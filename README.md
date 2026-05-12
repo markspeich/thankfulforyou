@@ -1,5 +1,10 @@
 # Thankful For You app
 
+ETSY REVIEWERS: Please note that this is just a placeholder site. I will be using the Etsy API locally for a couple of months and then publishing it to a server.
+
+
+
+## Description
 Thankful For You connects to an Etsy shop account, retrieves order information, and presents order activity in practical dashboards for daily operations and historical review.
 
 ## Features
