@@ -13,3 +13,5 @@ Thankful For You connects to an Etsy shop account, retrieves order information, 
 ## Order Insights
 
 The app organizes Etsy order data into views that make it easier to understand shop performance and prepare daily fulfillment work. Historical dashboards provide visibility into order trends, while daily color aggregation helps summarize production needs by color.
+
+Daily summaries support fulfillment planning by grouping selected color options into simple order counts.
