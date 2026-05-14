@@ -3,11 +3,16 @@ const FONT_FAMILY = "CandlepinLaser";
 const PX_PER_MM = 96 / 25.4;
 
 const orderLabelInput = document.querySelector("#orderLabelInput");
-const orderTextInput = document.querySelector("#orderTextInput");
 const addOrderButton = document.querySelector("#addOrderButton");
+const exportCompletedButton = document.querySelector("#exportCompletedButton");
+const orderSearchInput = document.querySelector("#orderSearchInput");
 const orderCountOutput = document.querySelector("#orderCountOutput");
+const completeCountOutput = document.querySelector("#completeCountOutput");
+const progressCountOutput = document.querySelector("#progressCountOutput");
+const notStartedCountOutput = document.querySelector("#notStartedCountOutput");
 const orderList = document.querySelector("#orderList");
 const activeOrderName = document.querySelector("#activeOrderName");
+const editorPanel = document.querySelector(".editor-panel");
 const textInput = document.querySelector("#textInput");
 const overlapInput = document.querySelector("#overlapInput");
 const overlapOutput = document.querySelector("#overlapOutput");
@@ -92,7 +97,8 @@ function getActiveOrder() {
 }
 
 function summarizeOrderText(text) {
-  return text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).join(" / ");
+  const summary = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).join(" / ");
+  return summary || "No text entered";
 }
 
 function saveActiveOrderDraft() {
@@ -101,6 +107,7 @@ function saveActiveOrderDraft() {
     return;
   }
 
+  order.label = orderLabelInput.value.trim() || order.label;
   order.text = textInput.value;
   order.settings = getCurrentSettings();
   if (order.status !== "captured" && order.status !== "exported") {
@@ -114,6 +121,7 @@ function updateActiveOrderFromControls() {
     return;
   }
 
+  order.label = orderLabelInput.value.trim() || order.label;
   order.text = textInput.value;
   order.settings = getCurrentSettings();
   order.capturedLayout = null;
@@ -122,7 +130,23 @@ function updateActiveOrderFromControls() {
 }
 
 function renderOrderList() {
+  const searchTerm = orderSearchInput.value.trim().toLowerCase();
+  const visibleOrders = orders.filter((order) => {
+    if (!searchTerm) {
+      return true;
+    }
+
+    return `${order.label} ${order.text}`.toLowerCase().includes(searchTerm);
+  });
+  const completeCount = orders.filter((order) => order.status === "captured" || order.status === "exported").length;
+  const progressCount = orders.filter((order) => order.status === "in-progress").length;
+  const notStartedCount = orders.filter((order) => order.status === "not-started").length;
+
   orderCountOutput.textContent = String(orders.length);
+  completeCountOutput.textContent = String(completeCount);
+  progressCountOutput.textContent = String(progressCount);
+  notStartedCountOutput.textContent = String(notStartedCount);
+  exportCompletedButton.disabled = completeCount === 0;
   orderList.replaceChildren();
 
   if (!orders.length) {
@@ -132,7 +156,14 @@ function renderOrderList() {
     orderList.append(empty);
   }
 
-  orders.forEach((order) => {
+  if (orders.length && !visibleOrders.length) {
+    const empty = document.createElement("p");
+    empty.className = "order-empty";
+    empty.textContent = "No orders match the current search.";
+    orderList.append(empty);
+  }
+
+  visibleOrders.forEach((order) => {
     const item = document.createElement("button");
     item.type = "button";
     item.className = `order-item${order.id === activeOrderId ? " active" : ""}`;
@@ -145,7 +176,7 @@ function renderOrderList() {
     title.textContent = order.label;
 
     const status = document.createElement("span");
-    status.className = "order-status";
+    status.className = `order-status ${order.status}`;
     status.textContent = statusLabels[order.status];
 
     const previewText = document.createElement("span");
@@ -159,10 +190,12 @@ function renderOrderList() {
   });
 
   const activeOrder = getActiveOrder();
+  editorPanel.classList.toggle("is-hidden", !activeOrder);
   activeOrderName.textContent = activeOrder
-    ? `Working on ${activeOrder.label}`
+    ? activeOrder.label
     : "No order selected";
-  captureButton.disabled = !activeOrder;
+  captureButton.disabled = !activeOrder || !activeOrder.text.trim();
+  downloadButton.disabled = !activeOrder || !activeOrder.text.trim();
   nextOrderButton.disabled = orders.length < 2;
 }
 
@@ -179,39 +212,33 @@ function selectOrder(orderId) {
     order.status = "in-progress";
   }
 
+  orderLabelInput.value = order.label;
+  orderLabelInput.placeholder = order.label;
   applySettings(order.settings);
   render();
   renderOrderList();
 }
 
 function addOrder() {
-  const text = orderTextInput.value.trim();
-  if (!text) {
-    fontStatus.classList.add("warning");
-    fontStatus.textContent = "Add the text for one Etsy order before adding it to the queue.";
-    return;
-  }
-
-  const label = orderLabelInput.value.trim() || `Order ${orderSequence}`;
+  const label = `Order ${orderSequence}`;
   const order = {
     id: crypto.randomUUID(),
     label,
-    text,
-    status: "not-started",
+    text: "",
+    status: "in-progress",
     settings: {
       ...getCurrentSettings(),
-      text,
+      text: "",
     },
     capturedLayout: null,
   };
 
   orders.push(order);
   orderSequence += 1;
-  orderLabelInput.value = "";
-  orderTextInput.value = "";
+  orderLabelInput.placeholder = `Order ${orderSequence}`;
   selectOrder(order.id);
   fontStatus.classList.remove("warning");
-  fontStatus.textContent = `${label} added to the order queue.`;
+  fontStatus.textContent = `${label} added. Enter the label and text in the editor.`;
 }
 
 function selectNextUncapturedOrder() {
@@ -241,6 +268,13 @@ function captureActiveOrder() {
     return;
   }
 
+  if (!textInput.value.trim()) {
+    fontStatus.classList.add("warning");
+    fontStatus.textContent = "Enter order text before capturing this layout.";
+    return;
+  }
+
+  order.label = orderLabelInput.value.trim() || order.label;
   order.text = textInput.value;
   order.settings = getCurrentSettings();
   order.capturedLayout = structuredClone(lastLayout);
@@ -654,13 +688,28 @@ function createFaceImage(letters, widthMm, heightMm, fontSizeMm) {
 }
 
 function render() {
-  const text = textInput.value.trim() || "Emily";
+  const hasActiveOrder = Boolean(getActiveOrder());
+  const text = textInput.value.trim();
   const bridgeMm = Number(overlapInput.value);
   const lineBridgeMm = Number(lineOverlapInput.value);
   const fontSizeMm = Number(sizeInput.value);
   const backingMm = Number(backingInput.value);
   const showGuides = guideInput.checked;
-  const lines = layoutTextLines(text, fontSizeMm, bridgeMm, lineBridgeMm);
+
+  overlapOutput.textContent = `${bridgeMm.toFixed(1)} mm`;
+  lineOverlapOutput.textContent = `${lineBridgeMm.toFixed(1)} mm`;
+  sizeOutput.textContent = `${fontSizeMm.toFixed(0)} mm`;
+  backingOutput.textContent = `${backingMm.toFixed(3)} mm`;
+
+  if (hasActiveOrder && !text) {
+    lastLayout = null;
+    preview.replaceChildren();
+    preview.removeAttribute("viewBox");
+    return;
+  }
+
+  const layoutText = text || "Emily";
+  const lines = layoutTextLines(layoutText, fontSizeMm, bridgeMm, lineBridgeMm);
   const textWidthMm = Math.max(...lines.map((line) => line.mask.widthMm), fontSizeMm);
   const textHeightMm = Math.max(...lines.map((line) => line.y + line.mask.height / (PX_PER_MM * MASK_SCALE)), fontSizeMm);
   const widthMm = Math.max(textWidthMm + backingMm * 2 + 18, 90);
@@ -680,7 +729,7 @@ function render() {
   });
 
   lastLayout = {
-    text,
+    text: layoutText,
     bridgeMm,
     lineBridgeMm,
     widthMm,
@@ -693,11 +742,6 @@ function render() {
       y: letter.y,
     })),
   };
-
-  overlapOutput.textContent = `${bridgeMm.toFixed(1)} mm`;
-  lineOverlapOutput.textContent = `${lineBridgeMm.toFixed(1)} mm`;
-  sizeOutput.textContent = `${fontSizeMm.toFixed(0)} mm`;
-  backingOutput.textContent = `${backingMm.toFixed(3)} mm`;
 
   preview.replaceChildren();
   preview.setAttribute("viewBox", `0 0 ${widthMm} ${heightMm}`);
@@ -743,6 +787,12 @@ function render() {
 }
 
 async function downloadSvg() {
+  if (!lastLayout) {
+    fontStatus.classList.add("warning");
+    fontStatus.textContent = "Enter order text before exporting this order.";
+    return;
+  }
+
   downloadButton.disabled = true;
   downloadButton.textContent = "Exporting...";
   downloadButton.setAttribute("aria-busy", "true");
@@ -784,8 +834,9 @@ async function downloadSvg() {
     fontStatus.textContent = "Vector SVG export failed. Check the terminal for details.";
   } finally {
     downloadButton.disabled = false;
-    downloadButton.textContent = "Export SVG";
+    downloadButton.textContent = "Export This Order";
     downloadButton.removeAttribute("aria-busy");
+    renderOrderList();
   }
 }
 
@@ -796,12 +847,27 @@ async function downloadSvg() {
   });
 });
 
-addOrderButton.addEventListener("click", addOrder);
-orderTextInput.addEventListener("keydown", (event) => {
-  if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
-    addOrder();
+orderLabelInput.addEventListener("input", () => {
+  const order = getActiveOrder();
+  if (!order) {
+    return;
   }
+
+  order.label = orderLabelInput.value.trim() || `Order ${orders.indexOf(order) + 1}`;
+  order.status = "in-progress";
+  renderOrderList();
 });
+addOrderButton.addEventListener("click", addOrder);
+exportCompletedButton.addEventListener("click", () => {
+  const completeCount = orders.filter((order) => order.status === "captured" || order.status === "exported").length;
+  if (!completeCount) {
+    return;
+  }
+
+  fontStatus.classList.add("warning");
+  fontStatus.textContent = "Batch export is not wired yet. Export completed orders one at a time for now.";
+});
+orderSearchInput.addEventListener("input", renderOrderList);
 captureButton.addEventListener("click", captureActiveOrder);
 nextOrderButton.addEventListener("click", () => {
   saveActiveOrderDraft();

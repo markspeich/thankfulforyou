@@ -62,6 +62,11 @@ The first browser-rendered preview confirmed that the modified Candlepin font ca
 - Support entering or pasting multiple Etsy orders into a session so the user can work through them one at a time.
 - Support adding Etsy orders one at a time because the Etsy orders page may not provide an easy way to copy all customer names at once.
 - Make order boundaries explicit so a two-line order, such as a name plus credentials, cannot be confused with two separate one-line orders.
+- Use a left-side order navigation area for the Etsy order list.
+- Selecting an order from the left navigation should show that order's text editing screen on the right.
+- Show no active order editor before an order has been added.
+- Clicking Add Order should immediately add a new row to the left-side order list, select that order, and show the editor on the right.
+- The order label and order text should be editable only in the selected-order editor, not in the left-side order navigation.
 - Allow each order to store its own customer text and layout settings, including letter bridge, line bridge, text height, backing border, and guide visibility.
 - Provide a way to capture the current preview and settings for the active order before moving to the next order.
 - Show which orders are not started, in progress, captured, or exported so a batch of orders can be completed without losing track.
@@ -82,6 +87,9 @@ The first browser-rendered preview confirmed that the modified Candlepin font ca
 - Preserve legibility while minimizing separate acrylic pieces.
 - Prepare for future laser-cut export, likely SVG or another vector format.
 - SVG export must produce vector path definitions, not embedded raster image data.
+- The active order editor should include a button for exporting the selected order as an SVG.
+- The left-side order navigation should include a button above the order list for exporting all orders whose text editing has been completed.
+- Batch export should include only orders marked complete/captured and should not silently export unfinished orders.
 - SVG export should place the face text layer and offset backing layer side by side, with the backing layer to the right of the text layer.
 - The exported backing layer should be an actual outline path for LightBurn, not only a filled shape or SVG stroke effect. The path can be imported and manually assigned to a LightBurn cut layer.
 - Exported face-layer paths should also be welded/unioned so overlapping letters do not create internal cut lines.
@@ -108,13 +116,18 @@ The website should be a practical production tool rather than a marketing site. 
 - Reliable geometry checks.
 - Simple controls for adjusting overlap, line spacing, and scale.
 - Export-ready output once the proof of concept is validated.
+- A two-pane master-detail layout, with order navigation on the left and the selected order editor on the right.
+- In the selected-order editor, the render/preview should occupy the top of the right side of the screen and the order editor controls should sit at the bottom.
+
+The selected UI direction is the Production Queue layout. Use `docs/mockups/production-queue-ui-mockup-preview-top-controls-bottom.png` as the primary visual reference for the next UI implementation pass. The mockup shows a left-side order queue with an Export Completed button above the order list, and a right-side selected-order editor with the selected order preview at the top, controls docked at the bottom, connectedness status, and an Export This Order button. The sample render should follow the attached Emily RN artwork: white raised text over a blue backing silhouette.
 
 For batch Etsy order sessions, the preferred proof-of-concept workflow is:
 
-1. Add orders one at a time, with each order carrying an order label and customer text. The order text may contain multiple lines.
-2. Select the first order from an order queue.
+1. Click Add Order to create a new blank order row in the order queue.
+2. Enter or paste the order label and customer text in the selected-order editor. The order text may contain multiple lines.
 3. Adjust the text layout using the existing preview and sliders.
 4. Capture the layout for that order, saving both text and slider settings.
 5. Automatically advance to the next uncaptured order.
 6. Review the captured order list before export.
-7. Export individual SVGs first, then consider batch export once vector output is stable.
+7. Export the active order SVG from the editor.
+8. Export all completed orders from the order navigation once batch export is stable.

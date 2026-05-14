@@ -8,102 +8,152 @@
   </head>
   <body>
     <main class="app-shell">
-      <section class="workspace">
-        <aside class="controls" aria-label="Layout controls">
-          <div>
-            <p class="eyebrow">Proof of concept</p>
-            <h1>Candlepin Layout</h1>
+      <section class="production-workspace">
+        <aside class="orders-panel" aria-label="Order navigation">
+          <h1>Orders</h1>
+
+          <button id="exportCompletedButton" class="primary-action" type="button">Export Completed</button>
+
+          <div class="order-stats" aria-label="Order status summary">
+            <div>
+              <span>Complete</span>
+              <strong id="completeCountOutput">0</strong>
+            </div>
+            <div>
+              <span>In Progress</span>
+              <strong id="progressCountOutput">0</strong>
+            </div>
+            <div>
+              <span>Not Started</span>
+              <strong id="notStartedCountOutput">0</strong>
+            </div>
           </div>
 
           <section class="order-entry" aria-label="Add Etsy order">
-            <label class="field compact-field">
-              <span>Order label</span>
-              <input id="orderLabelInput" type="text" autocomplete="off" placeholder="Order 1">
-            </label>
-
-            <label class="field compact-field">
-              <span>Order text</span>
-              <textarea id="orderTextInput" autocomplete="off" rows="3" placeholder="Emily&#10;RN"></textarea>
-            </label>
-
-            <button id="addOrderButton" type="button">Add Order</button>
+            <button id="addOrderButton" class="secondary-action" type="button">+ Add Order</button>
           </section>
+
+          <label class="search-field">
+            <span class="visually-hidden">Search orders</span>
+            <input id="orderSearchInput" type="search" autocomplete="off" placeholder="Search orders...">
+          </label>
 
           <section class="order-queue" aria-label="Order queue">
-            <div class="section-heading">
-              <span>Orders</span>
-              <output id="orderCountOutput">0</output>
-            </div>
+            <div class="section-heading">Queue <output id="orderCountOutput">0</output></div>
             <div id="orderList" class="order-list" role="list"></div>
           </section>
-
-          <div id="activeOrderName" class="active-order">No order selected</div>
-
-          <label class="field">
-            <span>Text</span>
-            <textarea id="textInput" autocomplete="off" rows="3">Emily
-RN</textarea>
-          </label>
-
-          <label class="field">
-            <span>Letter bridge</span>
-            <div class="range-row">
-              <input id="overlapInput" type="range" min="0" max="4" step="0.1" value="0.5">
-              <output id="overlapOutput">0.5 mm</output>
-            </div>
-          </label>
-
-          <label class="field">
-            <span>Line bridge</span>
-            <div class="range-row">
-              <input id="lineOverlapInput" type="range" min="0" max="8" step="0.1" value="0.5">
-              <output id="lineOverlapOutput">0.5 mm</output>
-            </div>
-          </label>
-
-          <label class="field">
-            <span>Text height</span>
-            <div class="range-row">
-              <input id="sizeInput" type="range" min="18" max="55" step="1" value="34">
-              <output id="sizeOutput">34 mm</output>
-            </div>
-          </label>
-
-          <label class="field">
-            <span>Backing border</span>
-            <div class="range-row">
-              <input id="backingInput" type="range" min="2" max="10" step="0.025" value="3.175">
-              <output id="backingOutput">3.175 mm</output>
-            </div>
-          </label>
-
-          <label class="check-field">
-            <input id="guideInput" type="checkbox">
-            <span>Show bridge guides</span>
-          </label>
-
-          <div class="zoom-controls" aria-label="Preview zoom controls">
-            <button id="zoomOutButton" type="button">-</button>
-            <output id="zoomOutput">100%</output>
-            <button id="zoomInButton" type="button">+</button>
-            <button id="zoomResetButton" type="button">Reset</button>
-          </div>
-
-          <button id="downloadButton" type="button">Export SVG</button>
-
-          <div class="capture-actions">
-            <button id="captureButton" type="button">Capture Layout</button>
-            <button id="nextOrderButton" type="button">Next Order</button>
-          </div>
-
-          <div id="fontStatus" class="status" role="status"></div>
-          <p class="note">
-            This first pass uses the browser's font renderer and measured character bounds to approximate the bridge target. The next geometry pass should inspect the actual letter outlines.
-          </p>
         </aside>
 
-        <section class="preview-panel" aria-label="Badge reel preview">
-          <svg id="preview" role="img" aria-label="Preview of overlapped badge reel text"></svg>
+        <section class="editor-panel is-hidden" aria-label="Selected order editor">
+          <header class="editor-header">
+            <div>
+              <p class="eyebrow">Proof of concept</p>
+              <h2 id="activeOrderName">No order selected</h2>
+            </div>
+            <button id="downloadButton" class="primary-action" type="button">Export This Order</button>
+          </header>
+
+          <div class="editor-body">
+            <aside class="controls" aria-label="Layout controls">
+              <div class="control-card">
+                <div class="text-controls">
+                  <label class="field compact-field">
+                    <span>Order Label</span>
+                    <input id="orderLabelInput" type="text" autocomplete="off" placeholder="Order 1">
+                  </label>
+
+                  <label class="field compact-field">
+                    <span>Order Text</span>
+                    <textarea id="textInput" autocomplete="off" rows="3" placeholder="Emily&#10;RN"></textarea>
+                  </label>
+
+                  <div class="font-row">
+                    <label class="field compact-field">
+                      <span>Font (Line 1)</span>
+                      <select disabled>
+                        <option>Candlepin Laser</option>
+                      </select>
+                    </label>
+                    <label class="field compact-field">
+                      <span>Font (Line 2)</span>
+                      <select disabled>
+                        <option>Candlepin Laser</option>
+                      </select>
+                    </label>
+                  </div>
+                </div>
+
+                <div class="bridge-controls">
+                  <label class="field">
+                    <span>Letter Bridge</span>
+                    <div class="range-row">
+                      <input id="overlapInput" type="range" min="0" max="4" step="0.1" value="0.5">
+                      <output id="overlapOutput">0.5 mm</output>
+                    </div>
+                  </label>
+
+                  <label class="field">
+                    <span>Line Bridge</span>
+                    <div class="range-row">
+                      <input id="lineOverlapInput" type="range" min="0" max="8" step="0.1" value="0.5">
+                      <output id="lineOverlapOutput">0.5 mm</output>
+                    </div>
+                  </label>
+                </div>
+
+                <div class="size-controls">
+                  <label class="field">
+                    <span>Text Height</span>
+                    <div class="range-row">
+                      <input id="sizeInput" type="range" min="18" max="55" step="1" value="34">
+                      <output id="sizeOutput">34 mm</output>
+                    </div>
+                  </label>
+
+                  <label class="field">
+                    <span>Backing Border</span>
+                    <div class="range-row">
+                      <input id="backingInput" type="range" min="2" max="10" step="0.025" value="3.175">
+                      <output id="backingOutput">3.175 mm</output>
+                    </div>
+                  </label>
+                </div>
+              </div>
+
+              <div class="control-footer">
+                <label class="check-field">
+                  <input id="guideInput" type="checkbox">
+                  <span>Show bridge guides</span>
+                </label>
+
+                <div class="connected-status">
+                  <strong>Connected: preview check pending</strong>
+                  <span>Geometry connectedness analysis will be added after vector outline inspection.</span>
+                </div>
+
+                <div class="capture-actions">
+                  <button id="captureButton" type="button">Capture Layout</button>
+                  <button id="nextOrderButton" type="button">Next Order</button>
+                </div>
+              </div>
+
+              <div id="fontStatus" class="status" role="status"></div>
+              <p class="note">
+                This first pass uses the browser's font renderer and measured character bounds to approximate the bridge target. The next geometry pass should inspect the actual letter outlines.
+              </p>
+            </aside>
+
+            <section class="preview-panel" aria-label="Badge reel preview">
+              <svg id="preview" role="img" aria-label="Preview of overlapped badge reel text"></svg>
+
+              <div class="zoom-controls" aria-label="Preview zoom controls">
+                <button id="zoomOutButton" type="button">-</button>
+                <output id="zoomOutput">100%</output>
+                <button id="zoomInButton" type="button">+</button>
+                <button id="zoomResetButton" type="button">Reset</button>
+              </div>
+            </section>
+          </div>
         </section>
       </section>
     </main>
