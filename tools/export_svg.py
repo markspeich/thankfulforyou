@@ -201,16 +201,12 @@ def text_outline_path(
     return trace_mask_outline(image, scale, tolerance_mm, smooth_iterations)
 
 
-def build_svg(payload):
-    root = Path(__file__).resolve().parents[1]
-    font_path = root / "public" / "fonts" / "Candlepin-Laser.otf"
-
+def build_single_order_paths(font_path, payload):
     width = float(payload["widthMm"])
     height = float(payload["heightMm"])
     export_gap = 10.0
     export_width = width * 2 + export_gap
     backing_x = width + export_gap
-    font_size = float(payload["fontSizeMm"])
     backing = float(payload["backingMm"])
 
     face_path = text_outline_path(font_path, payload, tolerance_mm=0.025, smooth_iterations=1)
@@ -222,20 +218,70 @@ def build_svg(payload):
         tolerance_mm=0.045,
         smooth_iterations=2,
     )
-    text = svg_escape(payload.get("text", ""))
-    bridge = svg_escape(payload.get("bridgeMm", ""))
 
-    return f"""<svg xmlns="http://www.w3.org/2000/svg" width="{export_width:.3f}mm" height="{height:.3f}mm" viewBox="0 0 {export_width:.3f} {height:.3f}">
+    return {
+        "width": width,
+        "height": height,
+        "export_width": export_width,
+        "backing_x": backing_x,
+        "face_path": face_path,
+        "backing_path": backing_path,
+        "text": svg_escape(payload.get("text", "")),
+        "bridge": svg_escape(payload.get("bridgeMm", "")),
+    }
+
+
+def build_svg(payload):
+    root = Path(__file__).resolve().parents[1]
+    font_path = root / "public" / "fonts" / "Candlepin-Laser.otf"
+
+    if isinstance(payload, dict) and isinstance(payload.get("layouts"), list):
+        return build_batch_svg(font_path, payload["layouts"])
+
+    order = build_single_order_paths(font_path, payload)
+    return f"""<svg xmlns="http://www.w3.org/2000/svg" width="{order["export_width"]:.3f}mm" height="{order["height"]:.3f}mm" viewBox="0 0 {order["export_width"]:.3f} {order["height"]:.3f}">
   <title>Candlepin badge reel layout POC</title>
-  <desc>Text: {text}. Bridge target: {bridge} mm. Face layer is on the left. Offset backing layer is on the right. Generated from Candlepin-Laser.otf as vector paths.</desc>
+  <desc>Text: {order["text"]}. Bridge target: {order["bridge"]} mm. Face layer is on the left. Offset backing layer is on the right. Generated from Candlepin-Laser.otf as vector paths.</desc>
   <g id="face-layer" fill="none" stroke="#f8fbfc" stroke-width="0.100" stroke-linejoin="round" stroke-linecap="round">
-    <path d="{face_path}"/>
+    <path d="{order["face_path"]}"/>
   </g>
-  <g id="backing-layer" transform="translate({backing_x:.3f} 0)" fill="none" stroke="#446f8b" stroke-width="0.100" stroke-linejoin="round" stroke-linecap="round">
-    <path d="{backing_path}"/>
+  <g id="backing-layer" transform="translate({order["backing_x"]:.3f} 0)" fill="none" stroke="#446f8b" stroke-width="0.100" stroke-linejoin="round" stroke-linecap="round">
+    <path d="{order["backing_path"]}"/>
   </g>
 </svg>
 """
+
+
+def build_batch_svg(font_path, layouts):
+    order_paths = [build_single_order_paths(font_path, payload) for payload in layouts]
+    vertical_gap = 12.0
+    export_width = max(order["export_width"] for order in order_paths)
+    export_height = sum(order["height"] for order in order_paths) + vertical_gap * (len(order_paths) - 1)
+    desc_items = [
+        f"Order {index + 1}: {order['text']} (bridge target {order['bridge']} mm)"
+        for index, order in enumerate(order_paths)
+    ]
+
+    parts = [
+        f"""<svg xmlns="http://www.w3.org/2000/svg" width="{export_width:.3f}mm" height="{export_height:.3f}mm" viewBox="0 0 {export_width:.3f} {export_height:.3f}">
+  <title>Candlepin badge reel batch layout POC</title>
+  <desc>{"; ".join(desc_items)}. Each order is stacked below the previous order. Face layer is on the left. Offset backing layer is on the right. Generated from Candlepin-Laser.otf as vector paths.</desc>"""
+    ]
+
+    current_y = 0.0
+    for index, order in enumerate(order_paths):
+        parts.append(
+            f"""  <g id="order-{index + 1}-face-layer" transform="translate(0 {current_y:.3f})" fill="none" stroke="#f8fbfc" stroke-width="0.100" stroke-linejoin="round" stroke-linecap="round">
+      <path d="{order["face_path"]}"/>
+    </g>
+    <g id="order-{index + 1}-backing-layer" transform="translate({order["backing_x"]:.3f} {current_y:.3f})" fill="none" stroke="#446f8b" stroke-width="0.100" stroke-linejoin="round" stroke-linecap="round">
+      <path d="{order["backing_path"]}"/>
+    </g>"""
+        )
+        current_y += order["height"] + vertical_gap
+
+    parts.append("</svg>\n")
+    return "\n".join(parts)
 
 
 def main():

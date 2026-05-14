@@ -32,7 +32,7 @@ The first browser-rendered preview confirmed that the modified Candlepin font ca
 
 - Users are preparing custom badge reel orders from Etsy.
 - The designs commonly include short names, titles, credentials, or phrases.
-- A production session may include several Etsy orders, each with unique customer text that must be laid out, adjusted, captured, and then revisited or exported later.
+- A production session may include several Etsy orders, each with unique customer text that must be laid out, adjusted, saved, and then revisited or exported later.
 - Example shown: a pink backing shape with raised white text reading "EMILY" above "RN".
 - Reference example 1 uses the Candlepin font.
 - The Candlepin font has been modified by the business to fix issues encountered when cutting it on the laser.
@@ -68,9 +68,9 @@ The first browser-rendered preview confirmed that the modified Candlepin font ca
 - Clicking Add Order should immediately add a new row to the left-side order list, select that order, and show the editor on the right.
 - The order label and order text should be editable only in the selected-order editor, not in the left-side order navigation.
 - Allow each order to store its own customer text and layout settings, including letter bridge, line bridge, text height, backing border, and guide visibility.
-- Provide a way to capture the current preview and settings for the active order before moving to the next order.
-- Show which orders are not started, in progress, captured, or exported so a batch of orders can be completed without losing track.
-- Allow captured orders to be reopened for adjustment without losing their previously saved settings.
+- Provide a way to save the current preview and settings for the active order before moving to the next order.
+- Show which orders are not started, in progress, saved, or exported so a batch of orders can be completed without losing track.
+- Allow saved orders to be reopened for adjustment without losing their previously saved settings.
 - Support choosing or loading a font.
 - Support the three primary production fonts early: modified Candlepin, modified Skywalk, and Somekind.
 - Render text as actual font outlines, not just browser text.
@@ -88,9 +88,12 @@ The first browser-rendered preview confirmed that the modified Candlepin font ca
 - Prepare for future laser-cut export, likely SVG or another vector format.
 - SVG export must produce vector path definitions, not embedded raster image data.
 - The active order editor should include a button for exporting the selected order as an SVG.
-- The left-side order navigation should include a button above the order list for exporting all orders whose text editing has been completed.
-- Batch export should include only orders marked complete/captured and should not silently export unfinished orders.
+- The left-side order navigation should include a button above the order list for exporting all queued orders that have text entered.
+- Batch export should export every queued order that has text entered, even if it has not been explicitly saved first.
+- Batch export should skip blank orders rather than producing empty geometry for them.
 - SVG export should place the face text layer and offset backing layer side by side, with the backing layer to the right of the text layer.
+- In batch export SVG output, each order's face and backing paths should appear below the previous order's paths in a single vertically stacked file.
+- In batch export SVG output, each order's text path should be grouped separately from its backing path so the name can be selected as one group without including the backing border.
 - The exported backing layer should be an actual outline path for LightBurn, not only a filled shape or SVG stroke effect. The path can be imported and manually assigned to a LightBurn cut layer.
 - Exported face-layer paths should also be welded/unioned so overlapping letters do not create internal cut lines.
 - Exported cut paths should be smooth enough for laser production and should avoid visibly pixelated/stair-stepped contours.
@@ -119,15 +122,15 @@ The website should be a practical production tool rather than a marketing site. 
 - A two-pane master-detail layout, with order navigation on the left and the selected order editor on the right.
 - In the selected-order editor, the render/preview should occupy the top of the right side of the screen and the order editor controls should sit at the bottom.
 
-The selected UI direction is the Production Queue layout. Use `docs/mockups/production-queue-ui-mockup-preview-top-controls-bottom.png` as the primary visual reference for the next UI implementation pass. The mockup shows a left-side order queue with an Export Completed button above the order list, and a right-side selected-order editor with the selected order preview at the top, controls docked at the bottom, connectedness status, and an Export This Order button. The sample render should follow the attached Emily RN artwork: white raised text over a blue backing silhouette.
+The selected UI direction is the Production Queue layout. Use `docs/mockups/production-queue-ui-mockup-preview-top-controls-bottom.png` as the primary visual reference for the next UI implementation pass. The mockup intent is a left-side order queue with a batch export button above the order list, and a right-side selected-order editor with the selected order preview at the top, controls docked at the bottom, and an Export This Order button. The sample render should follow the attached Emily RN artwork: white raised text over a blue backing silhouette.
 
 For batch Etsy order sessions, the preferred proof-of-concept workflow is:
 
 1. Click Add Order to create a new blank order row in the order queue.
 2. Enter or paste the order label and customer text in the selected-order editor. The order text may contain multiple lines.
 3. Adjust the text layout using the existing preview and sliders.
-4. Capture the layout for that order, saving both text and slider settings.
-5. Automatically advance to the next uncaptured order.
-6. Review the captured order list before export.
+4. Save the layout for that order, saving both text and slider settings.
+5. Automatically advance to the next unsaved order.
+6. Review the order list before export.
 7. Export the active order SVG from the editor.
-8. Export all completed orders from the order navigation once batch export is stable.
+8. Export all queued orders with text from the order navigation when a batch SVG is needed.

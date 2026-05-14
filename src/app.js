@@ -22,7 +22,6 @@ const sizeInput = document.querySelector("#sizeInput");
 const sizeOutput = document.querySelector("#sizeOutput");
 const backingInput = document.querySelector("#backingInput");
 const backingOutput = document.querySelector("#backingOutput");
-const guideInput = document.querySelector("#guideInput");
 const fontStatus = document.querySelector("#fontStatus");
 const preview = document.querySelector("#preview");
 const previewPanel = document.querySelector(".preview-panel");
@@ -32,7 +31,6 @@ const zoomResetButton = document.querySelector("#zoomResetButton");
 const zoomOutput = document.querySelector("#zoomOutput");
 const downloadButton = document.querySelector("#downloadButton");
 const captureButton = document.querySelector("#captureButton");
-const nextOrderButton = document.querySelector("#nextOrderButton");
 
 const canvas = document.createElement("canvas");
 const ctx = canvas.getContext("2d");
@@ -47,7 +45,7 @@ const orders = [];
 const statusLabels = {
   "not-started": "Not started",
   "in-progress": "In progress",
-  captured: "Captured",
+  captured: "Saved",
   exported: "Exported",
 };
 
@@ -79,7 +77,6 @@ function getCurrentSettings() {
     lineBridgeMm: Number(lineOverlapInput.value),
     fontSizeMm: Number(sizeInput.value),
     backingMm: Number(backingInput.value),
-    showGuides: guideInput.checked,
   };
 }
 
@@ -89,7 +86,6 @@ function applySettings(settings) {
   lineOverlapInput.value = settings.lineBridgeMm;
   sizeInput.value = settings.fontSizeMm;
   backingInput.value = settings.backingMm;
-  guideInput.checked = settings.showGuides;
 }
 
 function getActiveOrder() {
@@ -141,12 +137,13 @@ function renderOrderList() {
   const completeCount = orders.filter((order) => order.status === "captured" || order.status === "exported").length;
   const progressCount = orders.filter((order) => order.status === "in-progress").length;
   const notStartedCount = orders.filter((order) => order.status === "not-started").length;
+  const exportableCount = orders.filter((order) => order.text.trim()).length;
 
   orderCountOutput.textContent = String(orders.length);
   completeCountOutput.textContent = String(completeCount);
   progressCountOutput.textContent = String(progressCount);
   notStartedCountOutput.textContent = String(notStartedCount);
-  exportCompletedButton.disabled = completeCount === 0;
+  exportCompletedButton.disabled = exportableCount === 0;
   orderList.replaceChildren();
 
   if (!orders.length) {
@@ -196,7 +193,6 @@ function renderOrderList() {
     : "No order selected";
   captureButton.disabled = !activeOrder || !activeOrder.text.trim();
   downloadButton.disabled = !activeOrder || !activeOrder.text.trim();
-  nextOrderButton.disabled = orders.length < 2;
 }
 
 function selectOrder(orderId) {
@@ -241,27 +237,6 @@ function addOrder() {
   fontStatus.textContent = `${label} added. Enter the label and text in the editor.`;
 }
 
-function selectNextUncapturedOrder() {
-  if (!orders.length) {
-    return;
-  }
-
-  const activeIndex = Math.max(0, orders.findIndex((order) => order.id === activeOrderId));
-  const orderedCandidates = [
-    ...orders.slice(activeIndex + 1),
-    ...orders.slice(0, activeIndex),
-  ];
-  const nextUncaptured = orderedCandidates.find((order) => order.status !== "captured" && order.status !== "exported");
-
-  if (nextUncaptured) {
-    selectOrder(nextUncaptured.id);
-    return;
-  }
-
-  const nextOrder = orders[(activeIndex + 1) % orders.length];
-  selectOrder(nextOrder.id);
-}
-
 function captureActiveOrder() {
   const order = getActiveOrder();
   if (!order) {
@@ -270,7 +245,7 @@ function captureActiveOrder() {
 
   if (!textInput.value.trim()) {
     fontStatus.classList.add("warning");
-    fontStatus.textContent = "Enter order text before capturing this layout.";
+    fontStatus.textContent = "Enter order text before saving this layout.";
     return;
   }
 
@@ -291,12 +266,12 @@ function captureActiveOrder() {
   if (nextUncaptured) {
     selectOrder(nextUncaptured.id);
     fontStatus.classList.remove("warning");
-    fontStatus.textContent = `${currentLabel} captured. Moved to ${nextUncaptured.label}.`;
+    fontStatus.textContent = `${currentLabel} saved. Moved to ${nextUncaptured.label}.`;
     return;
   }
 
   fontStatus.classList.remove("warning");
-  fontStatus.textContent = `${currentLabel} captured. All orders in the queue are captured.`;
+  fontStatus.textContent = `${currentLabel} saved. All orders in the queue are saved.`;
 }
 
 async function checkFont() {
@@ -694,7 +669,6 @@ function render() {
   const lineBridgeMm = Number(lineOverlapInput.value);
   const fontSizeMm = Number(sizeInput.value);
   const backingMm = Number(backingInput.value);
-  const showGuides = guideInput.checked;
 
   overlapOutput.textContent = `${bridgeMm.toFixed(1)} mm`;
   lineOverlapOutput.textContent = `${lineBridgeMm.toFixed(1)} mm`;
@@ -747,7 +721,6 @@ function render() {
   preview.setAttribute("viewBox", `0 0 ${widthMm} ${heightMm}`);
   updateZoom(zoom);
 
-  const guideGroup = makeSvgElement("g");
   const backingImage = makeSvgElement("image", {
     href: createBackingImage(absoluteLetters, widthMm, heightMm, fontSizeMm, backingMm),
     x: 0,
@@ -764,26 +737,7 @@ function render() {
     height: heightMm,
   });
 
-  absoluteLetters.forEach((letter, index) => {
-    if (showGuides && index > 0 && bridgeMm > 0) {
-      const previousLetter = absoluteLetters[index - 1];
-      if (previousLetter.lineIndex !== letter.lineIndex) {
-        return;
-      }
-
-      const guide = makeSvgElement("rect", {
-        class: "bridge-guide",
-        x: letter.absoluteLeftEdge,
-        y: letter.y - fontSizeMm * 0.62,
-        width: bridgeMm,
-        height: fontSizeMm * 0.48,
-        rx: 0.5,
-      });
-      guideGroup.append(guide);
-    }
-  });
-
-  preview.append(backingImage, guideGroup, faceImage);
+  preview.append(backingImage, faceImage);
 }
 
 async function downloadSvg() {
@@ -800,26 +754,10 @@ async function downloadSvg() {
   fontStatus.textContent = "Generating welded vector SVG...";
 
   try {
-    const response = await fetch("/api/export-svg", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(lastLayout),
+    await requestSvgExport({
+      layout: lastLayout,
+      filename: "candlepin-layout-poc.svg",
     });
-
-    if (!response.ok) {
-      throw new Error("Vector SVG export failed");
-    }
-
-    const svgSource = await response.text();
-    const blob = new Blob([svgSource], { type: "image/svg+xml" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = "candlepin-layout-poc.svg";
-    link.click();
-    URL.revokeObjectURL(url);
     fontStatus.classList.remove("warning");
     fontStatus.textContent = "Vector SVG exported.";
     const order = getActiveOrder();
@@ -840,7 +778,113 @@ async function downloadSvg() {
   }
 }
 
-[textInput, overlapInput, lineOverlapInput, sizeInput, backingInput, guideInput].forEach((control) => {
+async function requestSvgExport({ layout = null, layouts = null, filename }) {
+  const payload = layouts
+    ? { layouts }
+    : layout;
+  const response = await fetch("/api/export-svg", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    throw new Error("Vector SVG export failed");
+  }
+
+  const svgSource = await response.text();
+  const blob = new Blob([svgSource], { type: "image/svg+xml" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+async function exportAllOrders() {
+  saveActiveOrderDraft();
+  renderOrderList();
+
+  const exportableOrders = orders.filter((order) => order.text.trim());
+  if (!exportableOrders.length) {
+    fontStatus.classList.add("warning");
+    fontStatus.textContent = "Add text to at least one order before exporting all orders.";
+    return;
+  }
+
+  exportCompletedButton.disabled = true;
+  exportCompletedButton.textContent = "Exporting...";
+  exportCompletedButton.setAttribute("aria-busy", "true");
+  fontStatus.classList.remove("warning");
+  fontStatus.textContent = `Generating batch SVG for ${exportableOrders.length} order${exportableOrders.length === 1 ? "" : "s"}...`;
+
+  try {
+    const builtLayouts = exportableOrders.map((order) => ({
+      order,
+      layout: buildOrderLayout(order.settings),
+    }));
+
+    await requestSvgExport({
+      layouts: builtLayouts.map(({ layout }) => layout),
+      filename: "candlepin-layout-batch.svg",
+    });
+
+    builtLayouts.forEach(({ order, layout }) => {
+      order.status = "exported";
+      order.capturedLayout = structuredClone(layout);
+    });
+    fontStatus.classList.remove("warning");
+    fontStatus.textContent = `Batch SVG exported for ${exportableOrders.length} order${exportableOrders.length === 1 ? "" : "s"}.`;
+  } catch {
+    fontStatus.classList.add("warning");
+    fontStatus.textContent = "Batch SVG export failed. Check the terminal for details.";
+  } finally {
+    exportCompletedButton.disabled = false;
+    exportCompletedButton.textContent = "Export All Orders";
+    exportCompletedButton.removeAttribute("aria-busy");
+    renderOrderList();
+  }
+}
+
+function buildOrderLayout(settings) {
+  const text = settings.text.trim();
+  const bridgeMm = Number(settings.bridgeMm);
+  const lineBridgeMm = Number(settings.lineBridgeMm);
+  const fontSizeMm = Number(settings.fontSizeMm);
+  const backingMm = Number(settings.backingMm);
+  const lines = layoutTextLines(text, fontSizeMm, bridgeMm, lineBridgeMm);
+  const textWidthMm = Math.max(...lines.map((line) => line.mask.widthMm), fontSizeMm);
+  const textHeightMm = Math.max(...lines.map((line) => line.y + line.mask.height / (PX_PER_MM * MASK_SCALE)), fontSizeMm);
+  const widthMm = Math.max(textWidthMm + backingMm * 2 + 18, 90);
+  const heightMm = Math.max(textHeightMm + backingMm * 2 + 16, 58);
+  const topOffset = backingMm + 5;
+  const absoluteLetters = lines.flatMap((line) => {
+    const lineX = (widthMm - line.mask.widthMm) / 2 - line.mask.leftMm;
+    const baselineY = topOffset + line.y + line.mask.baselineMm;
+
+    return line.letters.map((letter) => ({
+      character: letter.character,
+      x: lineX + letter.x,
+      y: baselineY,
+    }));
+  });
+
+  return {
+    text,
+    bridgeMm,
+    lineBridgeMm,
+    widthMm,
+    heightMm,
+    fontSizeMm,
+    backingMm,
+    letters: absoluteLetters,
+  };
+}
+
+[textInput, overlapInput, lineOverlapInput, sizeInput, backingInput].forEach((control) => {
   control.addEventListener("input", () => {
     render();
     updateActiveOrderFromControls();
@@ -858,21 +902,9 @@ orderLabelInput.addEventListener("input", () => {
   renderOrderList();
 });
 addOrderButton.addEventListener("click", addOrder);
-exportCompletedButton.addEventListener("click", () => {
-  const completeCount = orders.filter((order) => order.status === "captured" || order.status === "exported").length;
-  if (!completeCount) {
-    return;
-  }
-
-  fontStatus.classList.add("warning");
-  fontStatus.textContent = "Batch export is not wired yet. Export completed orders one at a time for now.";
-});
+exportCompletedButton.addEventListener("click", exportAllOrders);
 orderSearchInput.addEventListener("input", renderOrderList);
 captureButton.addEventListener("click", captureActiveOrder);
-nextOrderButton.addEventListener("click", () => {
-  saveActiveOrderDraft();
-  selectNextUncapturedOrder();
-});
 downloadButton.addEventListener("click", downloadSvg);
 zoomOutButton.addEventListener("click", () => updateZoom(zoom / 1.2));
 zoomInButton.addEventListener("click", () => updateZoom(zoom * 1.2));
