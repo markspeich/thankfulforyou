@@ -433,23 +433,6 @@ button:disabled {
   text-align: center;
 }
 
-.status {
-  min-height: 44px;
-  padding: 10px;
-  color: #21465e;
-  background: #eaf3f7;
-  border: 1px solid #c9dee9;
-  border-radius: 6px;
-  font-size: 0.88rem;
-  line-height: 1.35;
-}
-
-.status.warning {
-  color: #684313;
-  background: #fff6df;
-  border-color: #ead19a;
-}
-
 .note {
   margin: 0;
   color: var(--muted);

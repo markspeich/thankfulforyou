@@ -32,7 +32,6 @@ const sizeInput = document.querySelector("#sizeInput");
 const sizeOutput = document.querySelector("#sizeOutput");
 const backingInput = document.querySelector("#backingInput");
 const backingOutput = document.querySelector("#backingOutput");
-const fontStatus = document.querySelector("#fontStatus");
 const preview = document.querySelector("#preview");
 const previewPanel = document.querySelector(".preview-panel");
 const zoomOutButton = document.querySelector("#zoomOutButton");
@@ -58,6 +57,16 @@ const statusLabels = {
   captured: "Saved",
   exported: "Exported",
 };
+
+function buildSettingsSignature(settings) {
+  return JSON.stringify({
+    text: settings.text,
+    bridgeMm: Number(settings.bridgeMm),
+    lineBridgeMm: Number(settings.lineBridgeMm),
+    fontSizeMm: Number(settings.fontSizeMm),
+    backingMm: Number(settings.backingMm),
+  });
+}
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
@@ -180,6 +189,14 @@ function updateActiveOrderFromControls() {
   renderOrderList();
 }
 
+function hasUnsavedRenderChanges(order) {
+  if (!order || !order.text.trim()) {
+    return false;
+  }
+
+  return buildSettingsSignature(getCurrentSettings()) !== order.savedSettingsSignature;
+}
+
 function renderOrderList() {
   const searchTerm = orderSearchInput.value.trim().toLowerCase();
   const visibleOrders = orders.filter((order) => {
@@ -246,7 +263,7 @@ function renderOrderList() {
   activeOrderName.textContent = activeOrder
     ? activeOrder.label
     : "No order selected";
-  captureButton.disabled = !activeOrder || !activeOrder.text.trim();
+  captureButton.disabled = !hasUnsavedRenderChanges(activeOrder);
   downloadButton.disabled = !activeOrder || !activeOrder.text.trim();
 }
 
@@ -284,14 +301,13 @@ function addOrder() {
       text: "",
     },
     capturedLayout: null,
+    savedSettingsSignature: null,
   };
 
   orders.push(order);
   orderSequence += 1;
   orderLabelInput.placeholder = `Order ${orderSequence}`;
   selectOrder(order.id);
-  fontStatus.classList.remove("warning");
-  fontStatus.textContent = `${label} added. Enter the label and text in the editor.`;
 }
 
 function captureActiveOrder() {
@@ -301,14 +317,13 @@ function captureActiveOrder() {
   }
 
   if (!textInput.value.trim()) {
-    fontStatus.classList.add("warning");
-    fontStatus.textContent = "Enter order text before saving this layout.";
     return;
   }
 
   order.label = orderLabelInput.value.trim() || order.label;
   order.text = textInput.value;
   order.settings = getCurrentSettings();
+  order.savedSettingsSignature = buildSettingsSignature(order.settings);
   order.capturedLayout = structuredClone(lastLayout);
   order.status = "captured";
   renderOrderList();
@@ -322,13 +337,8 @@ function captureActiveOrder() {
   const nextUncaptured = orderedCandidates.find((candidate) => candidate.status !== "captured" && candidate.status !== "exported");
   if (nextUncaptured) {
     selectOrder(nextUncaptured.id);
-    fontStatus.classList.remove("warning");
-    fontStatus.textContent = `${currentLabel} saved. Moved to ${nextUncaptured.label}.`;
     return;
   }
-
-  fontStatus.classList.remove("warning");
-  fontStatus.textContent = `${currentLabel} saved. All orders in the queue are saved.`;
 }
 
 async function checkFont() {
@@ -339,11 +349,8 @@ async function checkFont() {
     }
 
     await document.fonts.load(`120px "${FONT_FAMILY}"`);
-    fontStatus.classList.remove("warning");
-    fontStatus.textContent = "Using Candlepin-Laser.otf from public/fonts.";
   } catch {
-    fontStatus.classList.add("warning");
-    fontStatus.textContent = "Candlepin-Laser.otf is not available in public/fonts yet, so this preview is using a fallback script font.";
+    // Fall back to the browser script font when the production font is unavailable.
   }
 }
 
@@ -597,7 +604,7 @@ function layoutCharacters(text, fontSizeMm, bridgeMm) {
 
 function layoutTextLines(text, fontSizeMm, letterBridgeMm, lineBridgeMm) {
   const rawLines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-  const lineTexts = rawLines.length ? rawLines : ["Emily"];
+  const lineTexts = rawLines.length ? rawLines : [];
   const lines = lineTexts.map((lineText, index) => {
     const letters = layoutCharacters(lineText, fontSizeMm, letterBridgeMm);
     return {
@@ -800,24 +807,18 @@ function render() {
 
 async function downloadSvg() {
   if (!lastLayout) {
-    fontStatus.classList.add("warning");
-    fontStatus.textContent = "Enter order text before exporting this order.";
     return;
   }
 
   downloadButton.disabled = true;
   downloadButton.textContent = "Exporting...";
   downloadButton.setAttribute("aria-busy", "true");
-  fontStatus.classList.remove("warning");
-  fontStatus.textContent = "Generating welded vector SVG...";
 
   try {
     await requestSvgExport({
       layout: lastLayout,
-      filename: "candlepin-layout-poc.svg",
+      filename: "badge-reel-layout.svg",
     });
-    fontStatus.classList.remove("warning");
-    fontStatus.textContent = "Vector SVG exported.";
     const order = getActiveOrder();
     if (order) {
       order.status = "exported";
@@ -826,8 +827,6 @@ async function downloadSvg() {
       renderOrderList();
     }
   } catch {
-    fontStatus.classList.add("warning");
-    fontStatus.textContent = "Vector SVG export failed. Check the terminal for details.";
   } finally {
     downloadButton.disabled = false;
     downloadButton.textContent = "Export This Order";
@@ -868,16 +867,12 @@ async function exportAllOrders() {
 
   const exportableOrders = orders.filter((order) => order.text.trim());
   if (!exportableOrders.length) {
-    fontStatus.classList.add("warning");
-    fontStatus.textContent = "Add text to at least one order before exporting all orders.";
     return;
   }
 
   exportCompletedButton.disabled = true;
   exportCompletedButton.textContent = "Exporting...";
   exportCompletedButton.setAttribute("aria-busy", "true");
-  fontStatus.classList.remove("warning");
-  fontStatus.textContent = `Generating batch SVG for ${exportableOrders.length} order${exportableOrders.length === 1 ? "" : "s"}...`;
 
   try {
     const builtLayouts = exportableOrders.map((order) => ({
@@ -887,18 +882,14 @@ async function exportAllOrders() {
 
     await requestSvgExport({
       layouts: builtLayouts.map(({ layout }) => layout),
-      filename: "candlepin-layout-batch.svg",
+      filename: "badge-reel-layout-batch.svg",
     });
 
     builtLayouts.forEach(({ order, layout }) => {
       order.status = "exported";
       order.capturedLayout = structuredClone(layout);
     });
-    fontStatus.classList.remove("warning");
-    fontStatus.textContent = `Batch SVG exported for ${exportableOrders.length} order${exportableOrders.length === 1 ? "" : "s"}.`;
   } catch {
-    fontStatus.classList.add("warning");
-    fontStatus.textContent = "Batch SVG export failed. Check the terminal for details.";
   } finally {
     exportCompletedButton.disabled = false;
     exportCompletedButton.textContent = "Export All Orders";

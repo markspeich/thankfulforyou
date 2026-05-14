@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Badge Reel Text Layout POC</title>
+    <title>Badge Reel Text Layout Tool</title>
     <link rel="stylesheet" href="src/styles.css">
   </head>
   <body>
@@ -47,7 +47,6 @@
         <section class="editor-panel is-hidden" aria-label="Selected order editor">
           <header class="editor-header">
             <div>
-              <p class="eyebrow">Proof of concept</p>
               <h2 id="activeOrderName">No order selected</h2>
             </div>
             <button id="downloadButton" class="primary-action" type="button">Export This Order</button>
@@ -64,7 +63,7 @@
 
                   <label class="field compact-field">
                     <span>Order Text</span>
-                    <textarea id="textInput" autocomplete="off" rows="3" placeholder="Emily&#10;RN"></textarea>
+                    <textarea id="textInput" autocomplete="off" rows="3" placeholder="Enter one or more lines of text"></textarea>
                   </label>
 
                   <div class="font-row">
@@ -126,9 +125,8 @@
                 </div>
               </div>
 
-              <div id="fontStatus" class="status" role="status"></div>
               <p class="note">
-                This first pass uses the browser's font renderer and measured character bounds to approximate the bridge target. The next geometry pass should inspect the actual letter outlines.
+                The current layout engine uses the browser's font renderer and measured character bounds to approximate bridge targets. A future geometry pass can replace this with direct outline inspection for higher accuracy.
               </p>
             </aside>
 

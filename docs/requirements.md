@@ -12,28 +12,28 @@ The software must lay out customer-provided text in a selected font so the laser
 
 The ideal result is that neighboring letters overlap slightly enough to form a single connected acrylic piece, while still preserving legibility and the intended font style.
 
-## Initial Proof Of Concept
+## Product Stage
 
-Before building the full website, create a proof of concept that demonstrates whether software can reliably lay out text from a given font with controlled letter overlap and connected output shapes.
+The application is moving forward as a production tool for preparing acrylic badge reel layouts while continuing to improve the geometry pipeline that drives layout accuracy and export quality.
 
-The proof of concept should answer:
+The current product must support:
 
-- Can text outlines be loaded from a font and converted into laser-friendly geometry?
-- Can letter positions be adjusted so adjacent letters slightly overlap?
-- Can the resulting text be evaluated for connectedness, so the software can tell whether the text cuts as one piece or multiple pieces?
-- Can the output be previewed visually in a way that resembles the final acrylic face plate?
-- Can the approach eventually export geometry suitable for laser cutting?
+- Loading text outlines from a font and converting them into laser-friendly geometry.
+- Adjusting letter positions so adjacent letters slightly overlap.
+- Evaluating connectedness so the software can tell whether the text cuts as one piece or multiple pieces.
+- Previewing the result in a way that resembles the final acrylic face plate.
+- Exporting geometry suitable for laser cutting.
 
-The first proof of concept starts with a single line of text using the modified Candlepin production font. The initial sample text is "Emily". The layout originally targeted about 1 mm of connection or bridge between neighboring acrylic letter pieces, but early visual testing suggests this may be too much. The current default bridge target is 0.5 mm and should remain adjustable.
+The initial production rollout starts with the modified Candlepin production font and a default bridge target of 0.5 mm between neighboring acrylic letter pieces. That target should remain adjustable.
 
-The first browser-rendered preview confirmed that the modified Candlepin font can be loaded and visually overlapped. However, browser text bounds are only an approximation. The initial spacing pass showed that some glyph pairs, such as "ly" in "Emily", may appear close by bounding box while still failing to visibly touch. The proof of concept should therefore evaluate neighboring glyphs by their actual visible shape, and eventually by vector outlines.
+The current browser-rendered preview confirms that the modified Candlepin font can be loaded and visually overlapped. However, browser text bounds are only an approximation. Some glyph pairs may appear close by bounding box while still failing to visibly touch. The layout engine should therefore evaluate neighboring glyphs by their actual visible shape, and eventually by vector outlines.
 
 ## Product Context
 
 - Users are preparing custom badge reel orders from Etsy.
 - The designs commonly include short names, titles, credentials, or phrases.
 - A production session may include several Etsy orders, each with unique customer text that must be laid out, adjusted, saved, and then revisited or exported later.
-- Example shown: a pink backing shape with raised white text reading "EMILY" above "RN".
+- Example layouts may include a raised white text layer over a colored backing silhouette.
 - Reference example 1 uses the Candlepin font.
 - The Candlepin font has been modified by the business to fix issues encountered when cutting it on the laser.
 - Reference example 2 uses two fonts: the top name text uses Skywalk, and the lower credential text uses Somekind.
@@ -45,7 +45,7 @@ The first browser-rendered preview confirmed that the modified Candlepin font ca
 - The backing layer has a rounded offset border around the text silhouette.
 - The backing border should default to the metric equivalent of 0.125 inch, which is 3.175 mm.
 - The backing layer should be a solid acrylic silhouette. Enclosed holes created by font counters or tiny gaps in the backing border should be removed from the backing plate.
-- Multi-line layouts may intentionally overlap or touch between lines, such as the lower "RN" contacting the upper "EMILY" text, to help unify the design.
+- Multi-line layouts may intentionally overlap or touch between lines to help unify the design.
 - Different lines in the same badge reel design may use different fonts.
 
 ## Materials And Manufacturing
@@ -77,9 +77,9 @@ The first browser-rendered preview confirmed that the modified Candlepin font ca
 - Allow text to be arranged in one or more lines.
 - Allow font selection per line of text.
 - Allow controlled overlap between adjacent letters.
-- Treat 0.5 mm as the current default target for the connecting tab or bridge between neighboring letters in the Candlepin proof of concept.
+- Treat 0.5 mm as the current default target for the connecting tab or bridge between neighboring letters in Candlepin layouts.
 - Allow controlled overlap or contact between multiple text lines.
-- Treat 0.5 mm as the current default target for the connecting bridge between neighboring lines in the Candlepin proof of concept.
+- Treat 0.5 mm as the current default target for the connecting bridge between neighboring lines in Candlepin layouts.
 - For multi-line Candlepin layouts, slide each lower line upward until the actual visible line shapes overlap by the configured line-bridge target.
 - Center multi-line layouts by each line's actual visible shape bounds, not by rough text boxes or font advance widths.
 - The rendered text geometry must fit within 2 inches in width and 1.5 inches in height.
@@ -110,10 +110,10 @@ The first browser-rendered preview confirmed that the modified Candlepin font ca
 - What laser cutter/software format is required for production output?
 - What maximum badge reel face plate dimensions should the tool enforce?
 - What minimum stroke/bridge width is safe for 1/8 inch acrylic?
-- Should the proof of concept optimize automatically, or expose manual controls first?
+- Should the app optimize automatically, or expose manual controls first?
 - Should overlap be per-character-pair, global, or both?
 - How should multi-line layouts be handled when lines need to connect to each other?
-- Does the backing plate need automatic offset/outline generation in the proof of concept?
+- Does the backing plate need automatic offset/outline generation in the current release?
 
 ## Design Direction
 
@@ -124,13 +124,13 @@ The website should be a practical production tool rather than a marketing site. 
 - Clear preview of cut layers.
 - Reliable geometry checks.
 - Simple controls for adjusting overlap, line spacing, and scale.
-- Export-ready output once the proof of concept is validated.
+- Export-ready output for production use.
 - A two-pane master-detail layout, with order navigation on the left and the selected order editor on the right.
 - In the selected-order editor, the render/preview should occupy the top of the right side of the screen and the order editor controls should sit at the bottom.
 
-The selected UI direction is the Production Queue layout. Use `docs/mockups/production-queue-ui-mockup-preview-top-controls-bottom.png` as the primary visual reference for the next UI implementation pass. The mockup intent is a left-side order queue with a batch export button above the order list, and a right-side selected-order editor with the selected order preview at the top, controls docked at the bottom, and an Export This Order button. The sample render should follow the attached Emily RN artwork: white raised text over a blue backing silhouette.
+The selected UI direction is the Production Queue layout. Use `docs/mockups/production-queue-ui-mockup-preview-top-controls-bottom.png` as the primary visual reference for the next UI implementation pass. The mockup intent is a left-side order queue with a batch export button above the order list, and a right-side selected-order editor with the selected order preview at the top, controls docked at the bottom, and an Export This Order button. Sample renders should use a white raised text layer over a blue backing silhouette.
 
-For batch Etsy order sessions, the preferred proof-of-concept workflow is:
+For batch Etsy order sessions, the preferred workflow is:
 
 1. Click Add Order to create a new blank order row in the order queue.
 2. Enter or paste the order label and customer text in the selected-order editor. The order text may contain multiple lines.

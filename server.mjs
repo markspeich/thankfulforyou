@@ -55,7 +55,7 @@ const server = createServer((request, response) => {
 
         response.writeHead(200, {
           "Content-Type": "image/svg+xml; charset=utf-8",
-          "Content-Disposition": "attachment; filename=\"candlepin-layout-poc.svg\"",
+          "Content-Disposition": "attachment; filename=\"badge-reel-layout.svg\"",
         });
         response.end(stdout);
       });
@@ -79,5 +79,5 @@ const server = createServer((request, response) => {
 });
 
 server.listen(port, () => {
-  console.log(`Badge reel layout POC: http://localhost:${port}`);
+  console.log(`Badge reel layout tool: http://localhost:${port}`);
 });

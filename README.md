@@ -2,13 +2,13 @@
 
 This workspace is for a new website that will help prepare custom acrylic badge reel designs for production.
 
-The first milestone is a proof of concept for laying out text from a font so the letters overlap enough to reduce disconnected acrylic pieces while staying readable.
+The app focuses on laying out text from a font so the letters overlap enough to reduce disconnected acrylic pieces while staying readable.
 
 See `docs/requirements.md` for the living requirements document.
 
-## Run The Proof Of Concept
+## Run The App
 
-The current proof of concept is a small local web app.
+The current app runs locally.
 
 ```powershell
 npm start
