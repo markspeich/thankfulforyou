@@ -1,22 +1,19 @@
-# Thankful For You app
+# Thankful For You Badge Reel Layout Tool
 
-ETSY REVIEWERS: Please note that this is just a placeholder site. I will be using the Etsy API locally for a couple of months and then publishing it to a server.
+This workspace is for a new website that will help prepare custom acrylic badge reel designs for production.
 
+The first milestone is a proof of concept for laying out text from a font so the letters overlap enough to reduce disconnected acrylic pieces while staying readable.
 
+See `docs/requirements.md` for the living requirements document.
 
-## Description
-Thankful For You connects to an Etsy shop account, retrieves order information, and presents order activity in practical dashboards for daily operations and historical review.
+## Run The Proof Of Concept
 
-## Features
+The current proof of concept is a small local web app.
 
-- Connects securely to an Etsy account to retrieve shop order information.
-- Displays historical order metrics over time, helping identify trends in order volume and customer selections.
-- Builds dashboards for reviewing Etsy order activity across selected time periods.
-- Reviews order details and aggregates customer-selected colors.
-- Produces daily color summary lists showing how many orders were placed for each color option.
+```powershell
+npm start
+```
 
-## Order Insights
+Then open `http://localhost:4173`.
 
-The app organizes Etsy order data into views that make it easier to understand shop performance and prepare daily fulfillment work. Historical dashboards provide visibility into order trends, while daily color aggregation helps summarize production needs by color.
-
-Daily summaries support fulfillment planning by grouping selected color options into simple order counts.
+The Candlepin font file should live at `public/fonts/Candlepin-Laser.otf`.

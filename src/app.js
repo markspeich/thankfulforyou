@@ -1,0 +1,589 @@
+const FONT_URL = "public/fonts/Candlepin-Laser.otf";
+const FONT_FAMILY = "CandlepinLaser";
+const PX_PER_MM = 96 / 25.4;
+
+const textInput = document.querySelector("#textInput");
+const overlapInput = document.querySelector("#overlapInput");
+const overlapOutput = document.querySelector("#overlapOutput");
+const lineOverlapInput = document.querySelector("#lineOverlapInput");
+const lineOverlapOutput = document.querySelector("#lineOverlapOutput");
+const sizeInput = document.querySelector("#sizeInput");
+const sizeOutput = document.querySelector("#sizeOutput");
+const backingInput = document.querySelector("#backingInput");
+const backingOutput = document.querySelector("#backingOutput");
+const guideInput = document.querySelector("#guideInput");
+const fontStatus = document.querySelector("#fontStatus");
+const preview = document.querySelector("#preview");
+const previewPanel = document.querySelector(".preview-panel");
+const zoomOutButton = document.querySelector("#zoomOutButton");
+const zoomInButton = document.querySelector("#zoomInButton");
+const zoomResetButton = document.querySelector("#zoomResetButton");
+const zoomOutput = document.querySelector("#zoomOutput");
+const downloadButton = document.querySelector("#downloadButton");
+
+const canvas = document.createElement("canvas");
+const ctx = canvas.getContext("2d");
+const MASK_SCALE = 3;
+const MASK_PADDING_PX = 12;
+let lastLayout = null;
+let zoom = 1;
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function updateZoom(nextZoom, anchor = null) {
+  const previousZoom = zoom;
+  zoom = clamp(nextZoom, 0.4, 6);
+  zoomOutput.textContent = `${Math.round(zoom * 100)}%`;
+
+  if (lastLayout) {
+    preview.style.setProperty("--preview-width", `${lastLayout.widthMm * PX_PER_MM * zoom}px`);
+    preview.style.setProperty("--preview-height", `${lastLayout.heightMm * PX_PER_MM * zoom}px`);
+  }
+
+  if (anchor && previousZoom !== zoom) {
+    const ratio = zoom / previousZoom;
+    previewPanel.scrollLeft = (previewPanel.scrollLeft + anchor.x) * ratio - anchor.x;
+    previewPanel.scrollTop = (previewPanel.scrollTop + anchor.y) * ratio - anchor.y;
+  }
+}
+
+async function checkFont() {
+  try {
+    const response = await fetch(FONT_URL, { cache: "no-store" });
+    if (!response.ok) {
+      throw new Error("Font file not found");
+    }
+
+    await document.fonts.load(`120px "${FONT_FAMILY}"`);
+    fontStatus.classList.remove("warning");
+    fontStatus.textContent = "Using Candlepin-Laser.otf from public/fonts.";
+  } catch {
+    fontStatus.classList.add("warning");
+    fontStatus.textContent = "Candlepin-Laser.otf is not available in public/fonts yet, so this preview is using a fallback script font.";
+  }
+}
+
+function measureCharacter(character, fontSizeMm) {
+  const fontSizePx = fontSizeMm * PX_PER_MM;
+  ctx.font = `${fontSizePx}px "${FONT_FAMILY}", "Segoe Script", cursive`;
+  const metrics = ctx.measureText(character);
+  const left = (metrics.actualBoundingBoxLeft || 0) / PX_PER_MM;
+  const right = (metrics.actualBoundingBoxRight || metrics.width) / PX_PER_MM;
+
+  return {
+    advance: metrics.width / PX_PER_MM,
+    left,
+    right,
+    inkWidth: left + right,
+  };
+}
+
+function createGlyphMask(character, fontSizeMm) {
+  const fontSizePx = fontSizeMm * PX_PER_MM * MASK_SCALE;
+  const maskCanvas = document.createElement("canvas");
+  const maskContext = maskCanvas.getContext("2d", { willReadFrequently: true });
+
+  maskContext.font = `${fontSizePx}px "${FONT_FAMILY}", "Segoe Script", cursive`;
+  const metrics = maskContext.measureText(character);
+  const left = Math.ceil(metrics.actualBoundingBoxLeft || 0);
+  const right = Math.ceil(metrics.actualBoundingBoxRight || metrics.width);
+  const ascent = Math.ceil(metrics.actualBoundingBoxAscent || fontSizePx * 0.8);
+  const descent = Math.ceil(metrics.actualBoundingBoxDescent || fontSizePx * 0.25);
+  const width = Math.max(1, left + right + MASK_PADDING_PX * 2);
+  const height = Math.max(1, ascent + descent + MASK_PADDING_PX * 2);
+  const baseline = MASK_PADDING_PX + ascent;
+
+  maskCanvas.width = width;
+  maskCanvas.height = height;
+  maskContext.font = `${fontSizePx}px "${FONT_FAMILY}", "Segoe Script", cursive`;
+  maskContext.fillStyle = "#000";
+  maskContext.textBaseline = "alphabetic";
+  maskContext.fillText(character, MASK_PADDING_PX + left, baseline);
+
+  const imageData = maskContext.getImageData(0, 0, width, height);
+
+  return {
+    character,
+    data: imageData.data,
+    width,
+    height,
+    baseline,
+    leftMm: left / MASK_SCALE / PX_PER_MM,
+    rightMm: right / MASK_SCALE / PX_PER_MM,
+    ascentMm: ascent / MASK_SCALE / PX_PER_MM,
+    descentMm: descent / MASK_SCALE / PX_PER_MM,
+  };
+}
+
+function maskHasInk(mask, x, y) {
+  if (x < 0 || y < 0 || x >= mask.width || y >= mask.height) {
+    return false;
+  }
+
+  return mask.data[(y * mask.width + x) * 4 + 3] > 32;
+}
+
+function getOverlapWidthPx(leftMask, rightMask, dxPx) {
+  const baselineDelta = leftMask.baseline - rightMask.baseline;
+  let minX = Infinity;
+  let maxX = -Infinity;
+
+  for (let rightY = 0; rightY < rightMask.height; rightY += 1) {
+    const leftY = rightY + baselineDelta;
+    if (leftY < 0 || leftY >= leftMask.height) {
+      continue;
+    }
+
+    for (let rightX = 0; rightX < rightMask.width; rightX += 1) {
+      if (!maskHasInk(rightMask, rightX, rightY)) {
+        continue;
+      }
+
+      const leftX = rightX + dxPx;
+      if (maskHasInk(leftMask, leftX, leftY)) {
+        minX = Math.min(minX, leftX);
+        maxX = Math.max(maxX, leftX);
+      }
+    }
+  }
+
+  return Number.isFinite(minX) ? maxX - minX + 1 : 0;
+}
+
+function findPairOffsetMm(leftMask, rightMask, bridgeMm) {
+  const targetPx = Math.max(1, Math.round(bridgeMm * PX_PER_MM * MASK_SCALE));
+  const start = leftMask.width + rightMask.width;
+  const end = -rightMask.width;
+
+  for (let dx = start; dx >= end; dx -= 1) {
+    if (getOverlapWidthPx(leftMask, rightMask, dx) >= targetPx) {
+      const rightOriginRelativeToLeft = dx / MASK_SCALE / PX_PER_MM;
+      return rightOriginRelativeToLeft;
+    }
+  }
+
+  return (leftMask.rightMm + rightMask.leftMm) - bridgeMm;
+}
+
+function createLineMask(letters, fontSizeMm) {
+  const scale = PX_PER_MM * MASK_SCALE;
+  const minLeft = Math.min(...letters.map((letter) => letter.leftEdge), 0);
+  const maxRight = Math.max(...letters.map((letter) => letter.rightEdge), fontSizeMm);
+  const width = Math.ceil((maxRight - minLeft) * scale) + MASK_PADDING_PX * 2;
+  const height = Math.ceil(fontSizeMm * 1.35 * scale) + MASK_PADDING_PX * 2;
+  const baseline = MASK_PADDING_PX + Math.ceil(fontSizeMm * scale);
+  const maskCanvas = document.createElement("canvas");
+  const maskContext = maskCanvas.getContext("2d", { willReadFrequently: true });
+
+  maskCanvas.width = width;
+  maskCanvas.height = height;
+  maskContext.font = `${fontSizeMm * scale}px "${FONT_FAMILY}", "Segoe Script", cursive`;
+  maskContext.fillStyle = "#000";
+  maskContext.textBaseline = "alphabetic";
+
+  letters.forEach((letter) => {
+    maskContext.fillText(letter.character, MASK_PADDING_PX + (letter.x - minLeft) * scale, baseline);
+  });
+
+  const imageData = maskContext.getImageData(0, 0, width, height);
+  let inkLeft = width;
+  let inkRight = 0;
+  let hasInk = false;
+
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      if (imageData.data[(y * width + x) * 4 + 3] > 32) {
+        inkLeft = Math.min(inkLeft, x);
+        inkRight = Math.max(inkRight, x);
+        hasInk = true;
+      }
+    }
+  }
+
+  const visualLeftMm = hasInk ? minLeft + (inkLeft - MASK_PADDING_PX) / scale : minLeft;
+  const visualRightMm = hasInk ? minLeft + (inkRight - MASK_PADDING_PX) / scale : maxRight;
+
+  return {
+    data: imageData.data,
+    width,
+    height,
+    baseline,
+    inkLeft,
+    inkRight,
+    leftMm: visualLeftMm,
+    rightMm: visualRightMm,
+    widthMm: visualRightMm - visualLeftMm,
+    baselineMm: baseline / scale,
+  };
+}
+
+function getLineOverlapHeightPx(upperMask, lowerMask, dxPx, dyPx) {
+  let minY = Infinity;
+  let maxY = -Infinity;
+
+  for (let lowerY = 0; lowerY < lowerMask.height; lowerY += 1) {
+    const upperY = lowerY + dyPx;
+    if (upperY < 0 || upperY >= upperMask.height) {
+      continue;
+    }
+
+    for (let lowerX = 0; lowerX < lowerMask.width; lowerX += 1) {
+      if (!maskHasInk(lowerMask, lowerX, lowerY)) {
+        continue;
+      }
+
+      const upperX = lowerX + dxPx;
+      if (maskHasInk(upperMask, upperX, upperY)) {
+        minY = Math.min(minY, upperY);
+        maxY = Math.max(maxY, upperY);
+      }
+    }
+  }
+
+  return Number.isFinite(minY) ? maxY - minY + 1 : 0;
+}
+
+function findLineOffsetMm(upperMask, lowerMask, bridgeMm) {
+  const scale = PX_PER_MM * MASK_SCALE;
+  const targetPx = Math.max(1, Math.round(bridgeMm * scale));
+  const upperCenter = (upperMask.inkLeft + upperMask.inkRight) / 2;
+  const lowerCenter = (lowerMask.inkLeft + lowerMask.inkRight) / 2;
+  const dxPx = Math.round(upperCenter - lowerCenter);
+
+  for (let dy = upperMask.height; dy >= -lowerMask.height; dy -= 1) {
+    if (getLineOverlapHeightPx(upperMask, lowerMask, dxPx, dy) >= targetPx) {
+      return dy / scale;
+    }
+  }
+
+  return (upperMask.height - MASK_PADDING_PX * 2) / scale - bridgeMm;
+}
+
+function layoutCharacters(text, fontSizeMm, bridgeMm) {
+  const characters = [...text].filter((character) => character !== "\n");
+  if (!characters.length) {
+    return [];
+  }
+
+  const masks = characters.map((character) => createGlyphMask(character, fontSizeMm));
+  const positions = [];
+
+  return characters.map((character, index) => {
+    const metrics = measureCharacter(character, fontSizeMm);
+    const mask = masks[index];
+    const maskOrigin = index === 0
+      ? 0
+      : positions[index - 1].maskOrigin + findPairOffsetMm(masks[index - 1], mask, bridgeMm);
+    positions.push({ maskOrigin });
+
+    const x = maskOrigin + mask.leftMm;
+    const leftEdge = x - metrics.left;
+    const rightEdge = x + metrics.right;
+
+    const item = {
+      character,
+      index,
+      x,
+      leftEdge,
+      rightEdge,
+      width: metrics.inkWidth,
+      advance: metrics.advance,
+    };
+
+    return item;
+  });
+}
+
+function layoutTextLines(text, fontSizeMm, letterBridgeMm, lineBridgeMm) {
+  const rawLines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const lineTexts = rawLines.length ? rawLines : ["Emily"];
+  const lines = lineTexts.map((lineText, index) => {
+    const letters = layoutCharacters(lineText, fontSizeMm, letterBridgeMm);
+    return {
+      index,
+      text: lineText,
+      letters,
+      mask: createLineMask(letters, fontSizeMm),
+      y: 0,
+    };
+  });
+
+  lines.forEach((line, index) => {
+    if (index === 0) {
+      line.y = 0;
+      return;
+    }
+
+    const previous = lines[index - 1];
+    line.y = previous.y + findLineOffsetMm(previous.mask, line.mask, lineBridgeMm);
+  });
+
+  return lines;
+}
+
+function makeSvgElement(name, attributes = {}) {
+  const element = document.createElementNS("http://www.w3.org/2000/svg", name);
+  Object.entries(attributes).forEach(([key, value]) => {
+    element.setAttribute(key, String(value));
+  });
+  return element;
+}
+
+function fillBackingHoles(imageData, width, height) {
+  const data = imageData.data;
+  const visited = new Uint8Array(width * height);
+  const queue = [];
+
+  function isTransparent(index) {
+    return data[index * 4 + 3] <= 32;
+  }
+
+  function enqueue(x, y) {
+    if (x < 0 || y < 0 || x >= width || y >= height) {
+      return;
+    }
+
+    const index = y * width + x;
+    if (visited[index] || !isTransparent(index)) {
+      return;
+    }
+
+    visited[index] = 1;
+    queue.push(index);
+  }
+
+  for (let x = 0; x < width; x += 1) {
+    enqueue(x, 0);
+    enqueue(x, height - 1);
+  }
+
+  for (let y = 0; y < height; y += 1) {
+    enqueue(0, y);
+    enqueue(width - 1, y);
+  }
+
+  while (queue.length) {
+    const index = queue.pop();
+    const x = index % width;
+    const y = Math.floor(index / width);
+
+    enqueue(x + 1, y);
+    enqueue(x - 1, y);
+    enqueue(x, y + 1);
+    enqueue(x, y - 1);
+  }
+
+  for (let index = 0; index < width * height; index += 1) {
+    if (!visited[index]) {
+      const offset = index * 4;
+      data[offset] = 68;
+      data[offset + 1] = 111;
+      data[offset + 2] = 139;
+      data[offset + 3] = 255;
+    }
+  }
+}
+
+function createBackingImage(letters, widthMm, heightMm, fontSizeMm, backingMm) {
+  const scale = PX_PER_MM * 3;
+  const backingCanvas = document.createElement("canvas");
+  const backingContext = backingCanvas.getContext("2d", { willReadFrequently: true });
+  const widthPx = Math.ceil(widthMm * scale);
+  const heightPx = Math.ceil(heightMm * scale);
+
+  backingCanvas.width = widthPx;
+  backingCanvas.height = heightPx;
+  backingContext.font = `${fontSizeMm * scale}px "${FONT_FAMILY}", "Segoe Script", cursive`;
+  backingContext.textBaseline = "alphabetic";
+  backingContext.lineJoin = "round";
+  backingContext.lineCap = "round";
+  backingContext.strokeStyle = "#446f8b";
+  backingContext.fillStyle = "#446f8b";
+  backingContext.lineWidth = backingMm * 2 * scale;
+
+  letters.forEach((letter) => {
+    backingContext.strokeText(letter.character, letter.x * scale, letter.y * scale);
+    backingContext.fillText(letter.character, letter.x * scale, letter.y * scale);
+  });
+
+  const imageData = backingContext.getImageData(0, 0, widthPx, heightPx);
+  fillBackingHoles(imageData, widthPx, heightPx);
+  backingContext.putImageData(imageData, 0, 0);
+
+  return backingCanvas.toDataURL("image/png");
+}
+
+function createFaceImage(letters, widthMm, heightMm, fontSizeMm) {
+  const scale = PX_PER_MM * 3;
+  const faceCanvas = document.createElement("canvas");
+  const faceContext = faceCanvas.getContext("2d");
+  const widthPx = Math.ceil(widthMm * scale);
+  const heightPx = Math.ceil(heightMm * scale);
+
+  faceCanvas.width = widthPx;
+  faceCanvas.height = heightPx;
+  faceContext.font = `${fontSizeMm * scale}px "${FONT_FAMILY}", "Segoe Script", cursive`;
+  faceContext.textBaseline = "alphabetic";
+  faceContext.lineJoin = "round";
+  faceContext.lineCap = "round";
+  faceContext.fillStyle = "#f8fbfc";
+
+  letters.forEach((letter) => {
+    faceContext.fillText(letter.character, letter.x * scale, letter.y * scale);
+  });
+
+  return faceCanvas.toDataURL("image/png");
+}
+
+function render() {
+  const text = textInput.value.trim() || "Emily";
+  const bridgeMm = Number(overlapInput.value);
+  const lineBridgeMm = Number(lineOverlapInput.value);
+  const fontSizeMm = Number(sizeInput.value);
+  const backingMm = Number(backingInput.value);
+  const showGuides = guideInput.checked;
+  const lines = layoutTextLines(text, fontSizeMm, bridgeMm, lineBridgeMm);
+  const textWidthMm = Math.max(...lines.map((line) => line.mask.widthMm), fontSizeMm);
+  const textHeightMm = Math.max(...lines.map((line) => line.y + line.mask.height / (PX_PER_MM * MASK_SCALE)), fontSizeMm);
+  const widthMm = Math.max(textWidthMm + backingMm * 2 + 18, 90);
+  const heightMm = Math.max(textHeightMm + backingMm * 2 + 16, 58);
+  const topOffset = backingMm + 5;
+  const absoluteLetters = lines.flatMap((line) => {
+    const lineX = (widthMm - line.mask.widthMm) / 2 - line.mask.leftMm;
+    const baselineY = topOffset + line.y + line.mask.baselineMm;
+
+    return line.letters.map((letter) => ({
+      ...letter,
+      x: lineX + letter.x,
+      y: baselineY,
+      lineIndex: line.index,
+      absoluteLeftEdge: lineX + letter.leftEdge,
+    }));
+  });
+
+  lastLayout = {
+    text,
+    bridgeMm,
+    lineBridgeMm,
+    widthMm,
+    heightMm,
+    fontSizeMm,
+    backingMm,
+    letters: absoluteLetters.map((letter) => ({
+      character: letter.character,
+      x: letter.x,
+      y: letter.y,
+    })),
+  };
+
+  overlapOutput.textContent = `${bridgeMm.toFixed(1)} mm`;
+  lineOverlapOutput.textContent = `${lineBridgeMm.toFixed(1)} mm`;
+  sizeOutput.textContent = `${fontSizeMm.toFixed(0)} mm`;
+  backingOutput.textContent = `${backingMm.toFixed(3)} mm`;
+
+  preview.replaceChildren();
+  preview.setAttribute("viewBox", `0 0 ${widthMm} ${heightMm}`);
+  updateZoom(zoom);
+
+  const guideGroup = makeSvgElement("g");
+  const backingImage = makeSvgElement("image", {
+    href: createBackingImage(absoluteLetters, widthMm, heightMm, fontSizeMm, backingMm),
+    x: 0,
+    y: 0,
+    width: widthMm,
+    height: heightMm,
+  });
+  const faceImage = makeSvgElement("image", {
+    class: "face-layer",
+    href: createFaceImage(absoluteLetters, widthMm, heightMm, fontSizeMm),
+    x: 0,
+    y: 0,
+    width: widthMm,
+    height: heightMm,
+  });
+
+  absoluteLetters.forEach((letter, index) => {
+    if (showGuides && index > 0 && bridgeMm > 0) {
+      const previousLetter = absoluteLetters[index - 1];
+      if (previousLetter.lineIndex !== letter.lineIndex) {
+        return;
+      }
+
+      const guide = makeSvgElement("rect", {
+        class: "bridge-guide",
+        x: letter.absoluteLeftEdge,
+        y: letter.y - fontSizeMm * 0.62,
+        width: bridgeMm,
+        height: fontSizeMm * 0.48,
+        rx: 0.5,
+      });
+      guideGroup.append(guide);
+    }
+  });
+
+  preview.append(backingImage, guideGroup, faceImage);
+}
+
+async function downloadSvg() {
+  downloadButton.disabled = true;
+  downloadButton.textContent = "Exporting...";
+  downloadButton.setAttribute("aria-busy", "true");
+  fontStatus.classList.remove("warning");
+  fontStatus.textContent = "Generating welded vector SVG...";
+
+  try {
+    const response = await fetch("/api/export-svg", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(lastLayout),
+    });
+
+    if (!response.ok) {
+      throw new Error("Vector SVG export failed");
+    }
+
+    const svgSource = await response.text();
+    const blob = new Blob([svgSource], { type: "image/svg+xml" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "candlepin-layout-poc.svg";
+    link.click();
+    URL.revokeObjectURL(url);
+    fontStatus.classList.remove("warning");
+    fontStatus.textContent = "Vector SVG exported.";
+  } catch {
+    fontStatus.classList.add("warning");
+    fontStatus.textContent = "Vector SVG export failed. Check the terminal for details.";
+  } finally {
+    downloadButton.disabled = false;
+    downloadButton.textContent = "Export SVG";
+    downloadButton.removeAttribute("aria-busy");
+  }
+}
+
+[textInput, overlapInput, lineOverlapInput, sizeInput, backingInput, guideInput].forEach((control) => {
+  control.addEventListener("input", render);
+});
+
+downloadButton.addEventListener("click", downloadSvg);
+zoomOutButton.addEventListener("click", () => updateZoom(zoom / 1.2));
+zoomInButton.addEventListener("click", () => updateZoom(zoom * 1.2));
+zoomResetButton.addEventListener("click", () => updateZoom(1));
+previewPanel.addEventListener("wheel", (event) => {
+  event.preventDefault();
+  const rect = previewPanel.getBoundingClientRect();
+  const anchor = {
+    x: event.clientX - rect.left,
+    y: event.clientY - rect.top,
+  };
+  const direction = event.deltaY < 0 ? 1.12 : 1 / 1.12;
+  updateZoom(zoom * direction, anchor);
+}, { passive: false });
+
+await checkFont();
+render();

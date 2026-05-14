@@ -1,0 +1,101 @@
+# Badge Reel Design Layout Tool Requirements
+
+## Project Objective
+
+Create a website that helps lay out custom badge reel designs for Etsy orders.
+
+The business sells custom badge reels. Each face plate is made from two layers of 1/8 inch acrylic cut by laser and solvent-welded together. The completed face plate is then solvent-welded to a badge reel.
+
+## Primary Problem
+
+The software must lay out customer-provided text in a selected font so the laser-cut acrylic uses as few separate pieces as possible.
+
+The ideal result is that neighboring letters overlap slightly enough to form a single connected acrylic piece, while still preserving legibility and the intended font style.
+
+## Initial Proof Of Concept
+
+Before building the full website, create a proof of concept that demonstrates whether software can reliably lay out text from a given font with controlled letter overlap and connected output shapes.
+
+The proof of concept should answer:
+
+- Can text outlines be loaded from a font and converted into laser-friendly geometry?
+- Can letter positions be adjusted so adjacent letters slightly overlap?
+- Can the resulting text be evaluated for connectedness, so the software can tell whether the text cuts as one piece or multiple pieces?
+- Can the output be previewed visually in a way that resembles the final acrylic face plate?
+- Can the approach eventually export geometry suitable for laser cutting?
+
+The first proof of concept starts with a single line of text using the modified Candlepin production font. The initial sample text is "Emily". The layout originally targeted about 1 mm of connection or bridge between neighboring acrylic letter pieces, but early visual testing suggests this may be too much. The current default bridge target is 0.5 mm and should remain adjustable.
+
+The first browser-rendered preview confirmed that the modified Candlepin font can be loaded and visually overlapped. However, browser text bounds are only an approximation. The initial spacing pass showed that some glyph pairs, such as "ly" in "Emily", may appear close by bounding box while still failing to visibly touch. The proof of concept should therefore evaluate neighboring glyphs by their actual visible shape, and eventually by vector outlines.
+
+## Product Context
+
+- Users are preparing custom badge reel orders from Etsy.
+- The designs commonly include short names, titles, credentials, or phrases.
+- Example shown: a pink backing shape with raised white text reading "EMILY" above "RN".
+- Reference example 1 uses the Candlepin font.
+- The Candlepin font has been modified by the business to fix issues encountered when cutting it on the laser.
+- Reference example 2 uses two fonts: the top name text uses Skywalk, and the lower credential text uses Somekind.
+- Skywalk has also been modified by the business to fix laser-cutting issues.
+- The three primary production fonts are modified Candlepin, modified Skywalk, and Somekind.
+- The text layer should be manufacturable from acrylic, ideally as one connected piece per text layer.
+- When text letters overlap, the overlap should be welded or unioned into one face-layer shape so internal seam lines are removed.
+- The backing layer follows the overall silhouette of the design and gives the text support and contrast.
+- The backing layer has a rounded offset border around the text silhouette.
+- The backing border should default to the metric equivalent of 0.125 inch, which is 3.175 mm.
+- The backing layer should be a solid acrylic silhouette. Enclosed holes created by font counters or tiny gaps in the backing border should be removed from the backing plate.
+- Multi-line layouts may intentionally overlap or touch between lines, such as the lower "RN" contacting the upper "EMILY" text, to help unify the design.
+- Different lines in the same badge reel design may use different fonts.
+
+## Materials And Manufacturing
+
+- Acrylic thickness: 1/8 inch per layer.
+- Process: laser cut acrylic, then solvent-weld layers together.
+- Face plate: two acrylic layers welded together.
+- Final assembly: face plate welded to a badge reel.
+- Manufacturing constraint: small disconnected text pieces are undesirable because they require more cutting, handling, alignment, and welding.
+
+## Early Functional Requirements
+
+- Accept text input for a badge reel design.
+- Support choosing or loading a font.
+- Support the three primary production fonts early: modified Candlepin, modified Skywalk, and Somekind.
+- Render text as actual font outlines, not just browser text.
+- Allow text to be arranged in one or more lines.
+- Allow font selection per line of text.
+- Allow controlled overlap between adjacent letters.
+- Treat 0.5 mm as the current default target for the connecting tab or bridge between neighboring letters in the Candlepin proof of concept.
+- Allow controlled overlap or contact between multiple text lines.
+- Treat 0.5 mm as the current default target for the connecting bridge between neighboring lines in the Candlepin proof of concept.
+- For multi-line Candlepin layouts, slide each lower line upward until the actual visible line shapes overlap by the configured line-bridge target.
+- Center multi-line layouts by each line's actual visible shape bounds, not by rough text boxes or font advance widths.
+- Detect whether text geometry is connected as a single piece.
+- Show a visual preview of the text and backing layer.
+- Preserve legibility while minimizing separate acrylic pieces.
+- Prepare for future laser-cut export, likely SVG or another vector format.
+- SVG export must produce vector path definitions, not embedded raster image data.
+- SVG export should place the face text layer and offset backing layer side by side, with the backing layer to the right of the text layer.
+- The exported backing layer should be an actual outline path for LightBurn, not only a filled shape or SVG stroke effect. The path can be imported and manually assigned to a LightBurn cut layer.
+- Exported face-layer paths should also be welded/unioned so overlapping letters do not create internal cut lines.
+- Exported cut paths should be smooth enough for laser production and should avoid visibly pixelated/stair-stepped contours.
+
+## Open Questions
+
+- What font formats must be supported first?
+- What laser cutter/software format is required for production output?
+- What maximum badge reel face plate dimensions should the tool enforce?
+- What minimum stroke/bridge width is safe for 1/8 inch acrylic?
+- Should the proof of concept optimize automatically, or expose manual controls first?
+- Should overlap be per-character-pair, global, or both?
+- How should multi-line layouts be handled when lines need to connect to each other?
+- Does the backing plate need automatic offset/outline generation in the proof of concept?
+
+## Design Direction
+
+The website should be a practical production tool rather than a marketing site. It should prioritize:
+
+- Fast order entry.
+- Clear preview of cut layers.
+- Reliable geometry checks.
+- Simple controls for adjusting overlap, line spacing, and scale.
+- Export-ready output once the proof of concept is validated.
