@@ -77,6 +77,7 @@ select {
   display: grid;
   grid-template-rows: auto minmax(360px, 1fr);
   min-height: 0;
+  min-width: 0;
   overflow: hidden;
 }
 
@@ -446,9 +447,11 @@ button:disabled {
   align-items: center;
   justify-content: center;
   min-height: 0;
+  min-width: 0;
   margin: 18px 24px 24px;
   padding: 52px 10px 10px;
-  overflow: auto;
+  overflow: hidden;
+  overflow: clip;
   background:
     radial-gradient(circle, rgba(28, 32, 36, 0.08) 1px, transparent 1px),
     #f8fafb;
@@ -456,6 +459,15 @@ button:disabled {
   border: 1px solid var(--line);
   border-radius: 8px;
   cursor: zoom-in;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  contain: size layout paint;
+}
+
+.preview-panel::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
 }
 
 .preview-title {
@@ -478,6 +490,7 @@ button:disabled {
   position: relative;
   z-index: 1;
   display: block;
+  max-width: none;
   width: var(--preview-width, 100%);
   height: var(--preview-height, 100%);
   transform-origin: top left;
