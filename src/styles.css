@@ -95,6 +95,114 @@ h1 {
   resize: vertical;
 }
 
+.compact-field {
+  gap: 6px;
+  font-size: 0.82rem;
+}
+
+.compact-field input[type="text"],
+.compact-field textarea {
+  min-height: 38px;
+}
+
+.order-entry {
+  display: grid;
+  gap: 12px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--line);
+}
+
+.order-queue {
+  display: grid;
+  gap: 10px;
+}
+
+.section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.section-heading output {
+  color: var(--ink);
+  text-transform: none;
+}
+
+.order-list {
+  display: grid;
+  gap: 8px;
+  max-height: 210px;
+  overflow: auto;
+}
+
+.order-empty {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.86rem;
+  line-height: 1.35;
+}
+
+.order-item {
+  width: 100%;
+  min-height: 0;
+  padding: 9px 10px;
+  color: var(--ink);
+  background: #f8fafb;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  text-align: left;
+}
+
+.order-item:hover,
+.order-item.active {
+  color: var(--ink);
+  background: #eef6fa;
+  border-color: #adcddb;
+}
+
+.order-item-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.9rem;
+  font-weight: 800;
+}
+
+.order-item-text {
+  display: block;
+  margin-top: 4px;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.order-status {
+  flex: 0 0 auto;
+  color: #21465e;
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.active-order {
+  min-height: 38px;
+  padding: 9px 10px;
+  color: #21465e;
+  background: #eaf3f7;
+  border: 1px solid #c9dee9;
+  border-radius: 6px;
+  font-size: 0.88rem;
+  font-weight: 800;
+}
+
 .check-field {
   display: flex;
   align-items: center;
@@ -141,6 +249,12 @@ button:hover {
 button:disabled {
   background: #7f98a8;
   cursor: wait;
+}
+
+.capture-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
 }
 
 .zoom-controls {

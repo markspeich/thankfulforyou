@@ -15,6 +15,30 @@
             <h1>Candlepin Layout</h1>
           </div>
 
+          <section class="order-entry" aria-label="Add Etsy order">
+            <label class="field compact-field">
+              <span>Order label</span>
+              <input id="orderLabelInput" type="text" autocomplete="off" placeholder="Order 1">
+            </label>
+
+            <label class="field compact-field">
+              <span>Order text</span>
+              <textarea id="orderTextInput" autocomplete="off" rows="3" placeholder="Emily&#10;RN"></textarea>
+            </label>
+
+            <button id="addOrderButton" type="button">Add Order</button>
+          </section>
+
+          <section class="order-queue" aria-label="Order queue">
+            <div class="section-heading">
+              <span>Orders</span>
+              <output id="orderCountOutput">0</output>
+            </div>
+            <div id="orderList" class="order-list" role="list"></div>
+          </section>
+
+          <div id="activeOrderName" class="active-order">No order selected</div>
+
           <label class="field">
             <span>Text</span>
             <textarea id="textInput" autocomplete="off" rows="3">Emily
@@ -66,6 +90,11 @@ RN</textarea>
           </div>
 
           <button id="downloadButton" type="button">Export SVG</button>
+
+          <div class="capture-actions">
+            <button id="captureButton" type="button">Capture Layout</button>
+            <button id="nextOrderButton" type="button">Next Order</button>
+          </div>
 
           <div id="fontStatus" class="status" role="status"></div>
           <p class="note">

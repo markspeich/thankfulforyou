@@ -2,6 +2,12 @@ const FONT_URL = "public/fonts/Candlepin-Laser.otf";
 const FONT_FAMILY = "CandlepinLaser";
 const PX_PER_MM = 96 / 25.4;
 
+const orderLabelInput = document.querySelector("#orderLabelInput");
+const orderTextInput = document.querySelector("#orderTextInput");
+const addOrderButton = document.querySelector("#addOrderButton");
+const orderCountOutput = document.querySelector("#orderCountOutput");
+const orderList = document.querySelector("#orderList");
+const activeOrderName = document.querySelector("#activeOrderName");
 const textInput = document.querySelector("#textInput");
 const overlapInput = document.querySelector("#overlapInput");
 const overlapOutput = document.querySelector("#overlapOutput");
@@ -20,6 +26,8 @@ const zoomInButton = document.querySelector("#zoomInButton");
 const zoomResetButton = document.querySelector("#zoomResetButton");
 const zoomOutput = document.querySelector("#zoomOutput");
 const downloadButton = document.querySelector("#downloadButton");
+const captureButton = document.querySelector("#captureButton");
+const nextOrderButton = document.querySelector("#nextOrderButton");
 
 const canvas = document.createElement("canvas");
 const ctx = canvas.getContext("2d");
@@ -27,6 +35,16 @@ const MASK_SCALE = 3;
 const MASK_PADDING_PX = 12;
 let lastLayout = null;
 let zoom = 1;
+let orderSequence = 1;
+let activeOrderId = null;
+const orders = [];
+
+const statusLabels = {
+  "not-started": "Not started",
+  "in-progress": "In progress",
+  captured: "Captured",
+  exported: "Exported",
+};
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
@@ -47,6 +65,204 @@ function updateZoom(nextZoom, anchor = null) {
     previewPanel.scrollLeft = (previewPanel.scrollLeft + anchor.x) * ratio - anchor.x;
     previewPanel.scrollTop = (previewPanel.scrollTop + anchor.y) * ratio - anchor.y;
   }
+}
+
+function getCurrentSettings() {
+  return {
+    text: textInput.value,
+    bridgeMm: Number(overlapInput.value),
+    lineBridgeMm: Number(lineOverlapInput.value),
+    fontSizeMm: Number(sizeInput.value),
+    backingMm: Number(backingInput.value),
+    showGuides: guideInput.checked,
+  };
+}
+
+function applySettings(settings) {
+  textInput.value = settings.text;
+  overlapInput.value = settings.bridgeMm;
+  lineOverlapInput.value = settings.lineBridgeMm;
+  sizeInput.value = settings.fontSizeMm;
+  backingInput.value = settings.backingMm;
+  guideInput.checked = settings.showGuides;
+}
+
+function getActiveOrder() {
+  return orders.find((order) => order.id === activeOrderId) || null;
+}
+
+function summarizeOrderText(text) {
+  return text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).join(" / ");
+}
+
+function saveActiveOrderDraft() {
+  const order = getActiveOrder();
+  if (!order) {
+    return;
+  }
+
+  order.text = textInput.value;
+  order.settings = getCurrentSettings();
+  if (order.status !== "captured" && order.status !== "exported") {
+    order.status = "in-progress";
+  }
+}
+
+function updateActiveOrderFromControls() {
+  const order = getActiveOrder();
+  if (!order) {
+    return;
+  }
+
+  order.text = textInput.value;
+  order.settings = getCurrentSettings();
+  order.capturedLayout = null;
+  order.status = "in-progress";
+  renderOrderList();
+}
+
+function renderOrderList() {
+  orderCountOutput.textContent = String(orders.length);
+  orderList.replaceChildren();
+
+  if (!orders.length) {
+    const empty = document.createElement("p");
+    empty.className = "order-empty";
+    empty.textContent = "Add one Etsy order at a time. Multi-line text stays inside that order.";
+    orderList.append(empty);
+  }
+
+  orders.forEach((order) => {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = `order-item${order.id === activeOrderId ? " active" : ""}`;
+    item.setAttribute("role", "listitem");
+
+    const header = document.createElement("span");
+    header.className = "order-item-header";
+
+    const title = document.createElement("span");
+    title.textContent = order.label;
+
+    const status = document.createElement("span");
+    status.className = "order-status";
+    status.textContent = statusLabels[order.status];
+
+    const previewText = document.createElement("span");
+    previewText.className = "order-item-text";
+    previewText.textContent = summarizeOrderText(order.text);
+
+    header.append(title, status);
+    item.append(header, previewText);
+    item.addEventListener("click", () => selectOrder(order.id));
+    orderList.append(item);
+  });
+
+  const activeOrder = getActiveOrder();
+  activeOrderName.textContent = activeOrder
+    ? `Working on ${activeOrder.label}`
+    : "No order selected";
+  captureButton.disabled = !activeOrder;
+  nextOrderButton.disabled = orders.length < 2;
+}
+
+function selectOrder(orderId) {
+  saveActiveOrderDraft();
+
+  const order = orders.find((candidate) => candidate.id === orderId);
+  if (!order) {
+    return;
+  }
+
+  activeOrderId = order.id;
+  if (order.status === "not-started") {
+    order.status = "in-progress";
+  }
+
+  applySettings(order.settings);
+  render();
+  renderOrderList();
+}
+
+function addOrder() {
+  const text = orderTextInput.value.trim();
+  if (!text) {
+    fontStatus.classList.add("warning");
+    fontStatus.textContent = "Add the text for one Etsy order before adding it to the queue.";
+    return;
+  }
+
+  const label = orderLabelInput.value.trim() || `Order ${orderSequence}`;
+  const order = {
+    id: crypto.randomUUID(),
+    label,
+    text,
+    status: "not-started",
+    settings: {
+      ...getCurrentSettings(),
+      text,
+    },
+    capturedLayout: null,
+  };
+
+  orders.push(order);
+  orderSequence += 1;
+  orderLabelInput.value = "";
+  orderTextInput.value = "";
+  selectOrder(order.id);
+  fontStatus.classList.remove("warning");
+  fontStatus.textContent = `${label} added to the order queue.`;
+}
+
+function selectNextUncapturedOrder() {
+  if (!orders.length) {
+    return;
+  }
+
+  const activeIndex = Math.max(0, orders.findIndex((order) => order.id === activeOrderId));
+  const orderedCandidates = [
+    ...orders.slice(activeIndex + 1),
+    ...orders.slice(0, activeIndex),
+  ];
+  const nextUncaptured = orderedCandidates.find((order) => order.status !== "captured" && order.status !== "exported");
+
+  if (nextUncaptured) {
+    selectOrder(nextUncaptured.id);
+    return;
+  }
+
+  const nextOrder = orders[(activeIndex + 1) % orders.length];
+  selectOrder(nextOrder.id);
+}
+
+function captureActiveOrder() {
+  const order = getActiveOrder();
+  if (!order) {
+    return;
+  }
+
+  order.text = textInput.value;
+  order.settings = getCurrentSettings();
+  order.capturedLayout = structuredClone(lastLayout);
+  order.status = "captured";
+  renderOrderList();
+
+  const currentLabel = order.label;
+  const activeIndex = orders.findIndex((candidate) => candidate.id === order.id);
+  const orderedCandidates = [
+    ...orders.slice(activeIndex + 1),
+    ...orders.slice(0, activeIndex),
+  ];
+  const nextUncaptured = orderedCandidates.find((candidate) => candidate.status !== "captured" && candidate.status !== "exported");
+  if (nextUncaptured) {
+    selectOrder(nextUncaptured.id);
+    fontStatus.classList.remove("warning");
+    fontStatus.textContent = `${currentLabel} captured. Moved to ${nextUncaptured.label}.`;
+    return;
+  }
+
+  fontStatus.classList.remove("warning");
+  fontStatus.textContent = `${currentLabel} captured. All orders in the queue are captured.`;
 }
 
 async function checkFont() {
@@ -556,6 +772,13 @@ async function downloadSvg() {
     URL.revokeObjectURL(url);
     fontStatus.classList.remove("warning");
     fontStatus.textContent = "Vector SVG exported.";
+    const order = getActiveOrder();
+    if (order) {
+      order.status = "exported";
+      order.capturedLayout = structuredClone(lastLayout);
+      order.settings = getCurrentSettings();
+      renderOrderList();
+    }
   } catch {
     fontStatus.classList.add("warning");
     fontStatus.textContent = "Vector SVG export failed. Check the terminal for details.";
@@ -567,9 +790,23 @@ async function downloadSvg() {
 }
 
 [textInput, overlapInput, lineOverlapInput, sizeInput, backingInput, guideInput].forEach((control) => {
-  control.addEventListener("input", render);
+  control.addEventListener("input", () => {
+    render();
+    updateActiveOrderFromControls();
+  });
 });
 
+addOrderButton.addEventListener("click", addOrder);
+orderTextInput.addEventListener("keydown", (event) => {
+  if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+    addOrder();
+  }
+});
+captureButton.addEventListener("click", captureActiveOrder);
+nextOrderButton.addEventListener("click", () => {
+  saveActiveOrderDraft();
+  selectNextUncapturedOrder();
+});
 downloadButton.addEventListener("click", downloadSvg);
 zoomOutButton.addEventListener("click", () => updateZoom(zoom / 1.2));
 zoomInButton.addEventListener("click", () => updateZoom(zoom * 1.2));
@@ -587,3 +824,4 @@ previewPanel.addEventListener("wheel", (event) => {
 
 await checkFont();
 render();
+renderOrderList();

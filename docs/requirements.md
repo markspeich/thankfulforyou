@@ -32,6 +32,7 @@ The first browser-rendered preview confirmed that the modified Candlepin font ca
 
 - Users are preparing custom badge reel orders from Etsy.
 - The designs commonly include short names, titles, credentials, or phrases.
+- A production session may include several Etsy orders, each with unique customer text that must be laid out, adjusted, captured, and then revisited or exported later.
 - Example shown: a pink backing shape with raised white text reading "EMILY" above "RN".
 - Reference example 1 uses the Candlepin font.
 - The Candlepin font has been modified by the business to fix issues encountered when cutting it on the laser.
@@ -58,6 +59,13 @@ The first browser-rendered preview confirmed that the modified Candlepin font ca
 ## Early Functional Requirements
 
 - Accept text input for a badge reel design.
+- Support entering or pasting multiple Etsy orders into a session so the user can work through them one at a time.
+- Support adding Etsy orders one at a time because the Etsy orders page may not provide an easy way to copy all customer names at once.
+- Make order boundaries explicit so a two-line order, such as a name plus credentials, cannot be confused with two separate one-line orders.
+- Allow each order to store its own customer text and layout settings, including letter bridge, line bridge, text height, backing border, and guide visibility.
+- Provide a way to capture the current preview and settings for the active order before moving to the next order.
+- Show which orders are not started, in progress, captured, or exported so a batch of orders can be completed without losing track.
+- Allow captured orders to be reopened for adjustment without losing their previously saved settings.
 - Support choosing or loading a font.
 - Support the three primary production fonts early: modified Candlepin, modified Skywalk, and Somekind.
 - Render text as actual font outlines, not just browser text.
@@ -95,7 +103,18 @@ The first browser-rendered preview confirmed that the modified Candlepin font ca
 The website should be a practical production tool rather than a marketing site. It should prioritize:
 
 - Fast order entry.
+- Batch order workflow for Etsy sessions.
 - Clear preview of cut layers.
 - Reliable geometry checks.
 - Simple controls for adjusting overlap, line spacing, and scale.
 - Export-ready output once the proof of concept is validated.
+
+For batch Etsy order sessions, the preferred proof-of-concept workflow is:
+
+1. Add orders one at a time, with each order carrying an order label and customer text. The order text may contain multiple lines.
+2. Select the first order from an order queue.
+3. Adjust the text layout using the existing preview and sliders.
+4. Capture the layout for that order, saving both text and slider settings.
+5. Automatically advance to the next uncaptured order.
+6. Review the captured order list before export.
+7. Export individual SVGs first, then consider batch export once vector output is stable.
