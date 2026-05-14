@@ -82,8 +82,14 @@ The first browser-rendered preview confirmed that the modified Candlepin font ca
 - Treat 0.5 mm as the current default target for the connecting bridge between neighboring lines in the Candlepin proof of concept.
 - For multi-line Candlepin layouts, slide each lower line upward until the actual visible line shapes overlap by the configured line-bridge target.
 - Center multi-line layouts by each line's actual visible shape bounds, not by rough text boxes or font advance widths.
+- The rendered text geometry must fit within 2 inches in width and 1.5 inches in height.
+- Scale the text proportionally to make the best use of the available size limit, scaling up or down as needed so the text fills as much of the allowed space as possible while still staying within 2 inches wide and 1.5 inches tall.
+- The backing border does not need to fit within the 2 inch by 1.5 inch text guide limit and may extend beyond it.
 - Detect whether text geometry is connected as a single piece.
 - Show a visual preview of the text and backing layer.
+- The preview area should include a non-exported 2 inch by 1.5 inch background guide box, and the rendered design should be centered within that box on screen.
+- The 2 inch by 1.5 inch preview guide box should remain visible even when there is no active text.
+- The preview guide box should show static dimension labels outside the box: `2"` centered above and `1.5"` on the right side.
 - Preserve legibility while minimizing separate acrylic pieces.
 - Prepare for future laser-cut export, likely SVG or another vector format.
 - SVG export must produce vector path definitions, not embedded raster image data.

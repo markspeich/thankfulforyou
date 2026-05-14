@@ -1,6 +1,16 @@
 const FONT_URL = "public/fonts/Candlepin-Laser.otf";
 const FONT_FAMILY = "CandlepinLaser";
 const PX_PER_MM = 96 / 25.4;
+const MAX_RENDER_WIDTH_MM = 50.8;
+const MAX_RENDER_HEIGHT_MM = 38.1;
+const PREVIEW_BOX_WIDTH_MM = 50.8;
+const PREVIEW_BOX_HEIGHT_MM = 38.1;
+const PREVIEW_MARGIN_MM = 6;
+const PREVIEW_LABEL_RIGHT_MM = 10;
+const DESIGN_BLEED_MM = 1;
+const DEFAULT_PREVIEW_WIDTH_MM = PREVIEW_BOX_WIDTH_MM + PREVIEW_MARGIN_MM * 2 + PREVIEW_LABEL_RIGHT_MM;
+const DEFAULT_PREVIEW_HEIGHT_MM = PREVIEW_BOX_HEIGHT_MM + PREVIEW_MARGIN_MM * 2;
+const DEFAULT_ZOOM = 3;
 
 const orderLabelInput = document.querySelector("#orderLabelInput");
 const addOrderButton = document.querySelector("#addOrderButton");
@@ -37,7 +47,7 @@ const ctx = canvas.getContext("2d");
 const MASK_SCALE = 3;
 const MASK_PADDING_PX = 12;
 let lastLayout = null;
-let zoom = 1;
+let zoom = DEFAULT_ZOOM;
 let orderSequence = 1;
 let activeOrderId = null;
 const orders = [];
@@ -59,8 +69,11 @@ function updateZoom(nextZoom, anchor = null) {
   zoomOutput.textContent = `${Math.round(zoom * 100)}%`;
 
   if (lastLayout) {
-    preview.style.setProperty("--preview-width", `${lastLayout.widthMm * PX_PER_MM * zoom}px`);
-    preview.style.setProperty("--preview-height", `${lastLayout.heightMm * PX_PER_MM * zoom}px`);
+    preview.style.setProperty("--preview-width", `${lastLayout.previewWidthMm * PX_PER_MM * zoom}px`);
+    preview.style.setProperty("--preview-height", `${lastLayout.previewHeightMm * PX_PER_MM * zoom}px`);
+  } else {
+    preview.style.setProperty("--preview-width", `${DEFAULT_PREVIEW_WIDTH_MM * PX_PER_MM * zoom}px`);
+    preview.style.setProperty("--preview-height", `${DEFAULT_PREVIEW_HEIGHT_MM * PX_PER_MM * zoom}px`);
   }
 
   if (anchor && previousZoom !== zoom) {
@@ -68,6 +81,48 @@ function updateZoom(nextZoom, anchor = null) {
     previewPanel.scrollLeft = (previewPanel.scrollLeft + anchor.x) * ratio - anchor.x;
     previewPanel.scrollTop = (previewPanel.scrollTop + anchor.y) * ratio - anchor.y;
   }
+}
+
+function renderPreviewGuideOnly() {
+  const previewBoxX = (DEFAULT_PREVIEW_WIDTH_MM - PREVIEW_LABEL_RIGHT_MM - PREVIEW_BOX_WIDTH_MM) / 2;
+  const previewBoxY = (DEFAULT_PREVIEW_HEIGHT_MM - PREVIEW_BOX_HEIGHT_MM) / 2;
+
+  preview.replaceChildren();
+  preview.setAttribute("viewBox", `0 0 ${DEFAULT_PREVIEW_WIDTH_MM} ${DEFAULT_PREVIEW_HEIGHT_MM}`);
+  updateZoom(zoom);
+  appendPreviewGuide(previewBoxX, previewBoxY);
+}
+
+function appendPreviewGuide(previewBoxX, previewBoxY) {
+  const topLabel = makeSvgElement("text", {
+    class: "preview-guide-label",
+    x: previewBoxX + PREVIEW_BOX_WIDTH_MM / 2,
+    y: previewBoxY - 2.6,
+    "text-anchor": "middle",
+  });
+  topLabel.textContent = '2"';
+
+  const sideLabel = makeSvgElement("text", {
+    class: "preview-guide-label",
+    x: previewBoxX + PREVIEW_BOX_WIDTH_MM + 4.5,
+    y: previewBoxY + PREVIEW_BOX_HEIGHT_MM / 2,
+    "text-anchor": "middle",
+    transform: `rotate(90 ${previewBoxX + PREVIEW_BOX_WIDTH_MM + 4.5} ${previewBoxY + PREVIEW_BOX_HEIGHT_MM / 2})`,
+  });
+  sideLabel.textContent = '1.5"';
+
+  preview.append(
+    makeSvgElement("rect", {
+      class: "preview-guide-box",
+      x: previewBoxX,
+      y: previewBoxY,
+      width: PREVIEW_BOX_WIDTH_MM,
+      height: PREVIEW_BOX_HEIGHT_MM,
+      rx: 1.6,
+    }),
+    topLabel,
+    sideLabel,
+  );
 }
 
 function getCurrentSettings() {
@@ -211,8 +266,10 @@ function selectOrder(orderId) {
   orderLabelInput.value = order.label;
   orderLabelInput.placeholder = order.label;
   applySettings(order.settings);
-  render();
   renderOrderList();
+  requestAnimationFrame(() => {
+    render();
+  });
 }
 
 function addOrder() {
@@ -429,6 +486,20 @@ function createLineMask(letters, fontSizeMm) {
 
   const visualLeftMm = hasInk ? minLeft + (inkLeft - MASK_PADDING_PX) / scale : minLeft;
   const visualRightMm = hasInk ? minLeft + (inkRight - MASK_PADDING_PX) / scale : maxRight;
+  let inkTop = height;
+  let inkBottom = 0;
+
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      if (imageData.data[(y * width + x) * 4 + 3] > 32) {
+        inkTop = Math.min(inkTop, y);
+        inkBottom = Math.max(inkBottom, y);
+      }
+    }
+  }
+
+  const visualTopMm = hasInk ? (inkTop - MASK_PADDING_PX) / scale : 0;
+  const visualBottomMm = hasInk ? (inkBottom - MASK_PADDING_PX) / scale : fontSizeMm;
 
   return {
     data: imageData.data,
@@ -439,7 +510,10 @@ function createLineMask(letters, fontSizeMm) {
     inkRight,
     leftMm: visualLeftMm,
     rightMm: visualRightMm,
+    topMm: visualTopMm,
+    bottomMm: visualBottomMm,
     widthMm: visualRightMm - visualLeftMm,
+    heightMm: visualBottomMm - visualTopMm,
     baselineMm: baseline / scale,
   };
 }
@@ -663,7 +737,6 @@ function createFaceImage(letters, widthMm, heightMm, fontSizeMm) {
 }
 
 function render() {
-  const hasActiveOrder = Boolean(getActiveOrder());
   const text = textInput.value.trim();
   const bridgeMm = Number(overlapInput.value);
   const lineBridgeMm = Number(lineOverlapInput.value);
@@ -675,68 +748,53 @@ function render() {
   sizeOutput.textContent = `${fontSizeMm.toFixed(0)} mm`;
   backingOutput.textContent = `${backingMm.toFixed(3)} mm`;
 
-  if (hasActiveOrder && !text) {
+  if (!text) {
     lastLayout = null;
-    preview.replaceChildren();
-    preview.removeAttribute("viewBox");
+    renderPreviewGuideOnly();
     return;
   }
 
-  const layoutText = text || "Emily";
-  const lines = layoutTextLines(layoutText, fontSizeMm, bridgeMm, lineBridgeMm);
-  const textWidthMm = Math.max(...lines.map((line) => line.mask.widthMm), fontSizeMm);
-  const textHeightMm = Math.max(...lines.map((line) => line.y + line.mask.height / (PX_PER_MM * MASK_SCALE)), fontSizeMm);
-  const widthMm = Math.max(textWidthMm + backingMm * 2 + 18, 90);
-  const heightMm = Math.max(textHeightMm + backingMm * 2 + 16, 58);
-  const topOffset = backingMm + 5;
-  const absoluteLetters = lines.flatMap((line) => {
-    const lineX = (widthMm - line.mask.widthMm) / 2 - line.mask.leftMm;
-    const baselineY = topOffset + line.y + line.mask.baselineMm;
-
-    return line.letters.map((letter) => ({
-      ...letter,
-      x: lineX + letter.x,
-      y: baselineY,
-      lineIndex: line.index,
-      absoluteLeftEdge: lineX + letter.leftEdge,
-    }));
-  });
-
-  lastLayout = {
-    text: layoutText,
+  const layout = buildOrderLayout({
+    text,
     bridgeMm,
     lineBridgeMm,
-    widthMm,
-    heightMm,
     fontSizeMm,
     backingMm,
-    letters: absoluteLetters.map((letter) => ({
-      character: letter.character,
-      x: letter.x,
-      y: letter.y,
-    })),
+  });
+  const previewWidthMm = Math.max(layout.widthMm, PREVIEW_BOX_WIDTH_MM) + PREVIEW_MARGIN_MM * 2;
+  const previewHeightMm = Math.max(layout.heightMm, PREVIEW_BOX_HEIGHT_MM) + PREVIEW_MARGIN_MM * 2;
+  const previewBoxX = (previewWidthMm - PREVIEW_LABEL_RIGHT_MM - PREVIEW_BOX_WIDTH_MM) / 2;
+  const previewBoxY = (previewHeightMm - PREVIEW_BOX_HEIGHT_MM) / 2;
+  const designX = previewBoxX + (PREVIEW_BOX_WIDTH_MM - layout.widthMm) / 2;
+  const designY = previewBoxY + (PREVIEW_BOX_HEIGHT_MM - layout.heightMm) / 2;
+
+  lastLayout = {
+    ...layout,
+    previewWidthMm,
+    previewHeightMm,
   };
 
   preview.replaceChildren();
-  preview.setAttribute("viewBox", `0 0 ${widthMm} ${heightMm}`);
+  preview.setAttribute("viewBox", `0 0 ${previewWidthMm} ${previewHeightMm}`);
   updateZoom(zoom);
 
   const backingImage = makeSvgElement("image", {
-    href: createBackingImage(absoluteLetters, widthMm, heightMm, fontSizeMm, backingMm),
-    x: 0,
-    y: 0,
-    width: widthMm,
-    height: heightMm,
+    href: createBackingImage(layout.letters, layout.widthMm, layout.heightMm, layout.fontSizeMm, layout.backingMm),
+    x: designX,
+    y: designY,
+    width: layout.widthMm,
+    height: layout.heightMm,
   });
   const faceImage = makeSvgElement("image", {
     class: "face-layer",
-    href: createFaceImage(absoluteLetters, widthMm, heightMm, fontSizeMm),
-    x: 0,
-    y: 0,
-    width: widthMm,
-    height: heightMm,
+    href: createFaceImage(layout.letters, layout.widthMm, layout.heightMm, layout.fontSizeMm),
+    x: designX,
+    y: designY,
+    width: layout.widthMm,
+    height: layout.heightMm,
   });
 
+  appendPreviewGuide(previewBoxX, previewBoxY);
   preview.append(backingImage, faceImage);
 }
 
@@ -857,18 +915,26 @@ function buildOrderLayout(settings) {
   const backingMm = Number(settings.backingMm);
   const lines = layoutTextLines(text, fontSizeMm, bridgeMm, lineBridgeMm);
   const textWidthMm = Math.max(...lines.map((line) => line.mask.widthMm), fontSizeMm);
-  const textHeightMm = Math.max(...lines.map((line) => line.y + line.mask.height / (PX_PER_MM * MASK_SCALE)), fontSizeMm);
-  const widthMm = Math.max(textWidthMm + backingMm * 2 + 18, 90);
-  const heightMm = Math.max(textHeightMm + backingMm * 2 + 16, 58);
-  const topOffset = backingMm + 5;
+  const minTopMm = Math.min(...lines.map((line) => line.y + line.mask.topMm));
+  const maxBottomMm = Math.max(...lines.map((line) => line.y + line.mask.bottomMm));
+  const rawTextHeightMm = maxBottomMm - minTopMm;
+  const scaleFactor = Math.min(
+    MAX_RENDER_WIDTH_MM / textWidthMm,
+    MAX_RENDER_HEIGHT_MM / rawTextHeightMm,
+  );
+  const scaledBackingMm = backingMm * scaleFactor;
+  const rawWidthMm = textWidthMm + backingMm * 2 + DESIGN_BLEED_MM * 2;
+  const rawHeightMm = rawTextHeightMm + backingMm * 2 + DESIGN_BLEED_MM * 2;
+  const widthMm = rawWidthMm * scaleFactor;
+  const heightMm = rawHeightMm * scaleFactor;
   const absoluteLetters = lines.flatMap((line) => {
-    const lineX = (widthMm - line.mask.widthMm) / 2 - line.mask.leftMm;
-    const baselineY = topOffset + line.y + line.mask.baselineMm;
+    const rawLineX = DESIGN_BLEED_MM + backingMm + (textWidthMm - line.mask.widthMm) / 2 - line.mask.leftMm;
+    const rawBaselineY = DESIGN_BLEED_MM + backingMm + (line.y - minTopMm) + line.mask.baselineMm;
 
     return line.letters.map((letter) => ({
       character: letter.character,
-      x: lineX + letter.x,
-      y: baselineY,
+      x: (rawLineX + letter.x) * scaleFactor,
+      y: rawBaselineY * scaleFactor,
     }));
   });
 
@@ -878,8 +944,8 @@ function buildOrderLayout(settings) {
     lineBridgeMm,
     widthMm,
     heightMm,
-    fontSizeMm,
-    backingMm,
+    fontSizeMm: fontSizeMm * scaleFactor,
+    backingMm: scaledBackingMm,
     letters: absoluteLetters,
   };
 }
@@ -908,7 +974,7 @@ captureButton.addEventListener("click", captureActiveOrder);
 downloadButton.addEventListener("click", downloadSvg);
 zoomOutButton.addEventListener("click", () => updateZoom(zoom / 1.2));
 zoomInButton.addEventListener("click", () => updateZoom(zoom * 1.2));
-zoomResetButton.addEventListener("click", () => updateZoom(1));
+zoomResetButton.addEventListener("click", () => updateZoom(DEFAULT_ZOOM));
 previewPanel.addEventListener("wheel", (event) => {
   event.preventDefault();
   const rect = previewPanel.getBoundingClientRect();
@@ -921,5 +987,6 @@ previewPanel.addEventListener("wheel", (event) => {
 }, { passive: false });
 
 await checkFont();
+renderPreviewGuideOnly();
 render();
 renderOrderList();
