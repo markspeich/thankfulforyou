@@ -77,6 +77,9 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - The backing border does not need to fit within the 2 inch by 1.5 inch text guide limit and may extend beyond it.
 - Detect whether text geometry is connected as a single piece.
 - Show a visual preview of the text and backing layer.
+- Keep the live on-screen preview fast and responsive while the user types or adjusts controls.
+- The live editing preview may use a faster browser-rendered path than the export pipeline, as long as it stays visually trustworthy for layout decisions.
+- Connectedness checks and other heavier geometry analysis may run asynchronously in the background so they do not block interactive editing.
 - The preview area should include a non-exported 2 inch by 1.5 inch background guide box, and the rendered design should be centered within that box on screen.
 - The 2 inch by 1.5 inch preview guide box should remain visible even when there is no active text.
 - The preview guide box should show static dimension labels outside the box: `2"` centered above and `1.5"` on the right side.
