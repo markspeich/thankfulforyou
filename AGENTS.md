@@ -8,9 +8,9 @@ The core technical challenge is text layout for laser-cut acrylic: arrange text 
 
 ## Current Phase
 
-The project is starting with a proof of concept.
+The project has moved beyond proof of concept and is now entering an initial production phase.
 
-Do not jump directly into a full production app until the proof of concept proves that font outlines can be loaded, overlapped, analyzed for connectedness, previewed, and eventually exported for laser cutting.
+The geometry pipeline remains the technical foundation of the product. Production work should continue to preserve and strengthen that foundation: real font outlines, overlap analysis, connectedness checks, practical previewing, and vector export suitable for laser cutting.
 
 ## Domain Notes
 
@@ -32,7 +32,7 @@ When the user provides new product, workflow, material, manufacturing, design, o
 
 ## Engineering Guidance
 
-- Prefer a geometry-first approach for the proof of concept.
+- Prefer a geometry-first approach as the product moves into production.
 - Use real font outlines instead of relying on plain DOM text rendering.
 - Keep layout logic separated from UI code so geometry can be tested.
 - Represent units explicitly. The manufacturing domain uses inches, while many graphics libraries use pixels, points, or arbitrary units.

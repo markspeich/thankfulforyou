@@ -18,7 +18,7 @@ npm start
 
 Then open `http://localhost:4173`.
 
-The proof of concept now expects these production fonts in `public/fonts`:
+The current production-oriented build expects these fonts in `public/fonts`:
 
 - `Candlepin-Laser.otf`
 - `SkywalkLaserRegular.otf`

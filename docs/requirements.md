@@ -14,17 +14,11 @@ The ideal result is that neighboring letters overlap slightly enough to form a s
 
 ## Product Stage
 
-The project is currently in a proof-of-concept stage.
+The project is now moving from proof of concept into an initial production phase.
 
-The current goal is to prove the geometry pipeline before expanding into a fuller production workflow. The proof of concept must demonstrate that the system can:
+The proof-of-concept work established the baseline approach: load real font outlines, overlap neighboring glyphs, evaluate connectedness, preview the resulting acrylic layers, and export vector geometry for laser cutting.
 
-- Loading text outlines from a font and converting them into laser-friendly geometry.
-- Adjusting letter positions so adjacent letters slightly overlap.
-- Evaluating connectedness so the software can tell whether the text cuts as one piece or multiple pieces.
-- Previewing the result in a way that resembles the final acrylic face plate.
-- Exporting geometry suitable for laser cutting.
-
-Production workflow features such as large order queues, saved work states, and batch export should be treated as later-phase capabilities unless they directly support proving the geometry pipeline.
+The current goal is to turn that geometry pipeline into a dependable production tool for day-to-day Etsy order work. Production implementation should continue to keep geometry behavior correct and testable while adding the workflow and UI needed for real order throughput.
 
 The initial production rollout starts with the modified Candlepin production font and a default bridge target of 0.5 mm between neighboring acrylic letter pieces. That target should remain adjustable.
 
@@ -58,7 +52,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Final assembly: face plate welded to a badge reel.
 - Manufacturing constraint: small disconnected text pieces are undesirable because they require more cutting, handling, alignment, and welding.
 
-## Proof Of Concept Requirements
+## Current Production Requirements
 
 - Accept text input for a badge reel design.
 - Support choosing or loading a font.
@@ -68,7 +62,8 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Treat the number of editable text lines as fully dynamic and derive it directly from the number of lines entered by the user.
 - Allow font selection per line of text.
 - Provide one control group per text line.
-- Each per-line control group must include a Font dropdown, Letter Bridge slider, Line Bridge slider, Horizontal Offset slider, and Text Height slider.
+- Each per-line control group must include a Font dropdown, Letter Bridge slider, Horizontal Offset slider, and Text Height slider.
+- Each per-line control group after the first must also include a Line Bridge slider for controlling the connection to the line above it.
 - Add or remove per-line control groups automatically as the user adds or removes text lines.
 - Remove the current non-functional `Font (Line 1)` and `Font (Line 2)` dropdowns from below the order text field once the per-line control groups exist.
 - Allow controlled overlap between adjacent letters.
@@ -88,14 +83,14 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Preserve legibility while minimizing separate acrylic pieces.
 - The `Backing Border` slider must remain a single global control for the whole design rather than a per-line control.
 - The global `Backing Border` slider should appear below all per-line control groups.
-- Prepare for future laser-cut export, likely SVG or another vector format.
+- Export designs as SVG for current production use.
 - SVG export must produce vector path definitions, not embedded raster image data.
 - Keep layout and geometry logic separated from UI code so geometry behavior can be tested independently.
 - Represent units explicitly and clearly distinguish inches from millimeters and any internal geometry units.
 - Add tests around geometry behavior as implementation matures, especially for connectedness detection and overlap behavior.
 - Keep the first screen focused on the layout tool itself rather than a landing page.
 
-## Later-Phase Production Workflow Requirements
+## Later-Phase Workflow Enhancements
 
 - Support entering or pasting multiple Etsy orders into a session so the user can work through them one at a time.
 - Support adding Etsy orders one at a time because the Etsy orders page may not provide an easy way to copy all customer names at once.
@@ -120,20 +115,27 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Exported face-layer paths should also be welded/unioned so overlapping letters do not create internal cut lines.
 - Exported cut paths should be smooth enough for laser production and should avoid visibly pixelated/stair-stepped contours.
 
+## Current Assumptions And Pending Decisions
+
+- The first production export target is SVG for LightBurn-oriented laser workflows.
+- The first production font formats are OTF and TTF, matching the currently available Candlepin, Skywalk, and Somekind assets.
+- The current production workflow is manual-control-first. Automatic optimization may be added later, but operators must be able to adjust letter bridge, line bridge, per-line font, horizontal offset, text height, and backing border directly.
+- The current implementation target is global per-line controls rather than per-character-pair tuning. More granular overlap controls may be considered later if real production jobs require them.
+- Multi-line layouts should support intentional contact between lines, and for Candlepin layouts each lower line should slide upward until the visible outlines reach the configured line-bridge target.
+- The backing layer should be generated automatically as an offset silhouette in the production tool rather than remaining a preview-only approximation.
+- The 2 inch by 1.5 inch guide box defines the text fitting target, not the total finished backing size limit.
+- A production-safe minimum bridge width for 1/8 inch acrylic still needs explicit shop confirmation. Until confirmed otherwise, use 0.5 mm as the working default bridge target for Candlepin letter and line connections.
+
 ## Open Questions
 
-- What font formats must be supported first?
-- What laser cutter/software format is required for production output?
 - Beyond the current 2 inch by 1.5 inch text guide area, what maximum finished badge reel face plate dimensions should the tool enforce?
-- What minimum stroke/bridge width is safe for 1/8 inch acrylic?
-- Should the app optimize automatically, or expose manual controls first?
-- Should overlap be per-character-pair, global, or both?
-- How should multi-line layouts be handled when lines need to connect to each other?
-- Does the proof of concept need full automatic backing offset generation now, or is a simpler backing preview/export acceptable for the first milestone?
+- What minimum stroke/bridge width is safe for 1/8 inch acrylic after shop validation?
+- Do Skywalk and Somekind need different default bridge or scaling presets than Candlepin?
+- What additional export conventions, if any, are needed for the exact LightBurn import workflow used in production?
 
 ## Design Direction
 
-The website should be a practical production tool rather than a marketing site. It should prioritize:
+The website should be a practical production tool rather than a marketing site. In the current production phase it should prioritize:
 
 - Fast order entry.
 - Batch order workflow for Etsy sessions.

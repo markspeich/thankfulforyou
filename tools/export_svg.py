@@ -264,7 +264,7 @@ def build_svg(payload):
 
     order = build_single_order_paths(root, payload)
     return f"""<svg xmlns="http://www.w3.org/2000/svg" width="{order["export_width"]:.3f}mm" height="{order["height"]:.3f}mm" viewBox="0 0 {order["export_width"]:.3f} {order["height"]:.3f}">
-  <title>Badge reel layout POC</title>
+  <title>Badge reel layout</title>
   <desc>Text: {order["text"]}. Face layer is on the left. Offset backing layer is on the right. Generated as vector paths from the selected production fonts.</desc>
   <g id="face-layer" fill="none" stroke="#f8fbfc" stroke-width="0.100" stroke-linejoin="round" stroke-linecap="round">
     <path d="{order["face_path"]}"/>
@@ -288,7 +288,7 @@ def build_batch_svg(root, layouts):
 
     parts = [
         f"""<svg xmlns="http://www.w3.org/2000/svg" width="{export_width:.3f}mm" height="{export_height:.3f}mm" viewBox="0 0 {export_width:.3f} {export_height:.3f}">
-  <title>Badge reel batch layout POC</title>
+  <title>Badge reel batch layout</title>
   <desc>{"; ".join(desc_items)}. Each order is stacked below the previous order. Face layer is on the left. Offset backing layer is on the right. Generated as vector paths from the selected production fonts.</desc>"""
     ]
 
