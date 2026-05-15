@@ -14,15 +14,17 @@ The ideal result is that neighboring letters overlap slightly enough to form a s
 
 ## Product Stage
 
-The application is moving forward as a production tool for preparing acrylic badge reel layouts while continuing to improve the geometry pipeline that drives layout accuracy and export quality.
+The project is currently in a proof-of-concept stage.
 
-The current product must support:
+The current goal is to prove the geometry pipeline before expanding into a fuller production workflow. The proof of concept must demonstrate that the system can:
 
 - Loading text outlines from a font and converting them into laser-friendly geometry.
 - Adjusting letter positions so adjacent letters slightly overlap.
 - Evaluating connectedness so the software can tell whether the text cuts as one piece or multiple pieces.
 - Previewing the result in a way that resembles the final acrylic face plate.
 - Exporting geometry suitable for laser cutting.
+
+Production workflow features such as large order queues, saved work states, and batch export should be treated as later-phase capabilities unless they directly support proving the geometry pipeline.
 
 The initial production rollout starts with the modified Candlepin production font and a default bridge target of 0.5 mm between neighboring acrylic letter pieces. That target should remain adjustable.
 
@@ -56,21 +58,9 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Final assembly: face plate welded to a badge reel.
 - Manufacturing constraint: small disconnected text pieces are undesirable because they require more cutting, handling, alignment, and welding.
 
-## Early Functional Requirements
+## Proof Of Concept Requirements
 
 - Accept text input for a badge reel design.
-- Support entering or pasting multiple Etsy orders into a session so the user can work through them one at a time.
-- Support adding Etsy orders one at a time because the Etsy orders page may not provide an easy way to copy all customer names at once.
-- Make order boundaries explicit so a two-line order, such as a name plus credentials, cannot be confused with two separate one-line orders.
-- Use a left-side order navigation area for the Etsy order list.
-- Selecting an order from the left navigation should show that order's text editing screen on the right.
-- Show no active order editor before an order has been added.
-- Clicking Add Order should immediately add a new row to the left-side order list, select that order, and show the editor on the right.
-- The order label and order text should be editable only in the selected-order editor, not in the left-side order navigation.
-- Allow each order to store its own customer text and layout settings, including letter bridge, line bridge, text height, backing border, and guide visibility.
-- Provide a way to save the current preview and settings for the active order before moving to the next order.
-- Show which orders are not started, in progress, saved, or exported so a batch of orders can be completed without losing track.
-- Allow saved orders to be reopened for adjustment without losing their previously saved settings.
 - Support choosing or loading a font.
 - Support the three primary production fonts early: modified Candlepin, modified Skywalk, and Somekind.
 - Render text as actual font outlines, not just browser text.
@@ -93,6 +83,25 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Preserve legibility while minimizing separate acrylic pieces.
 - Prepare for future laser-cut export, likely SVG or another vector format.
 - SVG export must produce vector path definitions, not embedded raster image data.
+- Keep layout and geometry logic separated from UI code so geometry behavior can be tested independently.
+- Represent units explicitly and clearly distinguish inches from millimeters and any internal geometry units.
+- Add tests around geometry behavior as implementation matures, especially for connectedness detection and overlap behavior.
+- Keep the first screen focused on the layout tool itself rather than a landing page.
+
+## Later-Phase Production Workflow Requirements
+
+- Support entering or pasting multiple Etsy orders into a session so the user can work through them one at a time.
+- Support adding Etsy orders one at a time because the Etsy orders page may not provide an easy way to copy all customer names at once.
+- Make order boundaries explicit so a two-line order, such as a name plus credentials, cannot be confused with two separate one-line orders.
+- Use a left-side order navigation area for the Etsy order list.
+- Selecting an order from the left navigation should show that order's text editing screen on the right.
+- Show no active order editor before an order has been added.
+- Clicking Add Order should immediately add a new row to the left-side order list, select that order, and show the editor on the right.
+- The order label and order text should be editable only in the selected-order editor, not in the left-side order navigation.
+- Allow each order to store its own customer text and layout settings, including letter bridge, line bridge, text height, backing border, and guide visibility.
+- Provide a way to save the current preview and settings for the active order before moving to the next order.
+- Show which orders are not started, in progress, saved, or exported so a batch of orders can be completed without losing track.
+- Allow saved orders to be reopened for adjustment without losing their previously saved settings.
 - The active order editor should include a button for exporting the selected order as an SVG.
 - The left-side order navigation should include a button above the order list for exporting all queued orders that have text entered.
 - Batch export should export every queued order that has text entered, even if it has not been explicitly saved first.
@@ -108,12 +117,12 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 
 - What font formats must be supported first?
 - What laser cutter/software format is required for production output?
-- What maximum badge reel face plate dimensions should the tool enforce?
+- Beyond the current 2 inch by 1.5 inch text guide area, what maximum finished badge reel face plate dimensions should the tool enforce?
 - What minimum stroke/bridge width is safe for 1/8 inch acrylic?
 - Should the app optimize automatically, or expose manual controls first?
 - Should overlap be per-character-pair, global, or both?
 - How should multi-line layouts be handled when lines need to connect to each other?
-- Does the backing plate need automatic offset/outline generation in the current release?
+- Does the proof of concept need full automatic backing offset generation now, or is a simpler backing preview/export acceptable for the first milestone?
 
 ## Design Direction
 
