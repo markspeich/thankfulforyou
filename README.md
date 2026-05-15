@@ -18,6 +18,21 @@ npm start
 
 Then open `http://localhost:4173`.
 
+## Run Tests
+
+The project now has both fast unit tests for layout math and browser tests for the live preview.
+
+```powershell
+npm run test:unit
+npm run test:e2e
+```
+
+Or run both:
+
+```powershell
+npm test
+```
+
 The current production-oriented build expects these fonts in `public/fonts`:
 
 - `Candlepin-Laser.otf`

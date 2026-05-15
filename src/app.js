@@ -1,3 +1,17 @@
+import {
+  DEFAULT_BACKING_MM,
+  DESIGN_BLEED_MM,
+  PREVIEW_BOX_HEIGHT_MM,
+  PREVIEW_BOX_WIDTH_MM,
+  PREVIEW_LABEL_RIGHT_MM,
+  PREVIEW_MARGIN_MM,
+  PX_PER_MM,
+  buildScaledTextBounds,
+  computePreviewFrame,
+  computeTextFitScale,
+  measureLineBounds,
+} from "./layout-math.js";
+
 const FONT_OPTIONS = [
   {
     id: "candlepin",
@@ -23,19 +37,9 @@ const FONT_OPTIONS = [
 ];
 
 const FONT_BY_ID = new Map(FONT_OPTIONS.map((font) => [font.id, font]));
-const PX_PER_MM = 96 / 25.4;
-const MAX_RENDER_WIDTH_MM = 55.88;
-const MAX_RENDER_HEIGHT_MM = 38.1;
-const TEXT_FIT_SAFETY_MARGIN_MM = 0.15;
-const PREVIEW_BOX_WIDTH_MM = 55.88;
-const PREVIEW_BOX_HEIGHT_MM = 38.1;
-const PREVIEW_MARGIN_MM = 6;
-const PREVIEW_LABEL_RIGHT_MM = 10;
-const DESIGN_BLEED_MM = 1;
 const DEFAULT_PREVIEW_WIDTH_MM = PREVIEW_BOX_WIDTH_MM + PREVIEW_MARGIN_MM * 2 + PREVIEW_LABEL_RIGHT_MM;
 const DEFAULT_PREVIEW_HEIGHT_MM = PREVIEW_BOX_HEIGHT_MM + PREVIEW_MARGIN_MM * 2;
 const DEFAULT_ZOOM = 3;
-const DEFAULT_BACKING_MM = 3.1;
 const DEFAULT_LINE_SETTINGS = Object.freeze({
   fontId: "candlepin",
   bridgeMm: 0.5,
@@ -1064,27 +1068,9 @@ function createFaceImage(letters, widthMm, heightMm) {
   };
 }
 
-function getPreviewFrame(layout, textBoundsMm = layout.textBoundsMm) {
-  const previewWidthMm = Math.max(layout.widthMm, PREVIEW_BOX_WIDTH_MM) + PREVIEW_MARGIN_MM * 2;
-  const previewHeightMm = Math.max(layout.heightMm, PREVIEW_BOX_HEIGHT_MM) + PREVIEW_MARGIN_MM * 2;
-  const previewBoxX = (previewWidthMm - PREVIEW_LABEL_RIGHT_MM - PREVIEW_BOX_WIDTH_MM) / 2;
-  const previewBoxY = (previewHeightMm - PREVIEW_BOX_HEIGHT_MM) / 2;
-  const designX = previewBoxX + (PREVIEW_BOX_WIDTH_MM - textBoundsMm.width) / 2 - textBoundsMm.left;
-  const designY = previewBoxY + (PREVIEW_BOX_HEIGHT_MM - textBoundsMm.height) / 2 - textBoundsMm.top;
-
-  return {
-    previewWidthMm,
-    previewHeightMm,
-    previewBoxX,
-    previewBoxY,
-    designX,
-    designY,
-  };
-}
-
 function renderPreviewFromLayout(layout) {
   const faceImageAsset = createFaceImage(layout.letters, layout.widthMm, layout.heightMm);
-  const frame = getPreviewFrame(layout, faceImageAsset.boundsMm);
+  const frame = computePreviewFrame(layout, faceImageAsset.boundsMm);
 
   lastLayout = {
     ...layout,
@@ -1283,26 +1269,16 @@ function buildOrderLayout(settings) {
     ...lines.map((line) => line.mask.widthMm),
     ...lines.map((line) => line.settings.fontSizeMm),
   );
-  const lineBounds = lines.map((line) => {
-    const centeredLeftMm = (baseTextWidthMm - line.mask.widthMm) / 2 + line.offsetXMm;
-    return {
-      line,
-      centeredLeftMm,
-      centeredRightMm: centeredLeftMm + line.mask.widthMm,
-      topMm: line.y + line.mask.topMm,
-      bottomMm: line.y + line.mask.bottomMm,
-    };
-  });
-  const minLeftMm = Math.min(...lineBounds.map((item) => item.centeredLeftMm));
-  const maxRightMm = Math.max(...lineBounds.map((item) => item.centeredRightMm));
+  const {
+    lineBounds,
+    minLeftMm,
+    maxRightMm,
+    minTopMm,
+    maxBottomMm,
+  } = measureLineBounds(baseTextWidthMm, lines);
   const textWidthMm = Math.max(1, maxRightMm - minLeftMm);
-  const minTopMm = Math.min(...lineBounds.map((item) => item.topMm));
-  const maxBottomMm = Math.max(...lineBounds.map((item) => item.bottomMm));
   const textHeightMm = Math.max(1, maxBottomMm - minTopMm);
-  const scaleFactor = Math.min(
-    Math.max(1, MAX_RENDER_WIDTH_MM - TEXT_FIT_SAFETY_MARGIN_MM) / textWidthMm,
-    Math.max(1, MAX_RENDER_HEIGHT_MM - TEXT_FIT_SAFETY_MARGIN_MM) / textHeightMm,
-  );
+  const scaleFactor = computeTextFitScale(textWidthMm, textHeightMm);
   const scaledBackingMm = normalized.backingMm * scaleFactor;
   const rawWidthMm = textWidthMm + normalized.backingMm * 2 + DESIGN_BLEED_MM * 2;
   const rawHeightMm = textHeightMm + normalized.backingMm * 2 + DESIGN_BLEED_MM * 2;
@@ -1328,12 +1304,7 @@ function buildOrderLayout(settings) {
     widthMm,
     heightMm,
     backingMm: scaledBackingMm,
-    textBoundsMm: {
-      left: (DESIGN_BLEED_MM + normalized.backingMm) * scaleFactor,
-      top: (DESIGN_BLEED_MM + normalized.backingMm) * scaleFactor,
-      width: textWidthMm * scaleFactor,
-      height: textHeightMm * scaleFactor,
-    },
+    textBoundsMm: buildScaledTextBounds(textWidthMm, textHeightMm, normalized.backingMm, scaleFactor),
     letters: absoluteLetters,
   };
 }

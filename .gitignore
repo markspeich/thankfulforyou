@@ -34,3 +34,6 @@ Thumbs.db
 .vscode/
 .idea/
 .git-baseline-*/
+playwright-report/
+test-results/
+coverage/
