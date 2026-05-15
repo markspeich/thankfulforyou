@@ -60,6 +60,9 @@ const backingInput = document.querySelector("#backingInput");
 const backingOutput = document.querySelector("#backingOutput");
 const preview = document.querySelector("#preview");
 const previewPanel = document.querySelector(".preview-panel");
+const connectionStatus = document.querySelector("#connectionStatus");
+const connectionStatusLabel = document.querySelector("#connectionStatusLabel");
+const connectionStatusDetail = document.querySelector("#connectionStatusDetail");
 const zoomOutButton = document.querySelector("#zoomOutButton");
 const zoomInButton = document.querySelector("#zoomInButton");
 const zoomResetButton = document.querySelector("#zoomResetButton");
@@ -75,6 +78,8 @@ let lastLayout = null;
 let zoom = DEFAULT_ZOOM;
 let orderSequence = 1;
 let activeOrderId = null;
+let renderRequestId = 0;
+let analysisTimerId = null;
 const orders = [];
 
 const statusLabels = {
@@ -187,6 +192,7 @@ function renderPreviewGuideOnly() {
   preview.setAttribute("viewBox", `0 0 ${DEFAULT_PREVIEW_WIDTH_MM} ${DEFAULT_PREVIEW_HEIGHT_MM}`);
   updateZoom(zoom);
   appendPreviewGuide(previewBoxX, previewBoxY);
+  updateConnectionStatus("pending", "Connectedness pending", "Enter text to analyze whether the face layer cuts as one acrylic piece.");
 }
 
 function appendPreviewGuide(previewBoxX, previewBoxY) {
@@ -219,6 +225,12 @@ function appendPreviewGuide(previewBoxX, previewBoxY) {
     topLabel,
     sideLabel,
   );
+}
+
+function updateConnectionStatus(state, label, detail) {
+  connectionStatus.className = `status-card status-${state}`;
+  connectionStatusLabel.textContent = label;
+  connectionStatusDetail.textContent = detail;
 }
 
 function lineValueText(setting, value) {
@@ -885,6 +897,25 @@ function makeSvgElement(name, attributes = {}) {
   return element;
 }
 
+async function analyzeLayout(layout) {
+  const response = await fetch("/api/layout-analyze", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      mode: "analyze",
+      layout,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error("Layout analysis failed");
+  }
+
+  return response.json();
+}
+
 function fillBackingHoles(imageData, width, height) {
   const data = imageData.data;
   const visited = new Uint8Array(width * height);
@@ -991,9 +1022,111 @@ function createFaceImage(letters, widthMm, heightMm) {
   return faceCanvas.toDataURL("image/png");
 }
 
+function getPreviewFrame(layout) {
+  const previewWidthMm = Math.max(layout.widthMm, PREVIEW_BOX_WIDTH_MM) + PREVIEW_MARGIN_MM * 2;
+  const previewHeightMm = Math.max(layout.heightMm, PREVIEW_BOX_HEIGHT_MM) + PREVIEW_MARGIN_MM * 2;
+  const previewBoxX = (previewWidthMm - PREVIEW_LABEL_RIGHT_MM - PREVIEW_BOX_WIDTH_MM) / 2;
+  const previewBoxY = (previewHeightMm - PREVIEW_BOX_HEIGHT_MM) / 2;
+  const designX = previewBoxX + (PREVIEW_BOX_WIDTH_MM - layout.widthMm) / 2;
+  const designY = previewBoxY + (PREVIEW_BOX_HEIGHT_MM - layout.heightMm) / 2;
+
+  return {
+    previewWidthMm,
+    previewHeightMm,
+    previewBoxX,
+    previewBoxY,
+    designX,
+    designY,
+  };
+}
+
+function renderPreviewFromLayout(layout) {
+  const frame = getPreviewFrame(layout);
+
+  lastLayout = {
+    ...layout,
+    previewWidthMm: frame.previewWidthMm,
+    previewHeightMm: frame.previewHeightMm,
+  };
+
+  preview.replaceChildren();
+  preview.setAttribute("viewBox", `0 0 ${frame.previewWidthMm} ${frame.previewHeightMm}`);
+  updateZoom(zoom);
+
+  const backingImage = makeSvgElement("image", {
+    href: createBackingImage(layout.letters, layout.widthMm, layout.heightMm, layout.backingMm),
+    x: frame.designX,
+    y: frame.designY,
+    width: layout.widthMm,
+    height: layout.heightMm,
+  });
+  const faceImage = makeSvgElement("image", {
+    class: "face-layer",
+    href: createFaceImage(layout.letters, layout.widthMm, layout.heightMm),
+    x: frame.designX,
+    y: frame.designY,
+    width: layout.widthMm,
+    height: layout.heightMm,
+  });
+
+  appendPreviewGuide(frame.previewBoxX, frame.previewBoxY);
+  preview.append(backingImage, faceImage);
+}
+
+function applyAnalysisResult(layout, analysis) {
+  if (!lastLayout || lastLayout.text !== layout.text) {
+    return;
+  }
+
+  lastLayout.analysis = analysis;
+
+  if (analysis.isConnected) {
+    updateConnectionStatus(
+      "ok",
+      "Single connected face piece",
+      "The current face-layer analysis reads as one connected acrylic component.",
+    );
+    return;
+  }
+
+  updateConnectionStatus(
+    "warning",
+    `${analysis.connectedComponentCount} separate face pieces`,
+    "The current face-layer analysis still contains disconnected acrylic pieces. Adjust the bridges or line layout before export.",
+  );
+}
+
+function scheduleLayoutAnalysis(layout, requestId) {
+  if (analysisTimerId) {
+    clearTimeout(analysisTimerId);
+  }
+
+  analysisTimerId = setTimeout(async () => {
+    try {
+      const analysis = await analyzeLayout(layout);
+      if (requestId !== renderRequestId) {
+        return;
+      }
+
+      applyAnalysisResult(layout, analysis);
+    } catch {
+      if (requestId !== renderRequestId) {
+        return;
+      }
+
+      updateConnectionStatus(
+        "warning",
+        "Analysis unavailable",
+        "The connectedness check failed, but the live preview is still available.",
+      );
+    }
+  }, 180);
+}
+
 function render() {
   updateBackingOutput();
   const settings = getCurrentSettings();
+  const requestId = ++renderRequestId;
 
   if (!settings.text.trim()) {
     lastLayout = null;
@@ -1002,41 +1135,9 @@ function render() {
   }
 
   const layout = buildOrderLayout(settings);
-  const previewWidthMm = Math.max(layout.widthMm, PREVIEW_BOX_WIDTH_MM) + PREVIEW_MARGIN_MM * 2;
-  const previewHeightMm = Math.max(layout.heightMm, PREVIEW_BOX_HEIGHT_MM) + PREVIEW_MARGIN_MM * 2;
-  const previewBoxX = (previewWidthMm - PREVIEW_LABEL_RIGHT_MM - PREVIEW_BOX_WIDTH_MM) / 2;
-  const previewBoxY = (previewHeightMm - PREVIEW_BOX_HEIGHT_MM) / 2;
-  const designX = previewBoxX + (PREVIEW_BOX_WIDTH_MM - layout.widthMm) / 2;
-  const designY = previewBoxY + (PREVIEW_BOX_HEIGHT_MM - layout.heightMm) / 2;
-
-  lastLayout = {
-    ...layout,
-    previewWidthMm,
-    previewHeightMm,
-  };
-
-  preview.replaceChildren();
-  preview.setAttribute("viewBox", `0 0 ${previewWidthMm} ${previewHeightMm}`);
-  updateZoom(zoom);
-
-  const backingImage = makeSvgElement("image", {
-    href: createBackingImage(layout.letters, layout.widthMm, layout.heightMm, layout.backingMm),
-    x: designX,
-    y: designY,
-    width: layout.widthMm,
-    height: layout.heightMm,
-  });
-  const faceImage = makeSvgElement("image", {
-    class: "face-layer",
-    href: createFaceImage(layout.letters, layout.widthMm, layout.heightMm),
-    x: designX,
-    y: designY,
-    width: layout.widthMm,
-    height: layout.heightMm,
-  });
-
-  appendPreviewGuide(previewBoxX, previewBoxY);
-  preview.append(backingImage, faceImage);
+  renderPreviewFromLayout(layout);
+  updateConnectionStatus("pending", "Analyzing layout...", "Checking connectedness in the background while keeping the live preview responsive.");
+  scheduleLayoutAnalysis(layout, requestId);
 }
 
 async function downloadSvg() {

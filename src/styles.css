@@ -493,6 +493,52 @@ button:disabled {
   line-height: 1.45;
 }
 
+.status-card {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8fbfc;
+}
+
+.status-card strong {
+  font-size: 0.9rem;
+}
+
+.status-card span {
+  color: var(--muted);
+  font-size: 0.83rem;
+  line-height: 1.4;
+}
+
+.status-ok {
+  border-color: #8fc7ad;
+  background: #edf8f1;
+}
+
+.status-ok strong {
+  color: #1e6a44;
+}
+
+.status-warning {
+  border-color: #e6c17a;
+  background: #fff6e6;
+}
+
+.status-warning strong {
+  color: #8a5a10;
+}
+
+.status-pending {
+  border-color: #c7d3dc;
+  background: #f5f8fa;
+}
+
+.status-pending strong {
+  color: #38556d;
+}
+
 .preview-panel {
   position: relative;
   display: flex;

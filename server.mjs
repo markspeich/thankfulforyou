@@ -16,6 +16,28 @@ const contentTypes = {
   ".ttf": "font/ttf",
 };
 
+function runGeometryScript(input, { onSuccess, onError }) {
+  const python = spawn("python", ["tools/export_svg.py"], { cwd: root });
+  let stdout = "";
+  let stderr = "";
+
+  python.stdout.on("data", (chunk) => {
+    stdout += chunk;
+  });
+  python.stderr.on("data", (chunk) => {
+    stderr += chunk;
+  });
+  python.on("close", (code) => {
+    if (code !== 0) {
+      onError(stderr || "Geometry processing failed");
+      return;
+    }
+
+    onSuccess(stdout);
+  });
+  python.stdin.end(input);
+}
+
 function resolvePath(url) {
   const requested = new URL(url, `http://localhost:${port}`).pathname;
   const filePath = requested === "/" ? "/index.html" : requested;
@@ -29,37 +51,34 @@ function resolvePath(url) {
 }
 
 const server = createServer((request, response) => {
-  if (request.method === "POST" && request.url === "/api/export-svg") {
+  if (
+    request.method === "POST"
+    && (request.url === "/api/export-svg" || request.url === "/api/layout-analyze")
+  ) {
     let body = "";
     request.setEncoding("utf8");
     request.on("data", (chunk) => {
       body += chunk;
     });
     request.on("end", () => {
-      const python = spawn("python", ["tools/export_svg.py"], { cwd: root });
-      let stdout = "";
-      let stderr = "";
+      const isAnalyzeRequest = request.url === "/api/layout-analyze";
+      runGeometryScript(body, {
+        onSuccess: (stdout) => {
+          const headers = isAnalyzeRequest
+            ? { "Content-Type": "application/json; charset=utf-8" }
+            : {
+                "Content-Type": "image/svg+xml; charset=utf-8",
+                "Content-Disposition": "attachment; filename=\"badge-reel-layout.svg\"",
+              };
 
-      python.stdout.on("data", (chunk) => {
-        stdout += chunk;
-      });
-      python.stderr.on("data", (chunk) => {
-        stderr += chunk;
-      });
-      python.on("close", (code) => {
-        if (code !== 0) {
+          response.writeHead(200, headers);
+          response.end(stdout);
+        },
+        onError: (message) => {
           response.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
-          response.end(stderr || "SVG export failed");
-          return;
-        }
-
-        response.writeHead(200, {
-          "Content-Type": "image/svg+xml; charset=utf-8",
-          "Content-Disposition": "attachment; filename=\"badge-reel-layout.svg\"",
-        });
-        response.end(stdout);
+          response.end(message);
+        },
       });
-      python.stdin.end(body);
     });
     return;
   }

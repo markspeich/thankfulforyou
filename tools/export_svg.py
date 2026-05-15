@@ -23,6 +23,12 @@ def fill_mask_holes(mask):
     mask.paste(Image.fromarray((filled * 255).astype(np.uint8)))
 
 
+def count_connected_components(mask):
+    structure = ndimage.generate_binary_structure(2, 2)
+    _, component_count = ndimage.label(np.array(mask) > 0, structure=structure)
+    return int(component_count)
+
+
 def point_line_distance(point, start, end):
     if start == end:
         return ((point[0] - start[0]) ** 2 + (point[1] - start[1]) ** 2) ** 0.5
@@ -121,7 +127,14 @@ def quadratic_closed_path(points, scale):
     return " ".join(commands)
 
 
-def trace_mask_outline(mask, scale, tolerance_mm, smooth_iterations):
+def polyline_closed_path(points, scale):
+    commands = [f"M{points[0][0] / scale:.3f} {points[0][1] / scale:.3f}"]
+    commands.extend(f"L{x / scale:.3f} {y / scale:.3f}" for x, y in points[1:-1])
+    commands.append("Z")
+    return " ".join(commands)
+
+
+def trace_mask_outline(mask, scale, tolerance_mm, smooth_iterations, curve_mode="quadratic"):
     width, height = mask.size
     pixels = mask.load()
     edges = defaultdict(list)
@@ -159,8 +172,12 @@ def trace_mask_outline(mask, scale, tolerance_mm, smooth_iterations):
                 break
 
         points = simplify_closed_polyline(points, tolerance_mm * scale)
-        points = chaikin_closed(points, smooth_iterations)
-        paths.append(quadratic_closed_path(points, scale))
+        if smooth_iterations > 0:
+            points = chaikin_closed(points, smooth_iterations)
+        if curve_mode == "polyline":
+            paths.append(polyline_closed_path(points, scale))
+        else:
+            paths.append(quadratic_closed_path(points, scale))
 
     return " ".join(paths)
 
@@ -185,14 +202,11 @@ def load_font(root, font_ref, font_size, cache):
     return cache[font_key]
 
 
-def text_outline_path(
+def render_text_mask(
     root,
     payload,
     scale=50,
     stroke_mm=0,
-    fill_holes=False,
-    tolerance_mm=0.025,
-    smooth_iterations=1,
 ):
     width = float(payload["widthMm"])
     height = float(payload["heightMm"])
@@ -220,39 +234,95 @@ def text_outline_path(
             stroke_fill=255,
         )
 
-    if fill_holes:
-        fill_mask_holes(image)
+    return image
 
-    return trace_mask_outline(image, scale, tolerance_mm, smooth_iterations)
+
+def text_outline_path(mask, scale, tolerance_mm=0.025, smooth_iterations=1, fill_holes=False, curve_mode="quadratic"):
+    if fill_holes:
+        fill_mask_holes(mask)
+
+    return trace_mask_outline(mask, scale, tolerance_mm, smooth_iterations, curve_mode=curve_mode)
+
+
+def get_trace_profile(payload):
+    font_ids = {str(letter.get("fontId", "")).lower() for letter in payload.get("letters", [])}
+    if "somekind" in font_ids:
+        return {
+            "scale": 90,
+            "face_tolerance_mm": 0.012,
+            "face_smooth_iterations": 0,
+            "face_curve_mode": "polyline",
+            "backing_tolerance_mm": 0.028,
+            "backing_smooth_iterations": 0,
+            "backing_curve_mode": "polyline",
+        }
+
+    return {
+        "scale": 50,
+        "face_tolerance_mm": 0.025,
+        "face_smooth_iterations": 1,
+        "face_curve_mode": "quadratic",
+        "backing_tolerance_mm": 0.045,
+        "backing_smooth_iterations": 2,
+        "backing_curve_mode": "quadratic",
+    }
+
+
+def analyze_single_layout(root, payload):
+    profile = get_trace_profile(payload)
+    scale = profile["scale"]
+    backing = float(payload["backingMm"])
+    face_mask = render_text_mask(root, payload, scale=scale)
+    backing_mask = render_text_mask(root, payload, scale=scale, stroke_mm=backing)
+
+    backing_mask_for_path = backing_mask.copy()
+    fill_mask_holes(backing_mask_for_path)
+
+    face_path = text_outline_path(
+        face_mask,
+        scale,
+        tolerance_mm=profile["face_tolerance_mm"],
+        smooth_iterations=profile["face_smooth_iterations"],
+        curve_mode=profile["face_curve_mode"],
+    )
+    backing_path = text_outline_path(
+        backing_mask_for_path,
+        scale,
+        tolerance_mm=profile["backing_tolerance_mm"],
+        smooth_iterations=profile["backing_smooth_iterations"],
+        curve_mode=profile["backing_curve_mode"],
+    )
+    component_count = count_connected_components(face_mask)
+
+    return {
+        "widthMm": float(payload["widthMm"]),
+        "heightMm": float(payload["heightMm"]),
+        "backingMm": backing,
+        "text": payload.get("text", ""),
+        "facePath": face_path,
+        "backingPath": backing_path,
+        "connectedComponentCount": component_count,
+        "isConnected": component_count <= 1,
+    }
 
 
 def build_single_order_paths(root, payload):
-    width = float(payload["widthMm"])
-    height = float(payload["heightMm"])
+    analysis = analyze_single_layout(root, payload)
+    width = analysis["widthMm"]
+    height = analysis["heightMm"]
     export_gap = 10.0
     export_width = width * 2 + export_gap
     backing_x = width + export_gap
-    backing = float(payload["backingMm"])
-
-    face_path = text_outline_path(root, payload, tolerance_mm=0.025, smooth_iterations=1)
-    backing_path = text_outline_path(
-        root,
-        payload,
-        stroke_mm=backing,
-        fill_holes=True,
-        tolerance_mm=0.045,
-        smooth_iterations=2,
-    )
 
     return {
         "width": width,
         "height": height,
         "export_width": export_width,
         "backing_x": backing_x,
-        "face_path": face_path,
-        "backing_path": backing_path,
-        "text": svg_escape(payload.get("text", "")),
-        "bridge": svg_escape(payload.get("bridgeMm", "")),
+        "face_path": analysis["facePath"],
+        "backing_path": analysis["backingPath"],
+        "text": svg_escape(analysis["text"]),
+        "connected_component_count": analysis["connectedComponentCount"],
     }
 
 
@@ -265,7 +335,7 @@ def build_svg(payload):
     order = build_single_order_paths(root, payload)
     return f"""<svg xmlns="http://www.w3.org/2000/svg" width="{order["export_width"]:.3f}mm" height="{order["height"]:.3f}mm" viewBox="0 0 {order["export_width"]:.3f} {order["height"]:.3f}">
   <title>Badge reel layout</title>
-  <desc>Text: {order["text"]}. Face layer is on the left. Offset backing layer is on the right. Generated as vector paths from the selected production fonts.</desc>
+  <desc>Text: {order["text"]}. Face layer is on the left. Offset backing layer is on the right. Generated as vector paths from the selected production fonts. Connected components: {order["connected_component_count"]}.</desc>
   <g id="face-layer" fill="none" stroke="#f8fbfc" stroke-width="0.100" stroke-linejoin="round" stroke-linecap="round">
     <path d="{order["face_path"]}"/>
   </g>
@@ -308,8 +378,17 @@ def build_batch_svg(root, layouts):
     return "\n".join(parts)
 
 
+def build_analysis(payload):
+    root = Path(__file__).resolve().parents[1]
+    return json.dumps(analyze_single_layout(root, payload))
+
+
 def main():
     payload = json.loads(sys.stdin.read())
+    if isinstance(payload, dict) and payload.get("mode") == "analyze":
+        sys.stdout.write(build_analysis(payload["layout"]))
+        return
+
     sys.stdout.write(build_svg(payload))
 
 
