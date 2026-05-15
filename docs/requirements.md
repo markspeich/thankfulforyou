@@ -65,7 +65,12 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Support the three primary production fonts early: modified Candlepin, modified Skywalk, and Somekind.
 - Render text as actual font outlines, not just browser text.
 - Allow text to be arranged in one or more lines.
+- Treat the number of editable text lines as fully dynamic and derive it directly from the number of lines entered by the user.
 - Allow font selection per line of text.
+- Provide one control group per text line.
+- Each per-line control group must include a Font dropdown, Letter Bridge slider, Line Bridge slider, Horizontal Offset slider, and Text Height slider.
+- Add or remove per-line control groups automatically as the user adds or removes text lines.
+- Remove the current non-functional `Font (Line 1)` and `Font (Line 2)` dropdowns from below the order text field once the per-line control groups exist.
 - Allow controlled overlap between adjacent letters.
 - Treat 0.5 mm as the current default target for the connecting tab or bridge between neighboring letters in Candlepin layouts.
 - Allow controlled overlap or contact between multiple text lines.
@@ -81,6 +86,8 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - The 2 inch by 1.5 inch preview guide box should remain visible even when there is no active text.
 - The preview guide box should show static dimension labels outside the box: `2"` centered above and `1.5"` on the right side.
 - Preserve legibility while minimizing separate acrylic pieces.
+- The `Backing Border` slider must remain a single global control for the whole design rather than a per-line control.
+- The global `Backing Border` slider should appear below all per-line control groups.
 - Prepare for future laser-cut export, likely SVG or another vector format.
 - SVG export must produce vector path definitions, not embedded raster image data.
 - Keep layout and geometry logic separated from UI code so geometry behavior can be tested independently.
@@ -102,8 +109,8 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Provide a way to save the current preview and settings for the active order before moving to the next order.
 - Show which orders are not started, in progress, saved, or exported so a batch of orders can be completed without losing track.
 - Allow saved orders to be reopened for adjustment without losing their previously saved settings.
-- The active order editor should include a button for exporting the selected order as an SVG.
-- The left-side order navigation should include a button above the order list for exporting all queued orders that have text entered.
+- The active order editor should include a button for exporting the selected design as an SVG.
+- The left-side order navigation should include a button above the order list for exporting all queued designs that have text entered.
 - Batch export should export every queued order that has text entered, even if it has not been explicitly saved first.
 - Batch export should skip blank orders rather than producing empty geometry for them.
 - SVG export should place the face text layer and offset backing layer side by side, with the backing layer to the right of the text layer.
@@ -132,12 +139,16 @@ The website should be a practical production tool rather than a marketing site. 
 - Batch order workflow for Etsy sessions.
 - Clear preview of cut layers.
 - Reliable geometry checks.
-- Simple controls for adjusting overlap, line spacing, and scale.
+- Simple controls for adjusting overlap, line spacing, horizontal positioning, scale, and per-line font choice.
 - Export-ready output for production use.
 - A two-pane master-detail layout, with order navigation on the left and the selected order editor on the right.
 - In the selected-order editor, the render/preview should occupy the top of the right side of the screen and the order editor controls should sit at the bottom.
+- The selected-order controls should be organized as a stack of per-line control groups followed by one global `Backing Border` control.
+- Each per-line control group should clearly map to a specific entered text line and should appear or disappear as the number of entered lines changes.
+- The first text line should not show a `Line Bridge` control because there is no line above it to connect to.
+- The selected-order header should hold the primary order actions, including `Save` and `Export This Design`, to reduce the height of the control area.
 
-The selected UI direction is the Production Queue layout. Use `docs/mockups/production-queue-ui-mockup-preview-top-controls-bottom.png` as the primary visual reference for the next UI implementation pass. The mockup intent is a left-side order queue with a batch export button above the order list, and a right-side selected-order editor with the selected order preview at the top, controls docked at the bottom, and an Export This Order button. Sample renders should use a white raised text layer over a blue backing silhouette.
+The selected UI direction is the Production Queue layout. Use `docs/mockups/production-queue-ui-mockup-preview-top-controls-bottom.png` as the primary visual reference for the next UI implementation pass. The mockup intent is a left-side order queue with a batch export button above the order list, and a right-side selected-order editor with the selected order preview at the top, controls docked at the bottom, and an Export This Design button. Sample renders should use a white raised text layer over a blue backing silhouette.
 
 For batch Etsy order sessions, the preferred workflow is:
 

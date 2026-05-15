@@ -165,8 +165,28 @@ def trace_mask_outline(mask, scale, tolerance_mm, smooth_iterations):
     return " ".join(paths)
 
 
+def load_font(root, font_ref, font_size, cache):
+    font_key = (font_ref or "", font_size)
+    if font_key in cache:
+        return cache[font_key]
+
+    fallback_path = root / "public" / "fonts" / "Candlepin-Laser.otf"
+    candidates = []
+    if font_ref:
+        candidates.append(root / font_ref)
+    candidates.append(fallback_path)
+
+    for candidate in candidates:
+        if candidate.exists():
+            cache[font_key] = ImageFont.truetype(str(candidate), font_size)
+            return cache[font_key]
+
+    cache[font_key] = ImageFont.load_default()
+    return cache[font_key]
+
+
 def text_outline_path(
-    font_path,
+    root,
     payload,
     scale=50,
     stroke_mm=0,
@@ -176,15 +196,20 @@ def text_outline_path(
 ):
     width = float(payload["widthMm"])
     height = float(payload["heightMm"])
-    font_size = float(payload["fontSizeMm"])
     letters = payload["letters"]
 
     image = Image.new("L", (round(width * scale), round(height * scale)), 0)
     draw = ImageDraw.Draw(image)
-    font = ImageFont.truetype(str(font_path), round(font_size * scale))
     stroke_width = max(0, round(stroke_mm * scale))
+    font_cache = {}
 
     for letter in letters:
+        font = load_font(
+            root,
+            letter.get("fontPath"),
+            max(1, round(float(letter["fontSizeMm"]) * scale)),
+            font_cache,
+        )
         draw.text(
             (float(letter["x"]) * scale, float(letter["y"]) * scale),
             letter["character"],
@@ -201,7 +226,7 @@ def text_outline_path(
     return trace_mask_outline(image, scale, tolerance_mm, smooth_iterations)
 
 
-def build_single_order_paths(font_path, payload):
+def build_single_order_paths(root, payload):
     width = float(payload["widthMm"])
     height = float(payload["heightMm"])
     export_gap = 10.0
@@ -209,9 +234,9 @@ def build_single_order_paths(font_path, payload):
     backing_x = width + export_gap
     backing = float(payload["backingMm"])
 
-    face_path = text_outline_path(font_path, payload, tolerance_mm=0.025, smooth_iterations=1)
+    face_path = text_outline_path(root, payload, tolerance_mm=0.025, smooth_iterations=1)
     backing_path = text_outline_path(
-        font_path,
+        root,
         payload,
         stroke_mm=backing,
         fill_holes=True,
@@ -233,15 +258,14 @@ def build_single_order_paths(font_path, payload):
 
 def build_svg(payload):
     root = Path(__file__).resolve().parents[1]
-    font_path = root / "public" / "fonts" / "Candlepin-Laser.otf"
 
     if isinstance(payload, dict) and isinstance(payload.get("layouts"), list):
-        return build_batch_svg(font_path, payload["layouts"])
+        return build_batch_svg(root, payload["layouts"])
 
-    order = build_single_order_paths(font_path, payload)
+    order = build_single_order_paths(root, payload)
     return f"""<svg xmlns="http://www.w3.org/2000/svg" width="{order["export_width"]:.3f}mm" height="{order["height"]:.3f}mm" viewBox="0 0 {order["export_width"]:.3f} {order["height"]:.3f}">
-  <title>Candlepin badge reel layout POC</title>
-  <desc>Text: {order["text"]}. Bridge target: {order["bridge"]} mm. Face layer is on the left. Offset backing layer is on the right. Generated from Candlepin-Laser.otf as vector paths.</desc>
+  <title>Badge reel layout POC</title>
+  <desc>Text: {order["text"]}. Face layer is on the left. Offset backing layer is on the right. Generated as vector paths from the selected production fonts.</desc>
   <g id="face-layer" fill="none" stroke="#f8fbfc" stroke-width="0.100" stroke-linejoin="round" stroke-linecap="round">
     <path d="{order["face_path"]}"/>
   </g>
@@ -252,20 +276,20 @@ def build_svg(payload):
 """
 
 
-def build_batch_svg(font_path, layouts):
-    order_paths = [build_single_order_paths(font_path, payload) for payload in layouts]
+def build_batch_svg(root, layouts):
+    order_paths = [build_single_order_paths(root, payload) for payload in layouts]
     vertical_gap = 12.0
     export_width = max(order["export_width"] for order in order_paths)
     export_height = sum(order["height"] for order in order_paths) + vertical_gap * (len(order_paths) - 1)
     desc_items = [
-        f"Order {index + 1}: {order['text']} (bridge target {order['bridge']} mm)"
+        f"Order {index + 1}: {order['text']}"
         for index, order in enumerate(order_paths)
     ]
 
     parts = [
         f"""<svg xmlns="http://www.w3.org/2000/svg" width="{export_width:.3f}mm" height="{export_height:.3f}mm" viewBox="0 0 {export_width:.3f} {export_height:.3f}">
-  <title>Candlepin badge reel batch layout POC</title>
-  <desc>{"; ".join(desc_items)}. Each order is stacked below the previous order. Face layer is on the left. Offset backing layer is on the right. Generated from Candlepin-Laser.otf as vector paths.</desc>"""
+  <title>Badge reel batch layout POC</title>
+  <desc>{"; ".join(desc_items)}. Each order is stacked below the previous order. Face layer is on the left. Offset backing layer is on the right. Generated as vector paths from the selected production fonts.</desc>"""
     ]
 
     current_y = 0.0

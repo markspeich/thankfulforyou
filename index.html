@@ -12,7 +12,7 @@
         <aside class="orders-panel" aria-label="Order navigation">
           <h1>Orders</h1>
 
-          <button id="exportCompletedButton" class="primary-action" type="button">Export All Orders</button>
+          <button id="exportCompletedButton" class="primary-action" type="button">Export All Designs</button>
 
           <div class="order-stats" aria-label="Order status summary">
             <div>
@@ -49,7 +49,10 @@
             <div>
               <h2 id="activeOrderName">No order selected</h2>
             </div>
-            <button id="downloadButton" class="primary-action" type="button">Export This Order</button>
+            <div class="editor-actions">
+              <button id="captureButton" class="primary-action" type="button">Save</button>
+              <button id="downloadButton" class="primary-action" type="button">Export This Design</button>
+            </div>
           </header>
 
           <div class="editor-body">
@@ -66,62 +69,19 @@
                     <textarea id="textInput" autocomplete="off" rows="3" placeholder="Enter one or more lines of text"></textarea>
                   </label>
 
-                  <div class="font-row">
+                  <div class="global-control-card">
                     <label class="field compact-field">
-                      <span>Font (Line 1)</span>
-                      <select disabled>
-                        <option>Candlepin Laser</option>
-                      </select>
-                    </label>
-                    <label class="field compact-field">
-                      <span>Font (Line 2)</span>
-                      <select disabled>
-                        <option>Candlepin Laser</option>
-                      </select>
+                      <span>Backing Border</span>
+                      <div class="range-row">
+                        <input id="backingInput" type="range" min="2" max="10" step="0.025" value="3.175">
+                        <output id="backingOutput">3.175 mm</output>
+                      </div>
                     </label>
                   </div>
                 </div>
 
-                <div class="bridge-controls">
-                  <label class="field">
-                    <span>Letter Bridge</span>
-                    <div class="range-row">
-                      <input id="overlapInput" type="range" min="0" max="4" step="0.1" value="0.5">
-                      <output id="overlapOutput">0.5 mm</output>
-                    </div>
-                  </label>
-
-                  <label class="field">
-                    <span>Line Bridge</span>
-                    <div class="range-row">
-                      <input id="lineOverlapInput" type="range" min="0" max="8" step="0.1" value="0.5">
-                      <output id="lineOverlapOutput">0.5 mm</output>
-                    </div>
-                  </label>
-                </div>
-
-                <div class="size-controls">
-                  <label class="field">
-                    <span>Text Height</span>
-                    <div class="range-row">
-                      <input id="sizeInput" type="range" min="18" max="55" step="1" value="34">
-                      <output id="sizeOutput">34 mm</output>
-                    </div>
-                  </label>
-
-                  <label class="field">
-                    <span>Backing Border</span>
-                    <div class="range-row">
-                      <input id="backingInput" type="range" min="2" max="10" step="0.025" value="3.175">
-                      <output id="backingOutput">3.175 mm</output>
-                    </div>
-                  </label>
-                </div>
-              </div>
-
-              <div class="control-footer">
-                <div class="capture-actions">
-                  <button id="captureButton" type="button">Save</button>
+                <div class="line-controls-panel">
+                  <div id="lineControls" class="line-controls"></div>
                 </div>
               </div>
 

@@ -1,7 +1,9 @@
 # Fonts
 
-Place the production font file here:
+Place the production font files here:
 
-`Candlepin-Laser.otf`
+- `Candlepin-Laser.otf`
+- `SkywalkLaserRegular.otf`
+- `Somekind.ttf`
 
-The proof-of-concept app loads it from `public/fonts/Candlepin-Laser.otf`.
+The proof-of-concept app loads them from `public/fonts` and exposes them in the per-line font dropdowns.

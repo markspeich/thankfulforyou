@@ -1,5 +1,28 @@
-const FONT_URL = "public/fonts/Candlepin-Laser.otf";
-const FONT_FAMILY = "CandlepinLaser";
+const FONT_OPTIONS = [
+  {
+    id: "candlepin",
+    label: "Candlepin Laser",
+    family: "CandlepinLaser",
+    url: "public/fonts/Candlepin-Laser.otf",
+    exportPath: "public/fonts/Candlepin-Laser.otf",
+  },
+  {
+    id: "skywalk",
+    label: "Skywalk Laser",
+    family: "SkywalkLaser",
+    url: "public/fonts/SkywalkLaserRegular.otf",
+    exportPath: "public/fonts/SkywalkLaserRegular.otf",
+  },
+  {
+    id: "somekind",
+    label: "Somekind",
+    family: "Somekind",
+    url: "public/fonts/Somekind.ttf",
+    exportPath: "public/fonts/Somekind.ttf",
+  },
+];
+
+const FONT_BY_ID = new Map(FONT_OPTIONS.map((font) => [font.id, font]));
 const PX_PER_MM = 96 / 25.4;
 const MAX_RENDER_WIDTH_MM = 50.8;
 const MAX_RENDER_HEIGHT_MM = 38.1;
@@ -11,6 +34,14 @@ const DESIGN_BLEED_MM = 1;
 const DEFAULT_PREVIEW_WIDTH_MM = PREVIEW_BOX_WIDTH_MM + PREVIEW_MARGIN_MM * 2 + PREVIEW_LABEL_RIGHT_MM;
 const DEFAULT_PREVIEW_HEIGHT_MM = PREVIEW_BOX_HEIGHT_MM + PREVIEW_MARGIN_MM * 2;
 const DEFAULT_ZOOM = 3;
+const DEFAULT_BACKING_MM = 3.175;
+const DEFAULT_LINE_SETTINGS = Object.freeze({
+  fontId: "candlepin",
+  bridgeMm: 0.5,
+  lineBridgeMm: 0.5,
+  offsetXMm: 0,
+  fontSizeMm: 34,
+});
 
 const orderLabelInput = document.querySelector("#orderLabelInput");
 const addOrderButton = document.querySelector("#addOrderButton");
@@ -24,12 +55,7 @@ const orderList = document.querySelector("#orderList");
 const activeOrderName = document.querySelector("#activeOrderName");
 const editorPanel = document.querySelector(".editor-panel");
 const textInput = document.querySelector("#textInput");
-const overlapInput = document.querySelector("#overlapInput");
-const overlapOutput = document.querySelector("#overlapOutput");
-const lineOverlapInput = document.querySelector("#lineOverlapInput");
-const lineOverlapOutput = document.querySelector("#lineOverlapOutput");
-const sizeInput = document.querySelector("#sizeInput");
-const sizeOutput = document.querySelector("#sizeOutput");
+const lineControls = document.querySelector("#lineControls");
 const backingInput = document.querySelector("#backingInput");
 const backingOutput = document.querySelector("#backingOutput");
 const preview = document.querySelector("#preview");
@@ -58,13 +84,74 @@ const statusLabels = {
   exported: "Exported",
 };
 
+function getFontOption(fontId) {
+  return FONT_BY_ID.get(fontId) || FONT_OPTIONS[0];
+}
+
+function getCanvasFont(fontSizePx, fontId) {
+  return `${fontSizePx}px "${getFontOption(fontId).family}", "Segoe Script", cursive`;
+}
+
+function createDefaultLineSettings() {
+  return {
+    fontId: DEFAULT_LINE_SETTINGS.fontId,
+    bridgeMm: DEFAULT_LINE_SETTINGS.bridgeMm,
+    lineBridgeMm: DEFAULT_LINE_SETTINGS.lineBridgeMm,
+    offsetXMm: DEFAULT_LINE_SETTINGS.offsetXMm,
+    fontSizeMm: DEFAULT_LINE_SETTINGS.fontSizeMm,
+  };
+}
+
+function getRawTextLines(text) {
+  if (!text.length) {
+    return [];
+  }
+
+  return text.split(/\r?\n/);
+}
+
+function normalizeLineSettings(lineSettings = {}) {
+  return {
+    fontId: FONT_BY_ID.has(lineSettings.fontId) ? lineSettings.fontId : DEFAULT_LINE_SETTINGS.fontId,
+    bridgeMm: Number.isFinite(Number(lineSettings.bridgeMm)) ? Number(lineSettings.bridgeMm) : DEFAULT_LINE_SETTINGS.bridgeMm,
+    lineBridgeMm: Number.isFinite(Number(lineSettings.lineBridgeMm)) ? Number(lineSettings.lineBridgeMm) : DEFAULT_LINE_SETTINGS.lineBridgeMm,
+    offsetXMm: Number.isFinite(Number(lineSettings.offsetXMm)) ? Number(lineSettings.offsetXMm) : DEFAULT_LINE_SETTINGS.offsetXMm,
+    fontSizeMm: Number.isFinite(Number(lineSettings.fontSizeMm)) ? Number(lineSettings.fontSizeMm) : DEFAULT_LINE_SETTINGS.fontSizeMm,
+  };
+}
+
+function normalizeSettings(settings = {}) {
+  const text = typeof settings.text === "string" ? settings.text : "";
+  const rawLines = getRawTextLines(text);
+  const legacyLines = Array.isArray(settings.lines)
+    ? settings.lines
+    : rawLines.map(() => ({
+        fontId: DEFAULT_LINE_SETTINGS.fontId,
+        bridgeMm: settings.bridgeMm,
+        lineBridgeMm: settings.lineBridgeMm,
+        offsetXMm: settings.offsetXMm,
+        fontSizeMm: settings.fontSizeMm,
+      }));
+
+  return {
+    text,
+    backingMm: Number.isFinite(Number(settings.backingMm)) ? Number(settings.backingMm) : DEFAULT_BACKING_MM,
+    lines: rawLines.map((_, index) => normalizeLineSettings(legacyLines[index] || createDefaultLineSettings())),
+  };
+}
+
 function buildSettingsSignature(settings) {
+  const normalized = normalizeSettings(settings);
   return JSON.stringify({
-    text: settings.text,
-    bridgeMm: Number(settings.bridgeMm),
-    lineBridgeMm: Number(settings.lineBridgeMm),
-    fontSizeMm: Number(settings.fontSizeMm),
-    backingMm: Number(settings.backingMm),
+    text: normalized.text,
+    backingMm: normalized.backingMm,
+    lines: normalized.lines.map((line) => ({
+      fontId: line.fontId,
+      bridgeMm: Number(line.bridgeMm),
+      lineBridgeMm: Number(line.lineBridgeMm),
+      offsetXMm: Number(line.offsetXMm),
+      fontSizeMm: Number(line.fontSizeMm),
+    })),
   });
 }
 
@@ -134,22 +221,158 @@ function appendPreviewGuide(previewBoxX, previewBoxY) {
   );
 }
 
+function lineValueText(setting, value) {
+  if (setting === "fontSizeMm") {
+    return `${Number(value).toFixed(0)} mm`;
+  }
+
+  return `${Number(value).toFixed(1)} mm`;
+}
+
+function updateBackingOutput() {
+  backingOutput.textContent = `${Number(backingInput.value).toFixed(3)} mm`;
+}
+
+function renderLineControls(settings = getCurrentSettings()) {
+  const normalized = normalizeSettings(settings);
+  const rawLines = getRawTextLines(normalized.text);
+  lineControls.replaceChildren();
+
+  if (!rawLines.length) {
+    const empty = document.createElement("p");
+    empty.className = "line-control-empty";
+    empty.textContent = "Add text lines to generate one font and slider group per line.";
+    lineControls.append(empty);
+    return;
+  }
+
+  rawLines.forEach((lineText, index) => {
+    const line = normalized.lines[index] || createDefaultLineSettings();
+    const card = document.createElement("section");
+    card.className = "line-control-card";
+    card.dataset.lineIndex = String(index);
+
+    const header = document.createElement("div");
+    header.className = "line-control-header";
+
+    const title = document.createElement("h3");
+    title.className = "line-control-title";
+    title.textContent = `Line ${index + 1}`;
+
+    const summary = document.createElement("span");
+    summary.className = "line-control-text";
+    summary.textContent = lineText.trim() || "Blank line";
+
+    header.append(title, summary);
+    card.append(header);
+
+    const grid = document.createElement("div");
+    grid.className = "line-control-grid";
+    const fields = [
+      createFontField(index, line.fontId),
+      createRangeField(index, "bridgeMm", "Letter Bridge", 0, 4, 0.1, line.bridgeMm),
+      createRangeField(index, "offsetXMm", "Horizontal Offset", -20, 20, 0.1, line.offsetXMm),
+      createRangeField(index, "fontSizeMm", "Text Height", 18, 55, 1, line.fontSizeMm),
+    ];
+
+    if (index > 0) {
+      fields.splice(2, 0, createRangeField(index, "lineBridgeMm", "Line Bridge", 0, 8, 0.1, line.lineBridgeMm));
+    }
+
+    grid.append(...fields);
+
+    card.append(grid);
+    lineControls.append(card);
+  });
+}
+
+function createFontField(lineIndex, fontId) {
+  const label = document.createElement("label");
+  label.className = "field compact-field";
+
+  const span = document.createElement("span");
+  span.textContent = "Font";
+
+  const select = document.createElement("select");
+  select.dataset.lineIndex = String(lineIndex);
+  select.dataset.setting = "fontId";
+
+  FONT_OPTIONS.forEach((font) => {
+    const option = document.createElement("option");
+    option.value = font.id;
+    option.textContent = font.label;
+    option.selected = font.id === fontId;
+    select.append(option);
+  });
+
+  label.append(span, select);
+  return label;
+}
+
+function createRangeField(lineIndex, setting, labelText, min, max, step, value) {
+  const label = document.createElement("label");
+  label.className = "field compact-field";
+
+  const span = document.createElement("span");
+  span.textContent = labelText;
+
+  const row = document.createElement("div");
+  row.className = "range-row";
+
+  const input = document.createElement("input");
+  input.type = "range";
+  input.min = String(min);
+  input.max = String(max);
+  input.step = String(step);
+  input.value = String(value);
+  input.dataset.lineIndex = String(lineIndex);
+  input.dataset.setting = setting;
+
+  const output = document.createElement("output");
+  output.textContent = lineValueText(setting, value);
+
+  row.append(input, output);
+  label.append(span, row);
+
+  return label;
+}
+
 function getCurrentSettings() {
-  return {
+  const rawLines = getRawTextLines(textInput.value);
+  const lines = rawLines.map((_, index) => {
+    const lineCard = lineControls.querySelector(`[data-line-index="${index}"]`);
+    if (!lineCard) {
+      return createDefaultLineSettings();
+    }
+
+    const fontSelect = lineCard.querySelector('[data-setting="fontId"]');
+    const bridgeInput = lineCard.querySelector('[data-setting="bridgeMm"]');
+    const lineBridgeInput = lineCard.querySelector('[data-setting="lineBridgeMm"]');
+    const offsetXInput = lineCard.querySelector('[data-setting="offsetXMm"]');
+    const fontSizeInput = lineCard.querySelector('[data-setting="fontSizeMm"]');
+
+    return normalizeLineSettings({
+      fontId: fontSelect?.value,
+      bridgeMm: bridgeInput?.value,
+      lineBridgeMm: lineBridgeInput?.value,
+      offsetXMm: offsetXInput?.value,
+      fontSizeMm: fontSizeInput?.value,
+    });
+  });
+
+  return normalizeSettings({
     text: textInput.value,
-    bridgeMm: Number(overlapInput.value),
-    lineBridgeMm: Number(lineOverlapInput.value),
-    fontSizeMm: Number(sizeInput.value),
     backingMm: Number(backingInput.value),
-  };
+    lines,
+  });
 }
 
 function applySettings(settings) {
-  textInput.value = settings.text;
-  overlapInput.value = settings.bridgeMm;
-  lineOverlapInput.value = settings.lineBridgeMm;
-  sizeInput.value = settings.fontSizeMm;
-  backingInput.value = settings.backingMm;
+  const normalized = normalizeSettings(settings);
+  textInput.value = normalized.text;
+  backingInput.value = String(normalized.backingMm);
+  updateBackingOutput();
+  renderLineControls(normalized);
 }
 
 function getActiveOrder() {
@@ -260,9 +483,7 @@ function renderOrderList() {
 
   const activeOrder = getActiveOrder();
   editorPanel.classList.toggle("is-hidden", !activeOrder);
-  activeOrderName.textContent = activeOrder
-    ? activeOrder.label
-    : "No order selected";
+  activeOrderName.textContent = activeOrder ? activeOrder.label : "No order selected";
   captureButton.disabled = !hasUnsavedRenderChanges(activeOrder);
   downloadButton.disabled = !activeOrder || !activeOrder.text.trim();
 }
@@ -296,10 +517,11 @@ function addOrder() {
     label,
     text: "",
     status: "in-progress",
-    settings: {
-      ...getCurrentSettings(),
+    settings: normalizeSettings({
       text: "",
-    },
+      backingMm: DEFAULT_BACKING_MM,
+      lines: [],
+    }),
     capturedLayout: null,
     savedSettingsSignature: null,
   };
@@ -312,11 +534,7 @@ function addOrder() {
 
 function captureActiveOrder() {
   const order = getActiveOrder();
-  if (!order) {
-    return;
-  }
-
-  if (!textInput.value.trim()) {
+  if (!order || !textInput.value.trim()) {
     return;
   }
 
@@ -328,35 +546,33 @@ function captureActiveOrder() {
   order.status = "captured";
   renderOrderList();
 
-  const currentLabel = order.label;
   const activeIndex = orders.findIndex((candidate) => candidate.id === order.id);
-  const orderedCandidates = [
-    ...orders.slice(activeIndex + 1),
-    ...orders.slice(0, activeIndex),
-  ];
+  const orderedCandidates = [...orders.slice(activeIndex + 1), ...orders.slice(0, activeIndex)];
   const nextUncaptured = orderedCandidates.find((candidate) => candidate.status !== "captured" && candidate.status !== "exported");
   if (nextUncaptured) {
     selectOrder(nextUncaptured.id);
-    return;
   }
 }
 
-async function checkFont() {
-  try {
-    const response = await fetch(FONT_URL, { cache: "no-store" });
-    if (!response.ok) {
-      throw new Error("Font file not found");
-    }
-
-    await document.fonts.load(`120px "${FONT_FAMILY}"`);
-  } catch {
-    // Fall back to the browser script font when the production font is unavailable.
-  }
+async function checkFonts() {
+  await Promise.all(
+    FONT_OPTIONS.map(async (font) => {
+      try {
+        const response = await fetch(font.url, { cache: "no-store" });
+        if (!response.ok) {
+          throw new Error("Font file not found");
+        }
+        await document.fonts.load(`120px "${font.family}"`);
+      } catch {
+        // Fall back to the browser script font when a production font is unavailable.
+      }
+    }),
+  );
 }
 
-function measureCharacter(character, fontSizeMm) {
+function measureCharacter(character, fontSizeMm, fontId) {
   const fontSizePx = fontSizeMm * PX_PER_MM;
-  ctx.font = `${fontSizePx}px "${FONT_FAMILY}", "Segoe Script", cursive`;
+  ctx.font = getCanvasFont(fontSizePx, fontId);
   const metrics = ctx.measureText(character);
   const left = (metrics.actualBoundingBoxLeft || 0) / PX_PER_MM;
   const right = (metrics.actualBoundingBoxRight || metrics.width) / PX_PER_MM;
@@ -369,12 +585,12 @@ function measureCharacter(character, fontSizeMm) {
   };
 }
 
-function createGlyphMask(character, fontSizeMm) {
+function createGlyphMask(character, fontSizeMm, fontId) {
   const fontSizePx = fontSizeMm * PX_PER_MM * MASK_SCALE;
   const maskCanvas = document.createElement("canvas");
   const maskContext = maskCanvas.getContext("2d", { willReadFrequently: true });
 
-  maskContext.font = `${fontSizePx}px "${FONT_FAMILY}", "Segoe Script", cursive`;
+  maskContext.font = getCanvasFont(fontSizePx, fontId);
   const metrics = maskContext.measureText(character);
   const left = Math.ceil(metrics.actualBoundingBoxLeft || 0);
   const right = Math.ceil(metrics.actualBoundingBoxRight || metrics.width);
@@ -386,7 +602,7 @@ function createGlyphMask(character, fontSizeMm) {
 
   maskCanvas.width = width;
   maskCanvas.height = height;
-  maskContext.font = `${fontSizePx}px "${FONT_FAMILY}", "Segoe Script", cursive`;
+  maskContext.font = getCanvasFont(fontSizePx, fontId);
   maskContext.fillStyle = "#000";
   maskContext.textBaseline = "alphabetic";
   maskContext.fillText(character, MASK_PADDING_PX + left, baseline);
@@ -448,15 +664,41 @@ function findPairOffsetMm(leftMask, rightMask, bridgeMm) {
 
   for (let dx = start; dx >= end; dx -= 1) {
     if (getOverlapWidthPx(leftMask, rightMask, dx) >= targetPx) {
-      const rightOriginRelativeToLeft = dx / MASK_SCALE / PX_PER_MM;
-      return rightOriginRelativeToLeft;
+      return dx / MASK_SCALE / PX_PER_MM;
     }
   }
 
   return (leftMask.rightMm + rightMask.leftMm) - bridgeMm;
 }
 
-function createLineMask(letters, fontSizeMm) {
+function createEmptyLineMask(fontSizeMm) {
+  const scale = PX_PER_MM * MASK_SCALE;
+  const height = Math.ceil(fontSizeMm * 1.35 * scale) + MASK_PADDING_PX * 2;
+  const baseline = MASK_PADDING_PX + Math.ceil(fontSizeMm * scale);
+
+  return {
+    data: new Uint8ClampedArray(4),
+    width: 1,
+    height,
+    baseline,
+    inkLeft: 0,
+    inkRight: 0,
+    leftMm: 0,
+    rightMm: 0,
+    topMm: 0,
+    bottomMm: fontSizeMm,
+    widthMm: 0,
+    heightMm: fontSizeMm,
+    baselineMm: baseline / scale,
+    hasInk: false,
+  };
+}
+
+function createLineMask(letters, fontSizeMm, fontId) {
+  if (!letters.length) {
+    return createEmptyLineMask(fontSizeMm);
+  }
+
   const scale = PX_PER_MM * MASK_SCALE;
   const minLeft = Math.min(...letters.map((letter) => letter.leftEdge), 0);
   const maxRight = Math.max(...letters.map((letter) => letter.rightEdge), fontSizeMm);
@@ -468,7 +710,7 @@ function createLineMask(letters, fontSizeMm) {
 
   maskCanvas.width = width;
   maskCanvas.height = height;
-  maskContext.font = `${fontSizeMm * scale}px "${FONT_FAMILY}", "Segoe Script", cursive`;
+  maskContext.font = getCanvasFont(fontSizeMm * scale, fontId);
   maskContext.fillStyle = "#000";
   maskContext.textBaseline = "alphabetic";
 
@@ -522,6 +764,7 @@ function createLineMask(letters, fontSizeMm) {
     widthMm: visualRightMm - visualLeftMm,
     heightMm: visualBottomMm - visualTopMm,
     baselineMm: baseline / scale,
+    hasInk,
   };
 }
 
@@ -552,6 +795,10 @@ function getLineOverlapHeightPx(upperMask, lowerMask, dxPx, dyPx) {
 }
 
 function findLineOffsetMm(upperMask, lowerMask, bridgeMm) {
+  if (!upperMask.hasInk || !lowerMask.hasInk) {
+    return upperMask.heightMm - bridgeMm;
+  }
+
   const scale = PX_PER_MM * MASK_SCALE;
   const targetPx = Math.max(1, Math.round(bridgeMm * scale));
   const upperCenter = (upperMask.inkLeft + upperMask.inkRight) / 2;
@@ -567,17 +814,17 @@ function findLineOffsetMm(upperMask, lowerMask, bridgeMm) {
   return (upperMask.height - MASK_PADDING_PX * 2) / scale - bridgeMm;
 }
 
-function layoutCharacters(text, fontSizeMm, bridgeMm) {
-  const characters = [...text].filter((character) => character !== "\n");
+function layoutCharacters(text, fontSizeMm, bridgeMm, fontId) {
+  const characters = [...text];
   if (!characters.length) {
     return [];
   }
 
-  const masks = characters.map((character) => createGlyphMask(character, fontSizeMm));
+  const masks = characters.map((character) => createGlyphMask(character, fontSizeMm, fontId));
   const positions = [];
 
   return characters.map((character, index) => {
-    const metrics = measureCharacter(character, fontSizeMm);
+    const metrics = measureCharacter(character, fontSizeMm, fontId);
     const mask = masks[index];
     const maskOrigin = index === 0
       ? 0
@@ -588,7 +835,7 @@ function layoutCharacters(text, fontSizeMm, bridgeMm) {
     const leftEdge = x - metrics.left;
     const rightEdge = x + metrics.right;
 
-    const item = {
+    return {
       character,
       index,
       x,
@@ -597,21 +844,22 @@ function layoutCharacters(text, fontSizeMm, bridgeMm) {
       width: metrics.inkWidth,
       advance: metrics.advance,
     };
-
-    return item;
   });
 }
 
-function layoutTextLines(text, fontSizeMm, letterBridgeMm, lineBridgeMm) {
-  const rawLines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-  const lineTexts = rawLines.length ? rawLines : [];
-  const lines = lineTexts.map((lineText, index) => {
-    const letters = layoutCharacters(lineText, fontSizeMm, letterBridgeMm);
+function layoutTextLines(text, lineSettings) {
+  const rawLines = getRawTextLines(text);
+  const normalizedSettings = normalizeSettings({ text, lines: lineSettings }).lines;
+  const lines = rawLines.map((lineText, index) => {
+    const settings = normalizedSettings[index] || createDefaultLineSettings();
+    const letters = layoutCharacters(lineText, settings.fontSizeMm, settings.bridgeMm, settings.fontId);
     return {
       index,
       text: lineText,
+      settings,
       letters,
-      mask: createLineMask(letters, fontSizeMm),
+      mask: createLineMask(letters, settings.fontSizeMm, settings.fontId),
+      offsetXMm: settings.offsetXMm,
       y: 0,
     };
   });
@@ -623,7 +871,7 @@ function layoutTextLines(text, fontSizeMm, letterBridgeMm, lineBridgeMm) {
     }
 
     const previous = lines[index - 1];
-    line.y = previous.y + findLineOffsetMm(previous.mask, line.mask, lineBridgeMm);
+    line.y = previous.y + findLineOffsetMm(previous.mask, line.mask, line.settings.lineBridgeMm);
   });
 
   return lines;
@@ -692,7 +940,7 @@ function fillBackingHoles(imageData, width, height) {
   }
 }
 
-function createBackingImage(letters, widthMm, heightMm, fontSizeMm, backingMm) {
+function createBackingImage(letters, widthMm, heightMm, backingMm) {
   const scale = PX_PER_MM * 3;
   const backingCanvas = document.createElement("canvas");
   const backingContext = backingCanvas.getContext("2d", { willReadFrequently: true });
@@ -701,15 +949,15 @@ function createBackingImage(letters, widthMm, heightMm, fontSizeMm, backingMm) {
 
   backingCanvas.width = widthPx;
   backingCanvas.height = heightPx;
-  backingContext.font = `${fontSizeMm * scale}px "${FONT_FAMILY}", "Segoe Script", cursive`;
   backingContext.textBaseline = "alphabetic";
   backingContext.lineJoin = "round";
   backingContext.lineCap = "round";
   backingContext.strokeStyle = "#446f8b";
   backingContext.fillStyle = "#446f8b";
-  backingContext.lineWidth = backingMm * 2 * scale;
 
   letters.forEach((letter) => {
+    backingContext.font = getCanvasFont(letter.fontSizeMm * scale, letter.fontId);
+    backingContext.lineWidth = backingMm * 2 * scale;
     backingContext.strokeText(letter.character, letter.x * scale, letter.y * scale);
     backingContext.fillText(letter.character, letter.x * scale, letter.y * scale);
   });
@@ -721,7 +969,7 @@ function createBackingImage(letters, widthMm, heightMm, fontSizeMm, backingMm) {
   return backingCanvas.toDataURL("image/png");
 }
 
-function createFaceImage(letters, widthMm, heightMm, fontSizeMm) {
+function createFaceImage(letters, widthMm, heightMm) {
   const scale = PX_PER_MM * 3;
   const faceCanvas = document.createElement("canvas");
   const faceContext = faceCanvas.getContext("2d");
@@ -730,13 +978,13 @@ function createFaceImage(letters, widthMm, heightMm, fontSizeMm) {
 
   faceCanvas.width = widthPx;
   faceCanvas.height = heightPx;
-  faceContext.font = `${fontSizeMm * scale}px "${FONT_FAMILY}", "Segoe Script", cursive`;
   faceContext.textBaseline = "alphabetic";
   faceContext.lineJoin = "round";
   faceContext.lineCap = "round";
   faceContext.fillStyle = "#f8fbfc";
 
   letters.forEach((letter) => {
+    faceContext.font = getCanvasFont(letter.fontSizeMm * scale, letter.fontId);
     faceContext.fillText(letter.character, letter.x * scale, letter.y * scale);
   });
 
@@ -744,30 +992,16 @@ function createFaceImage(letters, widthMm, heightMm, fontSizeMm) {
 }
 
 function render() {
-  const text = textInput.value.trim();
-  const bridgeMm = Number(overlapInput.value);
-  const lineBridgeMm = Number(lineOverlapInput.value);
-  const fontSizeMm = Number(sizeInput.value);
-  const backingMm = Number(backingInput.value);
+  updateBackingOutput();
+  const settings = getCurrentSettings();
 
-  overlapOutput.textContent = `${bridgeMm.toFixed(1)} mm`;
-  lineOverlapOutput.textContent = `${lineBridgeMm.toFixed(1)} mm`;
-  sizeOutput.textContent = `${fontSizeMm.toFixed(0)} mm`;
-  backingOutput.textContent = `${backingMm.toFixed(3)} mm`;
-
-  if (!text) {
+  if (!settings.text.trim()) {
     lastLayout = null;
     renderPreviewGuideOnly();
     return;
   }
 
-  const layout = buildOrderLayout({
-    text,
-    bridgeMm,
-    lineBridgeMm,
-    fontSizeMm,
-    backingMm,
-  });
+  const layout = buildOrderLayout(settings);
   const previewWidthMm = Math.max(layout.widthMm, PREVIEW_BOX_WIDTH_MM) + PREVIEW_MARGIN_MM * 2;
   const previewHeightMm = Math.max(layout.heightMm, PREVIEW_BOX_HEIGHT_MM) + PREVIEW_MARGIN_MM * 2;
   const previewBoxX = (previewWidthMm - PREVIEW_LABEL_RIGHT_MM - PREVIEW_BOX_WIDTH_MM) / 2;
@@ -786,7 +1020,7 @@ function render() {
   updateZoom(zoom);
 
   const backingImage = makeSvgElement("image", {
-    href: createBackingImage(layout.letters, layout.widthMm, layout.heightMm, layout.fontSizeMm, layout.backingMm),
+    href: createBackingImage(layout.letters, layout.widthMm, layout.heightMm, layout.backingMm),
     x: designX,
     y: designY,
     width: layout.widthMm,
@@ -794,7 +1028,7 @@ function render() {
   });
   const faceImage = makeSvgElement("image", {
     class: "face-layer",
-    href: createFaceImage(layout.letters, layout.widthMm, layout.heightMm, layout.fontSizeMm),
+    href: createFaceImage(layout.letters, layout.widthMm, layout.heightMm),
     x: designX,
     y: designY,
     width: layout.widthMm,
@@ -829,16 +1063,14 @@ async function downloadSvg() {
   } catch {
   } finally {
     downloadButton.disabled = false;
-    downloadButton.textContent = "Export This Order";
+    downloadButton.textContent = "Export This Design";
     downloadButton.removeAttribute("aria-busy");
     renderOrderList();
   }
 }
 
 async function requestSvgExport({ layout = null, layouts = null, filename }) {
-  const payload = layouts
-    ? { layouts }
-    : layout;
+  const payload = layouts ? { layouts } : layout;
   const response = await fetch("/api/export-svg", {
     method: "POST",
     headers: {
@@ -892,60 +1124,99 @@ async function exportAllOrders() {
   } catch {
   } finally {
     exportCompletedButton.disabled = false;
-    exportCompletedButton.textContent = "Export All Orders";
+    exportCompletedButton.textContent = "Export All Designs";
     exportCompletedButton.removeAttribute("aria-busy");
     renderOrderList();
   }
 }
 
 function buildOrderLayout(settings) {
-  const text = settings.text.trim();
-  const bridgeMm = Number(settings.bridgeMm);
-  const lineBridgeMm = Number(settings.lineBridgeMm);
-  const fontSizeMm = Number(settings.fontSizeMm);
-  const backingMm = Number(settings.backingMm);
-  const lines = layoutTextLines(text, fontSizeMm, bridgeMm, lineBridgeMm);
-  const textWidthMm = Math.max(...lines.map((line) => line.mask.widthMm), fontSizeMm);
-  const minTopMm = Math.min(...lines.map((line) => line.y + line.mask.topMm));
-  const maxBottomMm = Math.max(...lines.map((line) => line.y + line.mask.bottomMm));
-  const rawTextHeightMm = maxBottomMm - minTopMm;
+  const normalized = normalizeSettings(settings);
+  const text = normalized.text.trim();
+  const lines = layoutTextLines(normalized.text, normalized.lines);
+  const baseTextWidthMm = Math.max(
+    1,
+    ...lines.map((line) => line.mask.widthMm),
+    ...lines.map((line) => line.settings.fontSizeMm),
+  );
+  const lineBounds = lines.map((line) => {
+    const centeredLeftMm = (baseTextWidthMm - line.mask.widthMm) / 2 + line.offsetXMm;
+    return {
+      line,
+      centeredLeftMm,
+      centeredRightMm: centeredLeftMm + line.mask.widthMm,
+    };
+  });
+  const minLeftMm = Math.min(...lineBounds.map((item) => item.centeredLeftMm), 0);
+  const maxRightMm = Math.max(...lineBounds.map((item) => item.centeredRightMm), baseTextWidthMm);
+  const textWidthMm = Math.max(1, maxRightMm - minLeftMm);
+  const minTopMm = Math.min(...lines.map((line) => line.y + line.mask.topMm), 0);
+  const maxBottomMm = Math.max(...lines.map((line) => line.y + line.mask.bottomMm), ...lines.map((line) => line.y + line.settings.fontSizeMm));
+  const rawTextHeightMm = Math.max(1, maxBottomMm - minTopMm);
   const scaleFactor = Math.min(
     MAX_RENDER_WIDTH_MM / textWidthMm,
     MAX_RENDER_HEIGHT_MM / rawTextHeightMm,
   );
-  const scaledBackingMm = backingMm * scaleFactor;
-  const rawWidthMm = textWidthMm + backingMm * 2 + DESIGN_BLEED_MM * 2;
-  const rawHeightMm = rawTextHeightMm + backingMm * 2 + DESIGN_BLEED_MM * 2;
+  const scaledBackingMm = normalized.backingMm * scaleFactor;
+  const rawWidthMm = textWidthMm + normalized.backingMm * 2 + DESIGN_BLEED_MM * 2;
+  const rawHeightMm = rawTextHeightMm + normalized.backingMm * 2 + DESIGN_BLEED_MM * 2;
   const widthMm = rawWidthMm * scaleFactor;
   const heightMm = rawHeightMm * scaleFactor;
-  const absoluteLetters = lines.flatMap((line) => {
-    const rawLineX = DESIGN_BLEED_MM + backingMm + (textWidthMm - line.mask.widthMm) / 2 - line.mask.leftMm;
-    const rawBaselineY = DESIGN_BLEED_MM + backingMm + (line.y - minTopMm) + line.mask.baselineMm;
+  const absoluteLetters = lineBounds.flatMap(({ line, centeredLeftMm }) => {
+    const font = getFontOption(line.settings.fontId);
+    const rawLineX = DESIGN_BLEED_MM + normalized.backingMm + centeredLeftMm - minLeftMm - line.mask.leftMm;
+    const rawBaselineY = DESIGN_BLEED_MM + normalized.backingMm + (line.y - minTopMm) + line.mask.baselineMm;
 
     return line.letters.map((letter) => ({
       character: letter.character,
       x: (rawLineX + letter.x) * scaleFactor,
       y: rawBaselineY * scaleFactor,
+      fontId: line.settings.fontId,
+      fontPath: font.exportPath,
+      fontSizeMm: line.settings.fontSizeMm * scaleFactor,
     }));
   });
 
   return {
     text,
-    bridgeMm,
-    lineBridgeMm,
     widthMm,
     heightMm,
-    fontSizeMm: fontSizeMm * scaleFactor,
     backingMm: scaledBackingMm,
     letters: absoluteLetters,
   };
 }
 
-[textInput, overlapInput, lineOverlapInput, sizeInput, backingInput].forEach((control) => {
-  control.addEventListener("input", () => {
-    render();
-    updateActiveOrderFromControls();
-  });
+function handleTextInput() {
+  const nextSettings = normalizeSettings(getCurrentSettings());
+  renderLineControls(nextSettings);
+  updateActiveOrderFromControls();
+  render();
+}
+
+function handleLineControlsChange(event) {
+  const target = event.target;
+  if (!(target instanceof HTMLInputElement || target instanceof HTMLSelectElement)) {
+    return;
+  }
+
+  if (target instanceof HTMLInputElement && target.type === "range") {
+    const output = target.parentElement?.querySelector("output");
+    if (output) {
+      output.textContent = lineValueText(target.dataset.setting, target.value);
+    }
+  }
+
+  render();
+  updateActiveOrderFromControls();
+}
+
+textInput.addEventListener("input", handleTextInput);
+lineControls.addEventListener("input", handleLineControlsChange);
+lineControls.addEventListener("change", handleLineControlsChange);
+backingInput.addEventListener("input", () => {
+  updateBackingOutput();
+  render();
+  updateActiveOrderFromControls();
 });
 
 orderLabelInput.addEventListener("input", () => {
@@ -977,7 +1248,9 @@ previewPanel.addEventListener("wheel", (event) => {
   updateZoom(zoom * direction, anchor);
 }, { passive: false });
 
-await checkFont();
+await checkFonts();
+updateBackingOutput();
+renderLineControls(normalizeSettings({ text: "", backingMm: DEFAULT_BACKING_MM, lines: [] }));
 renderPreviewGuideOnly();
 render();
 renderOrderList();
