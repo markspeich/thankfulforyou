@@ -596,14 +596,14 @@ button:disabled {
 }
 
 .preview-guide-box {
-  fill: rgba(222, 238, 248, 0.72);
-  stroke: rgba(68, 111, 139, 0.55);
-  stroke-width: 0.35;
-  stroke-dasharray: 1.6 1.2;
+  fill: none;
+  stroke: #9a4f00;
+  stroke-width: 0.45;
+  stroke-dasharray: 1.8 1.2;
 }
 
 .preview-guide-label {
-  fill: #5b7f97;
+  fill: #7a3f00;
   font-size: 2.6px;
   font-weight: 700;
   letter-spacing: 0.04em;

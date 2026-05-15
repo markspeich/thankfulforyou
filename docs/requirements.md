@@ -39,7 +39,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - When text letters overlap, the overlap should be welded or unioned into one face-layer shape so internal seam lines are removed.
 - The backing layer follows the overall silhouette of the design and gives the text support and contrast.
 - The backing layer has a rounded offset border around the text silhouette.
-- The backing border should default to the metric equivalent of 0.125 inch, which is 3.175 mm.
+- The backing border should default to 3.1 mm.
 - The backing layer should be a solid acrylic silhouette. Enclosed holes created by font counters or tiny gaps in the backing border should be removed from the backing plate.
 - Multi-line layouts may intentionally overlap or touch between lines to help unify the design.
 - Different lines in the same badge reel design may use different fonts.
@@ -72,17 +72,18 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Treat 0.5 mm as the current default target for the connecting bridge between neighboring lines in Candlepin layouts.
 - For multi-line Candlepin layouts, slide each lower line upward until the actual visible line shapes overlap by the configured line-bridge target.
 - Center multi-line layouts by each line's actual visible shape bounds, not by rough text boxes or font advance widths.
-- The rendered text geometry must fit within 2 inches in width and 1.5 inches in height.
-- Scale the text proportionally to make the best use of the available size limit, scaling up or down as needed so the text fills as much of the allowed space as possible while still staying within 2 inches wide and 1.5 inches tall.
-- The backing border does not need to fit within the 2 inch by 1.5 inch text guide limit and may extend beyond it.
+- The rendered text geometry must fit within 2.2 inches in width and 1.5 inches in height.
+- Scale the text proportionally to make the best use of the available size limit, scaling up or down as needed so the text fills as much of the allowed space as possible while still staying within 2.2 inches wide and 1.5 inches tall.
+- The backing border does not need to fit within the 2.2 inch by 1.5 inch text guide limit and may extend beyond it.
 - Detect whether text geometry is connected as a single piece.
 - Show a visual preview of the text and backing layer.
 - Keep the live on-screen preview fast and responsive while the user types or adjusts controls.
 - The live editing preview may use a faster browser-rendered path than the export pipeline, as long as it stays visually trustworthy for layout decisions.
 - Connectedness checks and other heavier geometry analysis may run asynchronously in the background so they do not block interactive editing.
-- The preview area should include a non-exported 2 inch by 1.5 inch background guide box, and the rendered design should be centered within that box on screen.
-- The 2 inch by 1.5 inch preview guide box should remain visible even when there is no active text.
-- The preview guide box should show static dimension labels outside the box: `2"` centered above and `1.5"` on the right side.
+- The preview area should include a non-exported 2.2 inch by 1.5 inch background guide box, and the rendered design should be centered within that box on screen.
+- The preview should center the visible text geometry within the guide box, even when the backing border extends beyond the guide area.
+- The 2.2 inch by 1.5 inch preview guide box should remain visible even when there is no active text.
+- The preview guide box should show static dimension labels outside the box: `2.2"` centered above and `1.5"` on the right side.
 - Preserve legibility while minimizing separate acrylic pieces.
 - The `Backing Border` slider must remain a single global control for the whole design rather than a per-line control.
 - The global `Backing Border` slider should appear below all per-line control groups.
@@ -126,12 +127,12 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - The current implementation target is global per-line controls rather than per-character-pair tuning. More granular overlap controls may be considered later if real production jobs require them.
 - Multi-line layouts should support intentional contact between lines, and for Candlepin layouts each lower line should slide upward until the visible outlines reach the configured line-bridge target.
 - The backing layer should be generated automatically as an offset silhouette in the production tool rather than remaining a preview-only approximation.
-- The 2 inch by 1.5 inch guide box defines the text fitting target, not the total finished backing size limit.
+- The 2.2 inch by 1.5 inch guide box defines the text fitting target, not the total finished backing size limit.
 - A production-safe minimum bridge width for 1/8 inch acrylic still needs explicit shop confirmation. Until confirmed otherwise, use 0.5 mm as the working default bridge target for Candlepin letter and line connections.
 
 ## Open Questions
 
-- Beyond the current 2 inch by 1.5 inch text guide area, what maximum finished badge reel face plate dimensions should the tool enforce?
+- Beyond the current 2.2 inch by 1.5 inch text guide area, what maximum finished badge reel face plate dimensions should the tool enforce?
 - What minimum stroke/bridge width is safe for 1/8 inch acrylic after shop validation?
 - Do Skywalk and Somekind need different default bridge or scaling presets than Candlepin?
 - What additional export conventions, if any, are needed for the exact LightBurn import workflow used in production?

@@ -24,9 +24,10 @@ const FONT_OPTIONS = [
 
 const FONT_BY_ID = new Map(FONT_OPTIONS.map((font) => [font.id, font]));
 const PX_PER_MM = 96 / 25.4;
-const MAX_RENDER_WIDTH_MM = 50.8;
+const MAX_RENDER_WIDTH_MM = 55.88;
 const MAX_RENDER_HEIGHT_MM = 38.1;
-const PREVIEW_BOX_WIDTH_MM = 50.8;
+const TEXT_FIT_SAFETY_MARGIN_MM = 0.15;
+const PREVIEW_BOX_WIDTH_MM = 55.88;
 const PREVIEW_BOX_HEIGHT_MM = 38.1;
 const PREVIEW_MARGIN_MM = 6;
 const PREVIEW_LABEL_RIGHT_MM = 10;
@@ -34,7 +35,7 @@ const DESIGN_BLEED_MM = 1;
 const DEFAULT_PREVIEW_WIDTH_MM = PREVIEW_BOX_WIDTH_MM + PREVIEW_MARGIN_MM * 2 + PREVIEW_LABEL_RIGHT_MM;
 const DEFAULT_PREVIEW_HEIGHT_MM = PREVIEW_BOX_HEIGHT_MM + PREVIEW_MARGIN_MM * 2;
 const DEFAULT_ZOOM = 3;
-const DEFAULT_BACKING_MM = 3.175;
+const DEFAULT_BACKING_MM = 3.1;
 const DEFAULT_LINE_SETTINGS = Object.freeze({
   fontId: "candlepin",
   bridgeMm: 0.5,
@@ -202,7 +203,7 @@ function appendPreviewGuide(previewBoxX, previewBoxY) {
     y: previewBoxY - 2.6,
     "text-anchor": "middle",
   });
-  topLabel.textContent = '2"';
+  topLabel.textContent = '2.2"';
 
   const sideLabel = makeSvgElement("text", {
     class: "preview-guide-label",
@@ -1000,6 +1001,44 @@ function createBackingImage(letters, widthMm, heightMm, backingMm) {
   return backingCanvas.toDataURL("image/png");
 }
 
+function measureCanvasInkBounds(canvas, widthMm, heightMm) {
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  const { data, width, height } = context.getImageData(0, 0, canvas.width, canvas.height);
+  let minX = width;
+  let maxX = -1;
+  let minY = height;
+  let maxY = -1;
+
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      if (data[(y * width + x) * 4 + 3] <= 32) {
+        continue;
+      }
+
+      minX = Math.min(minX, x);
+      maxX = Math.max(maxX, x);
+      minY = Math.min(minY, y);
+      maxY = Math.max(maxY, y);
+    }
+  }
+
+  if (maxX < minX || maxY < minY) {
+    return {
+      left: 0,
+      top: 0,
+      width: 0,
+      height: 0,
+    };
+  }
+
+  return {
+    left: (minX / width) * widthMm,
+    top: (minY / height) * heightMm,
+    width: ((maxX - minX + 1) / width) * widthMm,
+    height: ((maxY - minY + 1) / height) * heightMm,
+  };
+}
+
 function createFaceImage(letters, widthMm, heightMm) {
   const scale = PX_PER_MM * 3;
   const faceCanvas = document.createElement("canvas");
@@ -1019,16 +1058,19 @@ function createFaceImage(letters, widthMm, heightMm) {
     faceContext.fillText(letter.character, letter.x * scale, letter.y * scale);
   });
 
-  return faceCanvas.toDataURL("image/png");
+  return {
+    href: faceCanvas.toDataURL("image/png"),
+    boundsMm: measureCanvasInkBounds(faceCanvas, widthMm, heightMm),
+  };
 }
 
-function getPreviewFrame(layout) {
+function getPreviewFrame(layout, textBoundsMm = layout.textBoundsMm) {
   const previewWidthMm = Math.max(layout.widthMm, PREVIEW_BOX_WIDTH_MM) + PREVIEW_MARGIN_MM * 2;
   const previewHeightMm = Math.max(layout.heightMm, PREVIEW_BOX_HEIGHT_MM) + PREVIEW_MARGIN_MM * 2;
   const previewBoxX = (previewWidthMm - PREVIEW_LABEL_RIGHT_MM - PREVIEW_BOX_WIDTH_MM) / 2;
   const previewBoxY = (previewHeightMm - PREVIEW_BOX_HEIGHT_MM) / 2;
-  const designX = previewBoxX + (PREVIEW_BOX_WIDTH_MM - layout.widthMm) / 2;
-  const designY = previewBoxY + (PREVIEW_BOX_HEIGHT_MM - layout.heightMm) / 2;
+  const designX = previewBoxX + (PREVIEW_BOX_WIDTH_MM - textBoundsMm.width) / 2 - textBoundsMm.left;
+  const designY = previewBoxY + (PREVIEW_BOX_HEIGHT_MM - textBoundsMm.height) / 2 - textBoundsMm.top;
 
   return {
     previewWidthMm,
@@ -1041,7 +1083,8 @@ function getPreviewFrame(layout) {
 }
 
 function renderPreviewFromLayout(layout) {
-  const frame = getPreviewFrame(layout);
+  const faceImageAsset = createFaceImage(layout.letters, layout.widthMm, layout.heightMm);
+  const frame = getPreviewFrame(layout, faceImageAsset.boundsMm);
 
   lastLayout = {
     ...layout,
@@ -1062,15 +1105,15 @@ function renderPreviewFromLayout(layout) {
   });
   const faceImage = makeSvgElement("image", {
     class: "face-layer",
-    href: createFaceImage(layout.letters, layout.widthMm, layout.heightMm),
+    href: faceImageAsset.href,
     x: frame.designX,
     y: frame.designY,
     width: layout.widthMm,
     height: layout.heightMm,
   });
 
-  appendPreviewGuide(frame.previewBoxX, frame.previewBoxY);
   preview.append(backingImage, faceImage);
+  appendPreviewGuide(frame.previewBoxX, frame.previewBoxY);
 }
 
 function applyAnalysisResult(layout, analysis) {
@@ -1246,21 +1289,23 @@ function buildOrderLayout(settings) {
       line,
       centeredLeftMm,
       centeredRightMm: centeredLeftMm + line.mask.widthMm,
+      topMm: line.y + line.mask.topMm,
+      bottomMm: line.y + line.mask.bottomMm,
     };
   });
-  const minLeftMm = Math.min(...lineBounds.map((item) => item.centeredLeftMm), 0);
-  const maxRightMm = Math.max(...lineBounds.map((item) => item.centeredRightMm), baseTextWidthMm);
+  const minLeftMm = Math.min(...lineBounds.map((item) => item.centeredLeftMm));
+  const maxRightMm = Math.max(...lineBounds.map((item) => item.centeredRightMm));
   const textWidthMm = Math.max(1, maxRightMm - minLeftMm);
-  const minTopMm = Math.min(...lines.map((line) => line.y + line.mask.topMm), 0);
-  const maxBottomMm = Math.max(...lines.map((line) => line.y + line.mask.bottomMm), ...lines.map((line) => line.y + line.settings.fontSizeMm));
-  const rawTextHeightMm = Math.max(1, maxBottomMm - minTopMm);
+  const minTopMm = Math.min(...lineBounds.map((item) => item.topMm));
+  const maxBottomMm = Math.max(...lineBounds.map((item) => item.bottomMm));
+  const textHeightMm = Math.max(1, maxBottomMm - minTopMm);
   const scaleFactor = Math.min(
-    MAX_RENDER_WIDTH_MM / textWidthMm,
-    MAX_RENDER_HEIGHT_MM / rawTextHeightMm,
+    Math.max(1, MAX_RENDER_WIDTH_MM - TEXT_FIT_SAFETY_MARGIN_MM) / textWidthMm,
+    Math.max(1, MAX_RENDER_HEIGHT_MM - TEXT_FIT_SAFETY_MARGIN_MM) / textHeightMm,
   );
   const scaledBackingMm = normalized.backingMm * scaleFactor;
   const rawWidthMm = textWidthMm + normalized.backingMm * 2 + DESIGN_BLEED_MM * 2;
-  const rawHeightMm = rawTextHeightMm + normalized.backingMm * 2 + DESIGN_BLEED_MM * 2;
+  const rawHeightMm = textHeightMm + normalized.backingMm * 2 + DESIGN_BLEED_MM * 2;
   const widthMm = rawWidthMm * scaleFactor;
   const heightMm = rawHeightMm * scaleFactor;
   const absoluteLetters = lineBounds.flatMap(({ line, centeredLeftMm }) => {
@@ -1283,6 +1328,12 @@ function buildOrderLayout(settings) {
     widthMm,
     heightMm,
     backingMm: scaledBackingMm,
+    textBoundsMm: {
+      left: (DESIGN_BLEED_MM + normalized.backingMm) * scaleFactor,
+      top: (DESIGN_BLEED_MM + normalized.backingMm) * scaleFactor,
+      width: textWidthMm * scaleFactor,
+      height: textHeightMm * scaleFactor,
+    },
     letters: absoluteLetters,
   };
 }
