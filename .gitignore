@@ -11,6 +11,7 @@ out/
 .env
 .env.*
 !.env.example
+.vercel/
 
 # Logs
 *.log
@@ -32,3 +33,5 @@ Thumbs.db
 playwright-report/
 test-results/
 coverage/
+
+.vercel

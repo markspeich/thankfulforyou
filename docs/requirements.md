@@ -216,7 +216,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Hosted preview must load the production fonts successfully so layout decisions match the real manufacturing fonts.
 - Hosted analysis and export must run against the same production font files used by the preview so connectedness checks and exported paths stay trustworthy.
 - The initial Vercel deployment shape is static frontend assets served from a `dist` build output plus Python API functions for `/api/layout-analyze` and `/api/export-svg`.
-- The Vercel Python runtime should be pinned explicitly so hosted geometry behavior does not drift silently across runtime defaults.
+- The Vercel Python runtime should be pinned explicitly to Python 3.12 so hosted geometry behavior does not drift silently across runtime defaults.
 - The Vercel Python function dependency set must include `fonttools`, `Pillow`, `numpy`, and `scipy`, matching the current geometry pipeline.
 - Deployment configuration should explicitly define the production install, build, and runtime behavior instead of relying on local-only defaults.
 - Production should have a smoke-test flow that verifies font loading, queue persistence, save-triggered analysis, and SVG export in the hosted environment before operators rely on it for Etsy batches.
