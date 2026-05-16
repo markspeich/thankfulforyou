@@ -1,5 +1,9 @@
 import json
+import os
 import sys
+import tempfile
+import urllib.parse
+import urllib.request
 from collections import defaultdict, deque
 from pathlib import Path
 
@@ -15,6 +19,7 @@ EXPORT_GAP_MM = 10.0
 COLOR_LABEL_MARGIN_MM = 3.0
 COLOR_LABEL_FONT_SIZE_MM = 4.0
 COLOR_LABEL_LINE_HEIGHT_MM = 4.8
+REMOTE_FONT_MAX_BYTES = 2 * 1024 * 1024
 
 
 def svg_escape(value):
@@ -288,15 +293,51 @@ def resolve_font_candidates(root, font_ref):
     return list(dict.fromkeys(candidates))
 
 
+def cache_remote_font(font_ref):
+    asset_base_url = os.environ.get("THANKFULFORYOU_ASSET_BASE_URL", "").strip()
+    if not asset_base_url or not font_ref or not str(font_ref).startswith("public/fonts/"):
+        return None
+
+    cache_dir = Path(tempfile.gettempdir()) / "thankfulforyou-fonts"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    cache_path = cache_dir / Path(font_ref).name
+    if cache_path.exists():
+        return cache_path
+
+    font_url = urllib.parse.urljoin(f"{asset_base_url.rstrip('/')}/", urllib.parse.quote(font_ref))
+    with urllib.request.urlopen(font_url, timeout=10) as response:
+        font_bytes = response.read(REMOTE_FONT_MAX_BYTES + 1)
+
+    if len(font_bytes) > REMOTE_FONT_MAX_BYTES:
+        raise ValueError(f"Remote font exceeded {REMOTE_FONT_MAX_BYTES} bytes: {font_ref}")
+
+    cache_path.write_bytes(font_bytes)
+    return cache_path
+
+
+def find_font_path(root, font_ref):
+    candidates = resolve_font_candidates(root, font_ref)
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate, candidates
+
+    remote_font = cache_remote_font(font_ref or "public/fonts/Candlepin-Laser.otf")
+    if remote_font and remote_font.exists():
+        candidates.append(remote_font)
+        return remote_font, candidates
+
+    return None, candidates
+
+
 def load_font(root, font_ref, font_size, cache):
     font_key = (font_ref or "", font_size)
     if font_key in cache:
         return cache[font_key]
 
-    for candidate in resolve_font_candidates(root, font_ref):
-        if candidate.exists():
-            cache[font_key] = ImageFont.truetype(str(candidate), font_size)
-            return cache[font_key]
+    font_path, _ = find_font_path(root, font_ref)
+    if font_path:
+        cache[font_key] = ImageFont.truetype(str(font_path), font_size)
+        return cache[font_key]
 
     cache[font_key] = ImageFont.load_default()
     return cache[font_key]
@@ -307,17 +348,16 @@ def load_outline_font(root, font_ref, cache):
     if cache_key in cache:
         return cache[cache_key]
 
-    candidates = resolve_font_candidates(root, font_ref)
-    for candidate in candidates:
-        if candidate.exists():
-            font = TTFont(str(candidate))
-            cache[cache_key] = {
-                "font": font,
-                "glyph_set": font.getGlyphSet(),
-                "cmap": font.getBestCmap() or {},
-                "units_per_em": font["head"].unitsPerEm,
-            }
-            return cache[cache_key]
+    font_path, candidates = find_font_path(root, font_ref)
+    if font_path:
+        font = TTFont(str(font_path))
+        cache[cache_key] = {
+            "font": font,
+            "glyph_set": font.getGlyphSet(),
+            "cmap": font.getBestCmap() or {},
+            "units_per_em": font["head"].unitsPerEm,
+        }
+        return cache[cache_key]
 
     checked_paths = ", ".join(str(candidate) for candidate in candidates)
     raise FileNotFoundError(f"Could not locate outline font for {font_ref or 'fallback font'}; checked {checked_paths}")
