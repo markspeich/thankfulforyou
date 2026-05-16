@@ -1479,12 +1479,13 @@ async function captureActiveOrder() {
     if (nextUncaptured) {
       selectOrder(nextUncaptured.id);
     }
-  } catch {
+  } catch (error) {
+    const detail = error instanceof Error && error.message ? ` ${error.message}` : "";
     order.analysisState = "idle";
     updateConnectionStatus(
       "warning",
       "Save failed",
-      "Face analysis could not complete, so this design was not saved for export yet.",
+      `Face analysis could not complete, so this design was not saved for export yet.${detail}`,
     );
     renderOrderList();
   } finally {
@@ -1838,7 +1839,8 @@ async function analyzeLayout(layout) {
   });
 
   if (!response.ok) {
-    throw new Error("Layout analysis failed");
+    const detail = await response.text();
+    throw new Error(detail ? `Layout analysis failed: ${detail}` : "Layout analysis failed");
   }
 
   return response.json();

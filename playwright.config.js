@@ -10,7 +10,7 @@ export default defineConfig({
     viewport: { width: 1500, height: 1200 },
   },
   webServer: {
-    command: "node server.mjs",
+    command: "node tools/dev_server.mjs",
     url: "http://127.0.0.1:4173",
     reuseExistingServer: true,
     timeout: 15000,

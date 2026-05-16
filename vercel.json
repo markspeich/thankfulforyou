@@ -15,6 +15,8 @@
   ],
   "functions": {
     "api/**/*.py": {
+      "includeFiles": "{public/fonts/**,tools/export_svg.py}",
+      "maxDuration": 60,
       "excludeFiles": "{docs/**,tests/**,test-results/**,playwright-report/**,coverage/**,node_modules/**,dist/**,*.log}"
     }
   }
