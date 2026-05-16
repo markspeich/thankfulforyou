@@ -46,22 +46,26 @@ select {
 }
 
 .app-shell {
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
 }
 
 .production-workspace {
   display: grid;
   grid-template-columns: minmax(310px, 388px) minmax(0, 1fr);
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
 }
 
 .orders-panel {
   display: flex;
   flex-direction: column;
   gap: 18px;
+  min-height: 0;
   padding: 28px;
   background: #fbfcfd;
   border-right: 1px solid var(--line);
+  overflow: hidden;
 }
 
 .editor-panel {
@@ -199,13 +203,18 @@ h2 {
 }
 
 .order-queue {
-  display: grid;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
   gap: 10px;
+  min-height: 0;
 }
 
 .order-list {
-  display: grid;
-  max-height: none;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow: auto;
   border-top: 1px solid var(--line);
 }
@@ -218,9 +227,15 @@ h2 {
 }
 
 .order-item {
+  appearance: none;
+  -webkit-appearance: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: stretch;
   width: 100%;
-  min-height: 0;
-  padding: 16px 28px 16px 12px;
+  min-height: 108px;
+  padding: 18px 28px 18px 12px;
   color: var(--ink);
   background: transparent;
   border: 0;
@@ -228,6 +243,8 @@ h2 {
   border-left: 4px solid transparent;
   border-radius: 0;
   text-align: left;
+  line-height: 1.2;
+  overflow: visible;
 }
 
 .order-item:hover,
@@ -239,30 +256,65 @@ h2 {
 
 .order-item-header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
+  min-width: 0;
   font-size: 0.9rem;
-  font-weight: 800;
+  font-weight: 600;
+  flex: 0 0 auto;
 }
 
-.order-item-text {
+.order-item-title {
+  flex: 1 1 auto;
   display: block;
-  margin-top: 4px;
+  min-width: 0;
+  max-width: 100%;
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.order-item-body {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  flex: 0 0 auto;
+}
+
+.order-item-recipient {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 0.86rem;
+  font-weight: 500;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.order-item-listing,
+.order-item-personalization {
+  display: block;
+  max-width: 100%;
   overflow: hidden;
   color: var(--muted);
-  font-size: 0.82rem;
-  font-weight: 600;
+  font-size: 0.77rem;
+  line-height: 1.35;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .order-item-meta {
   display: block;
-  margin-top: 6px;
+  overflow: hidden;
   color: var(--muted);
   font-size: 0.75rem;
   line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .order-status {
@@ -676,14 +728,22 @@ button:disabled {
 }
 
 @media (max-width: 820px) {
+  .app-shell {
+    height: auto;
+    overflow: visible;
+  }
+
   .production-workspace {
     grid-template-columns: 1fr;
-    min-height: auto;
+    height: auto;
+    overflow: visible;
   }
 
   .orders-panel {
+    min-height: auto;
     border-right: 0;
     border-bottom: 1px solid var(--line);
+    overflow: visible;
   }
 
   .editor-body {

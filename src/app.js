@@ -108,6 +108,7 @@ const statusLabels = {
   exported: "Exported",
 };
 const IMPORT_SOURCE_TAG = "thankfulforyou-etsy-clipboard";
+const IMPORT_MOJIBAKE_PATTERN = /[ÂÃâ]/;
 
 function getFontOption(fontId) {
   return FONT_BY_ID.get(fontId) || FONT_OPTIONS[0];
@@ -249,6 +250,67 @@ function buildActiveMeta(order) {
   return metaParts.join(" · ") || "Manual queue item";
 }
 
+function buildQueueOrderNumber(order) {
+  const orderNumber = order?.source?.orderNumber;
+  return orderNumber ? `#${orderNumber}` : order?.label || buildDefaultLabel();
+}
+
+function buildQueueRecipient(order) {
+  const buyerName = order?.source?.buyerName?.trim();
+  if (buyerName) {
+    return buyerName;
+  }
+
+  return order?.label || "Manual design";
+}
+
+function buildQueueListing(order) {
+  const listingId = order?.source?.listingId?.trim();
+  return listingId ? `Listing ${listingId}` : buildActiveMeta(order);
+}
+
+function buildQueuePersonalization(order) {
+  const personalization = summarizeOrderText(order?.text || "");
+  return personalization && personalization !== "No text entered"
+    ? personalization
+    : "No personalization entered";
+}
+
+function decodeHtmlEntities(value) {
+  const textarea = document.createElement("textarea");
+  textarea.innerHTML = value;
+  return textarea.value;
+}
+
+function repairImportedMojibake(value) {
+  if (!IMPORT_MOJIBAKE_PATTERN.test(value)) {
+    return value;
+  }
+
+  try {
+    const bytes = Uint8Array.from(Array.from(value, (character) => {
+      const codePoint = character.codePointAt(0);
+
+      if (typeof codePoint !== "number" || codePoint > 255) {
+        throw new Error("Non-Latin1 character");
+      }
+
+      return codePoint;
+    }));
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    return value;
+  }
+}
+
+function normalizeImportedText(value) {
+  if (typeof value !== "string") {
+    return "";
+  }
+
+  return repairImportedMojibake(decodeHtmlEntities(value).trim());
+}
+
 function createQueueItem({
   label,
   text = "",
@@ -327,11 +389,11 @@ function normalizeImportedEntry(entry) {
     return null;
   }
 
-  const personalization = typeof entry.personalization === "string"
-    ? entry.personalization.trim()
-    : typeof entry.text === "string"
-      ? entry.text.trim()
-      : "";
+  const personalization = normalizeImportedText(
+    typeof entry.personalization === "string"
+      ? entry.personalization
+      : entry.text,
+  );
 
   if (!personalization) {
     return null;
@@ -339,11 +401,11 @@ function normalizeImportedEntry(entry) {
 
   const orderNumber = entry.orderNumber == null ? "" : String(entry.orderNumber).trim();
   const listingId = entry.listingId == null ? "" : String(entry.listingId).trim();
-  const buyerName = typeof entry.buyerName === "string" ? entry.buyerName.trim() : "";
+  const buyerName = normalizeImportedText(entry.buyerName);
   const presetId = getPresetIdForListingId(listingId);
 
   return {
-    label: typeof entry.label === "string" ? entry.label.trim() : "",
+    label: normalizeImportedText(entry.label),
     text: personalization,
     presetId,
     source: {
@@ -740,26 +802,35 @@ function renderOrderList() {
     item.className = `order-item${order.id === activeOrderId ? " active" : ""}`;
     item.setAttribute("role", "listitem");
 
-    const header = document.createElement("span");
+    const header = document.createElement("div");
     header.className = "order-item-header";
 
-    const title = document.createElement("span");
-    title.textContent = order.label;
+    const title = document.createElement("div");
+    title.className = "order-item-title";
+    title.textContent = buildQueueOrderNumber(order);
 
     const status = document.createElement("span");
     status.className = `order-status ${order.status}`;
     status.textContent = statusLabels[order.status];
 
-    const previewText = document.createElement("span");
-    previewText.className = "order-item-text";
-    previewText.textContent = summarizeOrderText(order.text);
+    const body = document.createElement("div");
+    body.className = "order-item-body";
 
-    const metaText = document.createElement("span");
-    metaText.className = "order-item-meta";
-    metaText.textContent = buildActiveMeta(order);
+    const recipientText = document.createElement("div");
+    recipientText.className = "order-item-recipient";
+    recipientText.textContent = buildQueueRecipient(order);
+
+    const listingText = document.createElement("div");
+    listingText.className = "order-item-listing";
+    listingText.textContent = buildQueueListing(order);
+
+    const personalizationText = document.createElement("div");
+    personalizationText.className = "order-item-personalization";
+    personalizationText.textContent = buildQueuePersonalization(order);
 
     header.append(title, status);
-    item.append(header, previewText, metaText);
+    body.append(recipientText, listingText, personalizationText);
+    item.append(header, body);
     item.addEventListener("click", () => selectOrder(order.id));
     orderList.append(item);
   });

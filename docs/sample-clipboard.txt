@@ -1,0 +1,119 @@
+{
+  "source": "thankfulforyou-etsy-clipboard",
+  "version": 1,
+  "exportedAt": "2026-05-16T01:27:30.948Z",
+  "items": [
+    {
+      "orderNumber": "4057600528",
+      "listingId": "1884223710",
+      "transactionId": "5078093505",
+      "buyerName": "Marilyn Lopez",
+      "label": "#4057600528 · Marilyn Lopez",
+      "personalization": "Yohanna APN"
+    },
+    {
+      "orderNumber": "4057629148",
+      "listingId": "1884223710",
+      "transactionId": "5078133859",
+      "buyerName": "Mallory Braun",
+      "label": "#4057629148 · Mallory Braun",
+      "personalization": "Mallory R.T.(R)"
+    },
+    {
+      "orderNumber": "4057978426",
+      "listingId": "1889682603",
+      "transactionId": "5065873268",
+      "buyerName": "BriAnna Schaper",
+      "label": "#4057978426 · BriAnna Schaper",
+      "personalization": "Mrs. Morgan"
+    },
+    {
+      "orderNumber": "4057985712",
+      "listingId": "1884223710",
+      "transactionId": "5078646281",
+      "buyerName": "Daua Vidana",
+      "label": "#4057985712 · Daua Vidana",
+      "personalization": "Sidney RN"
+    },
+    {
+      "orderNumber": "4058104242",
+      "listingId": "4358653980",
+      "transactionId": "5078827731",
+      "buyerName": "juanita gaspar",
+      "label": "#4058104242 · juanita gaspar",
+      "personalization": "Ms. Vera"
+    },
+    {
+      "orderNumber": "4062879351",
+      "listingId": "4465975709",
+      "transactionId": "5077938715",
+      "buyerName": "Lori Morgan",
+      "label": "#4062879351 · Lori Morgan",
+      "personalization": "Lori"
+    },
+    {
+      "orderNumber": "4063081539",
+      "listingId": "4357670739",
+      "transactionId": "5065474480",
+      "buyerName": "Ashley Bezera",
+      "label": "#4063081539 · Ashley Bezera",
+      "personalization": "Emotional Support NP"
+    },
+    {
+      "orderNumber": "4063548491",
+      "listingId": "4465975709",
+      "transactionId": "5066012396",
+      "buyerName": "Amyya Duncan",
+      "label": "#4063548491 · Amyya Duncan",
+      "personalization": "Amyya"
+    },
+    {
+      "orderNumber": "4058172670",
+      "listingId": "1884223710",
+      "transactionId": "5066150092",
+      "buyerName": "Shayla Randle",
+      "label": "#4058172670 · Shayla Randle",
+      "personalization": "Tajah , np"
+    },
+    {
+      "orderNumber": "4058218048",
+      "listingId": "1884223710",
+      "transactionId": "5079012703",
+      "buyerName": "Shakeda Wade",
+      "label": "#4058218048 · Shakeda Wade",
+      "personalization": "Kennedy RN"
+    },
+    {
+      "orderNumber": "4063675101",
+      "listingId": "4358653980",
+      "transactionId": "5078979547",
+      "buyerName": "Christen Sikes",
+      "label": "#4063675101 · Christen Sikes",
+      "personalization": "Mrs. Sikes"
+    },
+    {
+      "orderNumber": "4063755435",
+      "listingId": "4357670739",
+      "transactionId": "5079085995",
+      "buyerName": "Adrienne C Baugh",
+      "label": "#4063755435 · Adrienne C Baugh",
+      "personalization": "Doctor&#39;s Favorite"
+    },
+    {
+      "orderNumber": "4064289393",
+      "listingId": "4465975709",
+      "transactionId": "5079749303",
+      "buyerName": "Nyla Thompson",
+      "label": "#4064289393 · Nyla Thompson",
+      "personalization": "Jade BSB RN"
+    },
+    {
+      "orderNumber": "4064289393",
+      "listingId": "4465975709",
+      "transactionId": "5066838724",
+      "buyerName": "Nyla Thompson",
+      "label": "#4064289393 · Nyla Thompson · Item 2",
+      "personalization": "Amparo BSN RN"
+    }
+  ]
+}
