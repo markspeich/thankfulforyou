@@ -264,18 +264,36 @@ def trace_mask_outline(mask, scale, tolerance_mm, smooth_iterations, curve_mode=
     return " ".join(paths)
 
 
+def resolve_font_candidates(root, font_ref):
+    fallback_ref = "public/fonts/Candlepin-Laser.otf"
+    refs = []
+    if font_ref:
+        refs.append(font_ref)
+    refs.append(fallback_ref)
+
+    candidates = []
+    for ref in refs:
+        path = Path(ref)
+        if path.is_absolute():
+            candidates.append(path)
+            continue
+
+        candidates.extend([
+            root / path,
+            root / "dist" / path,
+            Path.cwd() / path,
+            Path.cwd() / "dist" / path,
+        ])
+
+    return list(dict.fromkeys(candidates))
+
+
 def load_font(root, font_ref, font_size, cache):
     font_key = (font_ref or "", font_size)
     if font_key in cache:
         return cache[font_key]
 
-    fallback_path = root / "public" / "fonts" / "Candlepin-Laser.otf"
-    candidates = []
-    if font_ref:
-        candidates.append(root / font_ref)
-    candidates.append(fallback_path)
-
-    for candidate in candidates:
+    for candidate in resolve_font_candidates(root, font_ref):
         if candidate.exists():
             cache[font_key] = ImageFont.truetype(str(candidate), font_size)
             return cache[font_key]
@@ -289,12 +307,7 @@ def load_outline_font(root, font_ref, cache):
     if cache_key in cache:
         return cache[cache_key]
 
-    fallback_path = root / "public" / "fonts" / "Candlepin-Laser.otf"
-    candidates = []
-    if font_ref:
-        candidates.append(root / font_ref)
-    candidates.append(fallback_path)
-
+    candidates = resolve_font_candidates(root, font_ref)
     for candidate in candidates:
         if candidate.exists():
             font = TTFont(str(candidate))
@@ -306,7 +319,8 @@ def load_outline_font(root, font_ref, cache):
             }
             return cache[cache_key]
 
-    raise FileNotFoundError(f"Could not locate outline font for {font_ref or 'fallback font'}")
+    checked_paths = ", ".join(str(candidate) for candidate in candidates)
+    raise FileNotFoundError(f"Could not locate outline font for {font_ref or 'fallback font'}; checked {checked_paths}")
 
 
 def build_face_outline_path(root, payload):
