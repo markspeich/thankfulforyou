@@ -1,15 +1,13 @@
 import json
 import sys
-from collections import defaultdict
+from collections import defaultdict, deque
 from pathlib import Path
 
-import numpy as np
 from fontTools.pens.boundsPen import BoundsPen
 from fontTools.pens.svgPathPen import SVGPathPen
 from fontTools.pens.transformPen import TransformPen
 from fontTools.ttLib import TTFont
 from PIL import Image, ImageDraw, ImageFont
-from scipy import ndimage
 
 MM_PER_INCH = 25.4
 BATCH_EXPORT_START_STEP_MM = 2.03 * MM_PER_INCH
@@ -50,14 +48,67 @@ def parse_export_quantity(value):
 
 
 def fill_mask_holes(mask):
-    filled = ndimage.binary_fill_holes(np.array(mask) > 0)
-    mask.paste(Image.fromarray((filled * 255).astype(np.uint8)))
+    width, height = mask.size
+    data = bytearray(mask.tobytes())
+    exterior = bytearray(width * height)
+    queue = deque()
+
+    def enqueue_if_empty(x, y):
+        if x < 0 or y < 0 or x >= width or y >= height:
+            return
+
+        index = y * width + x
+        if exterior[index] or data[index] > 0:
+            return
+
+        exterior[index] = 1
+        queue.append((x, y))
+
+    for x in range(width):
+        enqueue_if_empty(x, 0)
+        enqueue_if_empty(x, height - 1)
+    for y in range(height):
+        enqueue_if_empty(0, y)
+        enqueue_if_empty(width - 1, y)
+
+    while queue:
+        x, y = queue.popleft()
+        enqueue_if_empty(x + 1, y)
+        enqueue_if_empty(x - 1, y)
+        enqueue_if_empty(x, y + 1)
+        enqueue_if_empty(x, y - 1)
+
+    for index, value in enumerate(data):
+        data[index] = 255 if value > 0 or not exterior[index] else 0
+
+    mask.putdata(data)
 
 
 def count_connected_components(mask):
-    structure = ndimage.generate_binary_structure(2, 2)
-    _, component_count = ndimage.label(np.array(mask) > 0, structure=structure)
-    return int(component_count)
+    width, height = mask.size
+    data = mask.tobytes()
+    visited = bytearray(width * height)
+    component_count = 0
+
+    for start_index, value in enumerate(data):
+        if value <= 0 or visited[start_index]:
+            continue
+
+        component_count += 1
+        visited[start_index] = 1
+        queue = deque([(start_index % width, start_index // width)])
+
+        while queue:
+            x, y = queue.popleft()
+            for next_y in range(max(0, y - 1), min(height, y + 2)):
+                for next_x in range(max(0, x - 1), min(width, x + 2)):
+                    next_index = next_y * width + next_x
+                    if visited[next_index] or data[next_index] <= 0:
+                        continue
+                    visited[next_index] = 1
+                    queue.append((next_x, next_y))
+
+    return component_count
 
 
 def point_line_distance(point, start, end):

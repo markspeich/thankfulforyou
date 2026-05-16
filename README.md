@@ -55,7 +55,7 @@ The project is configured for Vercel with:
 
 - `vercel.json` for the build command, output directory, and Python function bundle exclusions.
 - `.python-version` to align with Vercel's Python 3.14 runtime.
-- `pyproject.toml` and `requirements.txt` for the Python geometry runtime and dependencies.
+- `pyproject.toml` and `requirements.txt` for the Python geometry runtime and lightweight dependencies.
 - `api/layout_analyze.py` for hosted connectedness and path analysis.
 - `api/export_svg.py` for hosted SVG export.
 
