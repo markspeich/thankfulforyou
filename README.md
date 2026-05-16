@@ -33,8 +33,49 @@ Or run both:
 npm test
 ```
 
-The current production-oriented build expects these fonts in `public/fonts`:
+The production-oriented build expects these deployable font files in `public/fonts`:
 
 - `Candlepin-Laser.otf`
 - `SkywalkLaserRegular.otf`
 - `Somekind.ttf`
+
+## Build Static Assets
+
+The Vercel deployment serves static frontend files from `dist`.
+
+```powershell
+npm run build
+```
+
+This copies `index.html`, `src`, and `public` into `dist`. The API routes stay in `api/` and call the same Python geometry pipeline used locally.
+
+## Deploy To Vercel
+
+The project is configured for Vercel with:
+
+- `vercel.json` for the build command, output directory, and Python function bundle exclusions.
+- `.python-version` to pin Vercel's Python runtime to 3.12.
+- `requirements.txt` for the Python geometry dependencies.
+- `api/layout_analyze.py` for hosted connectedness and path analysis.
+- `api/export_svg.py` for hosted SVG export.
+
+Recommended Vercel project settings:
+
+- Framework Preset: `Other`
+- Build Command: `npm run build`
+- Output Directory: `dist`
+- Install Command: `npm install`
+
+The hosted preview, analysis, and export all use these same real font files so layout decisions and SVG output stay consistent between local and Vercel environments.
+
+## Vercel Preview Smoke Test
+
+Run this on the Vercel preview URL before promoting to production:
+
+1. Open the deployed app and confirm the design tool loads.
+2. Add a design with multiple text lines.
+3. Confirm Candlepin, Skywalk, and Somekind load from the font dropdowns.
+4. Click `Save` and confirm the connectedness status updates.
+5. Click `Export This Design` and confirm an SVG downloads.
+6. Add a second saved design and confirm `Export All Designs` downloads a batch SVG.
+7. Open the SVG in LightBurn and confirm the face layer, backing layer, and color label objects are selectable as expected.

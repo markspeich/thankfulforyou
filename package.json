@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "build": "node tools/build_static.mjs",
     "start": "node --watch server.mjs",
     "test": "npm run test:unit && npm run test:e2e",
     "test:unit": "vitest run",
