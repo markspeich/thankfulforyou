@@ -2,9 +2,14 @@ import { expect, test } from "playwright/test";
 
 test.describe.configure({ mode: "serial" });
 
-async function saveDesign(page, queueLabel) {
-  await page.getByRole("button", { name: "Save" }).click();
-  await expect(page.locator("#orderList .order-row").filter({ hasText: queueLabel })).toContainText("Saved");
+async function completeDesign(page, queueLabel) {
+  const row = page.locator("#orderList .order-row").filter({ hasText: queueLabel });
+
+  await page.getByRole("button", { name: "Complete" }).click();
+  await expect(row).toContainText("Complete");
+  await expect.poll(async () => {
+    return row.locator(".order-analysis-indicator.ok, .order-analysis-indicator.warning").count();
+  }, { timeout: 20000 }).toBe(1);
 }
 
 function buildMockAnalysisResponse(overrides = {}) {
@@ -374,7 +379,7 @@ test("includes imported color and quantity in the export payload", async ({ page
   });
 
   await page.getByRole("button", { name: "Import Clipboard" }).click();
-  await saveDesign(page, "#4057600528");
+  await completeDesign(page, "#4057600528");
   await page.locator("#orderList .order-row").filter({ hasText: "#4057600528" }).locator(".order-item").click();
   await page.getByRole("button", { name: "Export This Design" }).click();
 
@@ -428,12 +433,12 @@ test("copies the current design and all queued designs to the clipboard", async 
   });
 
   await page.locator("#textInput").fill("Alpha");
-  await saveDesign(page, "Design 1");
+  await completeDesign(page, "Design 1");
   await page.getByRole("button", { name: "Copy This Design" }).click();
 
   await page.getByRole("button", { name: "+ Add Design" }).click();
   await page.locator("#textInput").fill("Beta");
-  await saveDesign(page, "Design 2");
+  await completeDesign(page, "Design 2");
   await page.getByRole("button", { name: "Copy All Designs" }).click();
 
   await expect.poll(async () => {
@@ -446,7 +451,7 @@ test("copies the current design and all queued designs to the clipboard", async 
   await page.unrouteAll({ behavior: "ignoreErrors" });
 });
 
-test("runs face analysis only when saving", async ({ page }) => {
+test("runs face analysis only when completing", async ({ page }) => {
   const analyzeCounts = new Map();
 
   await page.route("**/api/layout-analyze", async (route) => {
@@ -465,7 +470,7 @@ test("runs face analysis only when saving", async ({ page }) => {
   await page.waitForTimeout(400);
   expect(Object.fromEntries(analyzeCounts)).toEqual({});
 
-  await saveDesign(page, "Design 1");
+  await completeDesign(page, "Design 1");
   await expect.poll(() => Object.fromEntries(analyzeCounts), { timeout: 20000 }).toEqual({
     Alpha: 1,
   });
@@ -476,7 +481,7 @@ test("runs face analysis only when saving", async ({ page }) => {
     Alpha: 1,
   });
 
-  await saveDesign(page, "Design 1");
+  await completeDesign(page, "Design 1");
   await expect.poll(() => Object.fromEntries(analyzeCounts), { timeout: 20000 }).toEqual({
     Alpha: 1,
     "Alpha RN": 1,
@@ -485,7 +490,35 @@ test("runs face analysis only when saving", async ({ page }) => {
   await page.unrouteAll({ behavior: "ignoreErrors" });
 });
 
-test("shows queue analysis indicators for running, connected, and multi-piece saves", async ({ page }) => {
+test("keeps Complete button state independent from background analysis", async ({ page }) => {
+  await page.route("**/api/layout-analyze", async (route) => {
+    await page.waitForTimeout(1000);
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify(buildMockAnalysisResponse()),
+    });
+  });
+
+  await page.locator("#textInput").fill("Alpha");
+  await page.getByRole("button", { name: "+ Add Design" }).click();
+  await page.locator("#textInput").fill("Beta");
+
+  await page.locator("#orderList .order-row").filter({ hasText: "Design 1" }).locator(".order-item").click();
+  await page.getByRole("button", { name: "Complete" }).click();
+
+  const completedRow = page.locator("#orderList .order-row").filter({ hasText: "Design 1" });
+  await expect(completedRow).toContainText("Complete");
+  await expect(completedRow.locator(".order-analysis-indicator.running")).toBeVisible();
+  await expect(page.locator("#activeOrderName")).toHaveText("Design 2");
+  await expect(page.getByRole("button", { name: "Complete" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Complete" })).not.toHaveText(/Saving/);
+  await expect(completedRow.locator(".order-analysis-indicator.ok")).toBeVisible({ timeout: 20000 });
+
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+});
+
+test("shows queue analysis indicators for running, connected, and multi-piece completions", async ({ page }) => {
   await page.route("**/api/layout-analyze", async (route) => {
     const postData = route.request().postDataJSON();
     const text = postData?.layout?.text || "";
@@ -511,14 +544,14 @@ test("shows queue analysis indicators for running, connected, and multi-piece sa
   });
 
   await page.locator("#textInput").fill("Alpha");
-  const saveAlpha = page.getByRole("button", { name: "Save" }).click();
+  const saveAlpha = page.getByRole("button", { name: "Complete" }).click();
   await expect(page.locator("#orderList .order-row").filter({ hasText: "Design 1" }).locator(".order-analysis-indicator.running")).toBeVisible();
   await saveAlpha;
-  await expect(page.locator("#orderList .order-row").filter({ hasText: "Design 1" }).locator(".order-analysis-indicator.ok")).toContainText("✓");
+  await expect(page.locator("#orderList .order-row").filter({ hasText: "Design 1" }).locator(".order-analysis-indicator.ok")).toBeVisible({ timeout: 20000 });
 
   await page.getByRole("button", { name: "+ Add Design" }).click();
   await page.locator("#textInput").fill("Beta");
-  await saveDesign(page, "Design 2");
+  await completeDesign(page, "Design 2");
 
   const betaIndicator = page.locator("#orderList .order-row").filter({ hasText: "Design 2" }).locator(".order-analysis-indicator.warning");
   await expect(betaIndicator).toContainText("⚠");
@@ -527,7 +560,7 @@ test("shows queue analysis indicators for running, connected, and multi-piece sa
   await page.unrouteAll({ behavior: "ignoreErrors" });
 });
 
-test("exports saved designs without re-running analysis", async ({ page }) => {
+test("exports completed designs without re-running analysis", async ({ page }) => {
   const analyzeCounts = new Map();
   let exportRequested = false;
   let exportAnalyzeCounts = null;
@@ -555,10 +588,10 @@ test("exports saved designs without re-running analysis", async ({ page }) => {
   });
 
   await page.locator("#textInput").fill("Alpha");
-  await saveDesign(page, "Design 1");
+  await completeDesign(page, "Design 1");
   await page.getByRole("button", { name: "+ Add Design" }).click();
   await page.locator("#textInput").fill("Beta");
-  await saveDesign(page, "Design 2");
+  await completeDesign(page, "Design 2");
   await page.getByRole("button", { name: "Export All Designs" }).click();
 
   await expect.poll(() => exportRequested, { timeout: 20000 }).toBe(true);

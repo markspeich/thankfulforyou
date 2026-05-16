@@ -85,7 +85,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Show a visual preview of the text and backing layer.
 - Keep the live on-screen preview fast and responsive while the user types or adjusts controls.
 - The live editing preview may use a faster browser-rendered path than the export pipeline, as long as it stays visually trustworthy for layout decisions.
-- Connectedness checks and other heavier geometry analysis should not run during routine typing or slider adjustments; they should run when the operator explicitly clicks `Save`.
+- Connectedness checks and other heavier geometry analysis should not run during routine typing or slider adjustments; they should run when the operator explicitly clicks `Complete`.
 - When a design's settings have not changed since the last save, the app should reuse its most recently saved analyzed export-ready geometry for queue revisit and SVG export instead of recomputing the same layout and paths again.
 - Add a `Weld Exported Design` checkbox directly below the order text field.
 - The `Weld Exported Design` checkbox must default to checked.
@@ -134,17 +134,19 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - The selected-order editor should focus on editable design text and layout settings rather than a separate editable design-label field.
 - Allow each order to store its own customer text and layout settings, including letter bridge, line bridge, text height, backing border, and guide visibility.
 - Provide a way to save the current preview and settings for the active order before moving to the next order.
-- Clicking `Save` should run face analysis for the active design and cache the export-ready geometry tied to that saved state.
-- Show which orders are not started, in progress, saved, or exported so a batch of orders can be completed without losing track.
-- The design queue should show a compact per-design face-analysis indicator: a small spinner while `Save` is running analysis, a checkmark when the saved face layer is one connected piece, or a warning sign with the compact piece count when the saved face layer has multiple disconnected pieces.
+- Clicking `Complete` should immediately save the active design text and layout settings, mark the queue item complete, and disable the `Complete` button until the design changes again.
+- Clicking `Complete` should also start face analysis and cache the export-ready geometry tied to that completed state in the background.
+- The selected-order `Complete` button state should depend only on whether the active design has unsaved text or layout changes, not on whether background analysis and export-geometry caching have finished.
+- Show which orders are not started, in progress, complete, or exported so a batch of orders can be completed without losing track.
+- The design queue should show a compact per-design face-analysis indicator: a small spinner while background analysis is running, a checkmark when the completed face layer is one connected piece, or a warning sign with the compact piece count when the completed face layer has multiple disconnected pieces.
 - Allow saved orders to be reopened for adjustment without losing their previously saved settings.
 - The active order editor should include a button for exporting the selected design as an SVG.
 - The active order editor should also include a button near `Export This Design` for copying the current design's generated SVG to the clipboard.
 - The left-side order navigation should include a button above the order list for exporting all queued designs that have text entered.
 - The left-side order navigation should also include a button near `Export All Designs` for copying the generated batch SVG for all queued designs with text to the clipboard.
 - Export and copy actions should use the most recently saved analyzed geometry for each design rather than running fresh analysis implicitly.
-- Orders with unsaved layout changes should be saved again before they can be exported or copied.
-- Batch export should export every queued order that has text entered after each of those orders has been explicitly saved.
+- Orders with unsaved layout changes should be completed again before they can be exported or copied.
+- Batch export should export every queued order that has text entered after each of those orders has been explicitly completed and analyzed.
 - Batch export should skip blank orders rather than producing empty geometry for them.
 - Export should treat imported Etsy quantity as the number of copies to place in the SVG output for that design.
 - When quantity is greater than `1`, the export should repeat that design the requested number of times, stacked vertically using the same production pitch as other exported designs.
@@ -247,7 +249,7 @@ The website should be a practical production tool rather than a marketing site. 
 - The selected-order controls should be organized as a stack of per-line control groups followed by one global `Backing Border` control.
 - Each per-line control group should clearly map to a specific entered text line and should appear or disappear as the number of entered lines changes.
 - The first text line should not show a `Line Bridge` control because there is no line above it to connect to.
-- The selected-order header should hold the primary order actions, including `Save` and `Export This Design`, to reduce the height of the control area.
+- The selected-order header should hold the primary order actions, including `Complete` and `Export This Design`, to reduce the height of the control area.
 
 The selected UI direction is the Production Queue layout. Use `docs/mockups/production-queue-ui-mockup-preview-top-controls-bottom.png` as the primary visual reference for the next UI implementation pass. The mockup intent is a left-side order queue with a batch export button above the order list, and a right-side selected-order editor with the selected order preview at the top, controls docked at the bottom, and an Export This Design button. Sample renders should use a white raised text layer over a blue backing silhouette.
 
@@ -256,7 +258,7 @@ For batch Etsy order sessions, the preferred workflow is:
 1. Click Add Order to create a new blank order row in the order queue.
 2. Enter or paste the customer text in the selected-order editor. The order text may contain multiple lines.
 3. Adjust the text layout using the existing preview and sliders.
-4. Save the layout for that order, saving both text and slider settings.
+4. Complete the layout for that order, saving both text and slider settings while analysis continues in the background.
 5. Automatically advance to the next unsaved order.
 6. Review the order list before export.
 7. Export the active order SVG from the editor.

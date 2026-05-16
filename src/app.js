@@ -112,7 +112,7 @@ const orders = [];
 const statusLabels = {
   "not-started": "Not started",
   "in-progress": "In progress",
-  captured: "Saved",
+  captured: "Complete",
   exported: "Exported",
 };
 const IMPORT_SOURCE_TAG = "thankfulforyou-etsy-clipboard";
@@ -1434,33 +1434,40 @@ async function captureActiveOrder() {
     return;
   }
 
-  const previousLabel = captureButton.textContent;
+  order.text = textInput.value;
+  order.settings = getCurrentSettings();
+  const layout = buildOrderLayout(order.settings);
+  const signature = buildSettingsSignature(order.settings);
+
+  order.savedSettingsSignature = signature;
+  order.capturedLayout = structuredClone(layout);
   order.analysisState = "running";
-  captureButton.disabled = true;
-  captureButton.textContent = "Saving...";
-  captureButton.setAttribute("aria-busy", "true");
+  order.status = "captured";
+  persistQueueState();
   renderOrderList();
+
   updateConnectionStatus(
     "pending",
-    "Analyzing saved layout...",
-    "Running face analysis and caching the export-ready geometry for this design.",
+    "Analyzing completed layout...",
+    "Running face analysis and caching the export-ready geometry for this completed design.",
   );
 
+  const activeIndex = orders.findIndex((candidate) => candidate.id === order.id);
+  const orderedCandidates = [...orders.slice(activeIndex + 1), ...orders.slice(0, activeIndex)];
+  const nextUncaptured = orderedCandidates.find((candidate) => candidate.status !== "captured" && candidate.status !== "exported");
+  if (nextUncaptured) {
+    selectOrder(nextUncaptured.id);
+  }
+
   try {
-    order.text = textInput.value;
-    order.settings = getCurrentSettings();
-    const layout = buildOrderLayout(order.settings);
     const analysis = await analyzeLayout(layout);
-    const signature = buildSettingsSignature(order.settings);
 
     storeCachedBuild(order, signature, layout, analysis);
-    order.savedSettingsSignature = signature;
     order.capturedLayout = structuredClone({
       ...layout,
       analysis,
     });
     order.analysisState = "idle";
-    order.status = "captured";
     persistQueueState();
 
     if (activeOrderId === order.id && buildSettingsSignature(getCurrentSettings()) === signature) {
@@ -1472,26 +1479,26 @@ async function captureActiveOrder() {
     }
 
     renderOrderList();
-
-    const activeIndex = orders.findIndex((candidate) => candidate.id === order.id);
-    const orderedCandidates = [...orders.slice(activeIndex + 1), ...orders.slice(0, activeIndex)];
-    const nextUncaptured = orderedCandidates.find((candidate) => candidate.status !== "captured" && candidate.status !== "exported");
-    if (nextUncaptured) {
-      selectOrder(nextUncaptured.id);
-    }
   } catch (error) {
     const detail = error instanceof Error && error.message ? ` ${error.message}` : "";
     order.analysisState = "idle";
-    updateConnectionStatus(
-      "warning",
-      "Save failed",
-      `Face analysis could not complete, so this design was not saved for export yet.${detail}`,
-    );
+    if (order.savedSettingsSignature === signature && !getCachedBuild(order, signature)) {
+      order.savedSettingsSignature = null;
+      order.status = "in-progress";
+    }
+    if (activeOrderId === order.id) {
+      updateConnectionStatus(
+        "warning",
+        "Analysis failed",
+        `Face analysis could not complete, so this completed design is not ready for export yet.${detail}`,
+      );
+    }
+    persistQueueState();
     renderOrderList();
   } finally {
     order.analysisState = "idle";
-    captureButton.textContent = previousLabel;
-    captureButton.removeAttribute("aria-busy");
+    persistQueueState();
+    renderOrderList();
   }
 }
 
@@ -2089,8 +2096,8 @@ function render() {
   renderPreviewFromLayout(layout);
   updateConnectionStatus(
     "pending",
-    "Save to analyze connectedness",
-    "Face analysis and cached export geometry run only when you click Save.",
+    "Complete to analyze connectedness",
+    "Face analysis and cached export geometry run only when you click Complete.",
   );
 }
 
@@ -2111,8 +2118,8 @@ async function downloadSvg() {
     if (!cachedBuild) {
       updateConnectionStatus(
         "warning",
-        "Save before exporting",
-        "Click Save to run face analysis and cache the export-ready geometry for this design.",
+        "Complete before exporting",
+        "Click Complete to run face analysis and cache the export-ready geometry for this design.",
       );
       return;
     }
@@ -2154,8 +2161,8 @@ async function copyCurrentSvg() {
     if (!cachedBuild) {
       updateConnectionStatus(
         "warning",
-        "Save before copying",
-        "Click Save to run face analysis and cache the export-ready geometry for this design.",
+        "Complete before copying",
+        "Click Complete to run face analysis and cache the export-ready geometry for this design.",
       );
       return;
     }
@@ -2238,7 +2245,7 @@ async function exportAllOrders() {
   const unsavedOrders = exportableOrders.filter((order) => !isOrderReadyForExport(order));
   if (unsavedOrders.length) {
     updateImportStatus(
-      `Save ${unsavedOrders.length} design${unsavedOrders.length === 1 ? "" : "s"} before batch export. Face analysis now runs only on Save.`,
+      `Complete ${unsavedOrders.length} design${unsavedOrders.length === 1 ? "" : "s"} before batch export. Face analysis now runs only on Complete.`,
       "error",
     );
     renderOrderList();
@@ -2290,7 +2297,7 @@ async function copyAllOrders() {
   const unsavedOrders = exportableOrders.filter((order) => !isOrderReadyForExport(order));
   if (unsavedOrders.length) {
     updateImportStatus(
-      `Save ${unsavedOrders.length} design${unsavedOrders.length === 1 ? "" : "s"} before batch copy. Face analysis now runs only on Save.`,
+      `Complete ${unsavedOrders.length} design${unsavedOrders.length === 1 ? "" : "s"} before batch copy. Face analysis now runs only on Complete.`,
       "error",
     );
     renderOrderList();

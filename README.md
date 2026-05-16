@@ -75,7 +75,7 @@ Run this on the Vercel preview URL before promoting to production:
 1. Open the deployed app and confirm the design tool loads.
 2. Add a design with multiple text lines.
 3. Confirm Candlepin, Skywalk, and Somekind load from the font dropdowns.
-4. Click `Save` and confirm the connectedness status updates.
+4. Click `Complete` and confirm the connectedness status updates.
 5. Click `Export This Design` and confirm an SVG downloads.
-6. Add a second saved design and confirm `Export All Designs` downloads a batch SVG.
+6. Add a second completed design and confirm `Export All Designs` downloads a batch SVG.
 7. Open the SVG in LightBurn and confirm the face layer, backing layer, and color label objects are selectable as expected.
