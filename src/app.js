@@ -58,7 +58,6 @@ const DEFAULT_LINE_SETTINGS = Object.freeze({
   fontSizeMm: 34,
 });
 
-const orderLabelInput = document.querySelector("#orderLabelInput");
 const addOrderButton = document.querySelector("#addOrderButton");
 const importClipboardButton = document.querySelector("#importClipboardButton");
 const clearQueueButton = document.querySelector("#clearQueueButton");
@@ -212,28 +211,9 @@ function isValidPresetId(presetId) {
   return PRESET_OPTIONS.some((preset) => preset.id === presetId);
 }
 
-function buildDefaultLabel() {
-  return `Design ${orderSequence}`;
-}
-
-function buildImportedLabel(entry, duplicateCount) {
-  const orderNumber = String(entry.orderNumber || "").trim();
-  const buyerName = String(entry.buyerName || "").trim();
-  const parts = [];
-
-  if (orderNumber) {
-    parts.push(`#${orderNumber}`);
-  }
-
-  if (buyerName) {
-    parts.push(buyerName);
-  }
-
-  if (duplicateCount > 1) {
-    parts.push(`Item ${duplicateCount}`);
-  }
-
-  return parts.join(" · ") || buildDefaultLabel();
+function buildManualDesignName(order) {
+  const index = orders.findIndex((candidate) => candidate.id === order?.id);
+  return `Design ${index >= 0 ? index + 1 : orderSequence}`;
 }
 
 function buildActiveMeta(order) {
@@ -263,7 +243,7 @@ function buildActiveMeta(order) {
 
 function buildQueueOrderNumber(order) {
   const orderNumber = order?.source?.orderNumber;
-  return orderNumber ? `#${orderNumber}` : order?.label || buildDefaultLabel();
+  return orderNumber ? `#${orderNumber}` : buildManualDesignName(order);
 }
 
 function buildQueueRecipient(order) {
@@ -272,7 +252,7 @@ function buildQueueRecipient(order) {
     return buyerName;
   }
 
-  return order?.label || "Manual design";
+  return "Manual design";
 }
 
 function buildQueueListing(order) {
@@ -321,7 +301,6 @@ function hydrateStoredOrder(order, index) {
 
   return {
     id: typeof order.id === "string" && order.id.trim() ? order.id : crypto.randomUUID(),
-    label: typeof order.label === "string" && order.label.trim() ? order.label.trim() : `Design ${index + 1}`,
     text,
     status: isValidOrderStatus(order.status) ? order.status : "in-progress",
     settings,
@@ -338,7 +317,6 @@ function buildPersistedQueueState() {
     activeOrderId,
     orders: orders.map((order) => ({
       id: order.id,
-      label: order.label,
       text: order.text,
       status: order.status,
       settings: normalizeSettings(order.settings),
@@ -437,7 +415,6 @@ function normalizeImportedText(value) {
 }
 
 function createQueueItem({
-  label,
   text = "",
   status = "in-progress",
   presetId = DEFAULT_PRESET_ID,
@@ -445,7 +422,6 @@ function createQueueItem({
 } = {}) {
   return {
     id: crypto.randomUUID(),
-    label: label || buildDefaultLabel(),
     text,
     status,
     settings: normalizeSettings({
@@ -534,7 +510,6 @@ function normalizeImportedEntry(entry) {
   const presetId = getPresetIdForListingId(listingId);
 
   return {
-    label: normalizeImportedText(entry.label),
     text: personalization,
     presetId,
     source: {
@@ -887,7 +862,6 @@ function saveActiveOrderDraft() {
     return;
   }
 
-  order.label = orderLabelInput.value.trim() || order.label;
   order.text = textInput.value;
   order.settings = getCurrentSettings();
   if (order.status !== "captured" && order.status !== "exported") {
@@ -902,7 +876,6 @@ function updateActiveOrderFromControls() {
     return;
   }
 
-  order.label = orderLabelInput.value.trim() || order.label;
   order.text = textInput.value;
   order.settings = getCurrentSettings();
   order.capturedLayout = null;
@@ -926,7 +899,7 @@ function renderOrderList() {
       return true;
     }
 
-    return `${order.label} ${order.text} ${order.source?.orderNumber || ""} ${order.source?.listingId || ""} ${order.source?.buyerName || ""}`
+    return `${buildQueueOrderNumber(order)} ${order.text} ${order.source?.orderNumber || ""} ${order.source?.listingId || ""} ${order.source?.buyerName || ""}`
       .toLowerCase()
       .includes(searchTerm);
   });
@@ -1005,7 +978,7 @@ function renderOrderList() {
         <path d="M9 3h6l1 2h4v2H4V5h4l1-2Zm1 7h2v8h-2v-8Zm4 0h2v8h-2v-8ZM7 10h2v8H7v-8Zm-1 11V8h12v13H6Z" />
       </svg>
     `;
-    deleteButton.setAttribute("aria-label", `Delete ${order.label}`);
+    deleteButton.setAttribute("aria-label", `Delete ${buildQueueOrderNumber(order)}`);
     deleteButton.addEventListener("click", (event) => {
       event.stopPropagation();
       deleteOrder(order.id);
@@ -1018,7 +991,7 @@ function renderOrderList() {
   const activeOrder = getActiveOrder();
   editorPanel.classList.toggle("is-hidden", !activeOrder);
   renderListingReference(activeOrder);
-  activeOrderName.textContent = activeOrder ? activeOrder.label : "No design selected";
+  activeOrderName.textContent = activeOrder ? buildQueueOrderNumber(activeOrder) : "No design selected";
   activeOrderMeta.textContent = buildActiveMeta(activeOrder);
   captureButton.disabled = !hasUnsavedRenderChanges(activeOrder);
   downloadButton.disabled = !activeOrder || !activeOrder.text.trim();
@@ -1038,8 +1011,6 @@ function selectOrder(orderId) {
   }
 
   syncOrderPresetFromListing(order);
-  orderLabelInput.value = order.label;
-  orderLabelInput.placeholder = order.label;
   applySettings(order.settings);
   persistQueueState();
   renderOrderList();
@@ -1050,7 +1021,6 @@ function selectOrder(orderId) {
 
 function addOrder() {
   const order = createQueueItem({
-    label: buildDefaultLabel(),
     text: "",
     status: "in-progress",
     presetId: DEFAULT_PRESET_ID,
@@ -1059,13 +1029,10 @@ function addOrder() {
 
   orders.push(order);
   orderSequence += 1;
-  orderLabelInput.placeholder = `Design ${orderSequence}`;
   selectOrder(order.id);
 }
 
 function resetEditorToEmptyState() {
-  orderLabelInput.value = "";
-  orderLabelInput.placeholder = `Design ${orderSequence}`;
   applySettings({
     text: "",
     presetId: DEFAULT_PRESET_ID,
@@ -1099,8 +1066,6 @@ function deleteOrder(orderId) {
     activeOrderId = orders[orderIndex]?.id || orders[orderIndex - 1]?.id || null;
     if (activeOrderId) {
       const nextOrder = getActiveOrder();
-      orderLabelInput.value = nextOrder.label;
-      orderLabelInput.placeholder = nextOrder.label;
       applySettings(nextOrder.settings);
     } else {
       orderSequence = 1;
@@ -1154,14 +1119,8 @@ async function importFromClipboard() {
   try {
     const clipboardText = await navigator.clipboard.readText();
     const importedItems = parseImportedItems(clipboardText);
-    const duplicateCounts = new Map();
     const createdItems = importedItems.map((entry) => {
-      const duplicateKey = `${entry.source.orderNumber}::${entry.source.listingId}`;
-      const duplicateCount = (duplicateCounts.get(duplicateKey) || 0) + 1;
-      duplicateCounts.set(duplicateKey, duplicateCount);
-
       return createQueueItem({
-        label: entry.label || buildImportedLabel(entry.source, duplicateCount),
         text: entry.text,
         status: "in-progress",
         presetId: entry.presetId,
@@ -1175,7 +1134,6 @@ async function importFromClipboard() {
     saveActiveOrderDraft();
     orders.push(...createdItems);
     orderSequence += createdItems.length;
-    orderLabelInput.placeholder = `Design ${orderSequence}`;
     selectOrder(createdItems[0].id);
     updateImportStatus(`Imported ${createdItems.length} Etsy design${createdItems.length === 1 ? "" : "s"} from the clipboard.`, "success");
   } catch (error) {
@@ -1193,7 +1151,6 @@ function captureActiveOrder() {
     return;
   }
 
-  order.label = orderLabelInput.value.trim() || order.label;
   order.text = textInput.value;
   order.settings = getCurrentSettings();
   order.savedSettingsSignature = buildSettingsSignature(order.settings);
@@ -2022,17 +1979,6 @@ weldExportedDesignInput.addEventListener("input", () => {
   updateActiveOrderFromControls();
 });
 
-orderLabelInput.addEventListener("input", () => {
-  const order = getActiveOrder();
-  if (!order) {
-    return;
-  }
-
-  order.label = orderLabelInput.value.trim() || `Design ${orders.indexOf(order) + 1}`;
-  order.status = "in-progress";
-  persistQueueState();
-  renderOrderList();
-});
 addOrderButton.addEventListener("click", addOrder);
 importClipboardButton.addEventListener("click", importFromClipboard);
 clearQueueButton.addEventListener("click", clearAllOrders);
@@ -2072,8 +2018,6 @@ renderLineControls(normalizeSettings({
 if (activeOrderId) {
   const activeOrder = getActiveOrder();
   if (activeOrder) {
-    orderLabelInput.value = activeOrder.label;
-    orderLabelInput.placeholder = activeOrder.label;
     applySettings(activeOrder.settings);
   }
 }

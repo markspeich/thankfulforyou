@@ -127,7 +127,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Selecting an order from the left navigation should show that order's text editing screen on the right.
 - Show no active order editor before an order has been added.
 - Clicking Add Order should immediately add a new row to the left-side order list, select that order, and show the editor on the right.
-- The order label and order text should be editable only in the selected-order editor, not in the left-side order navigation.
+- The selected-order editor should focus on editable design text and layout settings rather than a separate editable design-label field.
 - Allow each order to store its own customer text and layout settings, including letter bridge, line bridge, text height, backing border, and guide visibility.
 - Provide a way to save the current preview and settings for the active order before moving to the next order.
 - Show which orders are not started, in progress, saved, or exported so a batch of orders can be completed without losing track.
@@ -157,7 +157,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - The app should provide a queue action to delete a single design without affecting the rest of the current batch.
 - The app should provide a batch-reset action to clear all queued and persisted designs when the operator is ready to start a new batch.
 - Clearing all designs should also clear the corresponding persisted browser storage for that batch data.
-- In the selected-order editor, when imported listing title and 75 by 75 image data are available, show the listing title above the listing image and place both above the `Design Label` field.
+- In the selected-order editor, when imported listing title and 75 by 75 image data are available, show the listing title above the listing image and place both above the main text-entry controls.
 - SVG export should place the face text layer and offset backing layer side by side, with the backing layer to the right of the text layer.
 - In batch export SVG output, each order's face and backing paths should appear below the previous order's paths in a single vertically stacked file.
 - In batch export SVG output, each order's text path should be grouped separately from its backing path so the name can be selected as one group without including the backing border.
@@ -212,7 +212,7 @@ The selected UI direction is the Production Queue layout. Use `docs/mockups/prod
 For batch Etsy order sessions, the preferred workflow is:
 
 1. Click Add Order to create a new blank order row in the order queue.
-2. Enter or paste the order label and customer text in the selected-order editor. The order text may contain multiple lines.
+2. Enter or paste the customer text in the selected-order editor. The order text may contain multiple lines.
 3. Adjust the text layout using the existing preview and sliders.
 4. Save the layout for that order, saving both text and slider settings.
 5. Automatically advance to the next unsaved order.

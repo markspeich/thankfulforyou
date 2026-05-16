@@ -142,7 +142,6 @@ test("keeps a longer two-line layout inside the guide", async ({ page }) => {
 });
 
 test("restores the current batch after refresh and clears it when requested", async ({ page }) => {
-  await page.locator("#orderLabelInput").fill("Batch Test");
   await page.locator("#textInput").fill("Savannah\nRN");
   await page.locator("#backingInput").fill("4.2");
   await page.locator("#weldExportedDesignInput").uncheck();
@@ -151,7 +150,7 @@ test("restores the current batch after refresh and clears it when requested", as
   await page.reload();
 
   await expect(page.locator("#importStatus")).toContainText("Restored 1 design");
-  await expect(page.locator("#orderLabelInput")).toHaveValue("Batch Test");
+  await expect(page.locator("#activeOrderName")).toHaveText("Design 1");
   await expect(page.locator("#textInput")).toHaveValue("Savannah\nRN");
   await expect(page.locator("#backingInput")).toHaveValue("4.2");
   await expect(page.locator("#weldExportedDesignInput")).not.toBeChecked();
@@ -177,6 +176,6 @@ test("deletes a single design from the queue", async ({ page }) => {
   await page.getByRole("button", { name: "Delete Design 1" }).click();
 
   await expect(page.locator("#orderCountOutput")).toHaveText("1");
-  await expect(page.getByRole("button", { name: "Delete Design 1" })).toHaveCount(0);
-  await expect(page.locator("#activeOrderName")).toHaveText("Design 2");
+  await expect(page.locator("#orderList .order-row")).toHaveCount(1);
+  await expect(page.locator("#activeOrderName")).toHaveText("Design 1");
 });
