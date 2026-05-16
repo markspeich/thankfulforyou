@@ -337,7 +337,7 @@ h2 {
 .order-item-header {
   display: flex;
   align-items: flex-start;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 8px;
   min-width: 0;
   font-size: 0.9rem;
@@ -354,6 +354,58 @@ h2 {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.order-analysis-indicator {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 28px;
+  min-height: 24px;
+  padding: 1px 6px;
+  color: #15598a;
+  background: #e8f4ff;
+  border: 1px solid #abd2f5;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.order-analysis-indicator.warning {
+  color: #8a5a00;
+  background: #fff4d8;
+  border-color: #efd18a;
+}
+
+.order-analysis-indicator.running {
+  color: #446f8b;
+  background: #edf4f9;
+  border-color: #cad9e3;
+}
+
+.order-analysis-indicator.is-hidden {
+  visibility: hidden;
+}
+
+.order-analysis-icon {
+  line-height: 1;
+}
+
+.order-analysis-count {
+  min-width: 0.6rem;
+  text-align: center;
+}
+
+.order-analysis-spinner {
+  width: 11px;
+  height: 11px;
+  border: 2px solid rgba(68, 111, 139, 0.2);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: queue-spinner 700ms linear infinite;
 }
 
 .order-item-body {
@@ -399,6 +451,7 @@ h2 {
 
 .order-status {
   flex: 0 0 auto;
+  margin-left: auto;
   padding: 3px 7px;
   color: #0b6162;
   background: #bfe9e7;
@@ -777,6 +830,12 @@ button:disabled {
 
 .status-pending strong {
   color: #38556d;
+}
+
+@keyframes queue-spinner {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .preview-panel {

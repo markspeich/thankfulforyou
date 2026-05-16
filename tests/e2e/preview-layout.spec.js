@@ -2,6 +2,28 @@ import { expect, test } from "playwright/test";
 
 test.describe.configure({ mode: "serial" });
 
+async function saveDesign(page, queueLabel) {
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(page.locator("#orderList .order-row").filter({ hasText: queueLabel })).toContainText("Saved");
+}
+
+function buildMockAnalysisResponse(overrides = {}) {
+  return {
+    isConnected: true,
+    connectedComponentCount: 1,
+    facePath: "M0 0 L10 0 L10 10 L0 10 Z",
+    exportFacePath: "M0 0 L10 0 L10 10 L0 10 Z",
+    backingPath: "M-1 -1 L11 -1 L11 11 L-1 11 Z",
+    faceBoundsMm: {
+      x: 0,
+      y: 0,
+      width: 10,
+      height: 10,
+    },
+    ...overrides,
+  };
+}
+
 async function measureVisibleTextBounds(page) {
   return page.evaluate(async () => {
     const guide = document.querySelector("#preview .preview-guide-box");
@@ -343,8 +365,17 @@ test("includes imported color and quantity in the export payload", async ({ page
       body: "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>",
     });
   });
+  await page.route("**/api/layout-analyze", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify(buildMockAnalysisResponse()),
+    });
+  });
 
   await page.getByRole("button", { name: "Import Clipboard" }).click();
+  await saveDesign(page, "#4057600528");
+  await page.locator("#orderList .order-row").filter({ hasText: "#4057600528" }).locator(".order-item").click();
   await page.getByRole("button", { name: "Export This Design" }).click();
 
   await expect.poll(() => exportPayload, { timeout: 20000 }).not.toBeNull();
@@ -388,12 +419,21 @@ test("copies the current design and all queued designs to the clipboard", async 
       body,
     });
   });
+  await page.route("**/api/layout-analyze", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify(buildMockAnalysisResponse()),
+    });
+  });
 
   await page.locator("#textInput").fill("Alpha");
+  await saveDesign(page, "Design 1");
   await page.getByRole("button", { name: "Copy This Design" }).click();
 
   await page.getByRole("button", { name: "+ Add Design" }).click();
   await page.locator("#textInput").fill("Beta");
+  await saveDesign(page, "Design 2");
   await page.getByRole("button", { name: "Copy All Designs" }).click();
 
   await expect.poll(async () => {
@@ -406,7 +446,7 @@ test("copies the current design and all queued designs to the clipboard", async 
   await page.unrouteAll({ behavior: "ignoreErrors" });
 });
 
-test("finishes background analysis after switching to another design", async ({ page }) => {
+test("runs face analysis only when saving", async ({ page }) => {
   const analyzeCounts = new Map();
 
   await page.route("**/api/layout-analyze", async (route) => {
@@ -414,31 +454,80 @@ test("finishes background analysis after switching to another design", async ({ 
     const text = postData?.layout?.text || "";
     analyzeCounts.set(text, (analyzeCounts.get(text) || 0) + 1);
 
-    if (text === "Alpha") {
-      await page.waitForTimeout(700);
-    }
-
-    const response = await route.fetch();
-    await route.fulfill({ response });
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify(buildMockAnalysisResponse()),
+    });
   });
 
   await page.locator("#textInput").fill("Alpha");
-  await page.getByRole("button", { name: "+ Add Design" }).click();
-  await page.locator("#textInput").fill("Beta");
-  await expect(page.locator("#connectionStatusLabel")).not.toHaveText("Analyzing layout...", { timeout: 15000 });
-
-  await page.waitForTimeout(900);
-  await page.locator("#orderList .order-item").first().click();
-
-  await expect(page.locator("#textInput")).toHaveValue("Alpha");
-  await expect(page.locator("#connectionStatusLabel")).not.toHaveText("Analyzing layout...", { timeout: 1000 });
   await page.waitForTimeout(400);
+  expect(Object.fromEntries(analyzeCounts)).toEqual({});
 
-  expect(analyzeCounts.get("Alpha")).toBe(1);
+  await saveDesign(page, "Design 1");
+  await expect.poll(() => Object.fromEntries(analyzeCounts), { timeout: 20000 }).toEqual({
+    Alpha: 1,
+  });
+
+  await page.locator("#textInput").fill("Alpha RN");
+  await page.waitForTimeout(400);
+  expect(Object.fromEntries(analyzeCounts)).toEqual({
+    Alpha: 1,
+  });
+
+  await saveDesign(page, "Design 1");
+  await expect.poll(() => Object.fromEntries(analyzeCounts), { timeout: 20000 }).toEqual({
+    Alpha: 1,
+    "Alpha RN": 1,
+  });
+
   await page.unrouteAll({ behavior: "ignoreErrors" });
 });
 
-test("waits for pending cached analyses before exporting all designs", async ({ page }) => {
+test("shows queue analysis indicators for running, connected, and multi-piece saves", async ({ page }) => {
+  await page.route("**/api/layout-analyze", async (route) => {
+    const postData = route.request().postDataJSON();
+    const text = postData?.layout?.text || "";
+
+    if (text === "Alpha") {
+      await page.waitForTimeout(700);
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json; charset=utf-8",
+        body: JSON.stringify(buildMockAnalysisResponse()),
+      });
+      return;
+    }
+
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify(buildMockAnalysisResponse({
+        isConnected: false,
+        connectedComponentCount: 3,
+      })),
+    });
+  });
+
+  await page.locator("#textInput").fill("Alpha");
+  const saveAlpha = page.getByRole("button", { name: "Save" }).click();
+  await expect(page.locator("#orderList .order-row").filter({ hasText: "Design 1" }).locator(".order-analysis-indicator.running")).toBeVisible();
+  await saveAlpha;
+  await expect(page.locator("#orderList .order-row").filter({ hasText: "Design 1" }).locator(".order-analysis-indicator.ok")).toContainText("✓");
+
+  await page.getByRole("button", { name: "+ Add Design" }).click();
+  await page.locator("#textInput").fill("Beta");
+  await saveDesign(page, "Design 2");
+
+  const betaIndicator = page.locator("#orderList .order-row").filter({ hasText: "Design 2" }).locator(".order-analysis-indicator.warning");
+  await expect(betaIndicator).toContainText("⚠");
+  await expect(betaIndicator).toContainText("3");
+
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+});
+
+test("exports saved designs without re-running analysis", async ({ page }) => {
   const analyzeCounts = new Map();
   let exportRequested = false;
   let exportAnalyzeCounts = null;
@@ -448,12 +537,11 @@ test("waits for pending cached analyses before exporting all designs", async ({ 
     const text = postData?.layout?.text || "";
     analyzeCounts.set(text, (analyzeCounts.get(text) || 0) + 1);
 
-    if (text === "Alpha") {
-      await page.waitForTimeout(700);
-    }
-
-    const response = await route.fetch();
-    await route.fulfill({ response });
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify(buildMockAnalysisResponse()),
+    });
   });
 
   await page.route("**/api/export-svg", async (route) => {
@@ -467,12 +555,11 @@ test("waits for pending cached analyses before exporting all designs", async ({ 
   });
 
   await page.locator("#textInput").fill("Alpha");
+  await saveDesign(page, "Design 1");
   await page.getByRole("button", { name: "+ Add Design" }).click();
   await page.locator("#textInput").fill("Beta");
+  await saveDesign(page, "Design 2");
   await page.getByRole("button", { name: "Export All Designs" }).click();
-
-  await page.waitForTimeout(400);
-  expect(exportRequested).toBe(false);
 
   await expect.poll(() => exportRequested, { timeout: 20000 }).toBe(true);
   expect(exportAnalyzeCounts).toEqual({

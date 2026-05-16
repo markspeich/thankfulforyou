@@ -85,8 +85,8 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Show a visual preview of the text and backing layer.
 - Keep the live on-screen preview fast and responsive while the user types or adjusts controls.
 - The live editing preview may use a faster browser-rendered path than the export pipeline, as long as it stays visually trustworthy for layout decisions.
-- Connectedness checks and other heavier geometry analysis may run asynchronously in the background so they do not block interactive editing.
-- When a design's settings have not changed, the app should reuse its most recently analyzed export-ready geometry for queue revisit and SVG export instead of recomputing the same layout and paths again.
+- Connectedness checks and other heavier geometry analysis should not run during routine typing or slider adjustments; they should run when the operator explicitly clicks `Save`.
+- When a design's settings have not changed since the last save, the app should reuse its most recently saved analyzed export-ready geometry for queue revisit and SVG export instead of recomputing the same layout and paths again.
 - Add a `Weld Exported Design` checkbox directly below the order text field.
 - The `Weld Exported Design` checkbox must default to checked.
 - The preview area should include a non-exported 2.2 inch by 1.5 inch background guide box, and the rendered design should be centered within that box on screen.
@@ -134,13 +134,17 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - The selected-order editor should focus on editable design text and layout settings rather than a separate editable design-label field.
 - Allow each order to store its own customer text and layout settings, including letter bridge, line bridge, text height, backing border, and guide visibility.
 - Provide a way to save the current preview and settings for the active order before moving to the next order.
+- Clicking `Save` should run face analysis for the active design and cache the export-ready geometry tied to that saved state.
 - Show which orders are not started, in progress, saved, or exported so a batch of orders can be completed without losing track.
+- The design queue should show a compact per-design face-analysis indicator: a small spinner while `Save` is running analysis, a checkmark when the saved face layer is one connected piece, or a warning sign with the compact piece count when the saved face layer has multiple disconnected pieces.
 - Allow saved orders to be reopened for adjustment without losing their previously saved settings.
 - The active order editor should include a button for exporting the selected design as an SVG.
 - The active order editor should also include a button near `Export This Design` for copying the current design's generated SVG to the clipboard.
 - The left-side order navigation should include a button above the order list for exporting all queued designs that have text entered.
 - The left-side order navigation should also include a button near `Export All Designs` for copying the generated batch SVG for all queued designs with text to the clipboard.
-- Batch export should export every queued order that has text entered, even if it has not been explicitly saved first.
+- Export and copy actions should use the most recently saved analyzed geometry for each design rather than running fresh analysis implicitly.
+- Orders with unsaved layout changes should be saved again before they can be exported or copied.
+- Batch export should export every queued order that has text entered after each of those orders has been explicitly saved.
 - Batch export should skip blank orders rather than producing empty geometry for them.
 - Export should treat imported Etsy quantity as the number of copies to place in the SVG output for that design.
 - When quantity is greater than `1`, the export should repeat that design the requested number of times, stacked vertically using the same production pitch as other exported designs.

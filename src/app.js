@@ -108,10 +108,6 @@ let zoom = DEFAULT_ZOOM;
 let orderSequence = 1;
 let activeOrderId = null;
 const orders = [];
-const pendingAnalysisTimersByOrderId = new Map();
-const pendingAnalysisKeysByOrderId = new Map();
-const inFlightAnalysisKeys = new Set();
-const analysisPromisesByJobKey = new Map();
 
 const statusLabels = {
   "not-started": "Not started",
@@ -252,12 +248,6 @@ function getCachedBuild(order, signature = getOrderSettingsSignature(order)) {
   return structuredClone(order.cachedBuild);
 }
 
-function invalidateCachedBuild(order, nextSignature = getOrderSettingsSignature(order)) {
-  if (order?.cachedBuild && order.cachedBuild.signature !== nextSignature) {
-    order.cachedBuild = null;
-  }
-}
-
 function storeCachedBuild(order, signature, layout, analysis) {
   if (!order || !signature || !layout || !analysis) {
     return;
@@ -300,46 +290,6 @@ function buildExportPayload(layout, analysis = layout?.analysis || null, source 
     colorName,
     quantity,
   };
-}
-
-function makeAnalysisJobKey(orderId, signature) {
-  return `${orderId || "preview"}::${signature || "unknown"}`;
-}
-
-function isActiveAnalysisTarget(orderId, signature) {
-  if (!orderId || activeOrderId !== orderId) {
-    return false;
-  }
-
-  return buildSettingsSignature(getCurrentSettings()) === signature;
-}
-
-function getAnalysisPromise(jobKey) {
-  return analysisPromisesByJobKey.get(jobKey)?.promise || null;
-}
-
-function createTrackedAnalysisPromise(jobKey) {
-  let resolvePromise;
-  const promise = new Promise((resolve) => {
-    resolvePromise = resolve;
-  });
-
-  analysisPromisesByJobKey.set(jobKey, {
-    promise,
-    resolve: resolvePromise,
-  });
-
-  return promise;
-}
-
-function resolveTrackedAnalysisPromise(jobKey) {
-  const entry = analysisPromisesByJobKey.get(jobKey);
-  if (!entry) {
-    return;
-  }
-
-  entry.resolve();
-  analysisPromisesByJobKey.delete(jobKey);
 }
 
 function isValidPresetId(presetId) {
@@ -445,6 +395,7 @@ function hydrateStoredOrder(order, index) {
     capturedLayout: null,
     cachedBuild: normalizeStoredCachedBuild(order.cachedBuild),
     savedSettingsSignature: typeof order.savedSettingsSignature === "string" ? order.savedSettingsSignature : null,
+    analysisState: "idle",
   };
 }
 
@@ -581,6 +532,7 @@ function createQueueItem({
     capturedLayout: null,
     cachedBuild: null,
     savedSettingsSignature: null,
+    analysisState: "idle",
   };
 }
 
@@ -1070,7 +1022,6 @@ function saveActiveOrderDraft() {
 
   order.text = textInput.value;
   order.settings = getCurrentSettings();
-  invalidateCachedBuild(order);
   if (order.status !== "captured" && order.status !== "exported") {
     order.status = "in-progress";
   }
@@ -1085,7 +1036,6 @@ function updateActiveOrderFromControls() {
 
   order.text = textInput.value;
   order.settings = getCurrentSettings();
-  invalidateCachedBuild(order);
   order.status = "in-progress";
   persistQueueState();
   renderOrderList();
@@ -1097,6 +1047,60 @@ function hasUnsavedRenderChanges(order) {
   }
 
   return buildSettingsSignature(getCurrentSettings()) !== order.savedSettingsSignature;
+}
+
+function getSavedCachedBuild(order) {
+  if (!order?.text.trim() || typeof order.savedSettingsSignature !== "string") {
+    return null;
+  }
+
+  if (getOrderSettingsSignature(order) !== order.savedSettingsSignature) {
+    return null;
+  }
+
+  return getCachedBuild(order, order.savedSettingsSignature);
+}
+
+function isOrderReadyForExport(order) {
+  return Boolean(getSavedCachedBuild(order));
+}
+
+function getQueueAnalysisSummary(order) {
+  if (!order) {
+    return null;
+  }
+
+  if (order.analysisState === "running") {
+    return {
+      state: "running",
+      shortLabel: "",
+      fullLabel: "Analysis running",
+    };
+  }
+
+  const cachedBuild = getSavedCachedBuild(order);
+  const analysis = cachedBuild?.analysis;
+  if (!analysis) {
+    return null;
+  }
+
+  if (analysis.isConnected) {
+    return {
+      state: "ok",
+      shortLabel: "1",
+      fullLabel: "Analysis complete: 1 connected face piece",
+    };
+  }
+
+  const pieceCount = Number.isFinite(Number(analysis.connectedComponentCount))
+    ? Math.max(1, Number(analysis.connectedComponentCount))
+    : 0;
+
+  return {
+    state: "warning",
+    shortLabel: pieceCount > 0 ? String(pieceCount) : "",
+    fullLabel: `Analysis complete: ${pieceCount || "multiple"} face pieces`,
+  };
 }
 
 function renderOrderList() {
@@ -1114,14 +1118,16 @@ function renderOrderList() {
   const progressCount = orders.filter((order) => order.status === "in-progress").length;
   const notStartedCount = orders.filter((order) => order.status === "not-started").length;
   const exportableCount = orders.filter((order) => order.text.trim()).length;
+  const readyToExportCount = orders.filter(isOrderReadyForExport).length;
+  const allExportableOrdersReady = exportableCount > 0 && readyToExportCount === exportableCount;
 
   orderCountOutput.textContent = String(orders.length);
   completeCountOutput.textContent = String(completeCount);
   progressCountOutput.textContent = String(progressCount);
   notStartedCountOutput.textContent = String(notStartedCount);
   clearQueueButton.disabled = orders.length === 0;
-  exportCompletedButton.disabled = exportableCount === 0;
-  copyCompletedButton.disabled = exportableCount === 0 || !canCopySvgToClipboard();
+  exportCompletedButton.disabled = !allExportableOrdersReady;
+  copyCompletedButton.disabled = !allExportableOrdersReady || !canCopySvgToClipboard();
   orderList.replaceChildren();
 
   if (!orders.length) {
@@ -1154,6 +1160,38 @@ function renderOrderList() {
     title.className = "order-item-title";
     title.textContent = buildQueueOrderNumber(order);
 
+    const analysisSummary = getQueueAnalysisSummary(order);
+    const analysisIndicator = document.createElement("span");
+    analysisIndicator.className = `order-analysis-indicator${analysisSummary ? ` ${analysisSummary.state}` : ""}${analysisSummary ? "" : " is-hidden"}`;
+    analysisIndicator.setAttribute("aria-hidden", analysisSummary ? "false" : "true");
+
+    if (analysisSummary?.state === "running") {
+      const spinner = document.createElement("span");
+      spinner.className = "order-analysis-spinner";
+      spinner.setAttribute("aria-hidden", "true");
+      analysisIndicator.append(spinner);
+    } else if (analysisSummary?.state === "ok") {
+      const icon = document.createElement("span");
+      icon.className = "order-analysis-icon";
+      icon.textContent = "\u2713";
+      analysisIndicator.append(icon);
+    } else if (analysisSummary?.state === "warning") {
+      const icon = document.createElement("span");
+      icon.className = "order-analysis-icon";
+      icon.textContent = "\u26A0";
+      analysisIndicator.append(icon);
+
+      const count = document.createElement("span");
+      count.className = "order-analysis-count";
+      count.textContent = analysisSummary.shortLabel;
+      analysisIndicator.append(count);
+    }
+
+    if (analysisSummary?.fullLabel) {
+      analysisIndicator.setAttribute("title", analysisSummary.fullLabel);
+      analysisIndicator.setAttribute("aria-label", analysisSummary.fullLabel);
+    }
+
     const status = document.createElement("span");
     status.className = `order-status ${order.status}`;
     status.textContent = statusLabels[order.status];
@@ -1173,7 +1211,7 @@ function renderOrderList() {
     personalizationText.className = "order-item-personalization";
     personalizationText.textContent = buildQueuePersonalization(order);
 
-    header.append(title, status);
+    header.append(title, analysisIndicator, status);
     body.append(recipientText, listingText, personalizationText);
     item.append(header, body);
     item.addEventListener("click", () => selectOrder(order.id));
@@ -1203,8 +1241,8 @@ function renderOrderList() {
   activeOrderName.textContent = activeOrder ? buildQueueOrderNumber(activeOrder) : "No design selected";
   activeOrderMeta.textContent = buildActiveMeta(activeOrder);
   captureButton.disabled = !hasUnsavedRenderChanges(activeOrder);
-  downloadButton.disabled = !activeOrder || !activeOrder.text.trim();
-  copyButton.disabled = !activeOrder || !activeOrder.text.trim() || !canCopySvgToClipboard();
+  downloadButton.disabled = !activeOrder || !isOrderReadyForExport(activeOrder);
+  copyButton.disabled = !activeOrder || !isOrderReadyForExport(activeOrder) || !canCopySvgToClipboard();
 }
 
 function selectOrder(orderId) {
@@ -1390,25 +1428,69 @@ async function importFromClipboard() {
   }
 }
 
-function captureActiveOrder() {
+async function captureActiveOrder() {
   const order = getActiveOrder();
   if (!order || !textInput.value.trim()) {
     return;
   }
 
-  order.text = textInput.value;
-  order.settings = getCurrentSettings();
-  order.savedSettingsSignature = buildSettingsSignature(order.settings);
-  order.capturedLayout = structuredClone(lastLayout);
-  order.status = "captured";
-  persistQueueState();
+  const previousLabel = captureButton.textContent;
+  order.analysisState = "running";
+  captureButton.disabled = true;
+  captureButton.textContent = "Saving...";
+  captureButton.setAttribute("aria-busy", "true");
   renderOrderList();
+  updateConnectionStatus(
+    "pending",
+    "Analyzing saved layout...",
+    "Running face analysis and caching the export-ready geometry for this design.",
+  );
 
-  const activeIndex = orders.findIndex((candidate) => candidate.id === order.id);
-  const orderedCandidates = [...orders.slice(activeIndex + 1), ...orders.slice(0, activeIndex)];
-  const nextUncaptured = orderedCandidates.find((candidate) => candidate.status !== "captured" && candidate.status !== "exported");
-  if (nextUncaptured) {
-    selectOrder(nextUncaptured.id);
+  try {
+    order.text = textInput.value;
+    order.settings = getCurrentSettings();
+    const layout = buildOrderLayout(order.settings);
+    const analysis = await analyzeLayout(layout);
+    const signature = buildSettingsSignature(order.settings);
+
+    storeCachedBuild(order, signature, layout, analysis);
+    order.savedSettingsSignature = signature;
+    order.capturedLayout = structuredClone({
+      ...layout,
+      analysis,
+    });
+    order.analysisState = "idle";
+    order.status = "captured";
+    persistQueueState();
+
+    if (activeOrderId === order.id && buildSettingsSignature(getCurrentSettings()) === signature) {
+      renderPreviewFromLayout({
+        ...layout,
+        analysis,
+      });
+      updateConnectionStatusFromAnalysis(analysis);
+    }
+
+    renderOrderList();
+
+    const activeIndex = orders.findIndex((candidate) => candidate.id === order.id);
+    const orderedCandidates = [...orders.slice(activeIndex + 1), ...orders.slice(0, activeIndex)];
+    const nextUncaptured = orderedCandidates.find((candidate) => candidate.status !== "captured" && candidate.status !== "exported");
+    if (nextUncaptured) {
+      selectOrder(nextUncaptured.id);
+    }
+  } catch {
+    order.analysisState = "idle";
+    updateConnectionStatus(
+      "warning",
+      "Save failed",
+      "Face analysis could not complete, so this design was not saved for export yet.",
+    );
+    renderOrderList();
+  } finally {
+    order.analysisState = "idle";
+    captureButton.textContent = previousLabel;
+    captureButton.removeAttribute("aria-busy");
   }
 }
 
@@ -1979,76 +2061,6 @@ function updateConnectionStatusFromAnalysis(analysis) {
   );
 }
 
-function applyAnalysisResult(layout, analysis, orderId = null, signature = null) {
-  if (orderId && signature) {
-    const order = orders.find((candidate) => candidate.id === orderId);
-    if (order && getOrderSettingsSignature(order) === signature) {
-      storeCachedBuild(order, signature, layout, analysis);
-      persistQueueState();
-    }
-  }
-
-  if (!isActiveAnalysisTarget(orderId, signature)) {
-    return;
-  }
-
-  renderPreviewFromLayout({
-    ...layout,
-    analysis,
-  });
-  updateConnectionStatusFromAnalysis(analysis);
-}
-
-function scheduleLayoutAnalysis(layout, orderId = null, signature = null) {
-  const jobKey = makeAnalysisJobKey(orderId, signature);
-  if (inFlightAnalysisKeys.has(jobKey)) {
-    return;
-  }
-
-  if (getAnalysisPromise(jobKey)) {
-    return;
-  }
-
-  if (orderId) {
-    const pendingTimerId = pendingAnalysisTimersByOrderId.get(orderId);
-    if (pendingTimerId) {
-      clearTimeout(pendingTimerId);
-    }
-  }
-
-  createTrackedAnalysisPromise(jobKey);
-
-  const timerId = setTimeout(async () => {
-    if (orderId) {
-      pendingAnalysisTimersByOrderId.delete(orderId);
-      pendingAnalysisKeysByOrderId.delete(orderId);
-    }
-
-    inFlightAnalysisKeys.add(jobKey);
-
-    try {
-      const analysis = await analyzeLayout(layout);
-      applyAnalysisResult(layout, analysis, orderId, signature);
-    } catch {
-      if (isActiveAnalysisTarget(orderId, signature)) {
-        updateConnectionStatus(
-          "warning",
-          "Analysis unavailable",
-          "The connectedness check failed, but the live preview is still available.",
-        );
-      }
-    } finally {
-      inFlightAnalysisKeys.delete(jobKey);
-      resolveTrackedAnalysisPromise(jobKey);
-    }
-  }, 180);
-
-  if (orderId) {
-    pendingAnalysisTimersByOrderId.set(orderId, timerId);
-    pendingAnalysisKeysByOrderId.set(orderId, jobKey);
-  }
-}
-
 function render() {
   updateBackingOutput();
   const settings = getCurrentSettings();
@@ -2073,8 +2085,11 @@ function render() {
 
   const layout = buildOrderLayout(settings);
   renderPreviewFromLayout(layout);
-  updateConnectionStatus("pending", "Analyzing layout...", "Checking connectedness in the background while keeping the live preview responsive.");
-  scheduleLayoutAnalysis(layout, activeOrder?.id || null, signature);
+  updateConnectionStatus(
+    "pending",
+    "Save to analyze connectedness",
+    "Face analysis and cached export geometry run only when you click Save.",
+  );
 }
 
 async function downloadSvg() {
@@ -2090,14 +2105,14 @@ async function downloadSvg() {
   try {
     order.text = textInput.value;
     order.settings = getCurrentSettings();
-    let cachedBuild = getCachedBuild(order);
+    const cachedBuild = getSavedCachedBuild(order);
     if (!cachedBuild) {
-      const layout = buildOrderLayout(order.settings);
-      const analysis = await analyzeLayout(layout);
-      const signature = getOrderSettingsSignature(order);
-      storeCachedBuild(order, signature, layout, analysis);
-      persistQueueState();
-      cachedBuild = getCachedBuild(order, signature);
+      updateConnectionStatus(
+        "warning",
+        "Save before exporting",
+        "Click Save to run face analysis and cache the export-ready geometry for this design.",
+      );
+      return;
     }
 
     await requestSvgExport({
@@ -2133,14 +2148,14 @@ async function copyCurrentSvg() {
   try {
     order.text = textInput.value;
     order.settings = getCurrentSettings();
-    let cachedBuild = getCachedBuild(order);
+    const cachedBuild = getSavedCachedBuild(order);
     if (!cachedBuild) {
-      const layout = buildOrderLayout(order.settings);
-      const analysis = await analyzeLayout(layout);
-      const signature = getOrderSettingsSignature(order);
-      storeCachedBuild(order, signature, layout, analysis);
-      persistQueueState();
-      cachedBuild = getCachedBuild(order, signature);
+      updateConnectionStatus(
+        "warning",
+        "Save before copying",
+        "Click Save to run face analysis and cache the export-ready geometry for this design.",
+      );
+      return;
     }
 
     const svgSource = await requestSvgSource({
@@ -2209,30 +2224,6 @@ async function copySvgToClipboard(svgSource) {
   await navigator.clipboard.writeText(svgSource);
 }
 
-async function ensureOrderCachedBuild(order) {
-  const signature = getOrderSettingsSignature(order);
-  let cachedBuild = getCachedBuild(order, signature);
-  if (cachedBuild) {
-    return cachedBuild;
-  }
-
-  const jobKey = makeAnalysisJobKey(order.id, signature);
-  const pendingJob = getAnalysisPromise(jobKey);
-  if (pendingJob) {
-    await pendingJob;
-    cachedBuild = getCachedBuild(order, signature);
-    if (cachedBuild) {
-      return cachedBuild;
-    }
-  }
-
-  const layout = buildOrderLayout(order.settings);
-  const analysis = await analyzeLayout(layout);
-  storeCachedBuild(order, signature, layout, analysis);
-  persistQueueState();
-  return getCachedBuild(order, signature);
-}
-
 async function exportAllOrders() {
   saveActiveOrderDraft();
   renderOrderList();
@@ -2242,19 +2233,29 @@ async function exportAllOrders() {
     return;
   }
 
+  const unsavedOrders = exportableOrders.filter((order) => !isOrderReadyForExport(order));
+  if (unsavedOrders.length) {
+    updateImportStatus(
+      `Save ${unsavedOrders.length} design${unsavedOrders.length === 1 ? "" : "s"} before batch export. Face analysis now runs only on Save.`,
+      "error",
+    );
+    renderOrderList();
+    return;
+  }
+
   exportCompletedButton.disabled = true;
   exportCompletedButton.textContent = "Exporting...";
   exportCompletedButton.setAttribute("aria-busy", "true");
 
   try {
-    const builtLayouts = await Promise.all(exportableOrders.map(async (order) => {
-      const cachedBuild = await ensureOrderCachedBuild(order);
+    const builtLayouts = exportableOrders.map((order) => {
+      const cachedBuild = getSavedCachedBuild(order);
       return {
         order,
         layout: cachedBuild.layout,
         analysis: cachedBuild.analysis,
       };
-    }));
+    });
 
     await requestSvgExport({
       layouts: builtLayouts.map(({ order, layout, analysis }) => buildExportPayload(layout, analysis, order.source)),
@@ -2284,19 +2285,29 @@ async function copyAllOrders() {
     return;
   }
 
+  const unsavedOrders = exportableOrders.filter((order) => !isOrderReadyForExport(order));
+  if (unsavedOrders.length) {
+    updateImportStatus(
+      `Save ${unsavedOrders.length} design${unsavedOrders.length === 1 ? "" : "s"} before batch copy. Face analysis now runs only on Save.`,
+      "error",
+    );
+    renderOrderList();
+    return;
+  }
+
   copyCompletedButton.disabled = true;
   copyCompletedButton.textContent = "Copying...";
   copyCompletedButton.setAttribute("aria-busy", "true");
 
   try {
-    const builtLayouts = await Promise.all(exportableOrders.map(async (order) => {
-      const cachedBuild = await ensureOrderCachedBuild(order);
+    const builtLayouts = exportableOrders.map((order) => {
+      const cachedBuild = getSavedCachedBuild(order);
       return {
         order,
         layout: cachedBuild.layout,
         analysis: cachedBuild.analysis,
       };
-    }));
+    });
 
     const svgSource = await requestSvgSource({
       layouts: builtLayouts.map(({ order, layout, analysis }) => buildExportPayload(layout, analysis, order.source)),
