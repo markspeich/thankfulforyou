@@ -107,4 +107,36 @@ describe("export_svg face tracing", () => {
     expect(svg).toContain('stroke="none"');
     expect(svg).toContain("Text: Cached");
   });
+
+  test("stacks batch exports on a 2 inch start-to-start pitch", () => {
+    const svg = exportSvg({
+      layouts: [
+        {
+          text: "First",
+          widthMm: 40,
+          heightMm: 20,
+          analysis: {
+            exportFacePath: "M0 0 L10 0 L10 10 Z",
+            backingPath: "M20 0 L30 0 L30 10 Z",
+            connectedComponentCount: 1,
+          },
+        },
+        {
+          text: "Second",
+          widthMm: 40,
+          heightMm: 20,
+          analysis: {
+            exportFacePath: "M0 0 L10 0 L10 10 Z",
+            backingPath: "M20 0 L30 0 L30 10 Z",
+            connectedComponentCount: 1,
+          },
+        },
+      ],
+    });
+
+    expect(svg).toContain('height="70.800mm"');
+    expect(svg).toContain('id="order-1-face-layer" transform="translate(0 0.000)"');
+    expect(svg).toContain('id="order-2-face-layer" transform="translate(0 50.800)"');
+    expect(svg).toContain('id="order-2-backing-layer" transform="translate(50.000 50.800)"');
+  });
 });

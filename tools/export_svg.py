@@ -11,6 +11,9 @@ from fontTools.ttLib import TTFont
 from PIL import Image, ImageDraw, ImageFont
 from scipy import ndimage
 
+MM_PER_INCH = 25.4
+BATCH_EXPORT_START_STEP_MM = 2.03 * MM_PER_INCH
+
 
 def svg_escape(value):
     return (
@@ -482,9 +485,10 @@ def build_svg(payload):
 def build_batch_svg(root, layouts):
     export_fill = "rgb(255, 0, 0)"
     order_paths = [build_single_order_paths(root, payload) for payload in layouts]
-    vertical_gap = 12.0
     export_width = max(order["export_width"] for order in order_paths)
-    export_height = sum(order["height"] for order in order_paths) + vertical_gap * (len(order_paths) - 1)
+    export_height = 0.0
+    if order_paths:
+        export_height = BATCH_EXPORT_START_STEP_MM * (len(order_paths) - 1) + order_paths[-1]["height"]
     desc_items = [
         f"Order {index + 1}: {order['text']}"
         for index, order in enumerate(order_paths)
@@ -506,7 +510,7 @@ def build_batch_svg(root, layouts):
       <path d="{order["backing_path"]}"/>
     </g>"""
         )
-        current_y += order["height"] + vertical_gap
+        current_y += BATCH_EXPORT_START_STEP_MM
 
     parts.append("</svg>\n")
     return "\n".join(parts)
