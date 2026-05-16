@@ -179,3 +179,80 @@ test("deletes a single design from the queue", async ({ page }) => {
   await expect(page.locator("#orderList .order-row")).toHaveCount(1);
   await expect(page.locator("#activeOrderName")).toHaveText("Design 1");
 });
+
+test("finishes background analysis after switching to another design", async ({ page }) => {
+  const analyzeCounts = new Map();
+
+  await page.route("**/api/layout-analyze", async (route) => {
+    const postData = route.request().postDataJSON();
+    const text = postData?.layout?.text || "";
+    analyzeCounts.set(text, (analyzeCounts.get(text) || 0) + 1);
+
+    if (text === "Alpha") {
+      await page.waitForTimeout(700);
+    }
+
+    const response = await route.fetch();
+    await route.fulfill({ response });
+  });
+
+  await page.locator("#textInput").fill("Alpha");
+  await page.getByRole("button", { name: "+ Add Design" }).click();
+  await page.locator("#textInput").fill("Beta");
+  await expect(page.locator("#connectionStatusLabel")).not.toHaveText("Analyzing layout...", { timeout: 15000 });
+
+  await page.waitForTimeout(900);
+  await page.locator("#orderList .order-item").first().click();
+
+  await expect(page.locator("#textInput")).toHaveValue("Alpha");
+  await expect(page.locator("#connectionStatusLabel")).not.toHaveText("Analyzing layout...", { timeout: 1000 });
+  await page.waitForTimeout(400);
+
+  expect(analyzeCounts.get("Alpha")).toBe(1);
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+});
+
+test("waits for pending cached analyses before exporting all designs", async ({ page }) => {
+  const analyzeCounts = new Map();
+  let exportRequested = false;
+  let exportAnalyzeCounts = null;
+
+  await page.route("**/api/layout-analyze", async (route) => {
+    const postData = route.request().postDataJSON();
+    const text = postData?.layout?.text || "";
+    analyzeCounts.set(text, (analyzeCounts.get(text) || 0) + 1);
+
+    if (text === "Alpha") {
+      await page.waitForTimeout(700);
+    }
+
+    const response = await route.fetch();
+    await route.fulfill({ response });
+  });
+
+  await page.route("**/api/export-svg", async (route) => {
+    exportRequested = true;
+    exportAnalyzeCounts = Object.fromEntries(analyzeCounts);
+    await route.fulfill({
+      status: 200,
+      contentType: "image/svg+xml; charset=utf-8",
+      body: "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>",
+    });
+  });
+
+  await page.locator("#textInput").fill("Alpha");
+  await page.getByRole("button", { name: "+ Add Design" }).click();
+  await page.locator("#textInput").fill("Beta");
+  await page.getByRole("button", { name: "Export All Designs" }).click();
+
+  await page.waitForTimeout(400);
+  expect(exportRequested).toBe(false);
+
+  await expect.poll(() => exportRequested, { timeout: 20000 }).toBe(true);
+  expect(exportAnalyzeCounts).toEqual({
+    Alpha: 1,
+    Beta: 1,
+  });
+
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+});

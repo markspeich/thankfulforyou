@@ -101,9 +101,11 @@ let lastLayout = null;
 let zoom = DEFAULT_ZOOM;
 let orderSequence = 1;
 let activeOrderId = null;
-let renderRequestId = 0;
-let analysisTimerId = null;
 const orders = [];
+const pendingAnalysisTimersByOrderId = new Map();
+const pendingAnalysisKeysByOrderId = new Map();
+const inFlightAnalysisKeys = new Set();
+const analysisPromisesByJobKey = new Map();
 
 const statusLabels = {
   "not-started": "Not started",
@@ -281,6 +283,46 @@ function buildExportPayload(layout, analysis = layout?.analysis || null) {
   }
 
   return layout;
+}
+
+function makeAnalysisJobKey(orderId, signature) {
+  return `${orderId || "preview"}::${signature || "unknown"}`;
+}
+
+function isActiveAnalysisTarget(orderId, signature) {
+  if (!orderId || activeOrderId !== orderId) {
+    return false;
+  }
+
+  return buildSettingsSignature(getCurrentSettings()) === signature;
+}
+
+function getAnalysisPromise(jobKey) {
+  return analysisPromisesByJobKey.get(jobKey)?.promise || null;
+}
+
+function createTrackedAnalysisPromise(jobKey) {
+  let resolvePromise;
+  const promise = new Promise((resolve) => {
+    resolvePromise = resolve;
+  });
+
+  analysisPromisesByJobKey.set(jobKey, {
+    promise,
+    resolve: resolvePromise,
+  });
+
+  return promise;
+}
+
+function resolveTrackedAnalysisPromise(jobKey) {
+  const entry = analysisPromisesByJobKey.get(jobKey);
+  if (!entry) {
+    return;
+  }
+
+  entry.resolve();
+  analysisPromisesByJobKey.delete(jobKey);
 }
 
 function isValidPresetId(presetId) {
@@ -1815,7 +1857,15 @@ function updateConnectionStatusFromAnalysis(analysis) {
 }
 
 function applyAnalysisResult(layout, analysis, orderId = null, signature = null) {
-  if (!lastLayout || lastLayout.text !== layout.text || lastLayout.widthMm !== layout.widthMm || lastLayout.heightMm !== layout.heightMm) {
+  if (orderId && signature) {
+    const order = orders.find((candidate) => candidate.id === orderId);
+    if (order && getOrderSettingsSignature(order) === signature) {
+      storeCachedBuild(order, signature, layout, analysis);
+      persistQueueState();
+    }
+  }
+
+  if (!isActiveAnalysisTarget(orderId, signature)) {
     return;
   }
 
@@ -1824,51 +1874,61 @@ function applyAnalysisResult(layout, analysis, orderId = null, signature = null)
     analysis,
   });
   updateConnectionStatusFromAnalysis(analysis);
-
-  if (!orderId || !signature) {
-    return;
-  }
-
-  const order = orders.find((candidate) => candidate.id === orderId);
-  if (!order || getOrderSettingsSignature(order) !== signature) {
-    return;
-  }
-
-  storeCachedBuild(order, signature, layout, analysis);
-  persistQueueState();
 }
 
-function scheduleLayoutAnalysis(layout, requestId, orderId = null, signature = null) {
-  if (analysisTimerId) {
-    clearTimeout(analysisTimerId);
+function scheduleLayoutAnalysis(layout, orderId = null, signature = null) {
+  const jobKey = makeAnalysisJobKey(orderId, signature);
+  if (inFlightAnalysisKeys.has(jobKey)) {
+    return;
   }
 
-  analysisTimerId = setTimeout(async () => {
+  if (getAnalysisPromise(jobKey)) {
+    return;
+  }
+
+  if (orderId) {
+    const pendingTimerId = pendingAnalysisTimersByOrderId.get(orderId);
+    if (pendingTimerId) {
+      clearTimeout(pendingTimerId);
+    }
+  }
+
+  createTrackedAnalysisPromise(jobKey);
+
+  const timerId = setTimeout(async () => {
+    if (orderId) {
+      pendingAnalysisTimersByOrderId.delete(orderId);
+      pendingAnalysisKeysByOrderId.delete(orderId);
+    }
+
+    inFlightAnalysisKeys.add(jobKey);
+
     try {
       const analysis = await analyzeLayout(layout);
-      if (requestId !== renderRequestId) {
-        return;
-      }
-
       applyAnalysisResult(layout, analysis, orderId, signature);
     } catch {
-      if (requestId !== renderRequestId) {
-        return;
+      if (isActiveAnalysisTarget(orderId, signature)) {
+        updateConnectionStatus(
+          "warning",
+          "Analysis unavailable",
+          "The connectedness check failed, but the live preview is still available.",
+        );
       }
-
-      updateConnectionStatus(
-        "warning",
-        "Analysis unavailable",
-        "The connectedness check failed, but the live preview is still available.",
-      );
+    } finally {
+      inFlightAnalysisKeys.delete(jobKey);
+      resolveTrackedAnalysisPromise(jobKey);
     }
   }, 180);
+
+  if (orderId) {
+    pendingAnalysisTimersByOrderId.set(orderId, timerId);
+    pendingAnalysisKeysByOrderId.set(orderId, jobKey);
+  }
 }
 
 function render() {
   updateBackingOutput();
   const settings = getCurrentSettings();
-  const requestId = ++renderRequestId;
   const activeOrder = getActiveOrder();
   const signature = buildSettingsSignature(settings);
 
@@ -1891,7 +1951,7 @@ function render() {
   const layout = buildOrderLayout(settings);
   renderPreviewFromLayout(layout);
   updateConnectionStatus("pending", "Analyzing layout...", "Checking connectedness in the background while keeping the live preview responsive.");
-  scheduleLayoutAnalysis(layout, requestId, activeOrder?.id || null, signature);
+  scheduleLayoutAnalysis(layout, activeOrder?.id || null, signature);
 }
 
 async function downloadSvg() {
@@ -1961,6 +2021,30 @@ async function requestSvgExport({ layout = null, layouts = null, filename }) {
   URL.revokeObjectURL(url);
 }
 
+async function ensureOrderCachedBuild(order) {
+  const signature = getOrderSettingsSignature(order);
+  let cachedBuild = getCachedBuild(order, signature);
+  if (cachedBuild) {
+    return cachedBuild;
+  }
+
+  const jobKey = makeAnalysisJobKey(order.id, signature);
+  const pendingJob = getAnalysisPromise(jobKey);
+  if (pendingJob) {
+    await pendingJob;
+    cachedBuild = getCachedBuild(order, signature);
+    if (cachedBuild) {
+      return cachedBuild;
+    }
+  }
+
+  const layout = buildOrderLayout(order.settings);
+  const analysis = await analyzeLayout(layout);
+  storeCachedBuild(order, signature, layout, analysis);
+  persistQueueState();
+  return getCachedBuild(order, signature);
+}
+
 async function exportAllOrders() {
   saveActiveOrderDraft();
   renderOrderList();
@@ -1975,22 +2059,14 @@ async function exportAllOrders() {
   exportCompletedButton.setAttribute("aria-busy", "true");
 
   try {
-    const builtLayouts = exportableOrders.map((order) => {
-      const cachedBuild = getCachedBuild(order);
-      if (cachedBuild) {
-        return {
-          order,
-          layout: cachedBuild.layout,
-          analysis: cachedBuild.analysis,
-        };
-      }
-
+    const builtLayouts = await Promise.all(exportableOrders.map(async (order) => {
+      const cachedBuild = await ensureOrderCachedBuild(order);
       return {
         order,
-        layout: buildOrderLayout(order.settings),
-        analysis: null,
+        layout: cachedBuild.layout,
+        analysis: cachedBuild.analysis,
       };
-    });
+    }));
 
     await requestSvgExport({
       layouts: builtLayouts.map(({ layout, analysis }) => buildExportPayload(layout, analysis)),
