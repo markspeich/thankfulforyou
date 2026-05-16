@@ -80,6 +80,8 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Keep the live on-screen preview fast and responsive while the user types or adjusts controls.
 - The live editing preview may use a faster browser-rendered path than the export pipeline, as long as it stays visually trustworthy for layout decisions.
 - Connectedness checks and other heavier geometry analysis may run asynchronously in the background so they do not block interactive editing.
+- Add a `Weld Exported Design` checkbox directly below the order text field.
+- The `Weld Exported Design` checkbox must default to checked.
 - The preview area should include a non-exported 2.2 inch by 1.5 inch background guide box, and the rendered design should be centered within that box on screen.
 - The preview should center the visible text geometry within the guide box, even when the backing border extends beyond the guide area.
 - The 2.2 inch by 1.5 inch preview guide box should remain visible even when there is no active text.
@@ -89,6 +91,8 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - The global `Backing Border` slider should appear below all per-line control groups.
 - Export designs as SVG for current production use.
 - SVG export must produce vector path definitions, not embedded raster image data.
+- When `Weld Exported Design` is checked, exported face-layer paths must be welded/unioned so overlapping letters do not create internal cut lines.
+- When `Weld Exported Design` is unchecked, SVG export may preserve overlapping letter contours without welding so the overlaps remain visible and editable.
 - Keep layout and geometry logic separated from UI code so geometry behavior can be tested independently.
 - Represent units explicitly and clearly distinguish inches from millimeters and any internal geometry units.
 - Add tests around geometry behavior as implementation matures, especially for connectedness detection and overlap behavior.

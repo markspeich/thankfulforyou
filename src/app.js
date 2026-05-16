@@ -40,6 +40,7 @@ const FONT_BY_ID = new Map(FONT_OPTIONS.map((font) => [font.id, font]));
 const DEFAULT_PREVIEW_WIDTH_MM = PREVIEW_BOX_WIDTH_MM + PREVIEW_MARGIN_MM * 2 + PREVIEW_LABEL_RIGHT_MM;
 const DEFAULT_PREVIEW_HEIGHT_MM = PREVIEW_BOX_HEIGHT_MM + PREVIEW_MARGIN_MM * 2;
 const DEFAULT_ZOOM = 3;
+const DEFAULT_WELD_EXPORTED_DESIGN = true;
 const DEFAULT_LINE_SETTINGS = Object.freeze({
   fontId: "candlepin",
   bridgeMm: 0.5,
@@ -60,6 +61,7 @@ const orderList = document.querySelector("#orderList");
 const activeOrderName = document.querySelector("#activeOrderName");
 const editorPanel = document.querySelector(".editor-panel");
 const textInput = document.querySelector("#textInput");
+const weldExportedDesignInput = document.querySelector("#weldExportedDesignInput");
 const lineControls = document.querySelector("#lineControls");
 const backingInput = document.querySelector("#backingInput");
 const backingOutput = document.querySelector("#backingOutput");
@@ -146,6 +148,9 @@ function normalizeSettings(settings = {}) {
   return {
     text,
     backingMm: Number.isFinite(Number(settings.backingMm)) ? Number(settings.backingMm) : DEFAULT_BACKING_MM,
+    weldExportedDesign: typeof settings.weldExportedDesign === "boolean"
+      ? settings.weldExportedDesign
+      : DEFAULT_WELD_EXPORTED_DESIGN,
     lines: rawLines.map((_, index) => normalizeLineSettings(legacyLines[index] || createDefaultLineSettings())),
   };
 }
@@ -155,6 +160,7 @@ function buildSettingsSignature(settings) {
   return JSON.stringify({
     text: normalized.text,
     backingMm: normalized.backingMm,
+    weldExportedDesign: normalized.weldExportedDesign,
     lines: normalized.lines.map((line) => ({
       fontId: line.fontId,
       bridgeMm: Number(line.bridgeMm),
@@ -380,6 +386,7 @@ function getCurrentSettings() {
   return normalizeSettings({
     text: textInput.value,
     backingMm: Number(backingInput.value),
+    weldExportedDesign: weldExportedDesignInput.checked,
     lines,
   });
 }
@@ -387,6 +394,7 @@ function getCurrentSettings() {
 function applySettings(settings) {
   const normalized = normalizeSettings(settings);
   textInput.value = normalized.text;
+  weldExportedDesignInput.checked = normalized.weldExportedDesign;
   backingInput.value = String(normalized.backingMm);
   updateBackingOutput();
   renderLineControls(normalized);
@@ -1069,8 +1077,8 @@ function createFaceImage(letters, widthMm, heightMm) {
 }
 
 function renderPreviewFromLayout(layout) {
-  const faceImageAsset = createFaceImage(layout.letters, layout.widthMm, layout.heightMm);
-  const frame = computePreviewFrame(layout, faceImageAsset.boundsMm);
+  const analysis = layout.analysis || null;
+  const frame = computePreviewFrame(layout, analysis?.faceBoundsMm || layout.textBoundsMm);
 
   lastLayout = {
     ...layout,
@@ -1082,23 +1090,36 @@ function renderPreviewFromLayout(layout) {
   preview.setAttribute("viewBox", `0 0 ${frame.previewWidthMm} ${frame.previewHeightMm}`);
   updateZoom(zoom);
 
-  const backingImage = makeSvgElement("image", {
-    href: createBackingImage(layout.letters, layout.widthMm, layout.heightMm, layout.backingMm),
-    x: frame.designX,
-    y: frame.designY,
-    width: layout.widthMm,
-    height: layout.heightMm,
-  });
-  const faceImage = makeSvgElement("image", {
-    class: "face-layer",
-    href: faceImageAsset.href,
-    x: frame.designX,
-    y: frame.designY,
-    width: layout.widthMm,
-    height: layout.heightMm,
-  });
+  const backingLayer = analysis
+    ? makeSvgElement("path", {
+        d: analysis.backingPath,
+        fill: "#446f8b",
+        transform: `translate(${frame.designX} ${frame.designY})`,
+      })
+    : makeSvgElement("image", {
+        href: createBackingImage(layout.letters, layout.widthMm, layout.heightMm, layout.backingMm),
+        x: frame.designX,
+        y: frame.designY,
+        width: layout.widthMm,
+        height: layout.heightMm,
+      });
+  const faceLayer = analysis
+    ? makeSvgElement("path", {
+        class: "face-layer",
+        d: analysis.facePath,
+        fill: "#f8fbfc",
+        transform: `translate(${frame.designX} ${frame.designY})`,
+      })
+    : makeSvgElement("image", {
+        class: "face-layer",
+        href: createFaceImage(layout.letters, layout.widthMm, layout.heightMm).href,
+        x: frame.designX,
+        y: frame.designY,
+        width: layout.widthMm,
+        height: layout.heightMm,
+      });
 
-  preview.append(backingImage, faceImage);
+  preview.append(backingLayer, faceLayer);
   appendPreviewGuide(frame.previewBoxX, frame.previewBoxY);
 }
 
@@ -1108,6 +1129,7 @@ function applyAnalysisResult(layout, analysis) {
   }
 
   lastLayout.analysis = analysis;
+  renderPreviewFromLayout(lastLayout);
 
   if (analysis.isConnected) {
     updateConnectionStatus(
@@ -1304,6 +1326,7 @@ function buildOrderLayout(settings) {
     widthMm,
     heightMm,
     backingMm: scaledBackingMm,
+    weldExportedDesign: normalized.weldExportedDesign,
     textBoundsMm: buildScaledTextBounds(textWidthMm, textHeightMm, normalized.backingMm, scaleFactor),
     letters: absoluteLetters,
   };
@@ -1341,6 +1364,10 @@ backingInput.addEventListener("input", () => {
   render();
   updateActiveOrderFromControls();
 });
+weldExportedDesignInput.addEventListener("input", () => {
+  render();
+  updateActiveOrderFromControls();
+});
 
 orderLabelInput.addEventListener("input", () => {
   const order = getActiveOrder();
@@ -1373,7 +1400,12 @@ previewPanel.addEventListener("wheel", (event) => {
 
 await checkFonts();
 updateBackingOutput();
-renderLineControls(normalizeSettings({ text: "", backingMm: DEFAULT_BACKING_MM, lines: [] }));
+renderLineControls(normalizeSettings({
+  text: "",
+  backingMm: DEFAULT_BACKING_MM,
+  weldExportedDesign: DEFAULT_WELD_EXPORTED_DESIGN,
+  lines: [],
+}));
 renderPreviewGuideOnly();
 render();
 renderOrderList();

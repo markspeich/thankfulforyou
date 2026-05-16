@@ -4,6 +4,10 @@ from collections import defaultdict
 from pathlib import Path
 
 import numpy as np
+from fontTools.pens.boundsPen import BoundsPen
+from fontTools.pens.svgPathPen import SVGPathPen
+from fontTools.pens.transformPen import TransformPen
+from fontTools.ttLib import TTFont
 from PIL import Image, ImageDraw, ImageFont
 from scipy import ndimage
 
@@ -202,6 +206,90 @@ def load_font(root, font_ref, font_size, cache):
     return cache[font_key]
 
 
+def load_outline_font(root, font_ref, cache):
+    cache_key = font_ref or "__fallback__"
+    if cache_key in cache:
+        return cache[cache_key]
+
+    fallback_path = root / "public" / "fonts" / "Candlepin-Laser.otf"
+    candidates = []
+    if font_ref:
+        candidates.append(root / font_ref)
+    candidates.append(fallback_path)
+
+    for candidate in candidates:
+        if candidate.exists():
+            font = TTFont(str(candidate))
+            cache[cache_key] = {
+                "font": font,
+                "glyph_set": font.getGlyphSet(),
+                "cmap": font.getBestCmap() or {},
+                "units_per_em": font["head"].unitsPerEm,
+            }
+            return cache[cache_key]
+
+    raise FileNotFoundError(f"Could not locate outline font for {font_ref or 'fallback font'}")
+
+
+def build_face_outline_path(root, payload):
+    font_cache = {}
+    path_fragments = []
+    min_x = None
+    min_y = None
+    max_x = None
+    max_y = None
+
+    for letter in payload["letters"]:
+        character = letter.get("character", "")
+        if not character:
+            continue
+
+        font_data = load_outline_font(root, letter.get("fontPath"), font_cache)
+        glyph_name = font_data["cmap"].get(ord(character))
+        if not glyph_name:
+            continue
+
+        glyph = font_data["glyph_set"][glyph_name]
+        scale = float(letter["fontSizeMm"]) / float(font_data["units_per_em"])
+        transform = (
+            scale,
+            0,
+            0,
+            -scale,
+            float(letter["x"]),
+            float(letter["y"]),
+        )
+        pen = SVGPathPen(font_data["glyph_set"])
+        transform_pen = TransformPen(pen, transform)
+        glyph.draw(transform_pen)
+        commands = pen.getCommands()
+        if commands:
+            path_fragments.append(commands)
+
+        bounds_pen = BoundsPen(font_data["glyph_set"])
+        glyph.draw(TransformPen(bounds_pen, transform))
+        if bounds_pen.bounds:
+            glyph_min_x, glyph_min_y, glyph_max_x, glyph_max_y = bounds_pen.bounds
+            min_x = glyph_min_x if min_x is None else min(min_x, glyph_min_x)
+            min_y = glyph_min_y if min_y is None else min(min_y, glyph_min_y)
+            max_x = glyph_max_x if max_x is None else max(max_x, glyph_max_x)
+            max_y = glyph_max_y if max_y is None else max(max_y, glyph_max_y)
+
+    bounds = None
+    if min_x is not None and min_y is not None and max_x is not None and max_y is not None:
+        bounds = {
+            "left": float(min_x),
+            "top": float(min_y),
+            "width": float(max_x - min_x),
+            "height": float(max_y - min_y),
+        }
+
+    return {
+        "path": " ".join(path_fragments),
+        "bounds": bounds,
+    }
+
+
 def render_text_mask(
     root,
     payload,
@@ -248,7 +336,7 @@ def get_trace_profile(payload):
     font_ids = {str(letter.get("fontId", "")).lower() for letter in payload.get("letters", [])}
     if "somekind" in font_ids:
         return {
-            "scale": 90,
+            "scale": 60,
             "face_tolerance_mm": 0.012,
             "face_smooth_iterations": 0,
             "face_curve_mode": "polyline",
@@ -259,9 +347,9 @@ def get_trace_profile(payload):
 
     return {
         "scale": 50,
-        "face_tolerance_mm": 0.025,
-        "face_smooth_iterations": 1,
-        "face_curve_mode": "quadratic",
+        "face_tolerance_mm": 0.012,
+        "face_smooth_iterations": 0,
+        "face_curve_mode": "polyline",
         "backing_tolerance_mm": 0.045,
         "backing_smooth_iterations": 2,
         "backing_curve_mode": "quadratic",
@@ -272,19 +360,21 @@ def analyze_single_layout(root, payload):
     profile = get_trace_profile(payload)
     scale = profile["scale"]
     backing = float(payload["backingMm"])
+    weld_exported_design = payload.get("weldExportedDesign", True)
+    face_outline = build_face_outline_path(root, payload)
     face_mask = render_text_mask(root, payload, scale=scale)
     backing_mask = render_text_mask(root, payload, scale=scale, stroke_mm=backing)
 
     backing_mask_for_path = backing_mask.copy()
     fill_mask_holes(backing_mask_for_path)
-
-    face_path = text_outline_path(
+    welded_face_path = text_outline_path(
         face_mask,
         scale,
         tolerance_mm=profile["face_tolerance_mm"],
         smooth_iterations=profile["face_smooth_iterations"],
         curve_mode=profile["face_curve_mode"],
     )
+
     backing_path = text_outline_path(
         backing_mask_for_path,
         scale,
@@ -299,7 +389,9 @@ def analyze_single_layout(root, payload):
         "heightMm": float(payload["heightMm"]),
         "backingMm": backing,
         "text": payload.get("text", ""),
-        "facePath": face_path,
+        "facePath": face_outline["path"],
+        "faceBoundsMm": face_outline["bounds"],
+        "exportFacePath": welded_face_path if weld_exported_design else face_outline["path"],
         "backingPath": backing_path,
         "connectedComponentCount": component_count,
         "isConnected": component_count <= 1,
@@ -319,7 +411,7 @@ def build_single_order_paths(root, payload):
         "height": height,
         "export_width": export_width,
         "backing_x": backing_x,
-        "face_path": analysis["facePath"],
+        "face_path": analysis["exportFacePath"],
         "backing_path": analysis["backingPath"],
         "text": svg_escape(analysis["text"]),
         "connected_component_count": analysis["connectedComponentCount"],
