@@ -137,7 +137,9 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Show which orders are not started, in progress, saved, or exported so a batch of orders can be completed without losing track.
 - Allow saved orders to be reopened for adjustment without losing their previously saved settings.
 - The active order editor should include a button for exporting the selected design as an SVG.
+- The active order editor should also include a button near `Export This Design` for copying the current design's generated SVG to the clipboard.
 - The left-side order navigation should include a button above the order list for exporting all queued designs that have text entered.
+- The left-side order navigation should also include a button near `Export All Designs` for copying the generated batch SVG for all queued designs with text to the clipboard.
 - Batch export should export every queued order that has text entered, even if it has not been explicitly saved first.
 - Batch export should skip blank orders rather than producing empty geometry for them.
 - Export should treat imported Etsy quantity as the number of copies to place in the SVG output for that design.

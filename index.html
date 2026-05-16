@@ -12,7 +12,10 @@
         <aside class="orders-panel" aria-label="Design navigation">
           <h1>Design Queue</h1>
 
-          <button id="exportCompletedButton" class="primary-action" type="button">Export All Designs</button>
+          <div class="queue-export-actions">
+            <button id="exportCompletedButton" class="primary-action" type="button">Export All Designs</button>
+            <button id="copyCompletedButton" class="primary-action" type="button">Copy All Designs</button>
+          </div>
 
           <div class="order-stats" aria-label="Design status summary">
             <div>
@@ -57,6 +60,7 @@
             </div>
             <div class="editor-actions">
               <button id="captureButton" class="primary-action" type="button">Save</button>
+              <button id="copyButton" class="primary-action" type="button">Copy This Design</button>
               <button id="downloadButton" class="primary-action" type="button">Export This Design</button>
             </div>
           </header>

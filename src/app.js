@@ -63,6 +63,7 @@ const importClipboardButton = document.querySelector("#importClipboardButton");
 const clearQueueButton = document.querySelector("#clearQueueButton");
 const importStatus = document.querySelector("#importStatus");
 const exportCompletedButton = document.querySelector("#exportCompletedButton");
+const copyCompletedButton = document.querySelector("#copyCompletedButton");
 const orderSearchInput = document.querySelector("#orderSearchInput");
 const orderCountOutput = document.querySelector("#orderCountOutput");
 const completeCountOutput = document.querySelector("#completeCountOutput");
@@ -95,6 +96,7 @@ const zoomInButton = document.querySelector("#zoomInButton");
 const zoomResetButton = document.querySelector("#zoomResetButton");
 const zoomOutput = document.querySelector("#zoomOutput");
 const downloadButton = document.querySelector("#downloadButton");
+const copyButton = document.querySelector("#copyButton");
 const captureButton = document.querySelector("#captureButton");
 
 const canvas = document.createElement("canvas");
@@ -1119,6 +1121,7 @@ function renderOrderList() {
   notStartedCountOutput.textContent = String(notStartedCount);
   clearQueueButton.disabled = orders.length === 0;
   exportCompletedButton.disabled = exportableCount === 0;
+  copyCompletedButton.disabled = exportableCount === 0 || !navigator.clipboard?.writeText;
   orderList.replaceChildren();
 
   if (!orders.length) {
@@ -1201,6 +1204,7 @@ function renderOrderList() {
   activeOrderMeta.textContent = buildActiveMeta(activeOrder);
   captureButton.disabled = !hasUnsavedRenderChanges(activeOrder);
   downloadButton.disabled = !activeOrder || !activeOrder.text.trim();
+  copyButton.disabled = !activeOrder || !activeOrder.text.trim() || !navigator.clipboard?.writeText;
 }
 
 function selectOrder(orderId) {
@@ -2116,7 +2120,43 @@ async function downloadSvg() {
   }
 }
 
-async function requestSvgExport({ layout = null, layouts = null, filename }) {
+async function copyCurrentSvg() {
+  const order = getActiveOrder();
+  if (!order || !lastLayout || !navigator.clipboard?.writeText) {
+    return;
+  }
+
+  copyButton.disabled = true;
+  copyButton.textContent = "Copying...";
+  copyButton.setAttribute("aria-busy", "true");
+
+  try {
+    order.text = textInput.value;
+    order.settings = getCurrentSettings();
+    let cachedBuild = getCachedBuild(order);
+    if (!cachedBuild) {
+      const layout = buildOrderLayout(order.settings);
+      const analysis = await analyzeLayout(layout);
+      const signature = getOrderSettingsSignature(order);
+      storeCachedBuild(order, signature, layout, analysis);
+      persistQueueState();
+      cachedBuild = getCachedBuild(order, signature);
+    }
+
+    const svgSource = await requestSvgSource({
+      layout: buildExportPayload(cachedBuild.layout, cachedBuild.analysis, order.source),
+    });
+    await copySvgToClipboard(svgSource);
+  } catch {
+  } finally {
+    copyButton.disabled = !order.text.trim() || !navigator.clipboard?.writeText;
+    copyButton.textContent = "Copy This Design";
+    copyButton.removeAttribute("aria-busy");
+    renderOrderList();
+  }
+}
+
+async function requestSvgSource({ layout = null, layouts = null }) {
   const payload = layouts ? { layouts } : layout;
   const response = await fetch("/api/export-svg", {
     method: "POST",
@@ -2130,7 +2170,11 @@ async function requestSvgExport({ layout = null, layouts = null, filename }) {
     throw new Error("Vector SVG export failed");
   }
 
-  const svgSource = await response.text();
+  return response.text();
+}
+
+async function requestSvgExport({ layout = null, layouts = null, filename }) {
+  const svgSource = await requestSvgSource({ layout, layouts });
   const blob = new Blob([svgSource], { type: "image/svg+xml" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
@@ -2138,6 +2182,14 @@ async function requestSvgExport({ layout = null, layouts = null, filename }) {
   link.download = filename;
   link.click();
   URL.revokeObjectURL(url);
+}
+
+async function copySvgToClipboard(svgSource) {
+  if (!navigator.clipboard?.writeText) {
+    throw new Error("Clipboard copy is not available in this browser context.");
+  }
+
+  await navigator.clipboard.writeText(svgSource);
 }
 
 async function ensureOrderCachedBuild(order) {
@@ -2202,6 +2254,42 @@ async function exportAllOrders() {
     exportCompletedButton.disabled = false;
     exportCompletedButton.textContent = "Export All Designs";
     exportCompletedButton.removeAttribute("aria-busy");
+    renderOrderList();
+  }
+}
+
+async function copyAllOrders() {
+  saveActiveOrderDraft();
+  renderOrderList();
+
+  const exportableOrders = orders.filter((order) => order.text.trim());
+  if (!exportableOrders.length || !navigator.clipboard?.writeText) {
+    return;
+  }
+
+  copyCompletedButton.disabled = true;
+  copyCompletedButton.textContent = "Copying...";
+  copyCompletedButton.setAttribute("aria-busy", "true");
+
+  try {
+    const builtLayouts = await Promise.all(exportableOrders.map(async (order) => {
+      const cachedBuild = await ensureOrderCachedBuild(order);
+      return {
+        order,
+        layout: cachedBuild.layout,
+        analysis: cachedBuild.analysis,
+      };
+    }));
+
+    const svgSource = await requestSvgSource({
+      layouts: builtLayouts.map(({ order, layout, analysis }) => buildExportPayload(layout, analysis, order.source)),
+    });
+    await copySvgToClipboard(svgSource);
+  } catch {
+  } finally {
+    copyCompletedButton.disabled = exportableOrders.length === 0 || !navigator.clipboard?.writeText;
+    copyCompletedButton.textContent = "Copy All Designs";
+    copyCompletedButton.removeAttribute("aria-busy");
     renderOrderList();
   }
 }
@@ -2311,9 +2399,11 @@ addOrderButton.addEventListener("click", addOrder);
 importClipboardButton.addEventListener("click", importFromClipboard);
 clearQueueButton.addEventListener("click", clearAllOrders);
 exportCompletedButton.addEventListener("click", exportAllOrders);
+copyCompletedButton.addEventListener("click", copyAllOrders);
 orderSearchInput.addEventListener("input", renderOrderList);
 captureButton.addEventListener("click", captureActiveOrder);
 downloadButton.addEventListener("click", downloadSvg);
+copyButton.addEventListener("click", copyCurrentSvg);
 zoomOutButton.addEventListener("click", () => updateZoom(zoom / 1.2));
 zoomInButton.addEventListener("click", () => updateZoom(zoom * 1.2));
 zoomResetButton.addEventListener("click", () => updateZoom(DEFAULT_ZOOM));

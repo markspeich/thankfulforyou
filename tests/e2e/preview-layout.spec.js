@@ -354,6 +354,50 @@ test("includes imported color and quantity in the export payload", async ({ page
   await page.unrouteAll({ behavior: "ignoreErrors" });
 });
 
+test("copies the current design and all queued designs to the clipboard", async ({ page }) => {
+  await page.evaluate(() => {
+    window.__copiedSvgPayloads = [];
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        readText: async () => "",
+        writeText: async (value) => {
+          window.__copiedSvgPayloads.push(value);
+        },
+      },
+    });
+  });
+
+  await page.route("**/api/export-svg", async (route) => {
+    const postData = route.request().postDataJSON();
+    const body = postData.layouts
+      ? "<svg xmlns=\"http://www.w3.org/2000/svg\" data-export-kind=\"batch\"></svg>"
+      : "<svg xmlns=\"http://www.w3.org/2000/svg\" data-export-kind=\"single\"></svg>";
+
+    await route.fulfill({
+      status: 200,
+      contentType: "image/svg+xml; charset=utf-8",
+      body,
+    });
+  });
+
+  await page.locator("#textInput").fill("Alpha");
+  await page.getByRole("button", { name: "Copy This Design" }).click();
+
+  await page.getByRole("button", { name: "+ Add Design" }).click();
+  await page.locator("#textInput").fill("Beta");
+  await page.getByRole("button", { name: "Copy All Designs" }).click();
+
+  await expect.poll(async () => {
+    return page.evaluate(() => window.__copiedSvgPayloads);
+  }, { timeout: 20000 }).toEqual([
+    "<svg xmlns=\"http://www.w3.org/2000/svg\" data-export-kind=\"single\"></svg>",
+    "<svg xmlns=\"http://www.w3.org/2000/svg\" data-export-kind=\"batch\"></svg>",
+  ]);
+
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+});
+
 test("finishes background analysis after switching to another design", async ({ page }) => {
   const analyzeCounts = new Map();
 
