@@ -398,7 +398,47 @@ def analyze_single_layout(root, payload):
     }
 
 
+def build_precomputed_order_paths(payload):
+    analysis = payload.get("analysis")
+    if not isinstance(analysis, dict):
+        return None
+
+    export_face_path = analysis.get("exportFacePath")
+    backing_path = analysis.get("backingPath")
+    width = payload.get("widthMm")
+    height = payload.get("heightMm")
+
+    if (
+        not isinstance(export_face_path, str)
+        or not export_face_path
+        or not isinstance(backing_path, str)
+        or not backing_path
+        or not isinstance(width, (int, float))
+        or not isinstance(height, (int, float))
+    ):
+        return None
+
+    export_gap = 10.0
+    width = float(width)
+    height = float(height)
+
+    return {
+        "width": width,
+        "height": height,
+        "export_width": width * 2 + export_gap,
+        "backing_x": width + export_gap,
+        "face_path": export_face_path,
+        "backing_path": backing_path,
+        "text": svg_escape(payload.get("text", "")),
+        "connected_component_count": int(analysis.get("connectedComponentCount", 0)),
+    }
+
+
 def build_single_order_paths(root, payload):
+    precomputed_order = build_precomputed_order_paths(payload)
+    if precomputed_order:
+        return precomputed_order
+
     analysis = analyze_single_layout(root, payload)
     width = analysis["widthMm"]
     height = analysis["heightMm"]

@@ -207,6 +207,82 @@ function buildSettingsSignature(settings) {
   });
 }
 
+function normalizeStoredCachedBuild(cachedBuild) {
+  if (!cachedBuild || typeof cachedBuild !== "object") {
+    return null;
+  }
+
+  const { signature, layout, analysis } = cachedBuild;
+  if (
+    typeof signature !== "string"
+    || !layout
+    || typeof layout !== "object"
+    || !analysis
+    || typeof analysis !== "object"
+  ) {
+    return null;
+  }
+
+  return {
+    signature,
+    layout,
+    analysis,
+  };
+}
+
+function getOrderSettingsSignature(order) {
+  return order ? buildSettingsSignature(order.settings) : null;
+}
+
+function getCachedBuild(order, signature = getOrderSettingsSignature(order)) {
+  if (!order?.cachedBuild || !signature || order.cachedBuild.signature !== signature) {
+    return null;
+  }
+
+  return structuredClone(order.cachedBuild);
+}
+
+function invalidateCachedBuild(order, nextSignature = getOrderSettingsSignature(order)) {
+  if (order?.cachedBuild && order.cachedBuild.signature !== nextSignature) {
+    order.cachedBuild = null;
+  }
+}
+
+function storeCachedBuild(order, signature, layout, analysis) {
+  if (!order || !signature || !layout || !analysis) {
+    return;
+  }
+
+  order.cachedBuild = {
+    signature,
+    layout: structuredClone(layout),
+    analysis: structuredClone(analysis),
+  };
+}
+
+function buildExportPayload(layout, analysis = layout?.analysis || null) {
+  if (!layout) {
+    return null;
+  }
+
+  if (analysis?.exportFacePath && analysis?.backingPath) {
+    return {
+      text: layout.text,
+      widthMm: layout.widthMm,
+      heightMm: layout.heightMm,
+      backingMm: layout.backingMm,
+      weldExportedDesign: layout.weldExportedDesign,
+      analysis: {
+        exportFacePath: analysis.exportFacePath,
+        backingPath: analysis.backingPath,
+        connectedComponentCount: analysis.connectedComponentCount,
+      },
+    };
+  }
+
+  return layout;
+}
+
 function isValidPresetId(presetId) {
   return PRESET_OPTIONS.some((preset) => preset.id === presetId);
 }
@@ -306,6 +382,7 @@ function hydrateStoredOrder(order, index) {
     settings,
     source: normalizeStoredSource(order.source),
     capturedLayout: null,
+    cachedBuild: normalizeStoredCachedBuild(order.cachedBuild),
     savedSettingsSignature: typeof order.savedSettingsSignature === "string" ? order.savedSettingsSignature : null,
   };
 }
@@ -321,6 +398,7 @@ function buildPersistedQueueState() {
       status: order.status,
       settings: normalizeSettings(order.settings),
       source: order.source ? { ...order.source } : null,
+      cachedBuild: order.cachedBuild ? structuredClone(order.cachedBuild) : null,
       savedSettingsSignature: order.savedSettingsSignature,
     })),
   };
@@ -437,6 +515,7 @@ function createQueueItem({
     }),
     source,
     capturedLayout: null,
+    cachedBuild: null,
     savedSettingsSignature: null,
   };
 }
@@ -864,6 +943,7 @@ function saveActiveOrderDraft() {
 
   order.text = textInput.value;
   order.settings = getCurrentSettings();
+  invalidateCachedBuild(order);
   if (order.status !== "captured" && order.status !== "exported") {
     order.status = "in-progress";
   }
@@ -878,7 +958,7 @@ function updateActiveOrderFromControls() {
 
   order.text = textInput.value;
   order.settings = getCurrentSettings();
-  order.capturedLayout = null;
+  invalidateCachedBuild(order);
   order.status = "in-progress";
   persistQueueState();
   renderOrderList();
@@ -1717,14 +1797,7 @@ function renderPreviewFromLayout(layout) {
   appendPreviewGuide(frame.previewBoxX, frame.previewBoxY);
 }
 
-function applyAnalysisResult(layout, analysis) {
-  if (!lastLayout || lastLayout.text !== layout.text) {
-    return;
-  }
-
-  lastLayout.analysis = analysis;
-  renderPreviewFromLayout(lastLayout);
-
+function updateConnectionStatusFromAnalysis(analysis) {
   if (analysis.isConnected) {
     updateConnectionStatus(
       "ok",
@@ -1741,7 +1814,31 @@ function applyAnalysisResult(layout, analysis) {
   );
 }
 
-function scheduleLayoutAnalysis(layout, requestId) {
+function applyAnalysisResult(layout, analysis, orderId = null, signature = null) {
+  if (!lastLayout || lastLayout.text !== layout.text || lastLayout.widthMm !== layout.widthMm || lastLayout.heightMm !== layout.heightMm) {
+    return;
+  }
+
+  renderPreviewFromLayout({
+    ...layout,
+    analysis,
+  });
+  updateConnectionStatusFromAnalysis(analysis);
+
+  if (!orderId || !signature) {
+    return;
+  }
+
+  const order = orders.find((candidate) => candidate.id === orderId);
+  if (!order || getOrderSettingsSignature(order) !== signature) {
+    return;
+  }
+
+  storeCachedBuild(order, signature, layout, analysis);
+  persistQueueState();
+}
+
+function scheduleLayoutAnalysis(layout, requestId, orderId = null, signature = null) {
   if (analysisTimerId) {
     clearTimeout(analysisTimerId);
   }
@@ -1753,7 +1850,7 @@ function scheduleLayoutAnalysis(layout, requestId) {
         return;
       }
 
-      applyAnalysisResult(layout, analysis);
+      applyAnalysisResult(layout, analysis, orderId, signature);
     } catch {
       if (requestId !== renderRequestId) {
         return;
@@ -1772,6 +1869,8 @@ function render() {
   updateBackingOutput();
   const settings = getCurrentSettings();
   const requestId = ++renderRequestId;
+  const activeOrder = getActiveOrder();
+  const signature = buildSettingsSignature(settings);
 
   if (!settings.text.trim()) {
     lastLayout = null;
@@ -1779,14 +1878,25 @@ function render() {
     return;
   }
 
+  const cachedBuild = getCachedBuild(activeOrder, signature);
+  if (cachedBuild) {
+    renderPreviewFromLayout({
+      ...cachedBuild.layout,
+      analysis: cachedBuild.analysis,
+    });
+    updateConnectionStatusFromAnalysis(cachedBuild.analysis);
+    return;
+  }
+
   const layout = buildOrderLayout(settings);
   renderPreviewFromLayout(layout);
   updateConnectionStatus("pending", "Analyzing layout...", "Checking connectedness in the background while keeping the live preview responsive.");
-  scheduleLayoutAnalysis(layout, requestId);
+  scheduleLayoutAnalysis(layout, requestId, activeOrder?.id || null, signature);
 }
 
 async function downloadSvg() {
-  if (!lastLayout) {
+  const order = getActiveOrder();
+  if (!order || !lastLayout) {
     return;
   }
 
@@ -1795,18 +1905,29 @@ async function downloadSvg() {
   downloadButton.setAttribute("aria-busy", "true");
 
   try {
+    order.text = textInput.value;
+    order.settings = getCurrentSettings();
+    let cachedBuild = getCachedBuild(order);
+    if (!cachedBuild) {
+      const layout = buildOrderLayout(order.settings);
+      const analysis = await analyzeLayout(layout);
+      const signature = getOrderSettingsSignature(order);
+      storeCachedBuild(order, signature, layout, analysis);
+      persistQueueState();
+      cachedBuild = getCachedBuild(order, signature);
+    }
+
     await requestSvgExport({
-      layout: lastLayout,
+      layout: buildExportPayload(cachedBuild.layout, cachedBuild.analysis),
       filename: "badge-reel-layout.svg",
     });
-    const order = getActiveOrder();
-    if (order) {
-      order.status = "exported";
-      order.capturedLayout = structuredClone(lastLayout);
-      order.settings = getCurrentSettings();
-      persistQueueState();
-      renderOrderList();
-    }
+    order.status = "exported";
+    order.capturedLayout = structuredClone({
+      ...cachedBuild.layout,
+      analysis: cachedBuild.analysis,
+    });
+    persistQueueState();
+    renderOrderList();
   } catch {
   } finally {
     downloadButton.disabled = false;
@@ -1854,19 +1975,31 @@ async function exportAllOrders() {
   exportCompletedButton.setAttribute("aria-busy", "true");
 
   try {
-    const builtLayouts = exportableOrders.map((order) => ({
-      order,
-      layout: buildOrderLayout(order.settings),
-    }));
+    const builtLayouts = exportableOrders.map((order) => {
+      const cachedBuild = getCachedBuild(order);
+      if (cachedBuild) {
+        return {
+          order,
+          layout: cachedBuild.layout,
+          analysis: cachedBuild.analysis,
+        };
+      }
+
+      return {
+        order,
+        layout: buildOrderLayout(order.settings),
+        analysis: null,
+      };
+    });
 
     await requestSvgExport({
-      layouts: builtLayouts.map(({ layout }) => layout),
+      layouts: builtLayouts.map(({ layout, analysis }) => buildExportPayload(layout, analysis)),
       filename: "badge-reel-layout-batch.svg",
     });
 
-    builtLayouts.forEach(({ order, layout }) => {
+    builtLayouts.forEach(({ order, layout, analysis }) => {
       order.status = "exported";
-      order.capturedLayout = structuredClone(layout);
+      order.capturedLayout = structuredClone(analysis ? { ...layout, analysis } : layout);
     });
     persistQueueState();
   } catch {

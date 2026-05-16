@@ -86,6 +86,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Keep the live on-screen preview fast and responsive while the user types or adjusts controls.
 - The live editing preview may use a faster browser-rendered path than the export pipeline, as long as it stays visually trustworthy for layout decisions.
 - Connectedness checks and other heavier geometry analysis may run asynchronously in the background so they do not block interactive editing.
+- When a design's settings have not changed, the app should reuse its most recently analyzed export-ready geometry for queue revisit and SVG export instead of recomputing the same layout and paths again.
 - Add a `Weld Exported Design` checkbox directly below the order text field.
 - The `Weld Exported Design` checkbox must default to checked.
 - The preview area should include a non-exported 2.2 inch by 1.5 inch background guide box, and the rendered design should be centered within that box on screen.

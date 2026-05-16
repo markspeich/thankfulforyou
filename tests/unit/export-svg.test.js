@@ -18,6 +18,20 @@ function analyzeLayout(layout) {
   return JSON.parse(result.stdout);
 }
 
+function exportSvg(payload) {
+  const result = spawnSync("python", ["tools/export_svg.py"], {
+    cwd: process.cwd(),
+    encoding: "utf8",
+    input: JSON.stringify(payload),
+  });
+
+  if (result.status !== 0) {
+    throw new Error(result.stderr || "export_svg.py failed");
+  }
+
+  return result.stdout;
+}
+
 describe("export_svg face tracing", () => {
   test("builds Candlepin face paths directly from font outlines", { timeout: 15000 }, () => {
     const analysis = analyzeLayout({
@@ -73,5 +87,22 @@ describe("export_svg face tracing", () => {
     expect(welded.exportFacePath).not.toContain("C");
     expect(unwelded.exportFacePath).toContain("C");
     expect(unwelded.exportFacePath).toBe(unwelded.facePath);
+  });
+
+  test("reuses precomputed export geometry without rebuilding outlines", () => {
+    const svg = exportSvg({
+      text: "Cached",
+      widthMm: 40,
+      heightMm: 20,
+      analysis: {
+        exportFacePath: "M0 0 L10 0 L10 10 Z",
+        backingPath: "M20 0 L30 0 L30 10 Z",
+        connectedComponentCount: 1,
+      },
+    });
+
+    expect(svg).toContain('d="M0 0 L10 0 L10 10 Z"');
+    expect(svg).toContain('d="M20 0 L30 0 L30 10 Z"');
+    expect(svg).toContain("Text: Cached");
   });
 });
