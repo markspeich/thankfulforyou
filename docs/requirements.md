@@ -122,6 +122,18 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - The left-side order navigation should include a button above the order list for exporting all queued designs that have text entered.
 - Batch export should export every queued order that has text entered, even if it has not been explicitly saved first.
 - Batch export should skip blank orders rather than producing empty geometry for them.
+- Support importing Etsy order data from a seller orders page export so production sessions do not require manual retyping.
+- The first Etsy import target should accept an Etsy orders HTML save exported from the browser.
+- The import pipeline should extract at minimum the Etsy order number, the Etsy listing ID, and every Personalization text value present on each order line item.
+- The import pipeline should prefer the embedded Etsy page data model when available rather than relying only on visible DOM scraping, because the saved page includes structured order and transaction data.
+- The import flow should support a browser-side helper path, such as a User JavaScript and CSS script, that can copy structured order payloads directly from the live Etsy orders page.
+- The first import implementation should use a clipboard workflow driven by a User JavaScript and CSS helper on the live Etsy orders page.
+- Imported listing IDs should be usable to auto-select the app preset for each imported order.
+- The app should maintain a configurable mapping from Etsy listing ID to production preset name.
+- The current preset mapping must include Etsy listing ID `1884223710` to `Skywalk, Somekind`.
+- The current preset mapping must include Etsy listing ID `4465975709` to `Skywalk, Candlepin`.
+- Imported Etsy data should create one queue row per personalized Etsy line item rather than one row per Etsy order.
+- Because one Etsy order may create multiple queue rows, user-facing queue and editor language should refer to designs or queue items rather than assuming one row always equals one Etsy order.
 - SVG export should place the face text layer and offset backing layer side by side, with the backing layer to the right of the text layer.
 - In batch export SVG output, each order's face and backing paths should appear below the previous order's paths in a single vertically stacked file.
 - In batch export SVG output, each order's text path should be grouped separately from its backing path so the name can be selected as one group without including the backing border.
@@ -152,6 +164,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - What minimum stroke/bridge width is safe for 1/8 inch acrylic after shop validation?
 - Do Skywalk and Somekind need different default bridge or scaling presets than Candlepin?
 - What additional export conventions, if any, are needed for the exact LightBurn import workflow used in production?
+- What exact listing ID to preset mappings should the first import implementation ship with?
 
 ## Design Direction
 

@@ -9,12 +9,12 @@
   <body>
     <main class="app-shell">
       <section class="production-workspace">
-        <aside class="orders-panel" aria-label="Order navigation">
-          <h1>Orders</h1>
+        <aside class="orders-panel" aria-label="Design navigation">
+          <h1>Design Queue</h1>
 
           <button id="exportCompletedButton" class="primary-action" type="button">Export All Designs</button>
 
-          <div class="order-stats" aria-label="Order status summary">
+          <div class="order-stats" aria-label="Design status summary">
             <div>
               <span>Complete</span>
               <strong id="completeCountOutput">0</strong>
@@ -29,25 +29,30 @@
             </div>
           </div>
 
-          <section class="order-entry" aria-label="Add Etsy order">
-            <button id="addOrderButton" class="secondary-action" type="button">+ Add Order</button>
+          <section class="order-entry" aria-label="Queue actions">
+            <div class="queue-actions">
+              <button id="addOrderButton" class="secondary-action" type="button">+ Add Design</button>
+              <button id="importClipboardButton" class="secondary-action" type="button">Import Clipboard</button>
+            </div>
+            <p id="importStatus" class="note">Import Etsy clipboard data copied from the browser helper.</p>
           </section>
 
           <label class="search-field">
-            <span class="visually-hidden">Search orders</span>
-            <input id="orderSearchInput" type="search" autocomplete="off" placeholder="Search orders...">
+            <span class="visually-hidden">Search designs</span>
+            <input id="orderSearchInput" type="search" autocomplete="off" placeholder="Search designs...">
           </label>
 
-          <section class="order-queue" aria-label="Order queue">
+          <section class="order-queue" aria-label="Design queue">
             <div class="section-heading">Queue <output id="orderCountOutput">0</output></div>
             <div id="orderList" class="order-list" role="list"></div>
           </section>
         </aside>
 
-        <section class="editor-panel is-hidden" aria-label="Selected order editor">
+        <section class="editor-panel is-hidden" aria-label="Selected design editor">
           <header class="editor-header">
             <div>
-              <h2 id="activeOrderName">No order selected</h2>
+              <h2 id="activeOrderName">No design selected</h2>
+              <p id="activeOrderMeta" class="editor-meta">Add or import a design to start editing.</p>
             </div>
             <div class="editor-actions">
               <button id="captureButton" class="primary-action" type="button">Save</button>
@@ -60,12 +65,12 @@
               <div class="control-card">
                 <div class="text-controls">
                   <label class="field compact-field">
-                    <span>Order Label</span>
-                    <input id="orderLabelInput" type="text" autocomplete="off" placeholder="Order 1">
+                    <span>Design Label</span>
+                    <input id="orderLabelInput" type="text" autocomplete="off" placeholder="Design 1">
                   </label>
 
                   <label class="field compact-field">
-                    <span>Order Text</span>
+                    <span>Design Text</span>
                     <textarea id="textInput" autocomplete="off" rows="3" placeholder="Enter one or more lines of text"></textarea>
                   </label>
 
