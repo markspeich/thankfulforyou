@@ -8,6 +8,7 @@
       "listingId": "1884223710",
       "transactionId": "5078093505",
       "buyerName": "Marilyn Lopez",
+      "quantity": "1",
       "label": "#4057600528 · Marilyn Lopez",
       "personalization": "Yohanna APN"
     },
@@ -16,6 +17,7 @@
       "listingId": "1884223710",
       "transactionId": "5078133859",
       "buyerName": "Mallory Braun",
+      "quantity": "1",
       "label": "#4057629148 · Mallory Braun",
       "personalization": "Mallory R.T.(R)"
     },
@@ -24,6 +26,7 @@
       "listingId": "1889682603",
       "transactionId": "5065873268",
       "buyerName": "BriAnna Schaper",
+      "quantity": "1",
       "label": "#4057978426 · BriAnna Schaper",
       "personalization": "Mrs. Morgan"
     },
@@ -32,6 +35,7 @@
       "listingId": "1884223710",
       "transactionId": "5078646281",
       "buyerName": "Daua Vidana",
+      "quantity": "1",
       "label": "#4057985712 · Daua Vidana",
       "personalization": "Sidney RN"
     },
@@ -40,6 +44,7 @@
       "listingId": "4358653980",
       "transactionId": "5078827731",
       "buyerName": "juanita gaspar",
+      "quantity": "1",
       "label": "#4058104242 · juanita gaspar",
       "personalization": "Ms. Vera"
     },
@@ -48,6 +53,7 @@
       "listingId": "4465975709",
       "transactionId": "5077938715",
       "buyerName": "Lori Morgan",
+      "quantity": "1",
       "label": "#4062879351 · Lori Morgan",
       "personalization": "Lori"
     },
@@ -56,6 +62,7 @@
       "listingId": "4357670739",
       "transactionId": "5065474480",
       "buyerName": "Ashley Bezera",
+      "quantity": "1",
       "label": "#4063081539 · Ashley Bezera",
       "personalization": "Emotional Support NP"
     },
@@ -64,6 +71,7 @@
       "listingId": "4465975709",
       "transactionId": "5066012396",
       "buyerName": "Amyya Duncan",
+      "quantity": "1",
       "label": "#4063548491 · Amyya Duncan",
       "personalization": "Amyya"
     },
@@ -72,6 +80,7 @@
       "listingId": "1884223710",
       "transactionId": "5066150092",
       "buyerName": "Shayla Randle",
+      "quantity": "1",
       "label": "#4058172670 · Shayla Randle",
       "personalization": "Tajah , np"
     },
@@ -80,6 +89,7 @@
       "listingId": "1884223710",
       "transactionId": "5079012703",
       "buyerName": "Shakeda Wade",
+      "quantity": "1",
       "label": "#4058218048 · Shakeda Wade",
       "personalization": "Kennedy RN"
     },
@@ -88,6 +98,7 @@
       "listingId": "4358653980",
       "transactionId": "5078979547",
       "buyerName": "Christen Sikes",
+      "quantity": "1",
       "label": "#4063675101 · Christen Sikes",
       "personalization": "Mrs. Sikes"
     },
@@ -96,6 +107,7 @@
       "listingId": "4357670739",
       "transactionId": "5079085995",
       "buyerName": "Adrienne C Baugh",
+      "quantity": "1",
       "label": "#4063755435 · Adrienne C Baugh",
       "personalization": "Doctor&#39;s Favorite"
     },
@@ -104,6 +116,7 @@
       "listingId": "4465975709",
       "transactionId": "5079749303",
       "buyerName": "Nyla Thompson",
+      "quantity": "1",
       "label": "#4064289393 · Nyla Thompson",
       "personalization": "Jade BSB RN"
     },
@@ -112,6 +125,7 @@
       "listingId": "4465975709",
       "transactionId": "5066838724",
       "buyerName": "Nyla Thompson",
+      "quantity": "1",
       "label": "#4064289393 · Nyla Thompson · Item 2",
       "personalization": "Amparo BSN RN"
     }

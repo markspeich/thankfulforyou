@@ -253,7 +253,7 @@ test("skips already imported Etsy line items when importing another batch", asyn
   ]);
 });
 
-test("shows imported Etsy color below design text and highlights white colors", async ({ page }) => {
+test("shows imported Etsy color and quantity below design text and highlights white colors", async ({ page }) => {
   const payload = JSON.stringify({
     items: [
       {
@@ -262,6 +262,7 @@ test("shows imported Etsy color below design text and highlights white colors", 
         transactionId: "5078093505",
         buyerName: "Marilyn Lopez",
         colorName: "White Glitter",
+        quantity: "2",
         personalization: "Yohanna APN",
       },
       {
@@ -270,6 +271,7 @@ test("shows imported Etsy color below design text and highlights white colors", 
         transactionId: "5078133859",
         buyerName: "Mallory Braun",
         colorName: "Red",
+        quantity: "1",
         personalization: "Mallory R.T.(R)",
       },
     ],
@@ -289,17 +291,67 @@ test("shows imported Etsy color below design text and highlights white colors", 
   await expect(page.locator("#importedColorField")).toBeVisible();
   await expect(page.locator("#importedColorValue")).toHaveText("White Glitter");
   await expect(page.locator("#importedColorValue")).toHaveClass(/highlight-light-color/);
+  await expect(page.locator("#importedQuantityField")).toBeVisible();
+  await expect(page.locator("#importedQuantityValue")).toHaveText("2");
 
   await page.locator("#orderList .order-row").filter({ hasText: "#4057629148" }).locator(".order-item").click();
 
   await expect(page.locator("#importedColorField")).toBeVisible();
   await expect(page.locator("#importedColorValue")).toHaveText("Red");
   await expect(page.locator("#importedColorValue")).not.toHaveClass(/highlight-light-color/);
+  await expect(page.locator("#importedQuantityField")).toBeVisible();
+  await expect(page.locator("#importedQuantityValue")).toHaveText("1");
 
   await page.reload();
 
   await expect(page.locator("#importedColorField")).toBeVisible();
   await expect(page.locator("#importedColorValue")).toHaveText("Red");
+  await expect(page.locator("#importedQuantityField")).toBeVisible();
+  await expect(page.locator("#importedQuantityValue")).toHaveText("1");
+});
+
+test("includes imported color and quantity in the export payload", async ({ page }) => {
+  const payload = JSON.stringify({
+    items: [
+      {
+        orderNumber: "4057600528",
+        listingId: "1884223710",
+        transactionId: "5078093505",
+        buyerName: "Marilyn Lopez",
+        colorName: "White Glitter",
+        quantity: "2",
+        personalization: "Yohanna APN",
+      },
+    ],
+  });
+  let exportPayload = null;
+
+  await page.evaluate((clipboardPayload) => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        readText: async () => clipboardPayload,
+      },
+    });
+  }, payload);
+
+  await page.route("**/api/export-svg", async (route) => {
+    exportPayload = route.request().postDataJSON();
+    await route.fulfill({
+      status: 200,
+      contentType: "image/svg+xml; charset=utf-8",
+      body: "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>",
+    });
+  });
+
+  await page.getByRole("button", { name: "Import Clipboard" }).click();
+  await page.getByRole("button", { name: "Export This Design" }).click();
+
+  await expect.poll(() => exportPayload, { timeout: 20000 }).not.toBeNull();
+  expect(exportPayload.colorName).toBe("White Glitter");
+  expect(exportPayload.quantity).toBe("2");
+
+  await page.unrouteAll({ behavior: "ignoreErrors" });
 });
 
 test("finishes background analysis after switching to another design", async ({ page }) => {

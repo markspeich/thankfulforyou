@@ -78,6 +78,8 @@ const listingReferenceImage = document.querySelector("#listingReferenceImage");
 const textInput = document.querySelector("#textInput");
 const importedColorField = document.querySelector("#importedColorField");
 const importedColorValue = document.querySelector("#importedColorValue");
+const importedQuantityField = document.querySelector("#importedQuantityField");
+const importedQuantityValue = document.querySelector("#importedQuantityValue");
 const presetInput = document.querySelector("#presetInput");
 const weldExportedDesignInput = document.querySelector("#weldExportedDesignInput");
 const lineControls = document.querySelector("#lineControls");
@@ -266,10 +268,13 @@ function storeCachedBuild(order, signature, layout, analysis) {
   };
 }
 
-function buildExportPayload(layout, analysis = layout?.analysis || null) {
+function buildExportPayload(layout, analysis = layout?.analysis || null, source = null) {
   if (!layout) {
     return null;
   }
+
+  const colorName = typeof source?.colorName === "string" ? source.colorName.trim() : "";
+  const quantity = source?.quantity == null ? "" : String(source.quantity).trim();
 
   if (analysis?.exportFacePath && analysis?.backingPath) {
     return {
@@ -278,6 +283,8 @@ function buildExportPayload(layout, analysis = layout?.analysis || null) {
       heightMm: layout.heightMm,
       backingMm: layout.backingMm,
       weldExportedDesign: layout.weldExportedDesign,
+      colorName,
+      quantity,
       analysis: {
         exportFacePath: analysis.exportFacePath,
         backingPath: analysis.backingPath,
@@ -286,7 +293,11 @@ function buildExportPayload(layout, analysis = layout?.analysis || null) {
     };
   }
 
-  return layout;
+  return {
+    ...layout,
+    colorName,
+    quantity,
+  };
 }
 
 function makeAnalysisJobKey(orderId, signature) {
@@ -399,6 +410,7 @@ function normalizeStoredSource(source) {
     listingId: source.listingId == null ? "" : String(source.listingId).trim(),
     buyerName: typeof source.buyerName === "string" ? source.buyerName.trim() : "",
     colorName: typeof source.colorName === "string" ? source.colorName.trim() : "",
+    quantity: source.quantity == null ? "" : String(source.quantity).trim(),
     listingTitle: typeof source.listingTitle === "string" ? source.listingTitle.trim() : "",
     listingImageUrl75x75: typeof source.listingImageUrl75x75 === "string" ? source.listingImageUrl75x75.trim() : "",
     transactionId: source.transactionId == null ? "" : String(source.transactionId).trim(),
@@ -640,6 +652,7 @@ function normalizeImportedEntry(entry) {
   const listingId = entry.listingId == null ? "" : String(entry.listingId).trim();
   const buyerName = normalizeImportedText(entry.buyerName);
   const colorName = normalizeImportedText(entry.colorName);
+  const quantity = entry.quantity == null ? "" : String(entry.quantity).trim();
   const listingTitle = normalizeImportedText(entry.listingTitle);
   const listingImageUrl75x75 = typeof entry.listingImageUrl75x75 === "string"
     ? entry.listingImageUrl75x75.trim()
@@ -654,6 +667,7 @@ function normalizeImportedEntry(entry) {
       listingId,
       buyerName,
       colorName,
+      quantity,
       listingTitle,
       listingImageUrl75x75,
       transactionId: entry.transactionId == null ? "" : String(entry.transactionId).trim(),
@@ -1003,7 +1017,8 @@ function renderListingReference(order) {
   const listingTitle = order?.source?.listingTitle?.trim() || order?.source?.listingId?.trim() || "Imported Etsy listing";
   const listingImageUrl = order?.source?.listingImageUrl75x75?.trim();
   const colorName = order?.source?.colorName?.trim() || "";
-  const hasReference = Boolean(listingImageUrl || colorName);
+  const quantity = order?.source?.quantity?.trim() || "";
+  const hasReference = Boolean(listingImageUrl || colorName || quantity);
 
   listingReferenceCard.classList.toggle("is-hidden", !hasReference);
 
@@ -1029,16 +1044,20 @@ function renderListingReference(order) {
 function renderImportedColor(order) {
   const colorName = order?.source?.colorName?.trim() || "";
   const hasColor = Boolean(colorName);
+  const quantity = order?.source?.quantity?.trim() || "";
+  const hasQuantity = Boolean(quantity);
 
   importedColorField.classList.toggle("is-hidden", !hasColor);
   importedColorValue.classList.toggle("highlight-light-color", /\bwhite\b/i.test(colorName));
+  importedQuantityField.classList.toggle("is-hidden", !hasQuantity);
 
   if (!hasColor) {
     importedColorValue.textContent = "";
-    return;
+  } else {
+    importedColorValue.textContent = colorName;
   }
 
-  importedColorValue.textContent = colorName;
+  importedQuantityValue.textContent = hasQuantity ? quantity : "";
 }
 
 function saveActiveOrderDraft() {
@@ -2078,7 +2097,7 @@ async function downloadSvg() {
     }
 
     await requestSvgExport({
-      layout: buildExportPayload(cachedBuild.layout, cachedBuild.analysis),
+      layout: buildExportPayload(cachedBuild.layout, cachedBuild.analysis, order.source),
       filename: "badge-reel-layout.svg",
     });
     order.status = "exported";
@@ -2169,7 +2188,7 @@ async function exportAllOrders() {
     }));
 
     await requestSvgExport({
-      layouts: builtLayouts.map(({ layout, analysis }) => buildExportPayload(layout, analysis)),
+      layouts: builtLayouts.map(({ order, layout, analysis }) => buildExportPayload(layout, analysis, order.source)),
       filename: "badge-reel-layout-batch.svg",
     });
 

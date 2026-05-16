@@ -13,6 +13,10 @@ from scipy import ndimage
 
 MM_PER_INCH = 25.4
 BATCH_EXPORT_START_STEP_MM = 2.03 * MM_PER_INCH
+EXPORT_GAP_MM = 10.0
+COLOR_LABEL_MARGIN_MM = 3.0
+COLOR_LABEL_FONT_SIZE_MM = 4.0
+COLOR_LABEL_LINE_HEIGHT_MM = 4.8
 
 
 def svg_escape(value):
@@ -23,6 +27,26 @@ def svg_escape(value):
         .replace("<", "&lt;")
         .replace(">", "&gt;")
     )
+
+
+def parse_export_quantity(value):
+    if isinstance(value, bool):
+        return 1
+
+    if isinstance(value, (int, float)):
+        parsed = int(value)
+    elif isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            return 1
+        try:
+            parsed = int(float(stripped))
+        except ValueError:
+            return 1
+    else:
+        return 1
+
+    return parsed if parsed > 0 else 1
 
 
 def fill_mask_holes(mask):
@@ -421,19 +445,24 @@ def build_precomputed_order_paths(payload):
     ):
         return None
 
-    export_gap = 10.0
     width = float(width)
     height = float(height)
+    color_name = svg_escape(payload.get("colorName", ""))
+    quantity = parse_export_quantity(payload.get("quantity"))
+    color_label_width = estimate_color_label_width_mm(color_name)
+    color_label_extra = color_label_width + COLOR_LABEL_MARGIN_MM if color_name else 0.0
 
     return {
         "width": width,
         "height": height,
-        "export_width": width * 2 + export_gap,
-        "backing_x": width + export_gap,
+        "export_width": width * 2 + EXPORT_GAP_MM + color_label_extra,
+        "backing_x": width + EXPORT_GAP_MM,
         "face_path": export_face_path,
         "backing_path": backing_path,
         "text": svg_escape(payload.get("text", "")),
         "connected_component_count": int(analysis.get("connectedComponentCount", 0)),
+        "color_name": color_name,
+        "quantity": quantity,
     }
 
 
@@ -445,9 +474,12 @@ def build_single_order_paths(root, payload):
     analysis = analyze_single_layout(root, payload)
     width = analysis["widthMm"]
     height = analysis["heightMm"]
-    export_gap = 10.0
-    export_width = width * 2 + export_gap
-    backing_x = width + export_gap
+    color_name = svg_escape(payload.get("colorName", ""))
+    quantity = parse_export_quantity(payload.get("quantity"))
+    color_label_width = estimate_color_label_width_mm(color_name)
+    color_label_extra = color_label_width + COLOR_LABEL_MARGIN_MM if color_name else 0.0
+    export_width = width * 2 + EXPORT_GAP_MM + color_label_extra
+    backing_x = width + EXPORT_GAP_MM
 
     return {
         "width": width,
@@ -458,62 +490,109 @@ def build_single_order_paths(root, payload):
         "backing_path": analysis["backingPath"],
         "text": svg_escape(analysis["text"]),
         "connected_component_count": analysis["connectedComponentCount"],
+        "color_name": color_name,
+        "quantity": quantity,
     }
+
+
+def estimate_color_label_width_mm(color_name):
+    if not color_name:
+        return 0.0
+
+    estimated_char_width_mm = COLOR_LABEL_FONT_SIZE_MM * 0.58
+    return max(12.0, len(color_name) * estimated_char_width_mm)
+
+
+def build_color_label(order, instance_id, translate_y):
+    color_name = order.get("color_name", "")
+    if not color_name:
+        return ""
+
+    x = order["backing_x"] + order["width"] + COLOR_LABEL_MARGIN_MM
+    y = translate_y + min(order["height"] - 1.5, max(COLOR_LABEL_FONT_SIZE_MM, COLOR_LABEL_FONT_SIZE_MM + 1.0))
+    return (
+        f'  <text id="{instance_id}-color-label" x="{x:.3f}" y="{y:.3f}" '
+        f'font-family="Arial" font-size="{COLOR_LABEL_FONT_SIZE_MM:.3f}mm" '
+        f'fill="rgb(255, 0, 0)">{color_name}</text>'
+    )
+
+
+def expand_export_instances(order_paths):
+    instances = []
+    for order_index, order in enumerate(order_paths, start=1):
+        quantity = order.get("quantity", 1)
+        for copy_index in range(quantity):
+            instances.append({
+                "instance_id": f"order-{order_index}-copy-{copy_index + 1}",
+                "order": order,
+            })
+    return instances
+
+
+def build_svg_document(title, desc, instances):
+    export_fill = "rgb(255, 0, 0)"
+    export_width = max(instance["order"]["export_width"] for instance in instances)
+    export_height = 0.0
+    if instances:
+        export_height = BATCH_EXPORT_START_STEP_MM * (len(instances) - 1) + instances[-1]["order"]["height"]
+
+    parts = [
+        f"""<svg xmlns="http://www.w3.org/2000/svg" width="{export_width:.3f}mm" height="{export_height:.3f}mm" viewBox="0 0 {export_width:.3f} {export_height:.3f}">
+  <title>{title}</title>
+  <desc>{desc}</desc>"""
+    ]
+
+    current_y = 0.0
+    for instance in instances:
+        order = instance["order"]
+        instance_id = instance["instance_id"]
+        parts.append(
+            f"""  <g id="{instance_id}-face-layer" transform="translate(0 {current_y:.3f})" fill="{export_fill}" stroke="none">
+    <path d="{order["face_path"]}"/>
+  </g>
+  <g id="{instance_id}-backing-layer" transform="translate({order["backing_x"]:.3f} {current_y:.3f})" fill="{export_fill}" stroke="none">
+    <path d="{order["backing_path"]}"/>
+  </g>"""
+        )
+        color_label = build_color_label(order, instance_id, current_y)
+        if color_label:
+            parts.append(color_label)
+        current_y += BATCH_EXPORT_START_STEP_MM
+
+    parts.append("</svg>\n")
+    return "\n".join(parts)
 
 
 def build_svg(payload):
     root = Path(__file__).resolve().parents[1]
-    export_fill = "rgb(255, 0, 0)"
 
     if isinstance(payload, dict) and isinstance(payload.get("layouts"), list):
         return build_batch_svg(root, payload["layouts"])
 
     order = build_single_order_paths(root, payload)
-    return f"""<svg xmlns="http://www.w3.org/2000/svg" width="{order["export_width"]:.3f}mm" height="{order["height"]:.3f}mm" viewBox="0 0 {order["export_width"]:.3f} {order["height"]:.3f}">
-  <title>Badge reel layout</title>
-  <desc>Text: {order["text"]}. Face layer is on the left. Offset backing layer is on the right. Generated as vector paths from the selected production fonts. Connected components: {order["connected_component_count"]}.</desc>
-  <g id="face-layer" fill="{export_fill}" stroke="none">
-    <path d="{order["face_path"]}"/>
-  </g>
-  <g id="backing-layer" transform="translate({order["backing_x"]:.3f} 0)" fill="{export_fill}" stroke="none">
-    <path d="{order["backing_path"]}"/>
-  </g>
-</svg>
-"""
+    instances = expand_export_instances([order])
+    desc = (
+        f'Text: {order["text"]}. Face layer is on the left. Offset backing layer is on the right. '
+        f'Generated as vector paths from the selected production fonts. Connected components: {order["connected_component_count"]}.'
+    )
+    if order.get("color_name"):
+        desc += f' Color label: {order["color_name"]}.'
+    if order.get("quantity", 1) > 1:
+        desc += f' Quantity exported: {order["quantity"]}.'
+    return build_svg_document("Badge reel layout", desc, instances)
 
 
 def build_batch_svg(root, layouts):
-    export_fill = "rgb(255, 0, 0)"
     order_paths = [build_single_order_paths(root, payload) for payload in layouts]
-    export_width = max(order["export_width"] for order in order_paths)
-    export_height = 0.0
-    if order_paths:
-        export_height = BATCH_EXPORT_START_STEP_MM * (len(order_paths) - 1) + order_paths[-1]["height"]
     desc_items = [
-        f"Order {index + 1}: {order['text']}"
+        f"Order {index + 1}: {order['text']}" + (f" (x{order['quantity']})" if order.get("quantity", 1) > 1 else "")
         for index, order in enumerate(order_paths)
     ]
-
-    parts = [
-        f"""<svg xmlns="http://www.w3.org/2000/svg" width="{export_width:.3f}mm" height="{export_height:.3f}mm" viewBox="0 0 {export_width:.3f} {export_height:.3f}">
-  <title>Badge reel batch layout</title>
-  <desc>{"; ".join(desc_items)}. Each order is stacked below the previous order. Face layer is on the left. Offset backing layer is on the right. Generated as vector paths from the selected production fonts.</desc>"""
-    ]
-
-    current_y = 0.0
-    for index, order in enumerate(order_paths):
-        parts.append(
-            f"""  <g id="order-{index + 1}-face-layer" transform="translate(0 {current_y:.3f})" fill="{export_fill}" stroke="none">
-      <path d="{order["face_path"]}"/>
-    </g>
-    <g id="order-{index + 1}-backing-layer" transform="translate({order["backing_x"]:.3f} {current_y:.3f})" fill="{export_fill}" stroke="none">
-      <path d="{order["backing_path"]}"/>
-    </g>"""
-        )
-        current_y += BATCH_EXPORT_START_STEP_MM
-
-    parts.append("</svg>\n")
-    return "\n".join(parts)
+    desc = (
+        f'{"; ".join(desc_items)}. Each exported instance is stacked below the previous one. '
+        f'Face layer is on the left. Offset backing layer is on the right. Generated as vector paths from the selected production fonts.'
+    )
+    return build_svg_document("Badge reel batch layout", desc, expand_export_instances(order_paths))
 
 
 def build_analysis(payload):

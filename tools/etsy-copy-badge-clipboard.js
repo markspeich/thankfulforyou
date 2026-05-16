@@ -26,6 +26,19 @@ function getVariationValue(transaction, propertyName) {
   return variation?.value || "";
 }
 
+function getTransactionQuantity(transaction) {
+  const quantity = transaction?.quantity;
+  if (typeof quantity === "number" && Number.isFinite(quantity) && quantity > 0) {
+    return String(quantity);
+  }
+
+  if (typeof quantity === "string" && quantity.trim()) {
+    return quantity.trim();
+  }
+
+  return "1";
+}
+
 function buildClipboardItems() {
   const orders = getOrdersCollection();
 
@@ -43,6 +56,7 @@ function buildClipboardItems() {
           transactionId: String(transaction.transaction_id),
           buyerName,
           colorName: getVariationValue(transaction, "Color"),
+          quantity: getTransactionQuantity(transaction),
           listingTitle: transaction?.product?.title || "",
           listingImageUrl75x75: transaction?.product?.image_url_75x75 || "",
           label: `#${order.order_id}${buyerName ? ` · ${buyerName}` : ""}${itemNumber > 1 ? ` · Item ${itemNumber}` : ""}`,

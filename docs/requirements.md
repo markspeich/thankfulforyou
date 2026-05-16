@@ -100,6 +100,8 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Export designs as SVG for current production use.
 - SVG export must produce vector path definitions, not embedded raster image data.
 - Exported SVG face and backing paths must use a solid fill color of RGB(255, 0, 0).
+- When imported Etsy color metadata is available, exported SVG output must add a small `Arial` color-value label to the right of the backing layer for each exported design instance.
+- The exported color label should contain only the imported color value, not the word `Color` or any quantity text.
 - When `Weld Exported Design` is checked, exported face-layer paths must be welded/unioned so overlapping letters do not create internal cut lines.
 - When `Weld Exported Design` is unchecked, SVG export may preserve overlapping letter contours without welding so the overlaps remain visible and editable.
 - Keep layout and geometry logic separated from UI code so geometry behavior can be tested independently.
@@ -138,11 +140,14 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - The left-side order navigation should include a button above the order list for exporting all queued designs that have text entered.
 - Batch export should export every queued order that has text entered, even if it has not been explicitly saved first.
 - Batch export should skip blank orders rather than producing empty geometry for them.
+- Export should treat imported Etsy quantity as the number of copies to place in the SVG output for that design.
+- When quantity is greater than `1`, the export should repeat that design the requested number of times, stacked vertically using the same production pitch as other exported designs.
 - Support importing Etsy order data from a seller orders page export so production sessions do not require manual retyping.
 - The first Etsy import target should accept an Etsy orders HTML save exported from the browser.
 - The repository docs folder includes a sample Etsy orders HTML export at `docs/Orders - Etsy.html` for import development and testing.
 - The import pipeline should extract at minimum the Etsy order number, the Etsy listing ID, and every Personalization text value present on each order line item.
 - The import pipeline should also extract the Etsy `Color` variation value when it is present on the line item and store it with the imported design metadata.
+- The import pipeline should also extract the Etsy line-item quantity when it is present and store it with the imported design metadata.
 - The import pipeline should prefer the embedded Etsy page data model when available rather than relying only on visible DOM scraping, because the saved page includes structured order and transaction data.
 - The import flow should support a browser-side helper path, such as a User JavaScript and CSS script, that can copy structured order payloads directly from the live Etsy orders page.
 - The first import implementation should use a clipboard workflow driven by a User JavaScript and CSS helper on the live Etsy orders page.
@@ -162,6 +167,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Imported queue items and subsequent design edits should persist across a browser refresh in local browser storage during the current batch workflow.
 - Persisted queue-item data should include enough information to restore the queue, the selected design, imported Etsy metadata, current text, current per-line settings, backing border, weld toggle, and saved/exported status after refresh.
 - In the selected-order editor, show the imported Etsy color as a read-only label directly below the `Design Text` field whenever imported color metadata is available.
+- In the selected-order editor, show the imported Etsy quantity as a read-only label directly below the `Color` label whenever imported quantity metadata is available.
 - If the imported color name contains the word `White`, highlight that displayed color name in the editor.
 - The app should provide a queue action to delete a single design without affecting the rest of the current batch.
 - The app should provide a batch-reset action to clear all queued and persisted designs when the operator is ready to start a new batch.

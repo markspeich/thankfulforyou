@@ -564,6 +564,11 @@ button:disabled {
   gap: 12px;
 }
 
+.listing-reference-details {
+  display: grid;
+  gap: 6px;
+}
+
 .listing-reference-image {
   display: block;
   width: 75px;
