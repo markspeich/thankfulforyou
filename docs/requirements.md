@@ -66,6 +66,9 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - The `Skywalk, Somekind` preset must set the first text line to Skywalk and every subsequent line to Somekind.
 - The `Skywalk, Candlepin` preset must set the first text line to Skywalk and every subsequent line to Candlepin.
 - Selecting a preset must overwrite all current per-line settings for the order so every line resets to the preset's predefined values, including font, letter bridge, line bridge where applicable, horizontal offset, and text height.
+- Production preset definitions should move toward a schema-validated JSON source of truth instead of duplicating preset ids, labels, line rules, and listing-specific overrides across HTML and JavaScript.
+- A preset JSON definition should include the preset id, preset name, base line defaults, per-line rules, and any listing-specific overrides that belong to that preset.
+- Preset ids should remain stable once in use so saved queue data can continue resolving previously selected presets.
 - Allow font selection per line of text.
 - Provide one control group per text line.
 - Each per-line control group must include a Font dropdown, Letter Bridge slider, Horizontal Offset slider, and Text Height slider.
@@ -142,6 +145,10 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Allow saved orders to be reopened for adjustment without losing their previously saved settings.
 - The active order editor should include a button for exporting the selected design as an SVG.
 - The active order editor should also include a button near `Export This Design` for copying the current design's generated SVG to the clipboard.
+- The selected-order editor should eventually support a `Save As Preset` action for creating a reusable preset definition from the current control state.
+- A future `Save As Preset` workflow should serialize reusable preset settings, including preset name, backing border, weld toggle, per-line font choices, letter bridge values, line bridge values where applicable, horizontal offsets, and text-height defaults.
+- A future `Save As Preset` workflow should save preset data in the same schema-driven JSON format used by runtime presets.
+- A future `Save As Preset` workflow should not treat the current order text itself as part of the reusable preset definition.
 - The left-side order navigation should include a button above the order list for exporting all queued designs that have text entered.
 - The left-side order navigation should also include a button near `Export All Designs` for copying the generated batch SVG for all queued designs with text to the clipboard.
 - Export and copy actions should use the most recently saved analyzed geometry for each design rather than running fresh analysis implicitly.
@@ -195,6 +202,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Consider adding automatic bridge or spacing suggestions after enough production examples exist to validate them.
 - Consider more granular overlap controls than the current per-line settings if real jobs show consistent edge cases.
 - Consider broader import or export helpers beyond the current SVG-first LightBurn workflow once the first production flow is stable.
+- Consider adding a preset-management workflow so operators can create or update preset JSON from the editor instead of editing files manually.
 
 ## Current Assumptions And Pending Decisions
 
@@ -202,6 +210,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - The first production font formats are OTF and TTF, matching the currently available Candlepin, Skywalk, and Somekind assets.
 - The current production workflow is manual-control-first. Automatic optimization may be added later, but operators must be able to adjust letter bridge, line bridge, per-line font, horizontal offset, text height, and backing border directly.
 - The current implementation target is global per-line controls rather than per-character-pair tuning. More granular overlap controls may be considered later if real production jobs require them.
+- Preset configuration should be maintainable by editing data files with a well-defined schema rather than updating multiple hardcoded branches.
 - Multi-line layouts should support intentional contact between lines, and for Candlepin layouts each lower line should slide upward until the visible outlines reach the configured line-bridge target.
 - The backing layer should be generated automatically as an offset silhouette in the production tool rather than remaining a preview-only approximation.
 - The 2.2 inch by 1.5 inch guide box defines the text fitting target, not the total finished backing size limit.

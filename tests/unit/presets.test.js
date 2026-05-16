@@ -1,33 +1,71 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 
-import { buildPresetLines, getPresetFontIdForLine } from "../../src/presets.js";
+import {
+  buildPresetLines,
+  getDefaultPresetId,
+  getPresetGlobalDefaults,
+  getPresetOptions,
+  getPresetIdForListingId,
+  setPresetRegistryForTests,
+} from "../../src/presets.js";
+
+const createDefaultLineSettings = () => ({
+  fontId: "candlepin",
+  bridgeMm: 0.5,
+  lineBridgeMm: 0.5,
+  offsetXMm: 0,
+  fontSizeMm: 34,
+});
 
 describe("presets", () => {
+  beforeEach(() => {
+    setPresetRegistryForTests();
+  });
+
+  it("exposes preset options from the active registry", () => {
+    expect(getDefaultPresetId()).toBe("all-candlepin");
+    expect(getPresetOptions()).toEqual([
+      { id: "all-candlepin", label: "All Candlepin" },
+      { id: "skywalk-somekind", label: "Skywalk, Somekind" },
+      { id: "skywalk-candlepin", label: "Skywalk, Candlepin" },
+    ]);
+  });
+
   it("maps every line to Candlepin for the all-candlepin preset", () => {
-    expect(getPresetFontIdForLine("all-candlepin", 0)).toBe("candlepin");
-    expect(getPresetFontIdForLine("all-candlepin", 3)).toBe("candlepin");
+    const lines = buildPresetLines("all-candlepin", 4, createDefaultLineSettings);
+
+    expect(lines.map((line) => line.fontId)).toEqual([
+      "candlepin",
+      "candlepin",
+      "candlepin",
+      "candlepin",
+    ]);
   });
 
   it("maps the first line to Skywalk and remaining lines to Somekind", () => {
-    expect(getPresetFontIdForLine("skywalk-somekind", 0)).toBe("skywalk");
-    expect(getPresetFontIdForLine("skywalk-somekind", 1)).toBe("somekind");
-    expect(getPresetFontIdForLine("skywalk-somekind", 4)).toBe("somekind");
+    const lines = buildPresetLines("skywalk-somekind", 5, createDefaultLineSettings);
+
+    expect(lines.map((line) => line.fontId)).toEqual([
+      "skywalk",
+      "somekind",
+      "somekind",
+      "somekind",
+      "somekind",
+    ]);
   });
 
   it("maps the first line to Skywalk and remaining lines to Candlepin", () => {
-    expect(getPresetFontIdForLine("skywalk-candlepin", 0)).toBe("skywalk");
-    expect(getPresetFontIdForLine("skywalk-candlepin", 1)).toBe("candlepin");
-    expect(getPresetFontIdForLine("skywalk-candlepin", 2)).toBe("candlepin");
+    const lines = buildPresetLines("skywalk-candlepin", 3, createDefaultLineSettings);
+
+    expect(lines.map((line) => line.fontId)).toEqual([
+      "skywalk",
+      "candlepin",
+      "candlepin",
+    ]);
   });
 
-  it("resets every generated line to the preset defaults before assigning fonts", () => {
-    const lines = buildPresetLines("skywalk-somekind", 3, () => ({
-      fontId: "candlepin",
-      bridgeMm: 0.5,
-      lineBridgeMm: 0.5,
-      offsetXMm: 0,
-      fontSizeMm: 34,
-    }));
+  it("resets every generated line to the preset defaults before assigning rule overrides", () => {
+    const lines = buildPresetLines("skywalk-somekind", 3, createDefaultLineSettings);
 
     expect(lines).toEqual([
       {
@@ -55,13 +93,7 @@ describe("presets", () => {
   });
 
   it("applies the listing-specific line 2 height override for listing 1884223710", () => {
-    const lines = buildPresetLines("skywalk-somekind", 4, () => ({
-      fontId: "candlepin",
-      bridgeMm: 0.5,
-      lineBridgeMm: 0.5,
-      offsetXMm: 0,
-      fontSizeMm: 34,
-    }), {
+    const lines = buildPresetLines("skywalk-somekind", 4, createDefaultLineSettings, {
       listingId: "1884223710",
     });
 
@@ -89,13 +121,7 @@ describe("presets", () => {
   });
 
   it("applies the listing-specific line 2 height override for listing 4465975709", () => {
-    const lines = buildPresetLines("skywalk-candlepin", 4, () => ({
-      fontId: "candlepin",
-      bridgeMm: 0.5,
-      lineBridgeMm: 0.5,
-      offsetXMm: 0,
-      fontSizeMm: 34,
-    }), {
+    const lines = buildPresetLines("skywalk-candlepin", 4, createDefaultLineSettings, {
       listingId: "4465975709",
     });
 
@@ -120,5 +146,18 @@ describe("presets", () => {
       offsetXMm: 0,
       fontSizeMm: 34,
     });
+  });
+
+  it("returns preset-level global defaults", () => {
+    expect(getPresetGlobalDefaults("skywalk-somekind")).toEqual({
+      backingMm: 3.1,
+      weldExportedDesign: true,
+    });
+  });
+
+  it("maps listing ids to preset ids from preset data", () => {
+    expect(getPresetIdForListingId("1884223710")).toBe("skywalk-somekind");
+    expect(getPresetIdForListingId("4465975709")).toBe("skywalk-candlepin");
+    expect(getPresetIdForListingId("unknown")).toBe("all-candlepin");
   });
 });

@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "defaultPresetId": "all-candlepin",
+  "presets": [
+    {
+      "id": "all-candlepin",
+      "path": "public/presets/all-candlepin.json"
+    },
+    {
+      "id": "skywalk-somekind",
+      "path": "public/presets/skywalk-somekind.json"
+    },
+    {
+      "id": "skywalk-candlepin",
+      "path": "public/presets/skywalk-candlepin.json"
+    }
+  ]
+}

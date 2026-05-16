@@ -13,11 +13,13 @@ import {
 } from "./layout-math.js";
 import {
   buildPresetLines,
-  DEFAULT_PRESET_ID,
-  getPresetFontIdForLine,
+  getDefaultPresetId,
+  getPresetGlobalDefaults,
   getPresetIdForListingId,
+  getPresetOptions,
   hasPresetMappingForListingId,
-  PRESET_OPTIONS,
+  isValidPresetId,
+  loadPresetRegistry,
 } from "./presets.js";
 
 const FONT_OPTIONS = [
@@ -138,12 +140,22 @@ function createDefaultLineSettings() {
   };
 }
 
+function getPresetBaseSettings(presetId) {
+  const globalDefaults = getPresetGlobalDefaults(presetId);
+
+  return {
+    backingMm: Number.isFinite(Number(globalDefaults.backingMm)) ? Number(globalDefaults.backingMm) : DEFAULT_BACKING_MM,
+    weldExportedDesign: typeof globalDefaults.weldExportedDesign === "boolean"
+      ? globalDefaults.weldExportedDesign
+      : DEFAULT_WELD_EXPORTED_DESIGN,
+  };
+}
+
 function createPresetLineSettings(presetId, lineIndex, options = {}) {
   const { listingId = null } = options;
   return {
     ...createDefaultLineSettings(),
     ...buildPresetLines(presetId, lineIndex + 1, createDefaultLineSettings, { listingId })[lineIndex],
-    fontId: getPresetFontIdForLine(presetId, lineIndex),
   };
 }
 
@@ -172,9 +184,11 @@ function normalizeLineSettings(lineSettings = {}) {
 function normalizeSettings(settings = {}) {
   const text = typeof settings.text === "string" ? settings.text : "";
   const rawLines = getRawTextLines(text);
-  const presetId = PRESET_OPTIONS.some((preset) => preset.id === settings.presetId)
+  const defaultPresetId = getDefaultPresetId();
+  const presetId = isValidPresetId(settings.presetId)
     ? settings.presetId
-    : DEFAULT_PRESET_ID;
+    : defaultPresetId;
+  const presetBaseSettings = getPresetBaseSettings(presetId);
   const legacyLines = Array.isArray(settings.lines)
     ? settings.lines
     : rawLines.map(() => ({
@@ -188,10 +202,10 @@ function normalizeSettings(settings = {}) {
   return {
     text,
     presetId,
-    backingMm: Number.isFinite(Number(settings.backingMm)) ? Number(settings.backingMm) : DEFAULT_BACKING_MM,
+    backingMm: Number.isFinite(Number(settings.backingMm)) ? Number(settings.backingMm) : presetBaseSettings.backingMm,
     weldExportedDesign: typeof settings.weldExportedDesign === "boolean"
       ? settings.weldExportedDesign
-      : DEFAULT_WELD_EXPORTED_DESIGN,
+      : presetBaseSettings.weldExportedDesign,
     lines: rawLines.map((_, index) => normalizeLineSettings(legacyLines[index] || createPresetLineSettings(presetId, index))),
   };
 }
@@ -292,8 +306,21 @@ function buildExportPayload(layout, analysis = layout?.analysis || null, source 
   };
 }
 
-function isValidPresetId(presetId) {
-  return PRESET_OPTIONS.some((preset) => preset.id === presetId);
+function renderPresetOptions() {
+  const presetOptions = getPresetOptions();
+  const selectedPresetId = presetInput.value;
+
+  presetInput.replaceChildren();
+  presetOptions.forEach((preset) => {
+    const option = document.createElement("option");
+    option.value = preset.id;
+    option.textContent = preset.label;
+    presetInput.append(option);
+  });
+
+  presetInput.value = isValidPresetId(selectedPresetId)
+    ? selectedPresetId
+    : getDefaultPresetId();
 }
 
 function buildManualDesignName(order) {
@@ -507,10 +534,12 @@ function normalizeImportedText(value) {
 function createQueueItem({
   text = "",
   status = "in-progress",
-  presetId = DEFAULT_PRESET_ID,
+  presetId = null,
   source = null,
 } = {}) {
-  const normalizedPresetId = isValidPresetId(presetId) ? presetId : DEFAULT_PRESET_ID;
+  const defaultPresetId = getDefaultPresetId();
+  const normalizedPresetId = isValidPresetId(presetId) ? presetId : defaultPresetId;
+  const presetBaseSettings = getPresetBaseSettings(normalizedPresetId);
 
   return {
     id: crypto.randomUUID(),
@@ -519,8 +548,8 @@ function createQueueItem({
     settings: normalizeSettings({
       text,
       presetId: normalizedPresetId,
-      backingMm: DEFAULT_BACKING_MM,
-      weldExportedDesign: DEFAULT_WELD_EXPORTED_DESIGN,
+      backingMm: presetBaseSettings.backingMm,
+      weldExportedDesign: presetBaseSettings.weldExportedDesign,
       lines: buildPresetLines(
         normalizedPresetId,
         getRawTextLines(text).length,
@@ -539,10 +568,13 @@ function createQueueItem({
 function buildPresetSynchronizedSettings(settings, presetId, options = {}) {
   const normalized = normalizeSettings(settings);
   const rawLines = getRawTextLines(normalized.text);
+  const presetBaseSettings = getPresetBaseSettings(presetId);
 
   return normalizeSettings({
     ...normalized,
     presetId,
+    backingMm: presetBaseSettings.backingMm,
+    weldExportedDesign: presetBaseSettings.weldExportedDesign,
     lines: buildPresetLines(presetId, rawLines.length, createDefaultLineSettings, options),
   });
 }
@@ -946,11 +978,18 @@ function applySettings(settings) {
 
 function applyPresetSelection(presetId) {
   const currentSettings = getCurrentSettings();
+  const activeOrder = getActiveOrder();
   const rawLines = getRawTextLines(currentSettings.text);
   const nextSettings = normalizeSettings({
     ...currentSettings,
     presetId,
-    lines: buildPresetLines(presetId, rawLines.length, createDefaultLineSettings),
+    ...getPresetBaseSettings(presetId),
+    lines: buildPresetLines(
+      presetId,
+      rawLines.length,
+      createDefaultLineSettings,
+      { listingId: activeOrder?.source?.listingId ?? null },
+    ),
   });
 
   applySettings(nextSettings);
@@ -1271,7 +1310,7 @@ function addOrder() {
   const order = createQueueItem({
     text: "",
     status: "in-progress",
-    presetId: DEFAULT_PRESET_ID,
+    presetId: getDefaultPresetId(),
     source: null,
   });
 
@@ -1281,11 +1320,14 @@ function addOrder() {
 }
 
 function resetEditorToEmptyState() {
+  const defaultPresetId = getDefaultPresetId();
+  const presetBaseSettings = getPresetBaseSettings(defaultPresetId);
+
   applySettings({
     text: "",
-    presetId: DEFAULT_PRESET_ID,
-    backingMm: DEFAULT_BACKING_MM,
-    weldExportedDesign: DEFAULT_WELD_EXPORTED_DESIGN,
+    presetId: defaultPresetId,
+    backingMm: presetBaseSettings.backingMm,
+    weldExportedDesign: presetBaseSettings.weldExportedDesign,
     lines: [],
   });
   renderImportedColor(null);
@@ -2456,6 +2498,8 @@ previewPanel.addEventListener("wheel", (event) => {
 }, { passive: false });
 
 await checkFonts();
+await loadPresetRegistry();
+renderPresetOptions();
 updateBackingOutput();
 const restoredQueue = loadPersistedQueueState();
 if (restoredQueue) {
@@ -2463,11 +2507,14 @@ if (restoredQueue) {
 } else {
   updateImportStatus("Import Etsy clipboard data copied from the browser helper.", "pending");
 }
+const defaultPresetId = getDefaultPresetId();
+const defaultPresetBaseSettings = getPresetBaseSettings(defaultPresetId);
+
 renderLineControls(normalizeSettings({
   text: "",
-  presetId: DEFAULT_PRESET_ID,
-  backingMm: DEFAULT_BACKING_MM,
-  weldExportedDesign: DEFAULT_WELD_EXPORTED_DESIGN,
+  presetId: defaultPresetId,
+  backingMm: defaultPresetBaseSettings.backingMm,
+  weldExportedDesign: defaultPresetBaseSettings.weldExportedDesign,
   lines: [],
 }));
 if (activeOrderId) {

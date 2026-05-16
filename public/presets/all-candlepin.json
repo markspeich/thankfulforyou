@@ -1,0 +1,28 @@
+{
+  "$schema": "../../docs/schemas/preset.schema.json",
+  "schemaVersion": 1,
+  "id": "all-candlepin",
+  "name": "All Candlepin",
+  "description": "Use Candlepin on every line.",
+  "globalDefaults": {
+    "backingMm": 3.1,
+    "weldExportedDesign": true
+  },
+  "lineDefaults": {
+    "fontId": "candlepin",
+    "bridgeMm": 0.5,
+    "lineBridgeMm": 0.5,
+    "offsetXMm": 0,
+    "fontSizeMm": 34
+  },
+  "lineRules": [
+    {
+      "match": {
+        "kind": "all"
+      },
+      "settings": {
+        "fontId": "candlepin"
+      }
+    }
+  ]
+}

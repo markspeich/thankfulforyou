@@ -1,0 +1,191 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://thankfulforyou.local/schemas/preset.schema.json",
+  "title": "Badge Reel Preset",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "id",
+    "name",
+    "lineDefaults",
+    "lineRules"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "description": {
+      "type": "string"
+    },
+    "globalDefaults": {
+      "$ref": "#/$defs/globalDefaults"
+    },
+    "lineDefaults": {
+      "$ref": "#/$defs/lineSettings"
+    },
+    "lineRules": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/lineRule"
+      }
+    },
+    "listingAssignments": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/listingAssignment"
+      }
+    }
+  },
+  "$defs": {
+    "fontId": {
+      "type": "string",
+      "enum": [
+        "candlepin",
+        "skywalk",
+        "somekind"
+      ]
+    },
+    "globalDefaults": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "backingMm": {
+          "type": "number",
+          "minimum": 0
+        },
+        "weldExportedDesign": {
+          "type": "boolean"
+        }
+      }
+    },
+    "lineSettings": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "fontId": {
+          "$ref": "#/$defs/fontId"
+        },
+        "bridgeMm": {
+          "type": "number"
+        },
+        "lineBridgeMm": {
+          "type": "number"
+        },
+        "offsetXMm": {
+          "type": "number"
+        },
+        "fontSizeMm": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      }
+    },
+    "lineMatch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "all",
+            "first",
+            "remaining",
+            "index"
+          ]
+        },
+        "lineIndex": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "index"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "lineIndex"
+            ]
+          }
+        }
+      ]
+    },
+    "lineRule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "match",
+        "settings"
+      ],
+      "properties": {
+        "match": {
+          "$ref": "#/$defs/lineMatch"
+        },
+        "settings": {
+          "$ref": "#/$defs/lineSettings"
+        }
+      }
+    },
+    "listingLineOverride": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "lineIndex",
+        "settings"
+      ],
+      "properties": {
+        "lineIndex": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "settings": {
+          "$ref": "#/$defs/lineSettings"
+        }
+      }
+    },
+    "listingAssignment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "listingId"
+      ],
+      "properties": {
+        "listingId": {
+          "type": "string",
+          "pattern": "^[0-9]+$"
+        },
+        "name": {
+          "type": "string"
+        },
+        "lineOverrides": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/listingLineOverride"
+          }
+        }
+      }
+    }
+  }
+}
