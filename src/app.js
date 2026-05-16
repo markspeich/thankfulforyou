@@ -47,6 +47,7 @@ const FONT_OPTIONS = [
 const FONT_BY_ID = new Map(FONT_OPTIONS.map((font) => [font.id, font]));
 const DEFAULT_PREVIEW_WIDTH_MM = PREVIEW_BOX_WIDTH_MM + PREVIEW_MARGIN_MM * 2 + PREVIEW_LABEL_RIGHT_MM;
 const DEFAULT_PREVIEW_HEIGHT_MM = PREVIEW_BOX_HEIGHT_MM + PREVIEW_MARGIN_MM * 2;
+const PREVIEW_CENTER_CIRCLE_DIAMETER_MM = 1.25 * 25.4;
 const DEFAULT_ZOOM = 3;
 const DEFAULT_WELD_EXPORTED_DESIGN = true;
 const DEFAULT_LINE_SETTINGS = Object.freeze({
@@ -513,9 +514,11 @@ function renderPreviewGuideOnly() {
 }
 
 function appendPreviewGuide(previewBoxX, previewBoxY) {
+  const guideCenterX = previewBoxX + PREVIEW_BOX_WIDTH_MM / 2;
+  const guideCenterY = previewBoxY + PREVIEW_BOX_HEIGHT_MM / 2;
   const topLabel = makeSvgElement("text", {
     class: "preview-guide-label",
-    x: previewBoxX + PREVIEW_BOX_WIDTH_MM / 2,
+    x: guideCenterX,
     y: previewBoxY - 2.6,
     "text-anchor": "middle",
   });
@@ -538,6 +541,12 @@ function appendPreviewGuide(previewBoxX, previewBoxY) {
       width: PREVIEW_BOX_WIDTH_MM,
       height: PREVIEW_BOX_HEIGHT_MM,
       rx: 1.6,
+    }),
+    makeSvgElement("circle", {
+      class: "preview-guide-box",
+      cx: guideCenterX,
+      cy: guideCenterY,
+      r: PREVIEW_CENTER_CIRCLE_DIAMETER_MM / 2,
     }),
     topLabel,
     sideLabel,

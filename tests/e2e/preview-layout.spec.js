@@ -94,6 +94,27 @@ test("shows the production defaults", async ({ page }) => {
   await expect(page.locator("#backingOutput")).toHaveText("3.100 mm");
   await expect(page.locator("#weldExportedDesignInput")).toBeChecked();
   await expect(page.locator("#preview .preview-guide-label").first()).toHaveText('2.2"');
+  await expect(page.locator("#preview circle.preview-guide-box")).toHaveCount(1);
+
+  const circleMetrics = await page.evaluate(() => {
+    const guide = document.querySelector("#preview rect.preview-guide-box");
+    const circle = document.querySelector("#preview circle.preview-guide-box");
+    if (!(guide instanceof SVGRectElement) || !(circle instanceof SVGCircleElement)) {
+      return null;
+    }
+
+    return {
+      guideCenterX: Number(guide.getAttribute("x")) + Number(guide.getAttribute("width")) / 2,
+      guideCenterY: Number(guide.getAttribute("y")) + Number(guide.getAttribute("height")) / 2,
+      circleCenterX: Number(circle.getAttribute("cx")),
+      circleCenterY: Number(circle.getAttribute("cy")),
+      circleDiameter: Number(circle.getAttribute("r")) * 2,
+    };
+  });
+
+  expect(circleMetrics.circleCenterX).toBeCloseTo(circleMetrics.guideCenterX, 6);
+  expect(circleMetrics.circleCenterY).toBeCloseTo(circleMetrics.guideCenterY, 6);
+  expect(circleMetrics.circleDiameter).toBeCloseTo(1.25 * 25.4, 6);
 });
 
 test("keeps text inside the guide and centered for Mark RN", async ({ page }) => {

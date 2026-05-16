@@ -89,6 +89,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Add a `Weld Exported Design` checkbox directly below the order text field.
 - The `Weld Exported Design` checkbox must default to checked.
 - The preview area should include a non-exported 2.2 inch by 1.5 inch background guide box, and the rendered design should be centered within that box on screen.
+- The preview guide should include a non-exported 1.25 inch dashed circle centered inside the 2.2 inch by 1.5 inch guide box, matching the box guide style.
 - The preview should center the visible text geometry within the guide box, even when the backing border extends beyond the guide area.
 - The 2.2 inch by 1.5 inch preview guide box should remain visible even when there is no active text.
 - The preview guide box should show static dimension labels outside the box: `2.2"` centered above and `1.5"` on the right side.
@@ -103,6 +104,19 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Represent units explicitly and clearly distinguish inches from millimeters and any internal geometry units.
 - Add tests around geometry behavior as implementation matures, especially for connectedness detection and overlap behavior.
 - Keep the first screen focused on the layout tool itself rather than a landing page.
+
+## Test Requirements
+
+- Treat testing as a production requirement, not a later cleanup task.
+- Keep geometry, layout, and export logic separated from UI code so those behaviors can be tested directly without depending on browser rendering.
+- Add automated tests for geometry behavior whenever geometry logic changes in a way that could affect manufacturability, layout correctness, or export output.
+- Prioritize automated test coverage for connectedness detection, neighboring glyph overlap behavior, multi-line overlap behavior, backing silhouette generation, explicit unit conversion, and SVG export path correctness.
+- Prefer deterministic test inputs and assertions so geometry regressions can be caught reliably across environments.
+- When a change affects the UI, the agent must verify the affected workflow in a browser before considering the work complete.
+- Browser-based UI verification is required for any user-facing layout, control, preview, queue, import, save, or export interaction that was changed.
+- Browser UI verification should confirm both behavior and presentation, including control visibility, control state changes, preview updates, and basic usability of the modified flow.
+- Browser UI verification may be supported by automated browser tests, manual browser checks, or both, but some direct browser validation is required whenever UI changes are made.
+- If browser-based UI verification cannot be completed for a UI change, that limitation must be reported clearly along with the reason it could not be performed.
 
 ## Current Production Workflow Requirements
 
