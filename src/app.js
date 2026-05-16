@@ -11,6 +11,7 @@ import {
   computeTextFitScale,
   measureLineBounds,
 } from "./layout-math.js";
+import { buildPresetLines, DEFAULT_PRESET_ID, getPresetFontIdForLine, PRESET_OPTIONS } from "./presets.js";
 
 const FONT_OPTIONS = [
   {
@@ -61,6 +62,7 @@ const orderList = document.querySelector("#orderList");
 const activeOrderName = document.querySelector("#activeOrderName");
 const editorPanel = document.querySelector(".editor-panel");
 const textInput = document.querySelector("#textInput");
+const presetInput = document.querySelector("#presetInput");
 const weldExportedDesignInput = document.querySelector("#weldExportedDesignInput");
 const lineControls = document.querySelector("#lineControls");
 const backingInput = document.querySelector("#backingInput");
@@ -114,6 +116,13 @@ function createDefaultLineSettings() {
   };
 }
 
+function createPresetLineSettings(presetId, lineIndex) {
+  return {
+    ...createDefaultLineSettings(),
+    fontId: getPresetFontIdForLine(presetId, lineIndex),
+  };
+}
+
 function getRawTextLines(text) {
   if (!text.length) {
     return [];
@@ -135,6 +144,9 @@ function normalizeLineSettings(lineSettings = {}) {
 function normalizeSettings(settings = {}) {
   const text = typeof settings.text === "string" ? settings.text : "";
   const rawLines = getRawTextLines(text);
+  const presetId = PRESET_OPTIONS.some((preset) => preset.id === settings.presetId)
+    ? settings.presetId
+    : DEFAULT_PRESET_ID;
   const legacyLines = Array.isArray(settings.lines)
     ? settings.lines
     : rawLines.map(() => ({
@@ -147,11 +159,12 @@ function normalizeSettings(settings = {}) {
 
   return {
     text,
+    presetId,
     backingMm: Number.isFinite(Number(settings.backingMm)) ? Number(settings.backingMm) : DEFAULT_BACKING_MM,
     weldExportedDesign: typeof settings.weldExportedDesign === "boolean"
       ? settings.weldExportedDesign
       : DEFAULT_WELD_EXPORTED_DESIGN,
-    lines: rawLines.map((_, index) => normalizeLineSettings(legacyLines[index] || createDefaultLineSettings())),
+    lines: rawLines.map((_, index) => normalizeLineSettings(legacyLines[index] || createPresetLineSettings(presetId, index))),
   };
 }
 
@@ -159,6 +172,7 @@ function buildSettingsSignature(settings) {
   const normalized = normalizeSettings(settings);
   return JSON.stringify({
     text: normalized.text,
+    presetId: normalized.presetId,
     backingMm: normalized.backingMm,
     weldExportedDesign: normalized.weldExportedDesign,
     lines: normalized.lines.map((line) => ({
@@ -385,6 +399,7 @@ function getCurrentSettings() {
 
   return normalizeSettings({
     text: textInput.value,
+    presetId: presetInput.value,
     backingMm: Number(backingInput.value),
     weldExportedDesign: weldExportedDesignInput.checked,
     lines,
@@ -394,10 +409,25 @@ function getCurrentSettings() {
 function applySettings(settings) {
   const normalized = normalizeSettings(settings);
   textInput.value = normalized.text;
+  presetInput.value = normalized.presetId;
   weldExportedDesignInput.checked = normalized.weldExportedDesign;
   backingInput.value = String(normalized.backingMm);
   updateBackingOutput();
   renderLineControls(normalized);
+}
+
+function applyPresetSelection(presetId) {
+  const currentSettings = getCurrentSettings();
+  const rawLines = getRawTextLines(currentSettings.text);
+  const nextSettings = normalizeSettings({
+    ...currentSettings,
+    presetId,
+    lines: buildPresetLines(presetId, rawLines.length, createDefaultLineSettings),
+  });
+
+  applySettings(nextSettings);
+  render();
+  updateActiveOrderFromControls();
 }
 
 function getActiveOrder() {
@@ -544,6 +574,7 @@ function addOrder() {
     status: "in-progress",
     settings: normalizeSettings({
       text: "",
+      presetId: DEFAULT_PRESET_ID,
       backingMm: DEFAULT_BACKING_MM,
       lines: [],
     }),
@@ -1357,6 +1388,9 @@ function handleLineControlsChange(event) {
 }
 
 textInput.addEventListener("input", handleTextInput);
+presetInput.addEventListener("change", () => {
+  applyPresetSelection(presetInput.value);
+});
 lineControls.addEventListener("input", handleLineControlsChange);
 lineControls.addEventListener("change", handleLineControlsChange);
 backingInput.addEventListener("input", () => {
@@ -1402,6 +1436,7 @@ await checkFonts();
 updateBackingOutput();
 renderLineControls(normalizeSettings({
   text: "",
+  presetId: DEFAULT_PRESET_ID,
   backingMm: DEFAULT_BACKING_MM,
   weldExportedDesign: DEFAULT_WELD_EXPORTED_DESIGN,
   lines: [],

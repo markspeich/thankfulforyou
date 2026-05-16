@@ -60,6 +60,12 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Render text as actual font outlines, not just browser text.
 - Allow text to be arranged in one or more lines.
 - Treat the number of editable text lines as fully dynamic and derive it directly from the number of lines entered by the user.
+- Add a `Presets` dropdown directly below the `Order Text` field.
+- The `Presets` dropdown must offer exactly these production presets: `All Candlepin`, `Skywalk, Somekind`, and `Skywalk, Candlepin`.
+- The `All Candlepin` preset must set every text line to the Candlepin font.
+- The `Skywalk, Somekind` preset must set the first text line to Skywalk and every subsequent line to Somekind.
+- The `Skywalk, Candlepin` preset must set the first text line to Skywalk and every subsequent line to Candlepin.
+- Selecting a preset must overwrite all current per-line settings for the order so every line resets to the preset's predefined values, including font, letter bridge, line bridge where applicable, horizontal offset, and text height.
 - Allow font selection per line of text.
 - Provide one control group per text line.
 - Each per-line control group must include a Font dropdown, Letter Bridge slider, Horizontal Offset slider, and Text Height slider.
