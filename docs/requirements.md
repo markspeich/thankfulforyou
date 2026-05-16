@@ -138,10 +138,12 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Batch export should skip blank orders rather than producing empty geometry for them.
 - Support importing Etsy order data from a seller orders page export so production sessions do not require manual retyping.
 - The first Etsy import target should accept an Etsy orders HTML save exported from the browser.
+- The repository docs folder includes a sample Etsy orders HTML export at `docs/Orders - Etsy.html` for import development and testing.
 - The import pipeline should extract at minimum the Etsy order number, the Etsy listing ID, and every Personalization text value present on each order line item.
 - The import pipeline should prefer the embedded Etsy page data model when available rather than relying only on visible DOM scraping, because the saved page includes structured order and transaction data.
 - The import flow should support a browser-side helper path, such as a User JavaScript and CSS script, that can copy structured order payloads directly from the live Etsy orders page.
 - The first import implementation should use a clipboard workflow driven by a User JavaScript and CSS helper on the live Etsy orders page.
+- The repository docs folder includes a sample clipboard payload at `docs/sample-clipboard.txt` for clipboard-import development and testing.
 - Imported listing IDs should be usable to auto-select the app preset for each imported order.
 - Imported Etsy listing metadata should include the listing title and the 75 by 75 listing image URL when those fields are present in the Etsy order data.
 - The app should maintain a configurable mapping from Etsy listing ID to production preset name.
