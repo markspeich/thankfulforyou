@@ -204,6 +204,23 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - The backing layer should be generated automatically as an offset silhouette in the production tool rather than remaining a preview-only approximation.
 - The 2.2 inch by 1.5 inch guide box defines the text fitting target, not the total finished backing size limit.
 - A production-safe minimum bridge width for 1/8 inch acrylic still needs explicit shop confirmation. Until confirmed otherwise, use 0.5 mm as the working default bridge target for Candlepin letter and line connections.
+- The initial hosted deployment target is Vercel.
+- A production deployment must include the real production font assets used for preview, analysis, and export. A deployment flow that omits those font files is not production-ready.
+- The production font assets are allowed to be included in the deployed app and served from the deployed `public/fonts` path.
+- Production deployment must preserve the geometry analysis and SVG export pipeline in a way that remains deterministic between local use and hosted use.
+- If the hosted runtime cannot reliably execute the current Python-based geometry pipeline with its required dependencies, the deployment plan must move that pipeline to a supported service or rewrite it into a Vercel-supported runtime before launch.
+
+## Deployment Readiness
+
+- Treat the client editor, font assets, geometry analysis endpoint, and SVG export endpoint as one production system. Deployment is only ready when all four work together in the hosted environment.
+- Hosted preview must load the production fonts successfully so layout decisions match the real manufacturing fonts.
+- Hosted analysis and export must run against the same production font files used by the preview so connectedness checks and exported paths stay trustworthy.
+- The initial Vercel deployment shape is static frontend assets served from a `dist` build output plus Python API functions for `/api/layout-analyze` and `/api/export-svg`.
+- The Vercel Python runtime should be pinned explicitly so hosted geometry behavior does not drift silently across runtime defaults.
+- The Vercel Python function dependency set must include `fonttools`, `Pillow`, `numpy`, and `scipy`, matching the current geometry pipeline.
+- Deployment configuration should explicitly define the production install, build, and runtime behavior instead of relying on local-only defaults.
+- Production should have a smoke-test flow that verifies font loading, queue persistence, save-triggered analysis, and SVG export in the hosted environment before operators rely on it for Etsy batches.
+- If the hosted app is only for internal production use, deployment protection or authentication should be enabled before processing real Etsy order data.
 
 ## Open Questions
 

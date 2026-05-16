@@ -12,11 +12,6 @@ out/
 .env.*
 !.env.example
 
-# Production font assets
-public/fonts/*.otf
-public/fonts/*.ttf
-!public/fonts/README.md
-
 # Logs
 *.log
 npm-debug.log*
