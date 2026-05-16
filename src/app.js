@@ -61,6 +61,7 @@ const DEFAULT_LINE_SETTINGS = Object.freeze({
 const orderLabelInput = document.querySelector("#orderLabelInput");
 const addOrderButton = document.querySelector("#addOrderButton");
 const importClipboardButton = document.querySelector("#importClipboardButton");
+const clearQueueButton = document.querySelector("#clearQueueButton");
 const importStatus = document.querySelector("#importStatus");
 const exportCompletedButton = document.querySelector("#exportCompletedButton");
 const orderSearchInput = document.querySelector("#orderSearchInput");
@@ -113,6 +114,8 @@ const statusLabels = {
 };
 const IMPORT_SOURCE_TAG = "thankfulforyou-etsy-clipboard";
 const IMPORT_MOJIBAKE_PATTERN = /[ÂÃâ]/;
+const STORAGE_KEY = "thankfulforyou.designQueue";
+const STORAGE_VERSION = 1;
 
 function getFontOption(fontId) {
   return FONT_BY_ID.get(fontId) || FONT_OPTIONS[0];
@@ -137,6 +140,10 @@ function createPresetLineSettings(presetId, lineIndex) {
     ...createDefaultLineSettings(),
     fontId: getPresetFontIdForLine(presetId, lineIndex),
   };
+}
+
+function isValidOrderStatus(status) {
+  return Object.hasOwn(statusLabels, status);
 }
 
 function getRawTextLines(text) {
@@ -278,6 +285,120 @@ function buildQueuePersonalization(order) {
   return personalization && personalization !== "No text entered"
     ? personalization
     : "No personalization entered";
+}
+
+function normalizeStoredSource(source) {
+  if (!source || typeof source !== "object") {
+    return null;
+  }
+
+  return {
+    orderNumber: source.orderNumber == null ? "" : String(source.orderNumber).trim(),
+    listingId: source.listingId == null ? "" : String(source.listingId).trim(),
+    buyerName: typeof source.buyerName === "string" ? source.buyerName.trim() : "",
+    listingTitle: typeof source.listingTitle === "string" ? source.listingTitle.trim() : "",
+    listingImageUrl75x75: typeof source.listingImageUrl75x75 === "string" ? source.listingImageUrl75x75.trim() : "",
+    transactionId: source.transactionId == null ? "" : String(source.transactionId).trim(),
+    importSource: typeof source.importSource === "string" ? source.importSource.trim() : "",
+    manualPresetOverride: Boolean(source.manualPresetOverride),
+  };
+}
+
+function hydrateStoredOrder(order, index) {
+  if (!order || typeof order !== "object") {
+    return null;
+  }
+
+  const text = typeof order.text === "string"
+    ? order.text
+    : typeof order.settings?.text === "string"
+      ? order.settings.text
+      : "";
+  const settings = normalizeSettings({
+    ...(order.settings && typeof order.settings === "object" ? order.settings : {}),
+    text,
+  });
+
+  return {
+    id: typeof order.id === "string" && order.id.trim() ? order.id : crypto.randomUUID(),
+    label: typeof order.label === "string" && order.label.trim() ? order.label.trim() : `Design ${index + 1}`,
+    text,
+    status: isValidOrderStatus(order.status) ? order.status : "in-progress",
+    settings,
+    source: normalizeStoredSource(order.source),
+    capturedLayout: null,
+    savedSettingsSignature: typeof order.savedSettingsSignature === "string" ? order.savedSettingsSignature : null,
+  };
+}
+
+function buildPersistedQueueState() {
+  return {
+    version: STORAGE_VERSION,
+    orderSequence,
+    activeOrderId,
+    orders: orders.map((order) => ({
+      id: order.id,
+      label: order.label,
+      text: order.text,
+      status: order.status,
+      settings: normalizeSettings(order.settings),
+      source: order.source ? { ...order.source } : null,
+      savedSettingsSignature: order.savedSettingsSignature,
+    })),
+  };
+}
+
+function persistQueueState() {
+  try {
+    if (!orders.length) {
+      localStorage.removeItem(STORAGE_KEY);
+      return;
+    }
+
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(buildPersistedQueueState()));
+  } catch {
+    // Ignore storage failures and continue with in-memory editing.
+  }
+}
+
+function clearPersistedQueueState() {
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+  } catch {
+    // Ignore storage failures and continue with in-memory editing.
+  }
+}
+
+function loadPersistedQueueState() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) {
+      return false;
+    }
+
+    const parsed = JSON.parse(raw);
+    if (!parsed || parsed.version !== STORAGE_VERSION || !Array.isArray(parsed.orders)) {
+      clearPersistedQueueState();
+      return false;
+    }
+
+    const restoredOrders = parsed.orders
+      .map((order, index) => hydrateStoredOrder(order, index))
+      .filter(Boolean);
+
+    orders.splice(0, orders.length, ...restoredOrders);
+    orderSequence = Math.max(
+      Number.isInteger(parsed.orderSequence) ? parsed.orderSequence : 1,
+      restoredOrders.length + 1,
+    );
+    activeOrderId = restoredOrders.some((order) => order.id === parsed.activeOrderId)
+      ? parsed.activeOrderId
+      : restoredOrders[0]?.id || null;
+    return restoredOrders.length > 0;
+  } catch {
+    clearPersistedQueueState();
+    return false;
+  }
 }
 
 function decodeHtmlEntities(value) {
@@ -772,6 +893,7 @@ function saveActiveOrderDraft() {
   if (order.status !== "captured" && order.status !== "exported") {
     order.status = "in-progress";
   }
+  persistQueueState();
 }
 
 function updateActiveOrderFromControls() {
@@ -785,6 +907,7 @@ function updateActiveOrderFromControls() {
   order.settings = getCurrentSettings();
   order.capturedLayout = null;
   order.status = "in-progress";
+  persistQueueState();
   renderOrderList();
 }
 
@@ -816,6 +939,7 @@ function renderOrderList() {
   completeCountOutput.textContent = String(completeCount);
   progressCountOutput.textContent = String(progressCount);
   notStartedCountOutput.textContent = String(notStartedCount);
+  clearQueueButton.disabled = orders.length === 0;
   exportCompletedButton.disabled = exportableCount === 0;
   orderList.replaceChildren();
 
@@ -834,6 +958,9 @@ function renderOrderList() {
   }
 
   visibleOrders.forEach((order) => {
+    const row = document.createElement("div");
+    row.className = "order-row";
+
     const item = document.createElement("button");
     item.type = "button";
     item.className = `order-item${order.id === activeOrderId ? " active" : ""}`;
@@ -869,7 +996,19 @@ function renderOrderList() {
     body.append(recipientText, listingText, personalizationText);
     item.append(header, body);
     item.addEventListener("click", () => selectOrder(order.id));
-    orderList.append(item);
+
+    const deleteButton = document.createElement("button");
+    deleteButton.type = "button";
+    deleteButton.className = "secondary-action order-delete-button";
+    deleteButton.textContent = "Delete";
+    deleteButton.setAttribute("aria-label", `Delete ${order.label}`);
+    deleteButton.addEventListener("click", (event) => {
+      event.stopPropagation();
+      deleteOrder(order.id);
+    });
+
+    row.append(item, deleteButton);
+    orderList.append(row);
   });
 
   const activeOrder = getActiveOrder();
@@ -898,6 +1037,7 @@ function selectOrder(orderId) {
   orderLabelInput.value = order.label;
   orderLabelInput.placeholder = order.label;
   applySettings(order.settings);
+  persistQueueState();
   renderOrderList();
   requestAnimationFrame(() => {
     render();
@@ -917,6 +1057,85 @@ function addOrder() {
   orderSequence += 1;
   orderLabelInput.placeholder = `Design ${orderSequence}`;
   selectOrder(order.id);
+}
+
+function resetEditorToEmptyState() {
+  orderLabelInput.value = "";
+  orderLabelInput.placeholder = `Design ${orderSequence}`;
+  applySettings({
+    text: "",
+    presetId: DEFAULT_PRESET_ID,
+    backingMm: DEFAULT_BACKING_MM,
+    weldExportedDesign: DEFAULT_WELD_EXPORTED_DESIGN,
+    lines: [],
+  });
+  renderPreviewGuideOnly();
+}
+
+function deleteOrder(orderId) {
+  const order = orders.find((candidate) => candidate.id === orderId);
+  if (!order) {
+    return;
+  }
+
+  saveActiveOrderDraft();
+
+  if (!window.confirm(`Delete ${buildQueueOrderNumber(order)} from the current batch?`)) {
+    return;
+  }
+
+  const orderIndex = orders.findIndex((candidate) => candidate.id === orderId);
+  if (orderIndex < 0) {
+    return;
+  }
+
+  orders.splice(orderIndex, 1);
+
+  if (activeOrderId === orderId) {
+    activeOrderId = orders[orderIndex]?.id || orders[orderIndex - 1]?.id || null;
+    if (activeOrderId) {
+      const nextOrder = getActiveOrder();
+      orderLabelInput.value = nextOrder.label;
+      orderLabelInput.placeholder = nextOrder.label;
+      applySettings(nextOrder.settings);
+    } else {
+      orderSequence = 1;
+      resetEditorToEmptyState();
+    }
+  }
+
+  if (!orders.length) {
+    activeOrderId = null;
+    orderSequence = 1;
+    clearPersistedQueueState();
+    updateImportStatus("Queue cleared. Import Etsy clipboard data copied from the browser helper.", "pending");
+  } else {
+    persistQueueState();
+  }
+
+  renderOrderList();
+  if (activeOrderId) {
+    render();
+  }
+}
+
+function clearAllOrders() {
+  saveActiveOrderDraft();
+  if (!orders.length) {
+    return;
+  }
+
+  if (!window.confirm("Clear the current batch and delete all saved local designs?")) {
+    return;
+  }
+
+  orders.splice(0, orders.length);
+  activeOrderId = null;
+  orderSequence = 1;
+  clearPersistedQueueState();
+  resetEditorToEmptyState();
+  updateImportStatus("Batch cleared. Import Etsy clipboard data copied from the browser helper.", "pending");
+  renderOrderList();
 }
 
 async function importFromClipboard() {
@@ -976,6 +1195,7 @@ function captureActiveOrder() {
   order.savedSettingsSignature = buildSettingsSignature(order.settings);
   order.capturedLayout = structuredClone(lastLayout);
   order.status = "captured";
+  persistQueueState();
   renderOrderList();
 
   const activeIndex = orders.findIndex((candidate) => candidate.id === order.id);
@@ -1623,6 +1843,7 @@ async function downloadSvg() {
       order.status = "exported";
       order.capturedLayout = structuredClone(lastLayout);
       order.settings = getCurrentSettings();
+      persistQueueState();
       renderOrderList();
     }
   } catch {
@@ -1686,6 +1907,7 @@ async function exportAllOrders() {
       order.status = "exported";
       order.capturedLayout = structuredClone(layout);
     });
+    persistQueueState();
   } catch {
   } finally {
     exportCompletedButton.disabled = false;
@@ -1804,10 +2026,12 @@ orderLabelInput.addEventListener("input", () => {
 
   order.label = orderLabelInput.value.trim() || `Design ${orders.indexOf(order) + 1}`;
   order.status = "in-progress";
+  persistQueueState();
   renderOrderList();
 });
 addOrderButton.addEventListener("click", addOrder);
 importClipboardButton.addEventListener("click", importFromClipboard);
+clearQueueButton.addEventListener("click", clearAllOrders);
 exportCompletedButton.addEventListener("click", exportAllOrders);
 orderSearchInput.addEventListener("input", renderOrderList);
 captureButton.addEventListener("click", captureActiveOrder);
@@ -1828,7 +2052,12 @@ previewPanel.addEventListener("wheel", (event) => {
 
 await checkFonts();
 updateBackingOutput();
-updateImportStatus("Import Etsy clipboard data copied from the browser helper.", "pending");
+const restoredQueue = loadPersistedQueueState();
+if (restoredQueue) {
+  updateImportStatus(`Restored ${orders.length} design${orders.length === 1 ? "" : "s"} from browser storage.`, "success");
+} else {
+  updateImportStatus("Import Etsy clipboard data copied from the browser helper.", "pending");
+}
 renderLineControls(normalizeSettings({
   text: "",
   presetId: DEFAULT_PRESET_ID,
@@ -1836,6 +2065,14 @@ renderLineControls(normalizeSettings({
   weldExportedDesign: DEFAULT_WELD_EXPORTED_DESIGN,
   lines: [],
 }));
+if (activeOrderId) {
+  const activeOrder = getActiveOrder();
+  if (activeOrder) {
+    orderLabelInput.value = activeOrder.label;
+    orderLabelInput.placeholder = activeOrder.label;
+    applySettings(activeOrder.settings);
+  }
+}
 renderPreviewGuideOnly();
 render();
 renderOrderList();

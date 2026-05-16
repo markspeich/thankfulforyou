@@ -86,6 +86,8 @@ async function measureVisibleTextBounds(page) {
 
 test.beforeEach(async ({ page }) => {
   await page.goto("/");
+  await page.evaluate(() => localStorage.clear());
+  await page.reload();
   await page.getByRole("button", { name: "+ Add Design" }).click();
 });
 
@@ -137,4 +139,44 @@ test("keeps a longer two-line layout inside the guide", async ({ page }) => {
 
   expect(metrics.textWidthMm).toBeLessThanOrEqual(metrics.guideWidthMm + 0.01);
   expect(metrics.textHeightMm).toBeLessThanOrEqual(metrics.guideHeightMm + 0.01);
+});
+
+test("restores the current batch after refresh and clears it when requested", async ({ page }) => {
+  await page.locator("#orderLabelInput").fill("Batch Test");
+  await page.locator("#textInput").fill("Savannah\nRN");
+  await page.locator("#backingInput").fill("4.2");
+  await page.locator("#weldExportedDesignInput").uncheck();
+  await expect(page.locator("#orderCountOutput")).toHaveText("1");
+
+  await page.reload();
+
+  await expect(page.locator("#importStatus")).toContainText("Restored 1 design");
+  await expect(page.locator("#orderLabelInput")).toHaveValue("Batch Test");
+  await expect(page.locator("#textInput")).toHaveValue("Savannah\nRN");
+  await expect(page.locator("#backingInput")).toHaveValue("4.2");
+  await expect(page.locator("#weldExportedDesignInput")).not.toBeChecked();
+
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "Clear Batch" }).click();
+
+  await expect(page.locator("#orderCountOutput")).toHaveText("0");
+  await expect(page.locator("#importStatus")).toContainText("Batch cleared");
+  await expect(page.locator(".editor-panel")).toHaveClass(/is-hidden/);
+
+  await page.reload();
+
+  await expect(page.locator("#orderCountOutput")).toHaveText("0");
+  await expect(page.locator("#importStatus")).not.toContainText("Restored");
+});
+
+test("deletes a single design from the queue", async ({ page }) => {
+  await page.getByRole("button", { name: "+ Add Design" }).click();
+  await expect(page.locator("#orderCountOutput")).toHaveText("2");
+
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "Delete Design 1" }).click();
+
+  await expect(page.locator("#orderCountOutput")).toHaveText("1");
+  await expect(page.getByRole("button", { name: "Delete Design 1" })).toHaveCount(0);
+  await expect(page.locator("#activeOrderName")).toHaveText("Design 2");
 });

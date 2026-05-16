@@ -187,6 +187,15 @@ h2 {
   gap: 10px;
 }
 
+.destructive-action {
+  color: #8a2f2f;
+  border-color: #c66d6d;
+}
+
+.destructive-action:hover {
+  background: #8a2f2f;
+}
+
 .section-heading {
   display: flex;
   align-items: center;
@@ -214,9 +223,22 @@ h2 {
   display: flex;
   flex-direction: column;
   flex: 1 1 auto;
+  gap: 10px;
   min-height: 0;
   overflow: auto;
   border-top: 1px solid var(--line);
+  padding-top: 8px;
+}
+
+.order-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.order-row:last-child {
+  padding-bottom: 0;
 }
 
 .order-empty {
@@ -235,37 +257,31 @@ h2 {
   align-items: stretch;
   width: 100%;
   min-height: 108px;
-  margin-bottom: 18px;
-  padding: 18px 28px 0 12px;
+  padding: 14px 12px;
   color: var(--ink);
   background: transparent;
-  border: 0;
+  border: 1px solid transparent;
   border-left: 4px solid transparent;
-  border-radius: 0;
+  border-radius: 8px;
   text-align: left;
   line-height: 1.2;
   overflow: visible;
-}
-
-.order-item:last-child {
-  margin-bottom: 0;
-}
-
-.order-item::after {
-  content: "";
-  display: block;
-  border-bottom: 1px solid var(--line);
-}
-
-.order-item:last-child::after {
-  content: none;
 }
 
 .order-item:hover,
 .order-item.active {
   color: var(--ink);
   background: #eaf7f6;
+  border-color: #cce4e2;
   border-left-color: #00807c;
+}
+
+.order-delete-button {
+  align-self: flex-start;
+  min-height: 40px;
+  padding: 0 12px;
+  margin-top: 14px;
+  white-space: nowrap;
 }
 
 .order-item-header {
@@ -295,7 +311,6 @@ h2 {
   gap: 6px;
   min-width: 0;
   flex: 0 0 auto;
-  padding-bottom: 18px;
 }
 
 .order-item-recipient {

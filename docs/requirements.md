@@ -152,6 +152,11 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Imported Etsy data should create one queue row per personalized Etsy line item rather than one row per Etsy order.
 - Because one Etsy order may create multiple queue rows, user-facing queue and editor language should refer to designs or queue items rather than assuming one row always equals one Etsy order.
 - Imported Etsy queue rows should display as exactly four text lines: line 1 the Etsy order number, line 2 the recipient or buyer name, line 3 the Etsy listing ID, and line 4 the personalization text.
+- Imported queue items and subsequent design edits should persist across a browser refresh in local browser storage during the current batch workflow.
+- Persisted queue-item data should include enough information to restore the queue, the selected design, imported Etsy metadata, current text, current per-line settings, backing border, weld toggle, and saved/exported status after refresh.
+- The app should provide a queue action to delete a single design without affecting the rest of the current batch.
+- The app should provide a batch-reset action to clear all queued and persisted designs when the operator is ready to start a new batch.
+- Clearing all designs should also clear the corresponding persisted browser storage for that batch data.
 - In the selected-order editor, when imported listing title and 75 by 75 image data are available, show the listing title above the listing image and place both above the `Design Label` field.
 - SVG export should place the face text layer and offset backing layer side by side, with the backing layer to the right of the text layer.
 - In batch export SVG output, each order's face and backing paths should appear below the previous order's paths in a single vertically stacked file.
@@ -214,3 +219,5 @@ For batch Etsy order sessions, the preferred workflow is:
 6. Review the order list before export.
 7. Export the active order SVG from the editor.
 8. Export all queued orders with text from the order navigation when a batch SVG is needed.
+9. Delete a single queue item when it should be excluded from the batch.
+10. Clear the full queue and its saved local batch state when starting a new batch.
