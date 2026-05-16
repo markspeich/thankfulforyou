@@ -53,4 +53,72 @@ describe("presets", () => {
       },
     ]);
   });
+
+  it("applies the listing-specific line 2 height override for listing 1884223710", () => {
+    const lines = buildPresetLines("skywalk-somekind", 4, () => ({
+      fontId: "candlepin",
+      bridgeMm: 0.5,
+      lineBridgeMm: 0.5,
+      offsetXMm: 0,
+      fontSizeMm: 34,
+    }), {
+      listingId: "1884223710",
+    });
+
+    expect(lines[0]).toEqual({
+      fontId: "skywalk",
+      bridgeMm: 0.5,
+      lineBridgeMm: 0.5,
+      offsetXMm: 0,
+      fontSizeMm: 34,
+    });
+    expect(lines[1]).toEqual({
+      fontId: "somekind",
+      bridgeMm: 0.5,
+      lineBridgeMm: 0.5,
+      offsetXMm: 0,
+      fontSizeMm: 21,
+    });
+    expect(lines[2]).toEqual({
+      fontId: "somekind",
+      bridgeMm: 0.5,
+      lineBridgeMm: 0.5,
+      offsetXMm: 0,
+      fontSizeMm: 34,
+    });
+  });
+
+  it("applies the listing-specific line 2 height override for listing 4465975709", () => {
+    const lines = buildPresetLines("skywalk-candlepin", 4, () => ({
+      fontId: "candlepin",
+      bridgeMm: 0.5,
+      lineBridgeMm: 0.5,
+      offsetXMm: 0,
+      fontSizeMm: 34,
+    }), {
+      listingId: "4465975709",
+    });
+
+    expect(lines[0]).toEqual({
+      fontId: "skywalk",
+      bridgeMm: 0.5,
+      lineBridgeMm: 0.5,
+      offsetXMm: 0,
+      fontSizeMm: 34,
+    });
+    expect(lines[1]).toEqual({
+      fontId: "candlepin",
+      bridgeMm: 0.5,
+      lineBridgeMm: 0.5,
+      offsetXMm: 0,
+      fontSizeMm: 21,
+    });
+    expect(lines[2]).toEqual({
+      fontId: "candlepin",
+      bridgeMm: 0.5,
+      lineBridgeMm: 0.5,
+      offsetXMm: 0,
+      fontSizeMm: 34,
+    });
+  });
 });

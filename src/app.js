@@ -136,9 +136,11 @@ function createDefaultLineSettings() {
   };
 }
 
-function createPresetLineSettings(presetId, lineIndex) {
+function createPresetLineSettings(presetId, lineIndex, options = {}) {
+  const { listingId = null } = options;
   return {
     ...createDefaultLineSettings(),
+    ...buildPresetLines(presetId, lineIndex + 1, createDefaultLineSettings, { listingId })[lineIndex],
     fontId: getPresetFontIdForLine(presetId, lineIndex),
   };
 }
@@ -540,19 +542,22 @@ function createQueueItem({
   presetId = DEFAULT_PRESET_ID,
   source = null,
 } = {}) {
+  const normalizedPresetId = isValidPresetId(presetId) ? presetId : DEFAULT_PRESET_ID;
+
   return {
     id: crypto.randomUUID(),
     text,
     status,
     settings: normalizeSettings({
       text,
-      presetId: isValidPresetId(presetId) ? presetId : DEFAULT_PRESET_ID,
+      presetId: normalizedPresetId,
       backingMm: DEFAULT_BACKING_MM,
       weldExportedDesign: DEFAULT_WELD_EXPORTED_DESIGN,
       lines: buildPresetLines(
-        isValidPresetId(presetId) ? presetId : DEFAULT_PRESET_ID,
+        normalizedPresetId,
         getRawTextLines(text).length,
         createDefaultLineSettings,
+        { listingId: source?.listingId },
       ),
     }),
     source,
@@ -562,14 +567,14 @@ function createQueueItem({
   };
 }
 
-function buildPresetSynchronizedSettings(settings, presetId) {
+function buildPresetSynchronizedSettings(settings, presetId, options = {}) {
   const normalized = normalizeSettings(settings);
   const rawLines = getRawTextLines(normalized.text);
 
   return normalizeSettings({
     ...normalized,
     presetId,
-    lines: buildPresetLines(presetId, rawLines.length, createDefaultLineSettings),
+    lines: buildPresetLines(presetId, rawLines.length, createDefaultLineSettings, options),
   });
 }
 
@@ -588,7 +593,12 @@ function shouldSyncOrderPreset(order, presetId) {
   }
 
   const normalized = normalizeSettings(order.settings);
-  const expectedLines = buildPresetLines(presetId, getRawTextLines(normalized.text).length, createDefaultLineSettings);
+  const expectedLines = buildPresetLines(
+    presetId,
+    getRawTextLines(normalized.text).length,
+    createDefaultLineSettings,
+    { listingId: order.source?.listingId },
+  );
 
   if (normalized.presetId !== presetId) {
     return true;
@@ -603,7 +613,9 @@ function syncOrderPresetFromListing(order) {
     return;
   }
 
-  order.settings = buildPresetSynchronizedSettings(order.settings, mappedPresetId);
+  order.settings = buildPresetSynchronizedSettings(order.settings, mappedPresetId, {
+    listingId: order.source?.listingId,
+  });
 }
 
 function normalizeImportedEntry(entry) {
@@ -895,10 +907,12 @@ function createRangeField(lineIndex, setting, labelText, min, max, step, value) 
 function getCurrentSettings() {
   const rawLines = getRawTextLines(textInput.value);
   const presetId = presetInput.value;
+  const activeOrder = getActiveOrder();
+  const listingId = activeOrder?.source?.listingId ?? null;
   const lines = rawLines.map((_, index) => {
     const lineCard = lineControls.querySelector(`[data-line-index="${index}"]`);
     if (!lineCard) {
-      return createPresetLineSettings(presetId, index);
+      return createPresetLineSettings(presetId, index, { listingId });
     }
 
     const fontSelect = lineCard.querySelector('[data-setting="fontId"]');

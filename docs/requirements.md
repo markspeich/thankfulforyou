@@ -150,7 +150,9 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Imported Etsy listing metadata should include the listing title and the 75 by 75 listing image URL when those fields are present in the Etsy order data.
 - The app should maintain a configurable mapping from Etsy listing ID to production preset name.
 - The current preset mapping must include Etsy listing ID `1884223710` to `Skywalk, Somekind`.
+- Etsy listing ID `1884223710` must also apply a listing-specific per-line default of `21 mm` text height on line 2 while keeping the rest of the `Skywalk, Somekind` preset defaults unchanged.
 - The current preset mapping must include Etsy listing ID `4465975709` to `Skywalk, Candlepin`.
+- Etsy listing ID `4465975709` must also apply a listing-specific per-line default of `21 mm` text height on line 2 while keeping the rest of the `Skywalk, Candlepin` preset defaults unchanged.
 - Imported Etsy data should create one queue row per personalized Etsy line item rather than one row per Etsy order.
 - Because one Etsy order may create multiple queue rows, user-facing queue and editor language should refer to designs or queue items rather than assuming one row always equals one Etsy order.
 - Imported Etsy queue rows should display as exactly four text lines: line 1 the Etsy order number, line 2 the recipient or buyer name, line 3 the Etsy listing ID, and line 4 the personalization text.
