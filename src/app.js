@@ -959,11 +959,11 @@ function renderOrderList() {
 
   visibleOrders.forEach((order) => {
     const row = document.createElement("div");
-    row.className = "order-row";
+    row.className = `order-row${order.id === activeOrderId ? " active" : ""}`;
 
     const item = document.createElement("button");
     item.type = "button";
-    item.className = `order-item${order.id === activeOrderId ? " active" : ""}`;
+    item.className = "order-item";
     item.setAttribute("role", "listitem");
 
     const header = document.createElement("div");
@@ -1000,7 +1000,11 @@ function renderOrderList() {
     const deleteButton = document.createElement("button");
     deleteButton.type = "button";
     deleteButton.className = "secondary-action order-delete-button";
-    deleteButton.textContent = "Delete";
+    deleteButton.innerHTML = `
+      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path d="M9 3h6l1 2h4v2H4V5h4l1-2Zm1 7h2v8h-2v-8Zm4 0h2v8h-2v-8ZM7 10h2v8H7v-8Zm-1 11V8h12v13H6Z" />
+      </svg>
+    `;
     deleteButton.setAttribute("aria-label", `Delete ${order.label}`);
     deleteButton.addEventListener("click", (event) => {
       event.stopPropagation();
