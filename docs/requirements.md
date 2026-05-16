@@ -156,6 +156,8 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Imported Etsy data should create one queue row per personalized Etsy line item rather than one row per Etsy order.
 - Because one Etsy order may create multiple queue rows, user-facing queue and editor language should refer to designs or queue items rather than assuming one row always equals one Etsy order.
 - Imported Etsy queue rows should display as exactly four text lines: line 1 the Etsy order number, line 2 the recipient or buyer name, line 3 the Etsy listing ID, and line 4 the personalization text.
+- Re-importing a later Etsy batch must preserve any queue items already present in the current design queue instead of overwriting them.
+- During import, any Etsy line item that already exists in the current design queue should be skipped so the operator can import only newly arrived orders into the same working batch.
 - Imported queue items and subsequent design edits should persist across a browser refresh in local browser storage during the current batch workflow.
 - Persisted queue-item data should include enough information to restore the queue, the selected design, imported Etsy metadata, current text, current per-line settings, backing border, weld toggle, and saved/exported status after refresh.
 - The app should provide a queue action to delete a single design without affecting the rest of the current batch.

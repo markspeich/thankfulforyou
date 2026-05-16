@@ -656,6 +656,28 @@ function normalizeImportedEntry(entry) {
   };
 }
 
+function buildImportedQueueIdentity(source, text = "") {
+  if (!source || typeof source !== "object") {
+    return "";
+  }
+
+  const transactionId = source.transactionId == null ? "" : String(source.transactionId).trim();
+  if (transactionId) {
+    return `transaction:${transactionId}`;
+  }
+
+  const orderNumber = source.orderNumber == null ? "" : String(source.orderNumber).trim();
+  const listingId = source.listingId == null ? "" : String(source.listingId).trim();
+  const buyerName = typeof source.buyerName === "string" ? source.buyerName.trim() : "";
+  const normalizedText = typeof text === "string" ? text.trim() : "";
+
+  if (!orderNumber && !listingId && !buyerName && !normalizedText) {
+    return "";
+  }
+
+  return `fallback:${orderNumber}|${listingId}|${buyerName}|${normalizedText}`;
+}
+
 function parseImportedItems(payloadText) {
   const parsed = JSON.parse(payloadText);
   const rawItems = Array.isArray(parsed)
@@ -1255,7 +1277,30 @@ async function importFromClipboard() {
   try {
     const clipboardText = await navigator.clipboard.readText();
     const importedItems = parseImportedItems(clipboardText);
-    const createdItems = importedItems.map((entry) => {
+    const existingImportedIdentities = new Set(
+      orders
+        .map((order) => buildImportedQueueIdentity(order?.source, order?.text))
+        .filter(Boolean),
+    );
+    const dedupedItems = [];
+    let skippedCount = 0;
+
+    for (const entry of importedItems) {
+      const identity = buildImportedQueueIdentity(entry.source, entry.text);
+
+      if (identity && existingImportedIdentities.has(identity)) {
+        skippedCount += 1;
+        continue;
+      }
+
+      if (identity) {
+        existingImportedIdentities.add(identity);
+      }
+
+      dedupedItems.push(entry);
+    }
+
+    const createdItems = dedupedItems.map((entry) => {
       return createQueueItem({
         text: entry.text,
         status: "in-progress",
@@ -1268,10 +1313,21 @@ async function importFromClipboard() {
     });
 
     saveActiveOrderDraft();
-    orders.push(...createdItems);
-    orderSequence += createdItems.length;
-    selectOrder(createdItems[0].id);
-    updateImportStatus(`Imported ${createdItems.length} Etsy design${createdItems.length === 1 ? "" : "s"} from the clipboard.`, "success");
+    if (createdItems.length) {
+      orders.push(...createdItems);
+      orderSequence += createdItems.length;
+      selectOrder(createdItems[0].id);
+    }
+
+    if (createdItems.length && skippedCount) {
+      updateImportStatus(`Imported ${createdItems.length} new Etsy design${createdItems.length === 1 ? "" : "s"} and skipped ${skippedCount} already in the queue.`, "success");
+    } else if (createdItems.length) {
+      updateImportStatus(`Imported ${createdItems.length} Etsy design${createdItems.length === 1 ? "" : "s"} from the clipboard.`, "success");
+    } else if (skippedCount) {
+      updateImportStatus(`Skipped ${skippedCount} Etsy design${skippedCount === 1 ? "" : "s"} already in the queue. No new designs were added.`, "success");
+    } else {
+      updateImportStatus("Clipboard data did not include any importable Etsy designs.", "error");
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : "Clipboard import failed.";
     updateImportStatus(message, "error");

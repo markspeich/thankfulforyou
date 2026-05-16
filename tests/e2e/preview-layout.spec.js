@@ -180,6 +180,79 @@ test("deletes a single design from the queue", async ({ page }) => {
   await expect(page.locator("#activeOrderName")).toHaveText("Design 1");
 });
 
+test("skips already imported Etsy line items when importing another batch", async ({ page }) => {
+  const firstPayload = JSON.stringify({
+    items: [
+      {
+        orderNumber: "4057600528",
+        listingId: "1884223710",
+        transactionId: "5078093505",
+        buyerName: "Marilyn Lopez",
+        personalization: "Yohanna APN",
+      },
+      {
+        orderNumber: "4057629148",
+        listingId: "1884223710",
+        transactionId: "5078133859",
+        buyerName: "Mallory Braun",
+        personalization: "Mallory R.T.(R)",
+      },
+    ],
+  });
+
+  const secondPayload = JSON.stringify({
+    items: [
+      {
+        orderNumber: "4057629148",
+        listingId: "1884223710",
+        transactionId: "5078133859",
+        buyerName: "Mallory Braun",
+        personalization: "Mallory R.T.(R)",
+      },
+      {
+        orderNumber: "4062879351",
+        listingId: "4465975709",
+        transactionId: "5077938715",
+        buyerName: "Lori Morgan",
+        personalization: "Lori",
+      },
+    ],
+  });
+
+  await page.evaluate((payload) => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        readText: async () => payload,
+      },
+    });
+  }, firstPayload);
+
+  await page.getByRole("button", { name: "Import Clipboard" }).click();
+
+  await expect(page.locator("#orderCountOutput")).toHaveText("3");
+  await expect(page.locator("#importStatus")).toContainText("Imported 2 Etsy designs from the clipboard.");
+
+  await page.evaluate((payload) => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        readText: async () => payload,
+      },
+    });
+  }, secondPayload);
+
+  await page.getByRole("button", { name: "Import Clipboard" }).click();
+
+  await expect(page.locator("#orderCountOutput")).toHaveText("4");
+  await expect(page.locator("#importStatus")).toContainText("Imported 1 new Etsy design and skipped 1 already in the queue.");
+  await expect(page.locator("#orderList .order-row")).toContainText([
+    "#4057600528",
+    "#4057629148",
+    "#4062879351",
+  ]);
+});
+
 test("finishes background analysis after switching to another design", async ({ page }) => {
   const analyzeCounts = new Map();
 
