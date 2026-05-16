@@ -478,6 +478,37 @@ button:disabled {
   gap: 12px;
 }
 
+.listing-reference-card {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  background: #f7fafc;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.listing-reference-card.is-hidden {
+  display: none;
+}
+
+.listing-reference-title {
+  margin: 0;
+  color: #21465e;
+  font-size: 0.84rem;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.listing-reference-image {
+  display: block;
+  width: 75px;
+  height: 75px;
+  object-fit: cover;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
 .line-controls-panel {
   padding-left: 18px;
   border-left: 1px solid var(--line);

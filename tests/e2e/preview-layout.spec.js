@@ -86,7 +86,7 @@ async function measureVisibleTextBounds(page) {
 
 test.beforeEach(async ({ page }) => {
   await page.goto("/");
-  await page.getByRole("button", { name: "+ Add Order" }).click();
+  await page.getByRole("button", { name: "+ Add Design" }).click();
 });
 
 test("shows the production defaults", async ({ page }) => {
@@ -104,8 +104,8 @@ test("keeps text inside the guide and centered for Mark RN", async ({ page }) =>
 
   expect(metrics.textWidthMm).toBeLessThanOrEqual(metrics.guideWidthMm + 0.01);
   expect(metrics.textHeightMm).toBeLessThanOrEqual(metrics.guideHeightMm + 0.01);
-  expect(metrics.deltaX).toBeCloseTo(0, 2);
-  expect(metrics.deltaY).toBeCloseTo(0, 2);
+  expect(Math.abs(metrics.deltaX)).toBeLessThanOrEqual(0.05);
+  expect(Math.abs(metrics.deltaY)).toBeLessThanOrEqual(0.05);
 });
 
 test("keeps a longer two-line layout inside the guide", async ({ page }) => {

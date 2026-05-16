@@ -71,6 +71,9 @@ const orderList = document.querySelector("#orderList");
 const activeOrderName = document.querySelector("#activeOrderName");
 const activeOrderMeta = document.querySelector("#activeOrderMeta");
 const editorPanel = document.querySelector(".editor-panel");
+const listingReferenceCard = document.querySelector("#listingReferenceCard");
+const listingReferenceTitle = document.querySelector("#listingReferenceTitle");
+const listingReferenceImage = document.querySelector("#listingReferenceImage");
 const textInput = document.querySelector("#textInput");
 const presetInput = document.querySelector("#presetInput");
 const weldExportedDesignInput = document.querySelector("#weldExportedDesignInput");
@@ -402,6 +405,10 @@ function normalizeImportedEntry(entry) {
   const orderNumber = entry.orderNumber == null ? "" : String(entry.orderNumber).trim();
   const listingId = entry.listingId == null ? "" : String(entry.listingId).trim();
   const buyerName = normalizeImportedText(entry.buyerName);
+  const listingTitle = normalizeImportedText(entry.listingTitle);
+  const listingImageUrl75x75 = typeof entry.listingImageUrl75x75 === "string"
+    ? entry.listingImageUrl75x75.trim()
+    : "";
   const presetId = getPresetIdForListingId(listingId);
 
   return {
@@ -412,6 +419,8 @@ function normalizeImportedEntry(entry) {
       orderNumber,
       listingId,
       buyerName,
+      listingTitle,
+      listingImageUrl75x75,
       transactionId: entry.transactionId == null ? "" : String(entry.transactionId).trim(),
     },
   };
@@ -723,6 +732,25 @@ function summarizeOrderText(text) {
   return summary || "No text entered";
 }
 
+function renderListingReference(order) {
+  const listingTitle = order?.source?.listingTitle?.trim() || order?.source?.listingId?.trim() || "Imported Etsy listing";
+  const listingImageUrl = order?.source?.listingImageUrl75x75?.trim();
+  const hasReference = Boolean(listingImageUrl);
+
+  listingReferenceCard.classList.toggle("is-hidden", !hasReference);
+
+  if (!hasReference) {
+    listingReferenceTitle.textContent = "";
+    listingReferenceImage.removeAttribute("src");
+    listingReferenceImage.alt = "";
+    return;
+  }
+
+  listingReferenceTitle.textContent = listingTitle;
+  listingReferenceImage.src = listingImageUrl;
+  listingReferenceImage.alt = listingTitle;
+}
+
 function saveActiveOrderDraft() {
   const order = getActiveOrder();
   if (!order) {
@@ -837,6 +865,7 @@ function renderOrderList() {
 
   const activeOrder = getActiveOrder();
   editorPanel.classList.toggle("is-hidden", !activeOrder);
+  renderListingReference(activeOrder);
   activeOrderName.textContent = activeOrder ? activeOrder.label : "No design selected";
   activeOrderMeta.textContent = buildActiveMeta(activeOrder);
   captureButton.disabled = !hasUnsavedRenderChanges(activeOrder);

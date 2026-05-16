@@ -30,6 +30,8 @@ function buildClipboardItems() {
           listingId: String(transaction.listing_id),
           transactionId: String(transaction.transaction_id),
           buyerName,
+          listingTitle: transaction?.product?.title || "",
+          listingImageUrl75x75: transaction?.product?.image_url_75x75 || "",
           label: `#${order.order_id}${buyerName ? ` · ${buyerName}` : ""}${itemNumber > 1 ? ` · Item ${itemNumber}` : ""}`,
           personalization: personalizationEntry.value,
         };
