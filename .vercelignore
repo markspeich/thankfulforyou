@@ -1,0 +1,8 @@
+debug.log
+docs/
+tests/
+test-results/
+playwright-report/
+coverage/
+playwright.config.js
+vitest.config.js

@@ -1,5 +1,6 @@
 # Dependencies
 node_modules/
+.venv*/
 
 # Build output
 dist/
@@ -11,6 +12,7 @@ out/
 .env
 .env.*
 !.env.example
+.vercel/
 
 # Logs
 *.log
@@ -32,3 +34,5 @@ Thumbs.db
 playwright-report/
 test-results/
 coverage/
+
+.vercel

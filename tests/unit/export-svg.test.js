@@ -1,8 +1,15 @@
 import { spawnSync } from "node:child_process";
 import { describe, expect, test } from "vitest";
 
+const pythonCommand = process.env.PYTHON || (process.platform === "win32" ? "py" : "python3");
+const pythonScriptArgs = process.env.PYTHON
+  ? ["tools/export_svg.py"]
+  : process.platform === "win32"
+    ? ["-3.11", "tools/export_svg.py"]
+    : ["tools/export_svg.py"];
+
 function analyzeLayout(layout) {
-  const result = spawnSync("python", ["tools/export_svg.py"], {
+  const result = spawnSync(pythonCommand, pythonScriptArgs, {
     cwd: process.cwd(),
     encoding: "utf8",
     input: JSON.stringify({
@@ -19,7 +26,7 @@ function analyzeLayout(layout) {
 }
 
 function exportSvg(payload) {
-  const result = spawnSync("python", ["tools/export_svg.py"], {
+  const result = spawnSync(pythonCommand, pythonScriptArgs, {
     cwd: process.cwd(),
     encoding: "utf8",
     input: JSON.stringify(payload),

@@ -5,6 +5,12 @@ import { createServer } from "node:http";
 
 const port = Number(process.env.PORT || 4173);
 const root = process.cwd();
+const pythonCommand = process.env.PYTHON || (process.platform === "win32" ? "py" : "python3");
+const pythonScriptArgs = process.env.PYTHON
+  ? ["tools/export_svg.py"]
+  : process.platform === "win32"
+    ? ["-3.11", "tools/export_svg.py"]
+    : ["tools/export_svg.py"];
 
 const contentTypes = {
   ".css": "text/css; charset=utf-8",
@@ -17,7 +23,7 @@ const contentTypes = {
 };
 
 function runGeometryScript(input, { onSuccess, onError }) {
-  const python = spawn("python", ["tools/export_svg.py"], { cwd: root });
+  const python = spawn(pythonCommand, pythonScriptArgs, { cwd: root });
   let stdout = "";
   let stderr = "";
 
