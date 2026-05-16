@@ -142,6 +142,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - The first Etsy import target should accept an Etsy orders HTML save exported from the browser.
 - The repository docs folder includes a sample Etsy orders HTML export at `docs/Orders - Etsy.html` for import development and testing.
 - The import pipeline should extract at minimum the Etsy order number, the Etsy listing ID, and every Personalization text value present on each order line item.
+- The import pipeline should also extract the Etsy `Color` variation value when it is present on the line item and store it with the imported design metadata.
 - The import pipeline should prefer the embedded Etsy page data model when available rather than relying only on visible DOM scraping, because the saved page includes structured order and transaction data.
 - The import flow should support a browser-side helper path, such as a User JavaScript and CSS script, that can copy structured order payloads directly from the live Etsy orders page.
 - The first import implementation should use a clipboard workflow driven by a User JavaScript and CSS helper on the live Etsy orders page.
@@ -160,13 +161,15 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - During import, any Etsy line item that already exists in the current design queue should be skipped so the operator can import only newly arrived orders into the same working batch.
 - Imported queue items and subsequent design edits should persist across a browser refresh in local browser storage during the current batch workflow.
 - Persisted queue-item data should include enough information to restore the queue, the selected design, imported Etsy metadata, current text, current per-line settings, backing border, weld toggle, and saved/exported status after refresh.
+- In the selected-order editor, show the imported Etsy color as a read-only label directly below the `Design Text` field whenever imported color metadata is available.
+- If the imported color name contains the word `White`, highlight that displayed color name in the editor.
 - The app should provide a queue action to delete a single design without affecting the rest of the current batch.
 - The app should provide a batch-reset action to clear all queued and persisted designs when the operator is ready to start a new batch.
 - Clearing all designs should also clear the corresponding persisted browser storage for that batch data.
 - In the selected-order editor, when imported listing title and 75 by 75 image data are available, show the listing title above the listing image and place both above the main text-entry controls.
 - SVG export should place the face text layer and offset backing layer side by side, with the backing layer to the right of the text layer.
 - In batch export SVG output, each order's face and backing paths should appear below the previous order's paths in a single vertically stacked file.
-- In batch export SVG output, each design should start about `2 inches` below the top of the previous design so stacked exports use a tighter, more consistent vertical pitch.
+- In batch export SVG output, each design should start about `2.03 inches` below the top of the previous design so stacked exports use a tighter, more consistent vertical pitch.
 - In batch export SVG output, each order's text path should be grouped separately from its backing path so the name can be selected as one group without including the backing border.
 - The exported backing layer should be an actual outline path for LightBurn, not only a filled shape or SVG stroke effect. The path can be imported and manually assigned to a LightBurn cut layer.
 - Exported face-layer paths should also be welded/unioned so overlapping letters do not create internal cut lines.

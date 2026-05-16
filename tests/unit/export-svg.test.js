@@ -108,7 +108,7 @@ describe("export_svg face tracing", () => {
     expect(svg).toContain("Text: Cached");
   });
 
-  test("stacks batch exports on a 2 inch start-to-start pitch", () => {
+  test("stacks batch exports on a 2.03 inch start-to-start pitch", () => {
     const svg = exportSvg({
       layouts: [
         {
@@ -134,9 +134,9 @@ describe("export_svg face tracing", () => {
       ],
     });
 
-    expect(svg).toContain('height="70.800mm"');
+    expect(svg).toContain('height="71.562mm"');
     expect(svg).toContain('id="order-1-face-layer" transform="translate(0 0.000)"');
-    expect(svg).toContain('id="order-2-face-layer" transform="translate(0 50.800)"');
-    expect(svg).toContain('id="order-2-backing-layer" transform="translate(50.000 50.800)"');
+    expect(svg).toContain('id="order-2-face-layer" transform="translate(0 51.562)"');
+    expect(svg).toContain('id="order-2-backing-layer" transform="translate(50.000 51.562)"');
   });
 });

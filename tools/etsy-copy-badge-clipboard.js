@@ -14,6 +14,18 @@ function getPersonalizationEntries(transaction) {
   });
 }
 
+function getVariationValue(transaction, propertyName) {
+  if (!Array.isArray(transaction?.variations)) {
+    return "";
+  }
+
+  const variation = transaction.variations.find((entry) => {
+    return entry?.property === propertyName && typeof entry?.value === "string" && entry.value.trim();
+  });
+
+  return variation?.value || "";
+}
+
 function buildClipboardItems() {
   const orders = getOrdersCollection();
 
@@ -30,6 +42,7 @@ function buildClipboardItems() {
           listingId: String(transaction.listing_id),
           transactionId: String(transaction.transaction_id),
           buyerName,
+          colorName: getVariationValue(transaction, "Color"),
           listingTitle: transaction?.product?.title || "",
           listingImageUrl75x75: transaction?.product?.image_url_75x75 || "",
           label: `#${order.order_id}${buyerName ? ` · ${buyerName}` : ""}${itemNumber > 1 ? ` · Item ${itemNumber}` : ""}`,

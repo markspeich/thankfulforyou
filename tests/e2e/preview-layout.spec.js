@@ -253,6 +253,55 @@ test("skips already imported Etsy line items when importing another batch", asyn
   ]);
 });
 
+test("shows imported Etsy color below design text and highlights white colors", async ({ page }) => {
+  const payload = JSON.stringify({
+    items: [
+      {
+        orderNumber: "4057600528",
+        listingId: "1884223710",
+        transactionId: "5078093505",
+        buyerName: "Marilyn Lopez",
+        colorName: "White Glitter",
+        personalization: "Yohanna APN",
+      },
+      {
+        orderNumber: "4057629148",
+        listingId: "1884223710",
+        transactionId: "5078133859",
+        buyerName: "Mallory Braun",
+        colorName: "Red",
+        personalization: "Mallory R.T.(R)",
+      },
+    ],
+  });
+
+  await page.evaluate((clipboardPayload) => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        readText: async () => clipboardPayload,
+      },
+    });
+  }, payload);
+
+  await page.getByRole("button", { name: "Import Clipboard" }).click();
+
+  await expect(page.locator("#importedColorField")).toBeVisible();
+  await expect(page.locator("#importedColorValue")).toHaveText("White Glitter");
+  await expect(page.locator("#importedColorValue")).toHaveClass(/highlight-light-color/);
+
+  await page.locator("#orderList .order-row").filter({ hasText: "#4057629148" }).locator(".order-item").click();
+
+  await expect(page.locator("#importedColorField")).toBeVisible();
+  await expect(page.locator("#importedColorValue")).toHaveText("Red");
+  await expect(page.locator("#importedColorValue")).not.toHaveClass(/highlight-light-color/);
+
+  await page.reload();
+
+  await expect(page.locator("#importedColorField")).toBeVisible();
+  await expect(page.locator("#importedColorValue")).toHaveText("Red");
+});
+
 test("finishes background analysis after switching to another design", async ({ page }) => {
   const analyzeCounts = new Map();
 

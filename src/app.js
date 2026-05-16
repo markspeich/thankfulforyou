@@ -76,6 +76,8 @@ const listingReferenceCard = document.querySelector("#listingReferenceCard");
 const listingReferenceTitle = document.querySelector("#listingReferenceTitle");
 const listingReferenceImage = document.querySelector("#listingReferenceImage");
 const textInput = document.querySelector("#textInput");
+const importedColorField = document.querySelector("#importedColorField");
+const importedColorValue = document.querySelector("#importedColorValue");
 const presetInput = document.querySelector("#presetInput");
 const weldExportedDesignInput = document.querySelector("#weldExportedDesignInput");
 const lineControls = document.querySelector("#lineControls");
@@ -396,6 +398,7 @@ function normalizeStoredSource(source) {
     orderNumber: source.orderNumber == null ? "" : String(source.orderNumber).trim(),
     listingId: source.listingId == null ? "" : String(source.listingId).trim(),
     buyerName: typeof source.buyerName === "string" ? source.buyerName.trim() : "",
+    colorName: typeof source.colorName === "string" ? source.colorName.trim() : "",
     listingTitle: typeof source.listingTitle === "string" ? source.listingTitle.trim() : "",
     listingImageUrl75x75: typeof source.listingImageUrl75x75 === "string" ? source.listingImageUrl75x75.trim() : "",
     transactionId: source.transactionId == null ? "" : String(source.transactionId).trim(),
@@ -636,6 +639,7 @@ function normalizeImportedEntry(entry) {
   const orderNumber = entry.orderNumber == null ? "" : String(entry.orderNumber).trim();
   const listingId = entry.listingId == null ? "" : String(entry.listingId).trim();
   const buyerName = normalizeImportedText(entry.buyerName);
+  const colorName = normalizeImportedText(entry.colorName);
   const listingTitle = normalizeImportedText(entry.listingTitle);
   const listingImageUrl75x75 = typeof entry.listingImageUrl75x75 === "string"
     ? entry.listingImageUrl75x75.trim()
@@ -649,6 +653,7 @@ function normalizeImportedEntry(entry) {
       orderNumber,
       listingId,
       buyerName,
+      colorName,
       listingTitle,
       listingImageUrl75x75,
       transactionId: entry.transactionId == null ? "" : String(entry.transactionId).trim(),
@@ -997,7 +1002,8 @@ function summarizeOrderText(text) {
 function renderListingReference(order) {
   const listingTitle = order?.source?.listingTitle?.trim() || order?.source?.listingId?.trim() || "Imported Etsy listing";
   const listingImageUrl = order?.source?.listingImageUrl75x75?.trim();
-  const hasReference = Boolean(listingImageUrl);
+  const colorName = order?.source?.colorName?.trim() || "";
+  const hasReference = Boolean(listingImageUrl || colorName);
 
   listingReferenceCard.classList.toggle("is-hidden", !hasReference);
 
@@ -1009,8 +1015,30 @@ function renderListingReference(order) {
   }
 
   listingReferenceTitle.textContent = listingTitle;
-  listingReferenceImage.src = listingImageUrl;
-  listingReferenceImage.alt = listingTitle;
+  if (listingImageUrl) {
+    listingReferenceImage.src = listingImageUrl;
+    listingReferenceImage.alt = listingTitle;
+    listingReferenceImage.classList.remove("is-hidden");
+  } else {
+    listingReferenceImage.removeAttribute("src");
+    listingReferenceImage.alt = "";
+    listingReferenceImage.classList.add("is-hidden");
+  }
+}
+
+function renderImportedColor(order) {
+  const colorName = order?.source?.colorName?.trim() || "";
+  const hasColor = Boolean(colorName);
+
+  importedColorField.classList.toggle("is-hidden", !hasColor);
+  importedColorValue.classList.toggle("highlight-light-color", /\bwhite\b/i.test(colorName));
+
+  if (!hasColor) {
+    importedColorValue.textContent = "";
+    return;
+  }
+
+  importedColorValue.textContent = colorName;
 }
 
 function saveActiveOrderDraft() {
@@ -1149,6 +1177,7 @@ function renderOrderList() {
   const activeOrder = getActiveOrder();
   editorPanel.classList.toggle("is-hidden", !activeOrder);
   renderListingReference(activeOrder);
+  renderImportedColor(activeOrder);
   activeOrderName.textContent = activeOrder ? buildQueueOrderNumber(activeOrder) : "No design selected";
   activeOrderMeta.textContent = buildActiveMeta(activeOrder);
   captureButton.disabled = !hasUnsavedRenderChanges(activeOrder);
@@ -1198,6 +1227,7 @@ function resetEditorToEmptyState() {
     weldExportedDesign: DEFAULT_WELD_EXPORTED_DESIGN,
     lines: [],
   });
+  renderImportedColor(null);
   renderPreviewGuideOnly();
 }
 
