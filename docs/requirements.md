@@ -22,7 +22,7 @@ The current goal is to turn that geometry pipeline into a dependable production 
 
 The initial production rollout starts with the modified Candlepin production font and a default bridge target of 0.5 mm between neighboring acrylic letter pieces. That target should remain adjustable.
 
-The current browser-rendered preview confirms that the modified Candlepin font can be loaded and visually overlapped. However, browser text bounds are only an approximation. Some glyph pairs may appear close by bounding box while still failing to visibly touch. The layout engine should therefore evaluate neighboring glyphs by their actual visible shape, and eventually by vector outlines.
+The current browser-rendered preview confirms that the modified Candlepin font can be loaded and visually overlapped. However, browser text bounds are only an approximation. Some glyph pairs may appear close by bounding box while still failing to visibly touch. The production geometry pipeline must evaluate neighboring glyphs from actual font outlines rather than rough browser text bounds. A faster browser-rendered path may still be used for live preview only when it remains visually trustworthy and does not replace outline-based geometry checks or export.
 
 ## Product Context
 
@@ -94,7 +94,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Add tests around geometry behavior as implementation matures, especially for connectedness detection and overlap behavior.
 - Keep the first screen focused on the layout tool itself rather than a landing page.
 
-## Later-Phase Workflow Enhancements
+## Current Production Workflow Requirements
 
 - Support entering or pasting multiple Etsy orders into a session so the user can work through them one at a time.
 - Support adding Etsy orders one at a time because the Etsy orders page may not provide an easy way to copy all customer names at once.
@@ -118,6 +118,12 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - The exported backing layer should be an actual outline path for LightBurn, not only a filled shape or SVG stroke effect. The path can be imported and manually assigned to a LightBurn cut layer.
 - Exported face-layer paths should also be welded/unioned so overlapping letters do not create internal cut lines.
 - Exported cut paths should be smooth enough for laser production and should avoid visibly pixelated/stair-stepped contours.
+
+## Later-Phase Workflow Enhancements
+
+- Consider adding automatic bridge or spacing suggestions after enough production examples exist to validate them.
+- Consider more granular overlap controls than the current per-line settings if real jobs show consistent edge cases.
+- Consider broader import or export helpers beyond the current SVG-first LightBurn workflow once the first production flow is stable.
 
 ## Current Assumptions And Pending Decisions
 

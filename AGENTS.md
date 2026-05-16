@@ -43,8 +43,13 @@ When the user provides new product, workflow, material, manufacturing, design, o
 
 - Build the actual layout tool as the first screen, not a landing page.
 - The interface should feel like a calm production workspace.
+- The current UI direction is the Production Queue layout: a left-side order queue and a right-side selected-order editor.
+- The selected-order editor should place the preview at the top and the controls at the bottom.
+- The left-side order queue should support adding orders, selecting an order to edit, and batch export for queued orders with text.
+- The selected-order header should hold the primary order actions, including `Save` and `Export This Design`.
 - Prioritize practical controls: text entry, font choice, layer preview, overlap adjustment, line spacing, scale, connectedness status, and export when available.
-- Font choice should eventually be available per line of text.
+- Font choice should be available per line of text.
+- Organize controls as one control group per text line, followed by one global `Backing Border` control.
 - Avoid decorative UI that competes with design inspection.
 - Use visual previews that clearly distinguish acrylic layers.
 
