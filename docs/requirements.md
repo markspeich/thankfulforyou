@@ -99,6 +99,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - The global `Backing Border` slider should appear below all per-line control groups.
 - Export designs as SVG for current production use.
 - SVG export must produce vector path definitions, not embedded raster image data.
+- Exported SVG face and backing paths must use a solid fill color of RGB(255, 0, 0).
 - When `Weld Exported Design` is checked, exported face-layer paths must be welded/unioned so overlapping letters do not create internal cut lines.
 - When `Weld Exported Design` is unchecked, SVG export may preserve overlapping letter contours without welding so the overlaps remain visible and editable.
 - Keep layout and geometry logic separated from UI code so geometry behavior can be tested independently.

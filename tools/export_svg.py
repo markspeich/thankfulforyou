@@ -460,6 +460,7 @@ def build_single_order_paths(root, payload):
 
 def build_svg(payload):
     root = Path(__file__).resolve().parents[1]
+    export_fill = "rgb(255, 0, 0)"
 
     if isinstance(payload, dict) and isinstance(payload.get("layouts"), list):
         return build_batch_svg(root, payload["layouts"])
@@ -468,10 +469,10 @@ def build_svg(payload):
     return f"""<svg xmlns="http://www.w3.org/2000/svg" width="{order["export_width"]:.3f}mm" height="{order["height"]:.3f}mm" viewBox="0 0 {order["export_width"]:.3f} {order["height"]:.3f}">
   <title>Badge reel layout</title>
   <desc>Text: {order["text"]}. Face layer is on the left. Offset backing layer is on the right. Generated as vector paths from the selected production fonts. Connected components: {order["connected_component_count"]}.</desc>
-  <g id="face-layer" fill="none" stroke="#f8fbfc" stroke-width="0.100" stroke-linejoin="round" stroke-linecap="round">
+  <g id="face-layer" fill="{export_fill}" stroke="none">
     <path d="{order["face_path"]}"/>
   </g>
-  <g id="backing-layer" transform="translate({order["backing_x"]:.3f} 0)" fill="none" stroke="#446f8b" stroke-width="0.100" stroke-linejoin="round" stroke-linecap="round">
+  <g id="backing-layer" transform="translate({order["backing_x"]:.3f} 0)" fill="{export_fill}" stroke="none">
     <path d="{order["backing_path"]}"/>
   </g>
 </svg>
@@ -479,6 +480,7 @@ def build_svg(payload):
 
 
 def build_batch_svg(root, layouts):
+    export_fill = "rgb(255, 0, 0)"
     order_paths = [build_single_order_paths(root, payload) for payload in layouts]
     vertical_gap = 12.0
     export_width = max(order["export_width"] for order in order_paths)
@@ -497,10 +499,10 @@ def build_batch_svg(root, layouts):
     current_y = 0.0
     for index, order in enumerate(order_paths):
         parts.append(
-            f"""  <g id="order-{index + 1}-face-layer" transform="translate(0 {current_y:.3f})" fill="none" stroke="#f8fbfc" stroke-width="0.100" stroke-linejoin="round" stroke-linecap="round">
+            f"""  <g id="order-{index + 1}-face-layer" transform="translate(0 {current_y:.3f})" fill="{export_fill}" stroke="none">
       <path d="{order["face_path"]}"/>
     </g>
-    <g id="order-{index + 1}-backing-layer" transform="translate({order["backing_x"]:.3f} {current_y:.3f})" fill="none" stroke="#446f8b" stroke-width="0.100" stroke-linejoin="round" stroke-linecap="round">
+    <g id="order-{index + 1}-backing-layer" transform="translate({order["backing_x"]:.3f} {current_y:.3f})" fill="{export_fill}" stroke="none">
       <path d="{order["backing_path"]}"/>
     </g>"""
         )

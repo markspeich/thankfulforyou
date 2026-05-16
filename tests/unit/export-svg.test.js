@@ -103,6 +103,8 @@ describe("export_svg face tracing", () => {
 
     expect(svg).toContain('d="M0 0 L10 0 L10 10 Z"');
     expect(svg).toContain('d="M20 0 L30 0 L30 10 Z"');
+    expect(svg).toContain('fill="rgb(255, 0, 0)"');
+    expect(svg).toContain('stroke="none"');
     expect(svg).toContain("Text: Cached");
   });
 });
