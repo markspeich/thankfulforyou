@@ -1,0 +1,10 @@
+[project]
+name = "thankfulforyou-functions"
+version = "0.1.0"
+requires-python = "==3.12.*"
+dependencies = [
+  "fonttools==4.46.0",
+  "numpy==1.26.2",
+  "Pillow==10.1.0",
+  "scipy==1.11.4",
+]
