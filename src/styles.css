@@ -235,16 +235,30 @@ h2 {
   align-items: stretch;
   width: 100%;
   min-height: 108px;
-  padding: 18px 28px 18px 12px;
+  margin-bottom: 18px;
+  padding: 18px 28px 0 12px;
   color: var(--ink);
   background: transparent;
   border: 0;
-  border-bottom: 1px solid var(--line);
   border-left: 4px solid transparent;
   border-radius: 0;
   text-align: left;
   line-height: 1.2;
   overflow: visible;
+}
+
+.order-item:last-child {
+  margin-bottom: 0;
+}
+
+.order-item::after {
+  content: "";
+  display: block;
+  border-bottom: 1px solid var(--line);
+}
+
+.order-item:last-child::after {
+  content: none;
 }
 
 .order-item:hover,
@@ -281,6 +295,7 @@ h2 {
   gap: 6px;
   min-width: 0;
   flex: 0 0 auto;
+  padding-bottom: 18px;
 }
 
 .order-item-recipient {
