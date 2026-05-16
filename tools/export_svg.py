@@ -547,12 +547,10 @@ def build_svg_document(title, desc, instances):
         order = instance["order"]
         instance_id = instance["instance_id"]
         parts.append(
-            f"""  <g id="{instance_id}-face-layer" transform="translate(0 {current_y:.3f})" fill="{export_fill}" stroke="none">
+            f"""  <g id="{instance_id}-name-group" transform="translate(0 {current_y:.3f})" fill="{export_fill}" stroke="none">
     <path d="{order["face_path"]}"/>
   </g>
-  <g id="{instance_id}-backing-layer" transform="translate({order["backing_x"]:.3f} {current_y:.3f})" fill="{export_fill}" stroke="none">
-    <path d="{order["backing_path"]}"/>
-  </g>"""
+  <path id="{instance_id}-backing-border" d="{order["backing_path"]}" transform="translate({order["backing_x"]:.3f} {current_y:.3f})" fill="{export_fill}" stroke="none"/>"""
         )
         color_label = build_color_label(order, instance_id, current_y)
         if color_label:

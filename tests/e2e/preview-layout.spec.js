@@ -357,12 +357,20 @@ test("includes imported color and quantity in the export payload", async ({ page
 test("copies the current design and all queued designs to the clipboard", async ({ page }) => {
   await page.evaluate(() => {
     window.__copiedSvgPayloads = [];
+    window.ClipboardItem = class ClipboardItem {
+      constructor(data) {
+        this.data = data;
+      }
+    };
     Object.defineProperty(navigator, "clipboard", {
       configurable: true,
       value: {
         readText: async () => "",
-        writeText: async (value) => {
-          window.__copiedSvgPayloads.push(value);
+        write: async (items) => {
+          const [item] = items;
+          const svgBlob = item.data["image/svg+xml"];
+          const svgText = await svgBlob.text();
+          window.__copiedSvgPayloads.push(svgText);
         },
       },
     });

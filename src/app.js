@@ -1121,7 +1121,7 @@ function renderOrderList() {
   notStartedCountOutput.textContent = String(notStartedCount);
   clearQueueButton.disabled = orders.length === 0;
   exportCompletedButton.disabled = exportableCount === 0;
-  copyCompletedButton.disabled = exportableCount === 0 || !navigator.clipboard?.writeText;
+  copyCompletedButton.disabled = exportableCount === 0 || !canCopySvgToClipboard();
   orderList.replaceChildren();
 
   if (!orders.length) {
@@ -1204,7 +1204,7 @@ function renderOrderList() {
   activeOrderMeta.textContent = buildActiveMeta(activeOrder);
   captureButton.disabled = !hasUnsavedRenderChanges(activeOrder);
   downloadButton.disabled = !activeOrder || !activeOrder.text.trim();
-  copyButton.disabled = !activeOrder || !activeOrder.text.trim() || !navigator.clipboard?.writeText;
+  copyButton.disabled = !activeOrder || !activeOrder.text.trim() || !canCopySvgToClipboard();
 }
 
 function selectOrder(orderId) {
@@ -2122,7 +2122,7 @@ async function downloadSvg() {
 
 async function copyCurrentSvg() {
   const order = getActiveOrder();
-  if (!order || !lastLayout || !navigator.clipboard?.writeText) {
+  if (!order || !lastLayout || !canCopySvgToClipboard()) {
     return;
   }
 
@@ -2149,7 +2149,7 @@ async function copyCurrentSvg() {
     await copySvgToClipboard(svgSource);
   } catch {
   } finally {
-    copyButton.disabled = !order.text.trim() || !navigator.clipboard?.writeText;
+    copyButton.disabled = !order.text.trim() || !canCopySvgToClipboard();
     copyButton.textContent = "Copy This Design";
     copyButton.removeAttribute("aria-busy");
     renderOrderList();
@@ -2184,9 +2184,26 @@ async function requestSvgExport({ layout = null, layouts = null, filename }) {
   URL.revokeObjectURL(url);
 }
 
+function canCopySvgToClipboard() {
+  if (!navigator.clipboard) {
+    return false;
+  }
+
+  return Boolean(navigator.clipboard.write || navigator.clipboard.writeText);
+}
+
 async function copySvgToClipboard(svgSource) {
-  if (!navigator.clipboard?.writeText) {
+  if (!canCopySvgToClipboard()) {
     throw new Error("Clipboard copy is not available in this browser context.");
+  }
+
+  if (navigator.clipboard.write && typeof ClipboardItem !== "undefined") {
+    const clipboardItem = new ClipboardItem({
+      "image/svg+xml": new Blob([svgSource], { type: "image/svg+xml" }),
+      "text/plain": new Blob([svgSource], { type: "text/plain" }),
+    });
+    await navigator.clipboard.write([clipboardItem]);
+    return;
   }
 
   await navigator.clipboard.writeText(svgSource);
@@ -2263,7 +2280,7 @@ async function copyAllOrders() {
   renderOrderList();
 
   const exportableOrders = orders.filter((order) => order.text.trim());
-  if (!exportableOrders.length || !navigator.clipboard?.writeText) {
+  if (!exportableOrders.length || !canCopySvgToClipboard()) {
     return;
   }
 
@@ -2287,7 +2304,7 @@ async function copyAllOrders() {
     await copySvgToClipboard(svgSource);
   } catch {
   } finally {
-    copyCompletedButton.disabled = exportableOrders.length === 0 || !navigator.clipboard?.writeText;
+    copyCompletedButton.disabled = exportableOrders.length === 0 || !canCopySvgToClipboard();
     copyCompletedButton.textContent = "Copy All Designs";
     copyCompletedButton.removeAttribute("aria-busy");
     renderOrderList();

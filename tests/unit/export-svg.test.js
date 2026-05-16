@@ -109,8 +109,10 @@ describe("export_svg face tracing", () => {
     expect(svg).toContain('stroke="none"');
     expect(svg).toContain("Text: Cached");
     expect(svg).toContain('height="71.562mm"');
-    expect(svg).toContain('id="order-1-copy-1-face-layer" transform="translate(0 0.000)"');
-    expect(svg).toContain('id="order-1-copy-2-face-layer" transform="translate(0 51.562)"');
+    expect(svg).toContain('id="order-1-copy-1-name-group" transform="translate(0 0.000)"');
+    expect(svg).toContain('id="order-1-copy-1-backing-border" d="M20 0 L30 0 L30 10 Z" transform="translate(50.000 0.000)"');
+    expect(svg).toContain('id="order-1-copy-2-name-group" transform="translate(0 51.562)"');
+    expect(svg).toContain('id="order-1-copy-2-backing-border" d="M20 0 L30 0 L30 10 Z" transform="translate(50.000 51.562)"');
     expect(svg).toContain('id="order-1-copy-1-color-label"');
     expect(svg).toContain('font-family="Arial"');
     expect(svg).toContain(">Red</text>");
@@ -147,10 +149,10 @@ describe("export_svg face tracing", () => {
     });
 
     expect(svg).toContain('height="123.124mm"');
-    expect(svg).toContain('id="order-1-copy-1-face-layer" transform="translate(0 0.000)"');
-    expect(svg).toContain('id="order-1-copy-2-face-layer" transform="translate(0 51.562)"');
-    expect(svg).toContain('id="order-2-copy-1-face-layer" transform="translate(0 103.124)"');
-    expect(svg).toContain('id="order-2-copy-1-backing-layer" transform="translate(50.000 103.124)"');
+    expect(svg).toContain('id="order-1-copy-1-name-group" transform="translate(0 0.000)"');
+    expect(svg).toContain('id="order-1-copy-2-name-group" transform="translate(0 51.562)"');
+    expect(svg).toContain('id="order-2-copy-1-name-group" transform="translate(0 103.124)"');
+    expect(svg).toContain('id="order-2-copy-1-backing-border" d="M20 0 L30 0 L30 10 Z" transform="translate(50.000 103.124)"');
     expect(svg).toContain(">Sage Green</text>");
     expect(svg).toContain(">Red</text>");
   });
