@@ -2,9 +2,11 @@ import fs from "node:fs";
 import path from "node:path";
 import { defineConfig } from "playwright/test";
 import { fileURLToPath } from "node:url";
+import { resolveDevBaseUrl, resolveDevPort } from "./tools/dev_port.mjs";
 
-const LOCAL_BASE_URL = "http://127.0.0.1:4173";
 const CONFIG_DIR = path.dirname(fileURLToPath(import.meta.url));
+const LOCAL_BASE_URL = resolveDevBaseUrl({ cwd: CONFIG_DIR });
+const LOCAL_PORT = resolveDevPort({ cwd: CONFIG_DIR });
 const envFileValues = loadEnvFile(path.join(CONFIG_DIR, ".env.local"));
 const baseURL = process.env.PLAYWRIGHT_BASE_URL || envFileValues.PLAYWRIGHT_BASE_URL || LOCAL_BASE_URL;
 const bypassSecret = process.env.VERCEL_AUTOMATION_BYPASS_SECRET || envFileValues.VERCEL_AUTOMATION_BYPASS_SECRET;
@@ -59,6 +61,10 @@ export default defineConfig({
   webServer: baseURL === LOCAL_BASE_URL
     ? {
         command: "node tools/dev_server.mjs",
+        env: {
+          ...process.env,
+          PORT: String(LOCAL_PORT),
+        },
         url: LOCAL_BASE_URL,
         reuseExistingServer: true,
         timeout: 15000,

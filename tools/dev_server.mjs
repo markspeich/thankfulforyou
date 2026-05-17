@@ -2,8 +2,9 @@ import { createReadStream, existsSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { extname, join, normalize } from "node:path";
 import { createServer } from "node:http";
+import { resolveDevPort } from "./dev_port.mjs";
 
-const port = Number(process.env.PORT || 4173);
+const port = resolveDevPort();
 const root = process.cwd();
 const pythonCommand = process.env.PYTHON || (process.platform === "win32" ? "py" : "python3");
 const pythonScriptArgs = process.env.PYTHON
