@@ -254,6 +254,23 @@ function normalizeStoredCachedBuild(cachedBuild) {
   };
 }
 
+function normalizeStoredAnalysisBadge(analysisBadge) {
+  if (!analysisBadge || typeof analysisBadge !== "object") {
+    return null;
+  }
+
+  const state = analysisBadge.state;
+  if (state !== "running" && state !== "ok" && state !== "warning") {
+    return null;
+  }
+
+  return {
+    state,
+    shortLabel: typeof analysisBadge.shortLabel === "string" ? analysisBadge.shortLabel : "",
+    fullLabel: typeof analysisBadge.fullLabel === "string" ? analysisBadge.fullLabel : "",
+  };
+}
+
 function getOrderSettingsSignature(order) {
   return order ? buildSettingsSignature(order.settings) : null;
 }
@@ -426,6 +443,7 @@ function hydrateStoredOrder(order, index) {
     capturedLayout: null,
     cachedBuild: normalizeStoredCachedBuild(order.cachedBuild),
     savedSettingsSignature: typeof order.savedSettingsSignature === "string" ? order.savedSettingsSignature : null,
+    analysisBadge: normalizeStoredAnalysisBadge(order.analysisBadge),
     analysisState: "idle",
   };
 }
@@ -443,6 +461,7 @@ function buildPersistedQueueState() {
       source: order.source ? { ...order.source } : null,
       cachedBuild: order.cachedBuild ? structuredClone(order.cachedBuild) : null,
       savedSettingsSignature: order.savedSettingsSignature,
+      analysisBadge: order.analysisBadge ? structuredClone(order.analysisBadge) : null,
     })),
   };
 }
@@ -565,6 +584,7 @@ function createQueueItem({
     capturedLayout: null,
     cachedBuild: null,
     savedSettingsSignature: null,
+    analysisBadge: null,
     analysisState: "idle",
   };
 }
@@ -1079,6 +1099,7 @@ function saveActiveOrderDraft() {
   order.settings = getCurrentSettings();
   if (order.status !== "captured" && order.status !== "exported") {
     order.status = "in-progress";
+    order.analysisBadge = null;
   }
   persistQueueState();
 }
@@ -1092,6 +1113,7 @@ function updateActiveOrderFromControls() {
   order.text = textInput.value;
   order.settings = getCurrentSettings();
   order.status = "in-progress";
+  order.analysisBadge = null;
   persistQueueState();
   renderOrderList();
 }
@@ -1145,6 +1167,10 @@ function isOrderReadyForExport(order) {
 function getQueueAnalysisSummary(order) {
   if (!order) {
     return null;
+  }
+
+  if (order.analysisBadge) {
+    return order.analysisBadge;
   }
 
   if (order.analysisState === "running") {
@@ -1522,6 +1548,11 @@ async function captureActiveOrder() {
   order.savedSettingsSignature = signature;
   order.capturedLayout = structuredClone(layout);
   order.analysisState = "running";
+  order.analysisBadge = {
+    state: "running",
+    shortLabel: "",
+    fullLabel: "Analysis running",
+  };
   order.status = "captured";
   persistQueueState();
   renderOrderList();
@@ -1548,6 +1579,17 @@ async function captureActiveOrder() {
       analysis,
     });
     order.analysisState = "idle";
+    order.analysisBadge = analysis.isConnected
+      ? {
+          state: "ok",
+          shortLabel: "1",
+          fullLabel: "Analysis complete: 1 connected face piece",
+        }
+      : {
+          state: "warning",
+          shortLabel: String(Math.max(1, Number(analysis.connectedComponentCount) || 0)),
+          fullLabel: `Analysis complete: ${Math.max(1, Number(analysis.connectedComponentCount) || 0)} face pieces`,
+        };
     persistQueueState();
 
     if (activeOrderId === order.id && buildSettingsSignature(getCurrentSettings()) === signature) {
@@ -1566,6 +1608,7 @@ async function captureActiveOrder() {
       order.savedSettingsSignature = null;
       order.status = "in-progress";
     }
+    order.analysisBadge = null;
     if (activeOrderId === order.id) {
       updateConnectionStatus(
         "warning",
