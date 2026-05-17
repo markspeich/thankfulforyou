@@ -283,6 +283,10 @@ function getCachedBuild(order, signature = getOrderSettingsSignature(order)) {
   return structuredClone(order.cachedBuild);
 }
 
+function cloneSerializableData(value) {
+  return value == null ? value : JSON.parse(JSON.stringify(value));
+}
+
 function storeCachedBuild(order, signature, layout, analysis) {
   if (!order || !signature || !layout || !analysis) {
     return;
@@ -290,8 +294,8 @@ function storeCachedBuild(order, signature, layout, analysis) {
 
   order.cachedBuild = {
     signature,
-    layout: structuredClone(layout),
-    analysis: structuredClone(analysis),
+    layout: cloneSerializableData(layout),
+    analysis: cloneSerializableData(analysis),
   };
 }
 
@@ -1126,12 +1130,16 @@ function hasUnsavedRenderChanges(order) {
   return buildSettingsSignature(getCurrentSettings()) !== order.savedSettingsSignature;
 }
 
-function getSavedCachedBuild(order) {
-  if (!order?.text.trim() || typeof order.savedSettingsSignature !== "string") {
-    return null;
-  }
+function hasSavedCompletedState(order) {
+  return Boolean(
+    order
+    && typeof order.savedSettingsSignature === "string"
+    && (order.status === "captured" || order.status === "exported"),
+  );
+}
 
-  if (getOrderSettingsSignature(order) !== order.savedSettingsSignature) {
+function getSavedCachedBuild(order) {
+  if (!order?.text.trim() || !hasSavedCompletedState(order)) {
     return null;
   }
 
@@ -1161,29 +1169,19 @@ function getSavedCachedBuild(order) {
 }
 
 function isOrderReadyForExport(order) {
-  return Boolean(getSavedCachedBuild(order));
+  if (!getSavedCachedBuild(order)) {
+    return false;
+  }
+
+  if (order?.id === activeOrderId && hasUnsavedRenderChanges(order)) {
+    return false;
+  }
+
+  return true;
 }
 
-function getQueueAnalysisSummary(order) {
-  if (!order) {
-    return null;
-  }
-
-  if (order.analysisBadge) {
-    return order.analysisBadge;
-  }
-
-  if (order.analysisState === "running") {
-    return {
-      state: "running",
-      shortLabel: "",
-      fullLabel: "Analysis running",
-    };
-  }
-
-  const cachedBuild = getSavedCachedBuild(order);
-  const analysis = cachedBuild?.analysis;
-  if (!analysis) {
+function buildCompletedAnalysisBadge(analysis) {
+  if (!analysis || typeof analysis !== "object") {
     return null;
   }
 
@@ -1204,6 +1202,32 @@ function getQueueAnalysisSummary(order) {
     shortLabel: pieceCount > 0 ? String(pieceCount) : "",
     fullLabel: `Analysis complete: ${pieceCount || "multiple"} face pieces`,
   };
+}
+
+function getQueueAnalysisSummary(order) {
+  if (!order) {
+    return null;
+  }
+
+  if (order.analysisState === "running") {
+    return {
+      state: "running",
+      shortLabel: "",
+      fullLabel: "Analysis running",
+    };
+  }
+
+  if (order.status !== "captured" && order.status !== "exported") {
+    return order.analysisBadge;
+  }
+
+  const cachedBuild = getSavedCachedBuild(order);
+  const analysis = cachedBuild?.analysis;
+  if (!analysis) {
+    return order.analysisBadge;
+  }
+
+  return buildCompletedAnalysisBadge(analysis);
 }
 
 function renderOrderList() {
@@ -1574,22 +1598,12 @@ async function captureActiveOrder() {
     const analysis = await analyzeLayout(layout);
 
     storeCachedBuild(order, signature, layout, analysis);
-    order.capturedLayout = structuredClone({
-      ...layout,
-      analysis,
-    });
+    order.capturedLayout = {
+      ...cloneSerializableData(layout),
+      analysis: cloneSerializableData(analysis),
+    };
     order.analysisState = "idle";
-    order.analysisBadge = analysis.isConnected
-      ? {
-          state: "ok",
-          shortLabel: "1",
-          fullLabel: "Analysis complete: 1 connected face piece",
-        }
-      : {
-          state: "warning",
-          shortLabel: String(Math.max(1, Number(analysis.connectedComponentCount) || 0)),
-          fullLabel: `Analysis complete: ${Math.max(1, Number(analysis.connectedComponentCount) || 0)} face pieces`,
-        };
+    order.analysisBadge = buildCompletedAnalysisBadge(analysis);
     persistQueueState();
 
     if (activeOrderId === order.id && buildSettingsSignature(getCurrentSettings()) === signature) {

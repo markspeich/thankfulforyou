@@ -517,7 +517,7 @@ test("runs face analysis only when completing", async ({ page }) => {
 
 test("keeps Complete button state independent from background analysis", async ({ page }) => {
   await page.route("**/api/layout-analyze", async (route) => {
-    await page.waitForTimeout(1000);
+    await new Promise((resolve) => setTimeout(resolve, 1000));
     await route.fulfill({
       status: 200,
       contentType: "application/json; charset=utf-8",
@@ -549,7 +549,7 @@ test("shows queue analysis indicators for running, connected, and multi-piece co
     const text = postData?.layout?.text || "";
 
     if (text === "Alpha") {
-      await page.waitForTimeout(700);
+      await new Promise((resolve) => setTimeout(resolve, 700));
       await route.fulfill({
         status: 200,
         contentType: "application/json; charset=utf-8",
@@ -581,6 +581,47 @@ test("shows queue analysis indicators for running, connected, and multi-piece co
   const betaIndicator = page.locator("#orderList .order-row").filter({ hasText: "Design 2" }).locator(".order-analysis-indicator.warning");
   await expect(betaIndicator).toContainText("⚠");
   await expect(betaIndicator).toContainText("3");
+
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+});
+
+test("recovers queue analysis indicators from cached analysis when a stale running badge is stored", async ({ page }) => {
+  await page.route("**/api/layout-analyze", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify(buildMockAnalysisResponse()),
+    });
+  });
+
+  await page.locator("#textInput").fill("Alpha");
+  await completeDesign(page, "Design 1");
+
+  await page.evaluate(() => {
+    const raw = window.localStorage.getItem("thankfulforyou.designQueue");
+    if (!raw) {
+      return;
+    }
+
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed.orders) || !parsed.orders.length) {
+      return;
+    }
+
+    parsed.orders[0].analysisBadge = {
+      state: "running",
+      shortLabel: "",
+      fullLabel: "Analysis running",
+    };
+    window.localStorage.setItem("thankfulforyou.designQueue", JSON.stringify(parsed));
+  });
+
+  await page.reload();
+  await expect(page.locator("#importStatus")).toContainText("Restored 1 design");
+
+  const row = page.locator("#orderList .order-row").filter({ hasText: "Design 1" });
+  await expect(row.locator(".order-analysis-indicator.ok")).toBeVisible({ timeout: 20000 });
+  await expect(row.locator(".order-analysis-indicator.running")).toHaveCount(0);
 
   await page.unrouteAll({ behavior: "ignoreErrors" });
 });
