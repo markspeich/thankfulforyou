@@ -382,12 +382,14 @@ def build_face_outline_path(root, payload):
             continue
 
         glyph = font_data["glyph_set"][glyph_name]
-        scale = float(letter["fontSizeMm"]) / float(font_data["units_per_em"])
+        scale_x = float(letter["fontSizeMm"]) / float(font_data["units_per_em"])
+        vertical_scale = float(letter.get("verticalScale", 1))
+        scale_y = scale_x * vertical_scale
         transform = (
-            scale,
+            scale_x,
             0,
             0,
-            -scale,
+            -scale_y,
             float(letter["x"]),
             float(letter["y"]),
         )
@@ -433,9 +435,9 @@ def render_text_mask(
     letters = payload["letters"]
 
     image = Image.new("L", (round(width * scale), round(height * scale)), 0)
-    draw = ImageDraw.Draw(image)
     stroke_width = max(0, round(stroke_mm * scale))
     font_cache = {}
+    temp_draw = ImageDraw.Draw(Image.new("L", (1, 1), 0))
 
     for letter in letters:
         font = load_font(
@@ -444,15 +446,45 @@ def render_text_mask(
             max(1, round(float(letter["fontSizeMm"]) * scale)),
             font_cache,
         )
-        draw.text(
-            (float(letter["x"]) * scale, float(letter["y"]) * scale),
-            letter["character"],
+        character = letter.get("character", "")
+        if not character:
+            continue
+
+        vertical_scale = max(0.01, float(letter.get("verticalScale", 1)))
+        bbox = temp_draw.textbbox(
+            (0, 0),
+            character,
+            font=font,
+            anchor="ls",
+            stroke_width=stroke_width,
+        )
+        if not bbox:
+            continue
+
+        left, top, right, bottom = bbox
+        glyph_width = max(1, right - left)
+        glyph_height = max(1, bottom - top)
+        glyph_image = Image.new("L", (glyph_width, glyph_height), 0)
+        glyph_draw = ImageDraw.Draw(glyph_image)
+        glyph_draw.text(
+            (-left, -top),
+            character,
             font=font,
             fill=255,
             anchor="ls",
             stroke_width=stroke_width,
             stroke_fill=255,
         )
+
+        if abs(vertical_scale - 1.0) > 1e-6:
+            glyph_image = glyph_image.resize(
+                (glyph_width, max(1, round(glyph_height * vertical_scale))),
+                Image.Resampling.BICUBIC,
+            )
+
+        paste_x = round(float(letter["x"]) * scale + left)
+        paste_y = round(float(letter["y"]) * scale + top * vertical_scale)
+        image.paste(glyph_image, (paste_x, paste_y), glyph_image)
 
     return image
 

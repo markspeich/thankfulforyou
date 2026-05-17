@@ -96,6 +96,43 @@ describe("export_svg face tracing", () => {
     expect(unwelded.exportFacePath).toBe(unwelded.facePath);
   });
 
+  test("applies per-letter vertical stretch without widening outline bounds", { timeout: 15000 }, () => {
+    const baseLayout = {
+      text: "T",
+      widthMm: 40,
+      heightMm: 40,
+      backingMm: 3.1,
+      letters: [
+        {
+          character: "T",
+          fontId: "candlepin",
+          fontPath: "public/fonts/Candlepin-Laser.otf",
+          fontSizeMm: 20,
+          verticalScale: 1,
+          x: 5,
+          y: 28,
+        },
+      ],
+    };
+
+    const base = analyzeLayout(baseLayout);
+    const stretched = analyzeLayout({
+      ...baseLayout,
+      letters: [
+        {
+          ...baseLayout.letters[0],
+          verticalScale: 1.35,
+        },
+      ],
+    });
+
+    expect(base.faceBoundsMm).toBeTruthy();
+    expect(stretched.faceBoundsMm).toBeTruthy();
+    expect(stretched.faceBoundsMm.height).toBeGreaterThan(base.faceBoundsMm.height * 1.25);
+    expect(stretched.faceBoundsMm.width).toBeLessThan(base.faceBoundsMm.width * 1.05);
+    expect(stretched.facePath).not.toBe(base.facePath);
+  });
+
   test("reuses precomputed export geometry without rebuilding outlines", () => {
     const svg = exportSvg({
       text: "Cached",

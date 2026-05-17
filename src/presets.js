@@ -13,6 +13,7 @@ const FALLBACK_PRESET_DEFINITIONS = [
       lineBridgeMm: 0.5,
       offsetXMm: 0,
       fontSizeMm: 34,
+      verticalScale: 1,
     },
     lineRules: [
       {
@@ -40,6 +41,7 @@ const FALLBACK_PRESET_DEFINITIONS = [
       lineBridgeMm: 0.5,
       offsetXMm: 0,
       fontSizeMm: 34,
+      verticalScale: 1,
     },
     lineRules: [
       {
@@ -88,6 +90,7 @@ const FALLBACK_PRESET_DEFINITIONS = [
       lineBridgeMm: 0.5,
       offsetXMm: 0,
       fontSizeMm: 34,
+      verticalScale: 1,
     },
     lineRules: [
       {
@@ -135,6 +138,7 @@ const ALLOWED_LINE_SETTINGS = [
   "lineBridgeMm",
   "offsetXMm",
   "fontSizeMm",
+  "verticalScale",
 ];
 
 let presetRegistry = createPresetRegistry(FALLBACK_MANIFEST, FALLBACK_PRESET_DEFINITIONS);

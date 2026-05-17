@@ -13,7 +13,8 @@
     "bridgeMm": 0.5,
     "lineBridgeMm": 0.5,
     "offsetXMm": 0,
-    "fontSizeMm": 34
+    "fontSizeMm": 34,
+    "verticalScale": 1
   },
   "lineRules": [
     {

@@ -70,8 +70,9 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - A preset JSON definition should include the preset id, preset name, base line defaults, per-line rules, and any listing-specific overrides that belong to that preset.
 - Preset ids should remain stable once in use so saved queue data can continue resolving previously selected presets.
 - Allow font selection per line of text.
+- Allow vertical-only stretching per line of text so operators can make a line taller without making it wider.
 - Provide one control group per text line.
-- Each per-line control group must include a Font dropdown, Letter Bridge slider, Horizontal Offset slider, and Text Height slider.
+- Each per-line control group must include a Font dropdown, Letter Bridge slider, Horizontal Offset slider, Text Height slider, and Vertical Stretch slider.
 - Each per-line control group after the first must also include a Line Bridge slider for controlling the connection to the line above it.
 - Add or remove per-line control groups automatically as the user adds or removes text lines.
 - Remove the current non-functional `Font (Line 1)` and `Font (Line 2)` dropdowns from below the order text field once the per-line control groups exist.
@@ -83,6 +84,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Center multi-line layouts by each line's actual visible shape bounds, not by rough text boxes or font advance widths.
 - The rendered text geometry must fit within 2.2 inches in width and 1.5 inches in height.
 - Scale the text proportionally to make the best use of the available size limit, scaling up or down as needed so the text fills as much of the allowed space as possible while still staying within 2.2 inches wide and 1.5 inches tall.
+- Vertical-only stretch must contribute to the measured text height and connectedness analysis while preserving the intended line width as much as practical.
 - The backing border does not need to fit within the 2.2 inch by 1.5 inch text guide limit and may extend beyond it.
 - Detect whether text geometry is connected as a single piece.
 - Show a visual preview of the text and backing layer.
@@ -209,6 +211,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - The first production export target is SVG for LightBurn-oriented laser workflows.
 - The first production font formats are OTF and TTF, matching the currently available Candlepin, Skywalk, and Somekind assets.
 - The current production workflow is manual-control-first. Automatic optimization may be added later, but operators must be able to adjust letter bridge, line bridge, per-line font, horizontal offset, text height, and backing border directly.
+- Operators will sometimes need to increase a line's apparent height without increasing its width. Treat that as a per-line geometry setting rather than a preview-only effect so preview, analysis, and SVG export stay aligned.
 - The current implementation target is global per-line controls rather than per-character-pair tuning. More granular overlap controls may be considered later if real production jobs require them.
 - Preset configuration should be maintainable by editing data files with a well-defined schema rather than updating multiple hardcoded branches.
 - Multi-line layouts should support intentional contact between lines, and for Candlepin layouts each lower line should slide upward until the visible outlines reach the configured line-bridge target.
@@ -216,6 +219,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - The 2.2 inch by 1.5 inch guide box defines the text fitting target, not the total finished backing size limit.
 - A production-safe minimum bridge width for 1/8 inch acrylic still needs explicit shop confirmation. Until confirmed otherwise, use 0.5 mm as the working default bridge target for Candlepin letter and line connections.
 - The initial hosted deployment target is Vercel.
+- The first production authentication step should use Vercel Deployment Protection so the hosted tool and its API routes stay private before any in-app user system is added.
 - A production deployment must include the real production font assets used for preview, analysis, and export. A deployment flow that omits those font files is not production-ready.
 - The production font assets are allowed to be included in the deployed app and served from the deployed `public/fonts` path.
 - Production deployment must preserve the geometry analysis and SVG export pipeline in a way that remains deterministic between local use and hosted use.
@@ -234,6 +238,8 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Deployment configuration should explicitly define the production install, build, and runtime behavior instead of relying on local-only defaults.
 - Production should have a smoke-test flow that verifies font loading, queue persistence, save-triggered analysis, and SVG export in the hosted environment before operators rely on it for Etsy batches.
 - If the hosted app is only for internal production use, deployment protection or authentication should be enabled before processing real Etsy order data.
+- For the current internal production rollout, enable Vercel Deployment Protection on the linked Vercel project before processing real Etsy order data, and treat any later app-level login system as a separate follow-up phase.
+- Automated checks against a protected Vercel preview should use Vercel Protection Bypass for Automation so smoke tests can keep Deployment Protection enabled while still exercising the hosted UI and API routes.
 
 ## Open Questions
 

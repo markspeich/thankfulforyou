@@ -15,6 +15,7 @@ const createDefaultLineSettings = () => ({
   lineBridgeMm: 0.5,
   offsetXMm: 0,
   fontSizeMm: 34,
+  verticalScale: 1,
 });
 
 describe("presets", () => {
@@ -74,6 +75,7 @@ describe("presets", () => {
         lineBridgeMm: 0.5,
         offsetXMm: 0,
         fontSizeMm: 34,
+        verticalScale: 1,
       },
       {
         fontId: "somekind",
@@ -81,6 +83,7 @@ describe("presets", () => {
         lineBridgeMm: 0.5,
         offsetXMm: 0,
         fontSizeMm: 34,
+        verticalScale: 1,
       },
       {
         fontId: "somekind",
@@ -88,6 +91,7 @@ describe("presets", () => {
         lineBridgeMm: 0.5,
         offsetXMm: 0,
         fontSizeMm: 34,
+        verticalScale: 1,
       },
     ]);
   });
@@ -103,6 +107,7 @@ describe("presets", () => {
       lineBridgeMm: 0.5,
       offsetXMm: 0,
       fontSizeMm: 34,
+      verticalScale: 1,
     });
     expect(lines[1]).toEqual({
       fontId: "somekind",
@@ -110,6 +115,7 @@ describe("presets", () => {
       lineBridgeMm: 0.5,
       offsetXMm: 0,
       fontSizeMm: 21,
+      verticalScale: 1,
     });
     expect(lines[2]).toEqual({
       fontId: "somekind",
@@ -117,6 +123,7 @@ describe("presets", () => {
       lineBridgeMm: 0.5,
       offsetXMm: 0,
       fontSizeMm: 34,
+      verticalScale: 1,
     });
   });
 
@@ -131,6 +138,7 @@ describe("presets", () => {
       lineBridgeMm: 0.5,
       offsetXMm: 0,
       fontSizeMm: 34,
+      verticalScale: 1,
     });
     expect(lines[1]).toEqual({
       fontId: "candlepin",
@@ -138,6 +146,7 @@ describe("presets", () => {
       lineBridgeMm: 0.5,
       offsetXMm: 0,
       fontSizeMm: 21,
+      verticalScale: 1,
     });
     expect(lines[2]).toEqual({
       fontId: "candlepin",
@@ -145,6 +154,7 @@ describe("presets", () => {
       lineBridgeMm: 0.5,
       offsetXMm: 0,
       fontSizeMm: 34,
+      verticalScale: 1,
     });
   });
 

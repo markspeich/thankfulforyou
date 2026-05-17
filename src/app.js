@@ -58,6 +58,7 @@ const DEFAULT_LINE_SETTINGS = Object.freeze({
   lineBridgeMm: 0.5,
   offsetXMm: 0,
   fontSizeMm: 34,
+  verticalScale: 1,
 });
 
 const addOrderButton = document.querySelector("#addOrderButton");
@@ -137,6 +138,7 @@ function createDefaultLineSettings() {
     lineBridgeMm: DEFAULT_LINE_SETTINGS.lineBridgeMm,
     offsetXMm: DEFAULT_LINE_SETTINGS.offsetXMm,
     fontSizeMm: DEFAULT_LINE_SETTINGS.fontSizeMm,
+    verticalScale: DEFAULT_LINE_SETTINGS.verticalScale,
   };
 }
 
@@ -178,6 +180,7 @@ function normalizeLineSettings(lineSettings = {}) {
     lineBridgeMm: Number.isFinite(Number(lineSettings.lineBridgeMm)) ? Number(lineSettings.lineBridgeMm) : DEFAULT_LINE_SETTINGS.lineBridgeMm,
     offsetXMm: Number.isFinite(Number(lineSettings.offsetXMm)) ? Number(lineSettings.offsetXMm) : DEFAULT_LINE_SETTINGS.offsetXMm,
     fontSizeMm: Number.isFinite(Number(lineSettings.fontSizeMm)) ? Number(lineSettings.fontSizeMm) : DEFAULT_LINE_SETTINGS.fontSizeMm,
+    verticalScale: Number.isFinite(Number(lineSettings.verticalScale)) ? Number(lineSettings.verticalScale) : DEFAULT_LINE_SETTINGS.verticalScale,
   };
 }
 
@@ -223,6 +226,7 @@ function buildSettingsSignature(settings) {
       lineBridgeMm: Number(line.lineBridgeMm),
       offsetXMm: Number(line.offsetXMm),
       fontSizeMm: Number(line.fontSizeMm),
+      verticalScale: Number(line.verticalScale),
     })),
   });
 }
@@ -820,6 +824,10 @@ function lineValueText(setting, value) {
     return `${Number(value).toFixed(0)} mm`;
   }
 
+  if (setting === "verticalScale") {
+    return `${Math.round(Number(value) * 100)}%`;
+  }
+
   return `${Number(value).toFixed(1)} mm`;
 }
 
@@ -867,6 +875,7 @@ function renderLineControls(settings = getCurrentSettings()) {
       createRangeField(index, "bridgeMm", "Letter Bridge", 0, 4, 0.1, line.bridgeMm),
       createRangeField(index, "offsetXMm", "Horizontal Offset", -20, 20, 0.1, line.offsetXMm),
       createRangeField(index, "fontSizeMm", "Text Height", 18, 55, 1, line.fontSizeMm),
+      createRangeField(index, "verticalScale", "Vertical Stretch", 0.75, 1.5, 0.01, line.verticalScale),
     ];
 
     if (index > 0) {
@@ -947,6 +956,7 @@ function getCurrentSettings() {
     const lineBridgeInput = lineCard.querySelector('[data-setting="lineBridgeMm"]');
     const offsetXInput = lineCard.querySelector('[data-setting="offsetXMm"]');
     const fontSizeInput = lineCard.querySelector('[data-setting="fontSizeMm"]');
+    const verticalScaleInput = lineCard.querySelector('[data-setting="verticalScale"]');
 
     return normalizeLineSettings({
       fontId: fontSelect?.value,
@@ -954,6 +964,7 @@ function getCurrentSettings() {
       lineBridgeMm: lineBridgeInput?.value,
       offsetXMm: offsetXInput?.value,
       fontSizeMm: fontSizeInput?.value,
+      verticalScale: verticalScaleInput?.value,
     });
   });
 
@@ -1575,7 +1586,25 @@ function measureCharacter(character, fontSizeMm, fontId) {
   };
 }
 
-function createGlyphMask(character, fontSizeMm, fontId) {
+function drawScaledText(context, character, x, y, fontSizePx, fontId, verticalScale, mode = "fill") {
+  context.save();
+  context.font = getCanvasFont(fontSizePx, fontId);
+  context.textBaseline = "alphabetic";
+  context.translate(x, y);
+  context.scale(1, verticalScale);
+
+  if (mode === "stroke" || mode === "both") {
+    context.strokeText(character, 0, 0);
+  }
+
+  if (mode === "fill" || mode === "both") {
+    context.fillText(character, 0, 0);
+  }
+
+  context.restore();
+}
+
+function createGlyphMask(character, fontSizeMm, fontId, verticalScale) {
   const fontSizePx = fontSizeMm * PX_PER_MM * MASK_SCALE;
   const maskCanvas = document.createElement("canvas");
   const maskContext = maskCanvas.getContext("2d", { willReadFrequently: true });
@@ -1587,15 +1616,15 @@ function createGlyphMask(character, fontSizeMm, fontId) {
   const ascent = Math.ceil(metrics.actualBoundingBoxAscent || fontSizePx * 0.8);
   const descent = Math.ceil(metrics.actualBoundingBoxDescent || fontSizePx * 0.25);
   const width = Math.max(1, left + right + MASK_PADDING_PX * 2);
-  const height = Math.max(1, ascent + descent + MASK_PADDING_PX * 2);
-  const baseline = MASK_PADDING_PX + ascent;
+  const scaledAscent = Math.ceil(ascent * verticalScale);
+  const scaledDescent = Math.ceil(descent * verticalScale);
+  const height = Math.max(1, scaledAscent + scaledDescent + MASK_PADDING_PX * 2);
+  const baseline = MASK_PADDING_PX + scaledAscent;
 
   maskCanvas.width = width;
   maskCanvas.height = height;
-  maskContext.font = getCanvasFont(fontSizePx, fontId);
   maskContext.fillStyle = "#000";
-  maskContext.textBaseline = "alphabetic";
-  maskContext.fillText(character, MASK_PADDING_PX + left, baseline);
+  drawScaledText(maskContext, character, MASK_PADDING_PX + left, baseline, fontSizePx, fontId, verticalScale);
 
   const imageData = maskContext.getImageData(0, 0, width, height);
 
@@ -1607,8 +1636,8 @@ function createGlyphMask(character, fontSizeMm, fontId) {
     baseline,
     leftMm: left / MASK_SCALE / PX_PER_MM,
     rightMm: right / MASK_SCALE / PX_PER_MM,
-    ascentMm: ascent / MASK_SCALE / PX_PER_MM,
-    descentMm: descent / MASK_SCALE / PX_PER_MM,
+    ascentMm: scaledAscent / MASK_SCALE / PX_PER_MM,
+    descentMm: scaledDescent / MASK_SCALE / PX_PER_MM,
   };
 }
 
@@ -1661,10 +1690,11 @@ function findPairOffsetMm(leftMask, rightMask, bridgeMm) {
   return (leftMask.rightMm + rightMask.leftMm) - bridgeMm;
 }
 
-function createEmptyLineMask(fontSizeMm) {
+function createEmptyLineMask(fontSizeMm, verticalScale) {
   const scale = PX_PER_MM * MASK_SCALE;
-  const height = Math.ceil(fontSizeMm * 1.35 * scale) + MASK_PADDING_PX * 2;
-  const baseline = MASK_PADDING_PX + Math.ceil(fontSizeMm * scale);
+  const height = Math.ceil(fontSizeMm * 1.35 * verticalScale * scale) + MASK_PADDING_PX * 2;
+  const baseline = MASK_PADDING_PX + Math.ceil(fontSizeMm * verticalScale * scale);
+  const scaledHeightMm = fontSizeMm * verticalScale;
 
   return {
     data: new Uint8ClampedArray(4),
@@ -1676,36 +1706,42 @@ function createEmptyLineMask(fontSizeMm) {
     leftMm: 0,
     rightMm: 0,
     topMm: 0,
-    bottomMm: fontSizeMm,
+    bottomMm: scaledHeightMm,
     widthMm: 0,
-    heightMm: fontSizeMm,
+    heightMm: scaledHeightMm,
     baselineMm: baseline / scale,
     hasInk: false,
   };
 }
 
-function createLineMask(letters, fontSizeMm, fontId) {
+function createLineMask(letters, fontSizeMm, fontId, verticalScale) {
   if (!letters.length) {
-    return createEmptyLineMask(fontSizeMm);
+    return createEmptyLineMask(fontSizeMm, verticalScale);
   }
 
   const scale = PX_PER_MM * MASK_SCALE;
   const minLeft = Math.min(...letters.map((letter) => letter.leftEdge), 0);
   const maxRight = Math.max(...letters.map((letter) => letter.rightEdge), fontSizeMm);
   const width = Math.ceil((maxRight - minLeft) * scale) + MASK_PADDING_PX * 2;
-  const height = Math.ceil(fontSizeMm * 1.35 * scale) + MASK_PADDING_PX * 2;
-  const baseline = MASK_PADDING_PX + Math.ceil(fontSizeMm * scale);
+  const height = Math.ceil(fontSizeMm * 1.35 * verticalScale * scale) + MASK_PADDING_PX * 2;
+  const baseline = MASK_PADDING_PX + Math.ceil(fontSizeMm * verticalScale * scale);
   const maskCanvas = document.createElement("canvas");
   const maskContext = maskCanvas.getContext("2d", { willReadFrequently: true });
 
   maskCanvas.width = width;
   maskCanvas.height = height;
-  maskContext.font = getCanvasFont(fontSizeMm * scale, fontId);
   maskContext.fillStyle = "#000";
-  maskContext.textBaseline = "alphabetic";
 
   letters.forEach((letter) => {
-    maskContext.fillText(letter.character, MASK_PADDING_PX + (letter.x - minLeft) * scale, baseline);
+    drawScaledText(
+      maskContext,
+      letter.character,
+      MASK_PADDING_PX + (letter.x - minLeft) * scale,
+      baseline,
+      fontSizeMm * scale,
+      fontId,
+      verticalScale,
+    );
   });
 
   const imageData = maskContext.getImageData(0, 0, width, height);
@@ -1738,7 +1774,7 @@ function createLineMask(letters, fontSizeMm, fontId) {
   }
 
   const visualTopMm = hasInk ? (inkTop - MASK_PADDING_PX) / scale : 0;
-  const visualBottomMm = hasInk ? (inkBottom - MASK_PADDING_PX) / scale : fontSizeMm;
+  const visualBottomMm = hasInk ? (inkBottom - MASK_PADDING_PX) / scale : fontSizeMm * verticalScale;
 
   return {
     data: imageData.data,
@@ -1804,13 +1840,13 @@ function findLineOffsetMm(upperMask, lowerMask, bridgeMm) {
   return (upperMask.height - MASK_PADDING_PX * 2) / scale - bridgeMm;
 }
 
-function layoutCharacters(text, fontSizeMm, bridgeMm, fontId) {
+function layoutCharacters(text, fontSizeMm, bridgeMm, fontId, verticalScale) {
   const characters = [...text];
   if (!characters.length) {
     return [];
   }
 
-  const masks = characters.map((character) => createGlyphMask(character, fontSizeMm, fontId));
+  const masks = characters.map((character) => createGlyphMask(character, fontSizeMm, fontId, verticalScale));
   const positions = [];
 
   return characters.map((character, index) => {
@@ -1842,13 +1878,19 @@ function layoutTextLines(text, lineSettings) {
   const normalizedSettings = normalizeSettings({ text, lines: lineSettings }).lines;
   const lines = rawLines.map((lineText, index) => {
     const settings = normalizedSettings[index] || createDefaultLineSettings();
-    const letters = layoutCharacters(lineText, settings.fontSizeMm, settings.bridgeMm, settings.fontId);
+    const letters = layoutCharacters(
+      lineText,
+      settings.fontSizeMm,
+      settings.bridgeMm,
+      settings.fontId,
+      settings.verticalScale,
+    );
     return {
       index,
       text: lineText,
       settings,
       letters,
-      mask: createLineMask(letters, settings.fontSizeMm, settings.fontId),
+      mask: createLineMask(letters, settings.fontSizeMm, settings.fontId, settings.verticalScale),
       offsetXMm: settings.offsetXMm,
       y: 0,
     };
@@ -1966,10 +2008,17 @@ function createBackingImage(letters, widthMm, heightMm, backingMm) {
   backingContext.fillStyle = "#446f8b";
 
   letters.forEach((letter) => {
-    backingContext.font = getCanvasFont(letter.fontSizeMm * scale, letter.fontId);
     backingContext.lineWidth = backingMm * 2 * scale;
-    backingContext.strokeText(letter.character, letter.x * scale, letter.y * scale);
-    backingContext.fillText(letter.character, letter.x * scale, letter.y * scale);
+    drawScaledText(
+      backingContext,
+      letter.character,
+      letter.x * scale,
+      letter.y * scale,
+      letter.fontSizeMm * scale,
+      letter.fontId,
+      letter.verticalScale ?? 1,
+      "both",
+    );
   });
 
   const imageData = backingContext.getImageData(0, 0, widthPx, heightPx);
@@ -2032,8 +2081,15 @@ function createFaceImage(letters, widthMm, heightMm) {
   faceContext.fillStyle = "#f8fbfc";
 
   letters.forEach((letter) => {
-    faceContext.font = getCanvasFont(letter.fontSizeMm * scale, letter.fontId);
-    faceContext.fillText(letter.character, letter.x * scale, letter.y * scale);
+    drawScaledText(
+      faceContext,
+      letter.character,
+      letter.x * scale,
+      letter.y * scale,
+      letter.fontSizeMm * scale,
+      letter.fontId,
+      letter.verticalScale ?? 1,
+    );
   });
 
   return {
@@ -2409,6 +2465,7 @@ function buildOrderLayout(settings) {
       fontId: line.settings.fontId,
       fontPath: font.exportPath,
       fontSizeMm: line.settings.fontSizeMm * scaleFactor,
+      verticalScale: line.settings.verticalScale,
     }));
   });
 
