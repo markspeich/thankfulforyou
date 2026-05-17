@@ -58,4 +58,5 @@ When the user provides new product, workflow, material, manufacturing, design, o
 - Ask for clarification when manufacturing constraints affect geometry decisions.
 - Capture assumptions explicitly in `docs/requirements.md`.
 - Keep changes scoped and avoid unrelated refactors.
+- Prefer bash commands and examples over PowerShell unless PowerShell is absolutely necessary for the task or environment.
 - If adding dependencies, choose well-maintained libraries that handle font parsing, vector geometry, boolean operations, or SVG export reliably.
