@@ -69,10 +69,12 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Production preset definitions should move toward a schema-validated JSON source of truth instead of duplicating preset ids, labels, line rules, and listing-specific overrides across HTML and JavaScript.
 - A preset JSON definition should include the preset id, preset name, base line defaults, per-line rules, and any listing-specific overrides that belong to that preset.
 - Preset ids should remain stable once in use so saved queue data can continue resolving previously selected presets.
+- Per-line preset and saved-order data must persist the `Lock Text Height` setting so reusable presets and restored queue items preserve which lines are protected from automatic fit resizing.
 - Allow font selection per line of text.
 - Allow vertical-only stretching per line of text so operators can make a line taller without making it wider.
 - Provide one control group per text line.
 - Each per-line control group must include a Font dropdown, Letter Bridge slider, Horizontal Offset slider, Text Height slider, and Vertical Stretch slider.
+- Each per-line control group must also include a `Lock Text Height` control that prevents automatic boundary-fit resizing from changing that line's configured text height.
 - Each per-line control group after the first must also include a Line Bridge slider for controlling the connection to the line above it.
 - Add or remove per-line control groups automatically as the user adds or removes text lines.
 - Remove the current non-functional `Font (Line 1)` and `Font (Line 2)` dropdowns from below the order text field once the per-line control groups exist.
@@ -84,6 +86,12 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Center multi-line layouts by each line's actual visible shape bounds, not by rough text boxes or font advance widths.
 - The rendered text geometry must fit within 2.2 inches in width and 1.5 inches in height.
 - Scale the text proportionally to make the best use of the available size limit, scaling up or down as needed so the text fills as much of the allowed space as possible while still staying within 2.2 inches wide and 1.5 inches tall.
+- Treat `Text Height` as the authored physical size for each line in millimeters.
+- When a line's `Lock Text Height` control is enabled, preserve that line's authored text height during automatic boundary-fit resizing instead of scaling it with the rest of the design.
+- Automatic boundary-fit resizing should continue scaling unlocked lines proportionally to make the best use of the 2.2 inch by 1.5 inch guide box.
+- `Vertical Stretch` must remain editable and continue affecting final rendered geometry even when `Lock Text Height` is enabled, because the lock applies only to authored text height.
+- If one or more locked lines prevent the final design from fitting within the guide box, preserve the locked text height and allow the final design to overflow the guide rather than silently breaking the lock.
+- Manual edits to `Text Height` must continue working when `Lock Text Height` is enabled; the lock only prevents automatic fit resizing from changing the line's authored text height.
 - Vertical-only stretch must contribute to the measured text height and connectedness analysis while preserving the intended line width as much as practical.
 - The backing border does not need to fit within the 2.2 inch by 1.5 inch text guide limit and may extend beyond it.
 - Detect whether text geometry is connected as a single piece.
