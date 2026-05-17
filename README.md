@@ -79,3 +79,22 @@ Run this on the Vercel preview URL before promoting to production:
 5. Click `Export This Design` and confirm an SVG downloads.
 6. Add a second completed design and confirm `Export All Designs` downloads a batch SVG.
 7. Open the SVG in LightBurn and confirm the face layer, backing layer, and color label objects are selectable as expected.
+
+## Protected Vercel Preview Automation
+
+The initial production authorization plan uses Vercel Deployment Protection rather than an in-app login system.
+
+To run Playwright against a protected Vercel preview, generate a Protection Bypass for Automation secret in the Vercel project and then run:
+
+```powershell
+$env:PLAYWRIGHT_BASE_URL = "https://your-preview-url.vercel.app"
+$env:VERCEL_AUTOMATION_BYPASS_SECRET = "your-bypass-secret"
+npm run test:e2e
+```
+
+The Playwright config automatically sends:
+
+- `x-vercel-protection-bypass: $VERCEL_AUTOMATION_BYPASS_SECRET`
+- `x-vercel-set-bypass-cookie: true`
+
+This keeps Deployment Protection enabled while still allowing automated preview smoke tests to load the app and call the same protected API routes.
