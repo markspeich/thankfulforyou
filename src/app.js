@@ -742,6 +742,43 @@ function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
 
+function captureElementScrollState(element) {
+  if (!(element instanceof HTMLElement)) {
+    return null;
+  }
+
+  return {
+    left: element.scrollLeft,
+    top: element.scrollTop,
+  };
+}
+
+function restoreElementScrollState(element, state) {
+  if (!(element instanceof HTMLElement) || !state) {
+    return;
+  }
+
+  element.scrollLeft = state.left;
+  element.scrollTop = state.top;
+}
+
+function captureSelectionScrollState() {
+  return {
+    pageLeft: window.scrollX,
+    pageTop: window.scrollY,
+    queue: captureElementScrollState(orderList),
+  };
+}
+
+function restoreSelectionScrollState(state) {
+  if (!state) {
+    return;
+  }
+
+  restoreElementScrollState(orderList, state.queue);
+  window.scrollTo(state.pageLeft, state.pageTop);
+}
+
 function updateZoom(nextZoom, anchor = null) {
   const previousZoom = zoom;
   zoom = clamp(nextZoom, 0.4, 6);
@@ -1373,6 +1410,7 @@ function renderOrderList() {
 }
 
 function selectOrder(orderId) {
+  const selectionScrollState = captureSelectionScrollState();
   saveActiveOrderDraft();
 
   const order = orders.find((candidate) => candidate.id === orderId);
@@ -1389,8 +1427,10 @@ function selectOrder(orderId) {
   applySettings(order.settings);
   persistQueueState();
   renderOrderList();
+  restoreSelectionScrollState(selectionScrollState);
   requestAnimationFrame(() => {
     render();
+    restoreSelectionScrollState(selectionScrollState);
   });
 }
 
