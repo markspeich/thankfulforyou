@@ -593,7 +593,12 @@ function getMappedPresetIdForOrder(order) {
 }
 
 function shouldSyncOrderPreset(order, presetId) {
-  if (!order || !presetId || order.source?.manualPresetOverride) {
+  if (
+    !order
+    || !presetId
+    || order.source?.manualPresetOverride
+    || typeof order.savedSettingsSignature === "string"
+  ) {
     return false;
   }
 

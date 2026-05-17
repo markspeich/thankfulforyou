@@ -113,8 +113,23 @@ async function measureVisibleTextBounds(page) {
 
 test.beforeEach(async ({ page }) => {
   await page.goto("/");
-  await page.evaluate(() => localStorage.clear());
-  await page.reload();
+  await expect.poll(async () => {
+    const value = await page.locator("#importStatus").textContent();
+    return typeof value === "string"
+      && (
+        value.includes("Restored")
+        || value.includes("Import Etsy clipboard data copied from the browser helper.")
+      );
+  }).toBe(true);
+
+  const orderCount = page.locator("#orderCountOutput");
+
+  if ((await orderCount.textContent()) !== "0") {
+    page.once("dialog", (dialog) => dialog.accept());
+    await page.getByRole("button", { name: "Clear Batch" }).click();
+    await expect(orderCount).toHaveText("0");
+  }
+
   await page.getByRole("button", { name: "+ Add Design" }).click();
 });
 
