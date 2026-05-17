@@ -39,6 +39,29 @@ function exportSvg(payload) {
   return result.stdout;
 }
 
+function countPathCommands(path, command) {
+  const matches = path.match(new RegExp(command, "g"));
+  return matches ? matches.length : 0;
+}
+
+function pathBounds(path) {
+  const numbers = Array.from(path.matchAll(/-?\d+(?:\.\d+)?/g), (match) => Number(match[0]));
+  const xs = [];
+  const ys = [];
+
+  for (let index = 0; index + 1 < numbers.length; index += 2) {
+    xs.push(numbers[index]);
+    ys.push(numbers[index + 1]);
+  }
+
+  return {
+    left: Math.min(...xs),
+    top: Math.min(...ys),
+    right: Math.max(...xs),
+    bottom: Math.max(...ys),
+  };
+}
+
 describe("export_svg face tracing", () => {
   test("builds Candlepin face paths directly from font outlines", { timeout: 15000 }, () => {
     const analysis = analyzeLayout({
@@ -94,6 +117,53 @@ describe("export_svg face tracing", () => {
     expect(welded.exportFacePath).not.toContain("C");
     expect(unwelded.exportFacePath).toContain("C");
     expect(unwelded.exportFacePath).toBe(unwelded.facePath);
+  });
+
+  test("simplifies welded export paths without materially changing face bounds", { timeout: 15000 }, () => {
+    const layout = {
+      text: "RN",
+      widthMm: 40,
+      heightMm: 20,
+      backingMm: 3.1,
+      weldExportedDesign: true,
+      letters: [
+        {
+          character: "R",
+          fontId: "somekind",
+          fontPath: "public/fonts/Somekind.ttf",
+          fontSizeMm: 16,
+          x: 4,
+          y: 16,
+        },
+        {
+          character: "N",
+          fontId: "somekind",
+          fontPath: "public/fonts/Somekind.ttf",
+          fontSizeMm: 16,
+          x: 14,
+          y: 16,
+        },
+      ],
+    };
+
+    const simplified = analyzeLayout(layout);
+    const baseline = analyzeLayout({
+      ...layout,
+      traceProfileOverrides: {
+        faceToleranceMm: 0.012,
+      },
+    });
+
+    const simplifiedSegments = countPathCommands(simplified.exportFacePath, "L");
+    const baselineSegments = countPathCommands(baseline.exportFacePath, "L");
+    const simplifiedBounds = pathBounds(simplified.exportFacePath);
+    const baselineBounds = pathBounds(baseline.exportFacePath);
+
+    expect(simplifiedSegments).toBeLessThan(baselineSegments * 0.2);
+    expect(Math.abs(simplifiedBounds.left - baselineBounds.left)).toBeLessThanOrEqual(0.05);
+    expect(Math.abs(simplifiedBounds.top - baselineBounds.top)).toBeLessThanOrEqual(0.05);
+    expect(Math.abs(simplifiedBounds.right - baselineBounds.right)).toBeLessThanOrEqual(0.05);
+    expect(Math.abs(simplifiedBounds.bottom - baselineBounds.bottom)).toBeLessThanOrEqual(0.05);
   });
 
   test("applies per-letter vertical stretch without widening outline bounds", { timeout: 15000 }, () => {
