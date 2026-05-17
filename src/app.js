@@ -1113,7 +1113,29 @@ function getSavedCachedBuild(order) {
     return null;
   }
 
-  return getCachedBuild(order, order.savedSettingsSignature);
+  const cachedBuild = getCachedBuild(order, order.savedSettingsSignature);
+  if (cachedBuild) {
+    return cachedBuild;
+  }
+
+  if (
+    order.capturedLayout
+    && typeof order.capturedLayout === "object"
+    && order.capturedLayout.analysis
+    && typeof order.capturedLayout.analysis === "object"
+  ) {
+    const layout = structuredClone(order.capturedLayout);
+    const analysis = structuredClone(order.capturedLayout.analysis);
+    delete layout.analysis;
+
+    return {
+      signature: order.savedSettingsSignature,
+      layout,
+      analysis,
+    };
+  }
+
+  return null;
 }
 
 function isOrderReadyForExport(order) {

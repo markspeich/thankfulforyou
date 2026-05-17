@@ -112,15 +112,25 @@ async function measureVisibleTextBounds(page) {
 }
 
 test.beforeEach(async ({ page }) => {
+  async function waitForStartup() {
+    await expect.poll(async () => {
+      const value = await page.locator("#importStatus").textContent();
+      return typeof value === "string"
+        && (
+          value.includes("Restored")
+          || value.includes("Import Etsy clipboard data copied from the browser helper.")
+        );
+    }).toBe(true);
+  }
+
   await page.goto("/");
-  await expect.poll(async () => {
-    const value = await page.locator("#importStatus").textContent();
-    return typeof value === "string"
-      && (
-        value.includes("Restored")
-        || value.includes("Import Etsy clipboard data copied from the browser helper.")
-      );
-  }).toBe(true);
+  await waitForStartup();
+  await page.evaluate(() => {
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+  });
+  await page.reload();
+  await waitForStartup();
 
   const orderCount = page.locator("#orderCountOutput");
 
