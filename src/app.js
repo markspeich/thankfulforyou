@@ -32,6 +32,7 @@ import {
   chooseInitialQueueSnapshot,
   isQueueSnapshotEmpty,
 } from "./queue-sync.js";
+import { buildQueueSyncStatus } from "./queue-sync-status.js";
 
 const FONT_OPTIONS = [
   {
@@ -81,6 +82,9 @@ const addOrderButton = document.querySelector("#addOrderButton");
 const importClipboardButton = document.querySelector("#importClipboardButton");
 const clearQueueButton = document.querySelector("#clearQueueButton");
 const importStatus = document.querySelector("#importStatus");
+const queueSyncStatus = document.querySelector("#queueSyncStatus");
+const queueSyncStatusLabel = document.querySelector("#queueSyncStatusLabel");
+const queueSyncStatusDetail = document.querySelector("#queueSyncStatusDetail");
 const exportCompletedButton = document.querySelector("#exportCompletedButton");
 const copyCompletedButton = document.querySelector("#copyCompletedButton");
 const orderSearchInput = document.querySelector("#orderSearchInput");
@@ -131,6 +135,7 @@ let activeOrderId = null;
 const orders = [];
 let queuePersistenceTimeoutId = null;
 let orderListRenderFrameId = null;
+let suppressQueueSyncLocalNotice = false;
 
 const statusLabels = {
   "not-started": "Not started",
@@ -629,6 +634,18 @@ function buildPersistedQueueState() {
   };
 }
 
+function updateQueueSyncStatus(kind, options = {}) {
+  if (!queueSyncStatus || !queueSyncStatusLabel || !queueSyncStatusDetail) {
+    return;
+  }
+
+  const status = buildQueueSyncStatus(kind, options);
+  queueSyncStatus.classList.remove("status-ok", "status-warning", "status-pending");
+  queueSyncStatus.classList.add(`status-${status.tone}`);
+  queueSyncStatusLabel.textContent = status.label;
+  queueSyncStatusDetail.textContent = status.detail;
+}
+
 function applyPersistedQueueState(parsed) {
   if (!parsed || parsed.version !== STORAGE_VERSION || !Array.isArray(parsed.orders)) {
     return false;
@@ -653,10 +670,16 @@ function persistQueueState() {
   try {
     if (!orders.length) {
       localStorage.removeItem(STORAGE_KEY);
+      if (!suppressQueueSyncLocalNotice) {
+        updateQueueSyncStatus("empty");
+      }
       return;
     }
 
     localStorage.setItem(STORAGE_KEY, JSON.stringify(buildPersistedQueueState()));
+    if (!suppressQueueSyncLocalNotice) {
+      updateQueueSyncStatus("local-only", { count: orders.length });
+    }
   } catch {
     // Ignore storage failures and continue with in-memory editing.
   }
@@ -782,6 +805,7 @@ async function clearRemoteQueueSnapshot(options = {}) {
 
   if (!quiet) {
     updateImportStatus("Cleared the saved remote batch.", "success");
+    updateQueueSyncStatus("empty");
   }
 }
 
@@ -795,6 +819,7 @@ async function saveQueueSnapshotToRemote() {
     if (isQueueSnapshotEmpty(snapshot)) {
       await clearRemoteQueueSnapshot({ quiet: true });
       updateImportStatus("Queue is empty, so the saved remote batch was cleared.", "success");
+      updateQueueSyncStatus("empty");
       return;
     }
 
@@ -822,6 +847,7 @@ async function saveQueueSnapshotToRemote() {
     }
 
     updateImportStatus(`Saved ${snapshot.orders.length} design${snapshot.orders.length === 1 ? "" : "s"} to Neon.`, "success");
+    updateQueueSyncStatus("saved-remote", { count: snapshot.orders.length });
   } catch (error) {
     updateImportStatus(
       error instanceof Error ? error.message : "Unable to save the current batch remotely.",
@@ -853,6 +879,7 @@ async function restoreInitialQueueState() {
   });
 
   if (!initialSnapshot.snapshot || !applyPersistedQueueState(initialSnapshot.snapshot)) {
+    updateQueueSyncStatus("empty");
     return {
       source: null,
       count: 0,
@@ -860,7 +887,12 @@ async function restoreInitialQueueState() {
   }
 
   if (initialSnapshot.source === "remote") {
+    suppressQueueSyncLocalNotice = true;
     persistQueueState();
+    suppressQueueSyncLocalNotice = false;
+    updateQueueSyncStatus("restored-remote", { count: orders.length });
+  } else if (initialSnapshot.source === "local") {
+    updateQueueSyncStatus("restored-local", { count: orders.length });
   }
 
   return {
@@ -2000,6 +2032,7 @@ async function clearAllOrders() {
   try {
     await clearRemoteQueueSnapshot({ quiet: true });
     updateImportStatus("Batch cleared locally and remotely. Import Etsy clipboard data copied from the browser helper.", "pending");
+    updateQueueSyncStatus("empty");
   } catch (error) {
     updateImportStatus(
       error instanceof Error
@@ -2007,6 +2040,7 @@ async function clearAllOrders() {
         : "Batch cleared locally, but the saved remote batch could not be cleared.",
       "error",
     );
+    updateQueueSyncStatus("empty");
   }
   renderOrderList();
 }
