@@ -98,12 +98,18 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Show a visual preview of the text and backing layer.
 - Keep the live on-screen preview fast and responsive while the user types or adjusts controls.
 - The live editing preview may use a faster browser-rendered path than the export pipeline, as long as it stays visually trustworthy for layout decisions.
+- The analyzed preview backing silhouette should render in `rgb(255, 0, 0)`.
 - Connectedness checks and other heavier geometry analysis should not run during routine typing or slider adjustments; they should run when the operator explicitly clicks `Complete`.
 - When a design's settings have not changed since the last save, the app should reuse its most recently saved analyzed export-ready geometry for queue revisit and SVG export instead of recomputing the same layout and paths again.
 - Add a `Weld Exported Design` checkbox directly below the order text field.
 - The `Weld Exported Design` checkbox must default to checked.
 - The preview area should include a non-exported 2.2 inch by 1.5 inch background guide box, and the rendered design should be centered within that box on screen.
-- The preview guide should include a non-exported 1.25 inch dashed circle centered inside the 2.2 inch by 1.5 inch guide box, matching the box guide style.
+- The preview guide should include a non-exported 1.25 inch circle centered inside the 2.2 inch by 1.5 inch guide box, matching the box guide style.
+- The preview guide should use thin solid `rgb(12, 150, 217)` strokes instead of dashed strokes.
+- The outer preview box, centered circle, and inner reference lines should all use a `0.05px` stroke in the on-screen preview.
+- The preview guide should include four inner reference lines, with one inset vertical line near each side and one inset horizontal line near the top and bottom, matching the production reference template.
+- The two inner vertical guide lines should be 1.6 inches apart.
+- The two inner horizontal guide lines should be 1.1 inches apart.
 - The preview should center the visible text geometry within the guide box, even when the backing border extends beyond the guide area.
 - The 2.2 inch by 1.5 inch preview guide box should remain visible even when there is no active text.
 - The preview guide box should show static dimension labels outside the box: `2.2"` centered above and `1.5"` on the right side.
@@ -277,7 +283,7 @@ The website should be a practical production tool rather than a marketing site. 
 - The first text line should not show a `Line Bridge` control because there is no line above it to connect to.
 - The selected-order header should hold the primary order actions, including `Complete` and `Export This Design`, to reduce the height of the control area.
 
-The selected UI direction is the Production Queue layout. Use `docs/mockups/production-queue-ui-mockup-preview-top-controls-bottom.png` as the primary visual reference for the next UI implementation pass. The mockup intent is a left-side order queue with a batch export button above the order list, and a right-side selected-order editor with the selected order preview at the top, controls docked at the bottom, and an Export This Design button. Sample renders should use a white raised text layer over a blue backing silhouette.
+The selected UI direction is the Production Queue layout. Use `docs/mockups/production-queue-ui-mockup-preview-top-controls-bottom.png` as the primary visual reference for the next UI implementation pass. The mockup intent is a left-side order queue with a batch export button above the order list, and a right-side selected-order editor with the selected order preview at the top, controls docked at the bottom, and an Export This Design button. Sample renders should use a white raised text layer over a red backing silhouette.
 
 For batch Etsy order sessions, the preferred workflow is:
 

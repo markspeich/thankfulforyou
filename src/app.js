@@ -56,6 +56,10 @@ const FONT_BY_ID = new Map(FONT_OPTIONS.map((font) => [font.id, font]));
 const DEFAULT_PREVIEW_WIDTH_MM = PREVIEW_BOX_WIDTH_MM + PREVIEW_MARGIN_MM * 2 + PREVIEW_LABEL_RIGHT_MM;
 const DEFAULT_PREVIEW_HEIGHT_MM = PREVIEW_BOX_HEIGHT_MM + PREVIEW_MARGIN_MM * 2;
 const PREVIEW_CENTER_CIRCLE_DIAMETER_MM = 1.25 * 25.4;
+const PREVIEW_INNER_GUIDE_WIDTH_MM = 1.6 * 25.4;
+const PREVIEW_INNER_GUIDE_HEIGHT_MM = 1.1 * 25.4;
+const PREVIEW_INNER_GUIDE_INSET_X_MM = (PREVIEW_BOX_WIDTH_MM - PREVIEW_INNER_GUIDE_WIDTH_MM) / 2;
+const PREVIEW_INNER_GUIDE_INSET_Y_MM = (PREVIEW_BOX_HEIGHT_MM - PREVIEW_INNER_GUIDE_HEIGHT_MM) / 2;
 const DEFAULT_ZOOM = 3;
 const DEFAULT_WELD_EXPORTED_DESIGN = true;
 const DEFAULT_LINE_SETTINGS = Object.freeze({
@@ -1011,6 +1015,10 @@ function renderPreviewGuideOnly() {
 function appendPreviewGuide(previewBoxX, previewBoxY) {
   const guideCenterX = previewBoxX + PREVIEW_BOX_WIDTH_MM / 2;
   const guideCenterY = previewBoxY + PREVIEW_BOX_HEIGHT_MM / 2;
+  const leftInnerX = previewBoxX + PREVIEW_INNER_GUIDE_INSET_X_MM;
+  const rightInnerX = previewBoxX + PREVIEW_BOX_WIDTH_MM - PREVIEW_INNER_GUIDE_INSET_X_MM;
+  const topInnerY = previewBoxY + PREVIEW_INNER_GUIDE_INSET_Y_MM;
+  const bottomInnerY = previewBoxY + PREVIEW_BOX_HEIGHT_MM - PREVIEW_INNER_GUIDE_INSET_Y_MM;
   const topLabel = makeSvgElement("text", {
     class: "preview-guide-label",
     x: guideCenterX,
@@ -1036,6 +1044,34 @@ function appendPreviewGuide(previewBoxX, previewBoxY) {
       width: PREVIEW_BOX_WIDTH_MM,
       height: PREVIEW_BOX_HEIGHT_MM,
       rx: 1.6,
+    }),
+    makeSvgElement("line", {
+      class: "preview-guide-inner-line",
+      x1: leftInnerX,
+      y1: previewBoxY,
+      x2: leftInnerX,
+      y2: previewBoxY + PREVIEW_BOX_HEIGHT_MM,
+    }),
+    makeSvgElement("line", {
+      class: "preview-guide-inner-line",
+      x1: rightInnerX,
+      y1: previewBoxY,
+      x2: rightInnerX,
+      y2: previewBoxY + PREVIEW_BOX_HEIGHT_MM,
+    }),
+    makeSvgElement("line", {
+      class: "preview-guide-inner-line",
+      x1: previewBoxX,
+      y1: topInnerY,
+      x2: previewBoxX + PREVIEW_BOX_WIDTH_MM,
+      y2: topInnerY,
+    }),
+    makeSvgElement("line", {
+      class: "preview-guide-inner-line",
+      x1: previewBoxX,
+      y1: bottomInnerY,
+      x2: previewBoxX + PREVIEW_BOX_WIDTH_MM,
+      y2: bottomInnerY,
     }),
     makeSvgElement("circle", {
       class: "preview-guide-box",
@@ -2448,9 +2484,9 @@ function fillBackingHoles(imageData, width, height) {
   for (let index = 0; index < width * height; index += 1) {
     if (!visited[index]) {
       const offset = index * 4;
-      data[offset] = 68;
-      data[offset + 1] = 111;
-      data[offset + 2] = 139;
+      data[offset] = 255;
+      data[offset + 1] = 0;
+      data[offset + 2] = 0;
       data[offset + 3] = 255;
     }
   }
@@ -2468,8 +2504,8 @@ function createBackingImage(letters, widthMm, heightMm, backingMm) {
   backingContext.textBaseline = "alphabetic";
   backingContext.lineJoin = "round";
   backingContext.lineCap = "round";
-  backingContext.strokeStyle = "#446f8b";
-  backingContext.fillStyle = "#446f8b";
+  backingContext.strokeStyle = "rgb(255, 0, 0)";
+  backingContext.fillStyle = "rgb(255, 0, 0)";
 
   letters.forEach((letter) => {
     backingContext.lineWidth = backingMm * 2 * scale;
@@ -2585,7 +2621,7 @@ function renderPreviewFromLayout(layout) {
   const backingLayer = analysis
     ? makeSvgElement("path", {
         d: analysis.backingPath,
-        fill: "#446f8b",
+        fill: "rgb(255, 0, 0)",
         transform: `translate(${frame.designX} ${frame.designY})`,
       })
     : makeSvgElement("image", {

@@ -150,10 +150,11 @@ test("shows the production defaults", async ({ page }) => {
   await expect(page.locator("#preview .preview-guide-label").first()).toHaveText('2.2"');
   await expect(page.locator("#preview circle.preview-guide-box")).toHaveCount(1);
 
-  const circleMetrics = await page.evaluate(() => {
+  const guideMetrics = await page.evaluate(() => {
     const guide = document.querySelector("#preview rect.preview-guide-box");
     const circle = document.querySelector("#preview circle.preview-guide-box");
-    if (!(guide instanceof SVGRectElement) || !(circle instanceof SVGCircleElement)) {
+    const labels = Array.from(document.querySelectorAll("#preview .preview-guide-label"));
+    if (!(guide instanceof SVGRectElement) || !(circle instanceof SVGCircleElement) || labels.length !== 2) {
       return null;
     }
 
@@ -163,12 +164,133 @@ test("shows the production defaults", async ({ page }) => {
       circleCenterX: Number(circle.getAttribute("cx")),
       circleCenterY: Number(circle.getAttribute("cy")),
       circleDiameter: Number(circle.getAttribute("r")) * 2,
+      labelFills: labels.map((label) => window.getComputedStyle(label).fill),
     };
   });
 
-  expect(circleMetrics.circleCenterX).toBeCloseTo(circleMetrics.guideCenterX, 6);
-  expect(circleMetrics.circleCenterY).toBeCloseTo(circleMetrics.guideCenterY, 6);
-  expect(circleMetrics.circleDiameter).toBeCloseTo(1.25 * 25.4, 6);
+  expect(guideMetrics.guideCenterX).toBeCloseTo(guideMetrics.circleCenterX, 6);
+  expect(guideMetrics.guideCenterY).toBeCloseTo(guideMetrics.circleCenterY, 6);
+  expect(guideMetrics.circleDiameter).toBeCloseTo(1.25 * 25.4, 6);
+  expect(guideMetrics.labelFills).toEqual(["rgb(12, 150, 217)", "rgb(12, 150, 217)"]);
+});
+
+test("renders the preview guide with thin solid blue outer and inner lines", async ({ page }) => {
+  const guideStyles = await page.evaluate(() => {
+    const box = document.querySelector("#preview rect.preview-guide-box");
+    const circle = document.querySelector("#preview circle.preview-guide-box");
+    const innerLines = Array.from(document.querySelectorAll("#preview line.preview-guide-inner-line"));
+    if (!(box instanceof SVGRectElement) || !(circle instanceof SVGCircleElement)) {
+      return null;
+    }
+
+    const boxStyle = window.getComputedStyle(box);
+    const circleStyle = window.getComputedStyle(circle);
+    const lineStyle = innerLines.length ? window.getComputedStyle(innerLines[0]) : null;
+    const verticalLines = innerLines
+      .filter((line) => line.getAttribute("x1") === line.getAttribute("x2"))
+      .sort((left, right) => Number(left.getAttribute("x1")) - Number(right.getAttribute("x1")));
+    const horizontalLines = innerLines
+      .filter((line) => line.getAttribute("y1") === line.getAttribute("y2"))
+      .sort((top, bottom) => Number(top.getAttribute("y1")) - Number(bottom.getAttribute("y1")));
+
+    return {
+      boxStroke: boxStyle.stroke,
+      circleStroke: circleStyle.stroke,
+      boxDashArray: boxStyle.strokeDasharray,
+      circleDashArray: circleStyle.strokeDasharray,
+      boxStrokeWidth: boxStyle.strokeWidth,
+      circleStrokeWidth: circleStyle.strokeWidth,
+      innerLineCount: innerLines.length,
+      innerLineStroke: lineStyle?.stroke ?? null,
+      innerLineDashArray: lineStyle?.strokeDasharray ?? null,
+      innerLineStrokeWidth: lineStyle?.strokeWidth ?? null,
+      verticalSpacingMm: verticalLines.length === 2
+        ? Number(verticalLines[1].getAttribute("x1")) - Number(verticalLines[0].getAttribute("x1"))
+        : null,
+      horizontalSpacingMm: horizontalLines.length === 2
+        ? Number(horizontalLines[1].getAttribute("y1")) - Number(horizontalLines[0].getAttribute("y1"))
+        : null,
+    };
+  });
+
+  expect(guideStyles.boxStroke).toBe("rgb(12, 150, 217)");
+  expect(guideStyles.circleStroke).toBe("rgb(12, 150, 217)");
+  expect(guideStyles.boxDashArray).toBe("none");
+  expect(guideStyles.circleDashArray).toBe("none");
+  expect(guideStyles.boxStrokeWidth).toBe("0.05px");
+  expect(guideStyles.circleStrokeWidth).toBe("0.05px");
+  expect(guideStyles.innerLineCount).toBe(4);
+  expect(guideStyles.innerLineStroke).toBe("rgb(12, 150, 217)");
+  expect(guideStyles.innerLineDashArray).toBe("none");
+  expect(guideStyles.innerLineStrokeWidth).toBe("0.05px");
+  expect(guideStyles.verticalSpacingMm).toBeCloseTo(1.6 * 25.4, 6);
+  expect(guideStyles.horizontalSpacingMm).toBeCloseTo(1.1 * 25.4, 6);
+});
+
+test("renders the analyzed backing preview in red", async ({ page }) => {
+  await page.route("**/api/layout-analyze", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify(buildMockAnalysisResponse()),
+    });
+  });
+
+  await page.locator("#textInput").fill("Savannah");
+  await completeDesign(page, "Design 1");
+
+  const backingFill = await page.evaluate(() => {
+    const paths = Array.from(document.querySelectorAll("#preview path"));
+    const backing = paths.find((path) => !path.classList.contains("face-layer"));
+    return backing?.getAttribute("fill") ?? null;
+  });
+
+  expect(backingFill).toBe("rgb(255, 0, 0)");
+
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+});
+
+test("renders the live backing preview in red while editing", async ({ page }) => {
+  await page.locator("#textInput").fill("Savannah");
+  await expect(page.locator("#connectionStatusLabel")).not.toHaveText("Analyzing layout...", { timeout: 15000 });
+
+  const backingPixel = await page.evaluate(async () => {
+    const backingImage = document.querySelector("#preview image");
+    if (!(backingImage instanceof SVGImageElement)) {
+      return null;
+    }
+
+    const href = backingImage.getAttribute("href");
+    if (!href) {
+      return null;
+    }
+
+    const image = new Image();
+    image.src = href;
+    await image.decode();
+
+    const canvas = document.createElement("canvas");
+    canvas.width = image.naturalWidth;
+    canvas.height = image.naturalHeight;
+    const context = canvas.getContext("2d");
+    context.drawImage(image, 0, 0);
+    const { data, width, height } = context.getImageData(0, 0, canvas.width, canvas.height);
+
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        const offset = (y * width + x) * 4;
+        if (data[offset + 3] < 240) {
+          continue;
+        }
+
+        return [data[offset], data[offset + 1], data[offset + 2], data[offset + 3]];
+      }
+    }
+
+    return null;
+  });
+
+  expect(backingPixel).toEqual([255, 0, 0, 255]);
 });
 
 test("keeps text inside the guide and centered for Mark RN", async ({ page }) => {
