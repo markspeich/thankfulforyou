@@ -740,34 +740,6 @@ button:disabled {
   grid-column: 1 / -1;
 }
 
-.zoom-controls {
-  position: absolute;
-  left: 50%;
-  bottom: 24px;
-  display: grid;
-  grid-template-columns: 42px 76px 42px 72px;
-  align-items: center;
-  gap: 8px;
-  padding: 9px;
-  background: rgba(255, 255, 255, 0.92);
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  box-shadow: 0 8px 28px rgba(31, 42, 54, 0.12);
-  transform: translateX(-50%);
-  z-index: 2;
-}
-
-.zoom-controls button {
-  min-height: 38px;
-}
-
-.zoom-controls output {
-  color: var(--ink);
-  font-size: 0.9rem;
-  font-weight: 700;
-  text-align: center;
-}
-
 .note {
   margin: 0;
   color: var(--muted);
@@ -842,13 +814,21 @@ button:disabled {
   }
 }
 
+.preview-workspace {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  margin: 18px 24px 24px;
+}
+
 .preview-panel {
   position: relative;
   display: block;
   min-height: 0;
   min-width: 0;
-  margin: 18px 24px 24px;
-  padding: 52px 10px 10px;
+  flex: 1 1 auto;
+  padding: 10px;
   overflow: auto;
   background:
     radial-gradient(circle, rgba(28, 32, 36, 0.08) 1px, transparent 1px),
@@ -862,6 +842,10 @@ button:disabled {
   contain: size layout paint;
 }
 
+.preview-panel.is-middle-panning {
+  cursor: grabbing;
+}
+
 .preview-panel::-webkit-scrollbar {
   width: 0;
   height: 0;
@@ -869,11 +853,7 @@ button:disabled {
 }
 
 .preview-title {
-  position: absolute;
-  top: 16px;
-  left: 18px;
-  z-index: 2;
-  margin: 0;
+  margin: 0 0 10px;
   color: #21465e;
   font-size: 0.95rem;
   font-weight: 700;
@@ -1003,6 +983,9 @@ button:disabled {
 
   .preview-panel {
     min-height: 420px;
+  }
+
+  .preview-workspace {
     margin: 14px;
   }
 

@@ -105,10 +105,6 @@ const previewPanel = document.querySelector(".preview-panel");
 const connectionStatus = document.querySelector("#connectionStatus");
 const connectionStatusLabel = document.querySelector("#connectionStatusLabel");
 const connectionStatusDetail = document.querySelector("#connectionStatusDetail");
-const zoomOutButton = document.querySelector("#zoomOutButton");
-const zoomInButton = document.querySelector("#zoomInButton");
-const zoomResetButton = document.querySelector("#zoomResetButton");
-const zoomOutput = document.querySelector("#zoomOutput");
 const downloadButton = document.querySelector("#downloadButton");
 const copyButton = document.querySelector("#copyButton");
 const captureButton = document.querySelector("#captureButton");
@@ -120,6 +116,7 @@ const MASK_SCALE = 3;
 const MASK_PADDING_PX = 12;
 let lastLayout = null;
 let zoom = DEFAULT_ZOOM;
+let previewMiddlePan = null;
 let orderSequence = 1;
 let activeOrderId = null;
 const orders = [];
@@ -964,7 +961,6 @@ function restoreSelectionScrollState(state) {
 function updateZoom(nextZoom, anchor = null) {
   const previousZoom = zoom;
   zoom = clamp(nextZoom, 0.4, 6);
-  zoomOutput.textContent = `${Math.round(zoom * 100)}%`;
 
   if (lastLayout) {
     preview.style.setProperty("--preview-width", `${lastLayout.previewWidthMm * PX_PER_MM * zoom}px`);
@@ -1002,6 +998,41 @@ function centerPreviewViewport() {
 
   previewPanel.scrollLeft = clamp(guideCenterX - previewPanel.clientWidth / 2, 0, maxScrollLeft);
   previewPanel.scrollTop = clamp(guideCenterY - previewPanel.clientHeight / 2, 0, maxScrollTop);
+}
+
+function startPreviewMiddlePan(event) {
+  if (event.button !== 1) {
+    return;
+  }
+
+  event.preventDefault();
+  previewMiddlePan = {
+    clientX: event.clientX,
+    clientY: event.clientY,
+  };
+  previewPanel.classList.add("is-middle-panning");
+}
+
+function updatePreviewMiddlePan(event) {
+  if (!previewMiddlePan) {
+    return;
+  }
+
+  const deltaX = event.clientX - previewMiddlePan.clientX;
+  const deltaY = event.clientY - previewMiddlePan.clientY;
+  previewPanel.scrollLeft -= deltaX;
+  previewPanel.scrollTop -= deltaY;
+  previewMiddlePan.clientX = event.clientX;
+  previewMiddlePan.clientY = event.clientY;
+}
+
+function endPreviewMiddlePan() {
+  if (!previewMiddlePan) {
+    return;
+  }
+
+  previewMiddlePan = null;
+  previewPanel.classList.remove("is-middle-panning");
 }
 
 function renderPreviewGuideOnly() {
@@ -3096,9 +3127,12 @@ completeNextButton.addEventListener("click", () => {
 });
 downloadButton.addEventListener("click", downloadSvg);
 copyButton.addEventListener("click", copyCurrentSvg);
-zoomOutButton.addEventListener("click", () => updateZoom(zoom / 1.2));
-zoomInButton.addEventListener("click", () => updateZoom(zoom * 1.2));
-zoomResetButton.addEventListener("click", () => updateZoom(DEFAULT_ZOOM));
+previewPanel.addEventListener("mousedown", startPreviewMiddlePan);
+previewPanel.addEventListener("auxclick", (event) => {
+  if (event.button === 1) {
+    event.preventDefault();
+  }
+});
 previewPanel.addEventListener("wheel", (event) => {
   event.preventDefault();
   const rect = previewPanel.getBoundingClientRect();
@@ -3109,6 +3143,13 @@ previewPanel.addEventListener("wheel", (event) => {
   const direction = event.deltaY < 0 ? 1.12 : 1 / 1.12;
   updateZoom(zoom * direction, anchor);
 }, { passive: false });
+window.addEventListener("mousemove", updatePreviewMiddlePan);
+window.addEventListener("mouseup", (event) => {
+  if (event.button === 1) {
+    endPreviewMiddlePan();
+  }
+});
+window.addEventListener("blur", endPreviewMiddlePan);
 
 await checkFonts();
 await loadPresetRegistry();
