@@ -16,7 +16,16 @@ The current app runs locally.
 npm start
 ```
 
-Then open `http://localhost:4173`.
+The local dev server picks a deterministic port for each worktree. In this worktree, the default URL is `http://127.0.0.1:4710`.
+
+To force a different port:
+
+```powershell
+$env:PORT = "4801"
+npm start
+```
+
+On Windows in this Codex worktree setup, keep the dev server running in a foreground or other persistent terminal session. A detached hidden launch can exit early and leave the in-app browser unable to connect even if the first health check passed.
 
 ## Run Tests
 
@@ -26,6 +35,8 @@ The project now has both fast unit tests for layout math and browser tests for t
 npm run test:unit
 npm run test:e2e
 ```
+
+The Playwright config uses the same shared local port helper as `npm start`, so browser tests target the matching per-worktree URL automatically unless `PLAYWRIGHT_BASE_URL` is set.
 
 Or run both:
 

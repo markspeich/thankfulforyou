@@ -206,6 +206,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - The exported backing layer should be an actual outline path for LightBurn, not only a filled shape or SVG stroke effect. The path can be imported and manually assigned to a LightBurn cut layer.
 - Exported face-layer paths should also be welded/unioned so overlapping letters do not create internal cut lines.
 - Exported cut paths should be smooth enough for laser production and should avoid visibly pixelated/stair-stepped contours.
+- Exported cut paths should also avoid excessive vertex counts by applying conservative path simplification that reduces tiny traced stair-steps without materially changing the underlying outline shape.
 
 ## Later-Phase Workflow Enhancements
 
@@ -248,6 +249,8 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - If the hosted app is only for internal production use, deployment protection or authentication should be enabled before processing real Etsy order data.
 - For the current internal production rollout, enable Vercel Deployment Protection on the linked Vercel project before processing real Etsy order data, and treat any later app-level login system as a separate follow-up phase.
 - Automated checks against a protected Vercel preview should use Vercel Protection Bypass for Automation so smoke tests can keep Deployment Protection enabled while still exercising the hosted UI and API routes.
+- Local development and browser automation should share one deterministic per-worktree port-resolution helper so multiple git worktrees can run in parallel without port collisions or hardcoded test URLs drifting from the local server.
+- In the current Windows Codex worktree environment, local server launch workflow should prefer a foreground or otherwise persistent terminal session over a detached hidden process, because detached launches may exit early and break browser connectivity.
 
 ## Open Questions
 

@@ -220,6 +220,33 @@ test("restores the current batch after refresh and clears it when requested", as
   await expect(page.locator("#importStatus")).not.toContainText("Restored");
 });
 
+test("keeps the design queue scroll position when selecting a row", async ({ page }) => {
+  for (let index = 0; index < 14; index += 1) {
+    await page.getByRole("button", { name: "+ Add Design" }).click();
+  }
+
+  await expect(page.locator("#orderCountOutput")).toHaveText("15");
+
+  const queue = page.locator("#orderList");
+  const targetRow = page.locator("#orderList .order-row").filter({ hasText: "Design 13" });
+
+  await targetRow.scrollIntoViewIfNeeded();
+
+  const scrollTopBefore = await queue.evaluate((node) => {
+    node.scrollTop = Math.max(0, node.scrollTop - 40);
+    return node.scrollTop;
+  });
+
+  expect(scrollTopBefore).toBeGreaterThan(0);
+
+  await targetRow.getByRole("button").click();
+
+  const scrollTopAfter = await queue.evaluate((node) => node.scrollTop);
+
+  expect(scrollTopAfter).toBeGreaterThan(0);
+  expect(Math.abs(scrollTopAfter - scrollTopBefore)).toBeLessThanOrEqual(4);
+});
+
 test("deletes a single design from the queue", async ({ page }) => {
   await page.getByRole("button", { name: "+ Add Design" }).click();
   await expect(page.locator("#orderCountOutput")).toHaveText("2");

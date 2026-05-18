@@ -499,25 +499,42 @@ def text_outline_path(mask, scale, tolerance_mm=0.025, smooth_iterations=1, fill
 def get_trace_profile(payload):
     font_ids = {str(letter.get("fontId", "")).lower() for letter in payload.get("letters", [])}
     if "somekind" in font_ids:
-        return {
+        profile = {
             "scale": 60,
-            "face_tolerance_mm": 0.012,
+            "face_tolerance_mm": 0.025,
             "face_smooth_iterations": 0,
             "face_curve_mode": "polyline",
             "backing_tolerance_mm": 0.028,
             "backing_smooth_iterations": 0,
             "backing_curve_mode": "polyline",
         }
+    else:
+        profile = {
+            "scale": 50,
+            "face_tolerance_mm": 0.025,
+            "face_smooth_iterations": 0,
+            "face_curve_mode": "polyline",
+            "backing_tolerance_mm": 0.045,
+            "backing_smooth_iterations": 2,
+            "backing_curve_mode": "quadratic",
+        }
 
-    return {
-        "scale": 50,
-        "face_tolerance_mm": 0.012,
-        "face_smooth_iterations": 0,
-        "face_curve_mode": "polyline",
-        "backing_tolerance_mm": 0.045,
-        "backing_smooth_iterations": 2,
-        "backing_curve_mode": "quadratic",
-    }
+    overrides = payload.get("traceProfileOverrides")
+    if isinstance(overrides, dict):
+        if "faceToleranceMm" in overrides:
+            profile["face_tolerance_mm"] = float(overrides["faceToleranceMm"])
+        if "faceSmoothIterations" in overrides:
+            profile["face_smooth_iterations"] = int(overrides["faceSmoothIterations"])
+        if "faceCurveMode" in overrides:
+            profile["face_curve_mode"] = str(overrides["faceCurveMode"])
+        if "backingToleranceMm" in overrides:
+            profile["backing_tolerance_mm"] = float(overrides["backingToleranceMm"])
+        if "backingSmoothIterations" in overrides:
+            profile["backing_smooth_iterations"] = int(overrides["backingSmoothIterations"])
+        if "backingCurveMode" in overrides:
+            profile["backing_curve_mode"] = str(overrides["backingCurveMode"])
+
+    return profile
 
 
 def analyze_single_layout(root, payload):
