@@ -809,8 +809,15 @@ async function clearRemoteQueueSnapshot(options = {}) {
   }
 }
 
-async function saveQueueSnapshotToRemote() {
-  saveActiveOrderDraft();
+async function saveQueueSnapshotToRemote(options = {}) {
+  const {
+    persistActiveDraft = true,
+    successMessage = null,
+  } = options;
+
+  if (persistActiveDraft) {
+    saveActiveOrderDraft();
+  }
   setSaveButtonBusy(true);
 
   try {
@@ -846,7 +853,11 @@ async function saveQueueSnapshotToRemote() {
       throw new Error(message);
     }
 
-    updateImportStatus(`Saved ${snapshot.orders.length} design${snapshot.orders.length === 1 ? "" : "s"} to Neon.`, "success");
+    if (typeof successMessage === "string" && successMessage.trim()) {
+      updateImportStatus(successMessage.trim(), "success");
+    } else if (successMessage !== false) {
+      updateImportStatus(`Saved ${snapshot.orders.length} design${snapshot.orders.length === 1 ? "" : "s"} to Neon.`, "success");
+    }
     updateQueueSyncStatus("saved-remote", { count: snapshot.orders.length });
   } catch (error) {
     updateImportStatus(
@@ -2184,6 +2195,11 @@ async function captureActiveOrder({ advanceToNext = false } = {}) {
       if (order.previousCompletedBuild?.signature === signature) {
         order.previousCompletedBuild = null;
       }
+
+      await saveQueueSnapshotToRemote({
+        persistActiveDraft: false,
+        successMessage: false,
+      });
     }
 
     persistQueueState();
