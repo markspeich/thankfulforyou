@@ -133,6 +133,7 @@ let activeOrderId = null;
 const orders = [];
 let queuePersistenceTimeoutId = null;
 let orderListRenderFrameId = null;
+let deferredPreviewRenderToken = 0;
 let suppressQueueSyncLocalNotice = false;
 
 const statusLabels = {
@@ -711,6 +712,19 @@ function scheduleRenderOrderList() {
   orderListRenderFrameId = window.requestAnimationFrame(() => {
     orderListRenderFrameId = null;
     renderOrderList();
+  });
+}
+
+function scheduleDeferredPreviewRender() {
+  const renderToken = ++deferredPreviewRenderToken;
+  window.requestAnimationFrame(() => {
+    window.requestAnimationFrame(() => {
+      if (renderToken !== deferredPreviewRenderToken) {
+        return;
+      }
+
+      render();
+    });
   });
 }
 
@@ -1612,7 +1626,7 @@ function saveActiveOrderDraft() {
     order.status = "in-progress";
     order.analysisBadge = null;
   }
-  persistQueueState();
+  schedulePersistQueueState();
 }
 
 function updateActiveOrderFromControls() {
@@ -1968,11 +1982,11 @@ function selectOrder(orderId) {
 
   syncOrderPresetFromListing(order);
   applySettings(order.settings);
-  persistQueueState();
+  schedulePersistQueueState();
   renderOrderList();
   restoreSelectionScrollState(selectionScrollState);
-  requestAnimationFrame(() => {
-    render();
+  scheduleDeferredPreviewRender();
+  window.requestAnimationFrame(() => {
     restoreSelectionScrollState(selectionScrollState);
   });
 }
