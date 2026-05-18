@@ -39,7 +39,9 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - When text letters overlap, the overlap should be welded or unioned into one face-layer shape so internal seam lines are removed.
 - The backing layer follows the overall silhouette of the design and gives the text support and contrast.
 - The backing layer has a rounded offset border around the text silhouette.
-- The backing border should default to 3.1 mm.
+- The backing border should default to 2.2 mm.
+- The backing border slider should move in 0.1 mm increments.
+- The backing border control should allow values down to 0 mm.
 - The backing layer should be a solid acrylic silhouette. Enclosed holes created by font counters or tiny gaps in the backing border should be removed from the backing plate.
 - Multi-line layouts may intentionally overlap or touch between lines to help unify the design.
 - Different lines in the same badge reel design may use different fonts.
@@ -64,6 +66,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - The `Presets` dropdown must offer exactly these production presets: `All Candlepin`, `Skywalk, Somekind`, and `Skywalk, Candlepin`.
 - The `All Candlepin` preset must set every text line to the Candlepin font.
 - The `Skywalk, Somekind` preset must set the first text line to Skywalk and every subsequent line to Somekind.
+- The `Skywalk, Somekind` preset must set the second text line text height to 23 mm.
 - The `Skywalk, Candlepin` preset must set the first text line to Skywalk and every subsequent line to Candlepin.
 - Selecting a preset must overwrite all current per-line settings for the order so every line resets to the preset's predefined values, including font, letter bridge, line bridge where applicable, horizontal offset, and text height.
 - Production preset definitions should move toward a schema-validated JSON source of truth instead of duplicating preset ids, labels, line rules, and listing-specific overrides across HTML and JavaScript.
@@ -75,6 +78,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Provide one control group per text line.
 - Each per-line control group must include a Font dropdown, Letter Bridge slider, Horizontal Offset slider, Text Height slider, and Vertical Stretch slider.
 - Each per-line control group must also include a `Lock Text Height` control that prevents automatic boundary-fit resizing from changing that line's configured text height.
+- The `Lock Text Height` control should appear inline with the rest of the line controls and should not render inside its own bordered subsection.
 - Each per-line control group after the first must also include a Line Bridge slider for controlling the connection to the line above it.
 - Add or remove per-line control groups automatically as the user adds or removes text lines.
 - Remove the current non-functional `Font (Line 1)` and `Font (Line 2)` dropdowns from below the order text field once the per-line control groups exist.
@@ -98,12 +102,18 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Show a visual preview of the text and backing layer.
 - Keep the live on-screen preview fast and responsive while the user types or adjusts controls.
 - The live editing preview may use a faster browser-rendered path than the export pipeline, as long as it stays visually trustworthy for layout decisions.
+- The analyzed preview backing silhouette should render in `rgb(255, 0, 0)`.
 - Connectedness checks and other heavier geometry analysis should not run during routine typing or slider adjustments; they should run when the operator explicitly clicks `Complete`.
 - When a design's settings have not changed since the last save, the app should reuse its most recently saved analyzed export-ready geometry for queue revisit and SVG export instead of recomputing the same layout and paths again.
 - Add a `Weld Exported Design` checkbox directly below the order text field.
 - The `Weld Exported Design` checkbox must default to checked.
 - The preview area should include a non-exported 2.2 inch by 1.5 inch background guide box, and the rendered design should be centered within that box on screen.
-- The preview guide should include a non-exported 1.25 inch dashed circle centered inside the 2.2 inch by 1.5 inch guide box, matching the box guide style.
+- The preview guide should include a non-exported 1.25 inch circle centered inside the 2.2 inch by 1.5 inch guide box, matching the box guide style.
+- The preview guide should use thin solid `rgb(12, 150, 217)` strokes instead of dashed strokes.
+- The outer preview box, centered circle, and inner reference lines should all use a `0.05px` stroke in the on-screen preview.
+- The preview guide should include four inner reference lines, with one inset vertical line near each side and one inset horizontal line near the top and bottom, matching the production reference template.
+- The two inner vertical guide lines should be 1.6 inches apart.
+- The two inner horizontal guide lines should be 1.1 inches apart.
 - The preview should center the visible text geometry within the guide box, even when the backing border extends beyond the guide area.
 - The 2.2 inch by 1.5 inch preview guide box should remain visible even when there is no active text.
 - The preview guide box should show static dimension labels outside the box: `2.2"` centered above and `1.5"` on the right side.
@@ -147,8 +157,9 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - The selected-order editor should focus on editable design text and layout settings rather than a separate editable design-label field.
 - Allow each order to store its own customer text and layout settings, including letter bridge, line bridge, text height, backing border, and guide visibility.
 - Provide a way to save the current preview and settings for the active order before moving to the next order.
-- Clicking `Complete` should immediately save the active design text and layout settings, mark the queue item complete, and disable the `Complete` button until the design changes again.
-- Clicking `Complete` should also start face analysis and cache the export-ready geometry tied to that completed state in the background.
+- Clicking `Complete` should immediately save the active design text and layout settings, mark the queue item complete, and disable both completion buttons until the design changes again.
+- Clicking `Complete` should also start face analysis and cache the export-ready geometry tied to that completed state in the background without advancing to another design.
+- Clicking `Complete & Next` should perform the same save, complete, and background-analysis work as `Complete`, then advance to the next queue item that is not already complete or exported when one exists.
 - The selected-order `Complete` button state should depend only on whether the active design has unsaved text or layout changes, not on whether background analysis and export-geometry caching have finished.
 - Show which orders are not started, in progress, complete, or exported so a batch of orders can be completed without losing track.
 - The design queue should show a compact per-design face-analysis indicator: a small spinner while background analysis is running, a checkmark when the completed face layer is one connected piece, or a warning sign with the compact piece count when the completed face layer has multiple disconnected pieces.
@@ -275,9 +286,9 @@ The website should be a practical production tool rather than a marketing site. 
 - The selected-order controls should be organized as a stack of per-line control groups followed by one global `Backing Border` control.
 - Each per-line control group should clearly map to a specific entered text line and should appear or disappear as the number of entered lines changes.
 - The first text line should not show a `Line Bridge` control because there is no line above it to connect to.
-- The selected-order header should hold the primary order actions, including `Complete` and `Export This Design`, to reduce the height of the control area.
+- The selected-order header should hold the primary order actions in this order: `Complete`, `Complete & Next`, `Copy This Design`, and `Export This Design`.
 
-The selected UI direction is the Production Queue layout. Use `docs/mockups/production-queue-ui-mockup-preview-top-controls-bottom.png` as the primary visual reference for the next UI implementation pass. The mockup intent is a left-side order queue with a batch export button above the order list, and a right-side selected-order editor with the selected order preview at the top, controls docked at the bottom, and an Export This Design button. Sample renders should use a white raised text layer over a blue backing silhouette.
+The selected UI direction is the Production Queue layout. Use `docs/mockups/production-queue-ui-mockup-preview-top-controls-bottom.png` as the primary visual reference for the next UI implementation pass. The mockup intent is a left-side order queue with a batch export button above the order list, and a right-side selected-order editor with the selected order preview at the top, controls docked at the bottom, and an Export This Design button. Sample renders should use a white raised text layer over a red backing silhouette.
 
 For batch Etsy order sessions, the preferred workflow is:
 

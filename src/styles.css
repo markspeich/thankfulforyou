@@ -738,11 +738,6 @@ button:disabled {
 
 .line-control-toggle {
   grid-column: 1 / -1;
-  min-height: 38px;
-  padding: 8px 10px;
-  background: #fff;
-  border: 1px solid var(--line);
-  border-radius: 6px;
 }
 
 .zoom-controls {
@@ -900,15 +895,22 @@ button:disabled {
   margin: 0 auto;
 }
 
-.preview-guide-box {
+.preview-guide-box,
+.preview-guide-inner-line {
   fill: none;
-  stroke: #9a4f00;
-  stroke-width: 0.45;
-  stroke-dasharray: 1.8 1.2;
+  stroke: rgb(12, 150, 217);
+}
+
+.preview-guide-box {
+  stroke-width: 0.05;
+}
+
+.preview-guide-inner-line {
+  stroke-width: 0.05;
 }
 
 .preview-guide-label {
-  fill: #7a3f00;
+  fill: rgb(12, 150, 217);
   font-size: 2.6px;
   font-weight: 700;
   letter-spacing: 0.04em;

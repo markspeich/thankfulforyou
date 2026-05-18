@@ -5,7 +5,7 @@
   "name": "Skywalk, Somekind",
   "description": "Use Skywalk on the first line and Somekind on the remaining lines.",
   "globalDefaults": {
-    "backingMm": 3.1,
+    "backingMm": 2.2,
     "weldExportedDesign": true
   },
   "lineDefaults": {
@@ -13,7 +13,9 @@
     "bridgeMm": 0.5,
     "lineBridgeMm": 0.5,
     "offsetXMm": 0,
-    "fontSizeMm": 34
+    "fontSizeMm": 34,
+    "verticalScale": 1,
+    "lockTextHeight": false
   },
   "lineRules": [
     {
@@ -21,7 +23,8 @@
         "kind": "first"
       },
       "settings": {
-        "fontId": "skywalk"
+        "fontId": "skywalk",
+        "fontSizeMm": 18
       }
     },
     {
@@ -30,6 +33,16 @@
       },
       "settings": {
         "fontId": "somekind"
+      }
+    },
+    {
+      "match": {
+        "kind": "index",
+        "lineIndex": 1
+      },
+      "settings": {
+        "fontSizeMm": 23,
+        "lockTextHeight": true
       }
     }
   ],
@@ -41,7 +54,7 @@
         {
           "lineIndex": 1,
           "settings": {
-            "fontSizeMm": 21
+            "fontSizeMm": 23
           }
         }
       ]

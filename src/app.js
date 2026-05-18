@@ -56,6 +56,10 @@ const FONT_BY_ID = new Map(FONT_OPTIONS.map((font) => [font.id, font]));
 const DEFAULT_PREVIEW_WIDTH_MM = PREVIEW_BOX_WIDTH_MM + PREVIEW_MARGIN_MM * 2 + PREVIEW_LABEL_RIGHT_MM;
 const DEFAULT_PREVIEW_HEIGHT_MM = PREVIEW_BOX_HEIGHT_MM + PREVIEW_MARGIN_MM * 2;
 const PREVIEW_CENTER_CIRCLE_DIAMETER_MM = 1.25 * 25.4;
+const PREVIEW_INNER_GUIDE_WIDTH_MM = 1.6 * 25.4;
+const PREVIEW_INNER_GUIDE_HEIGHT_MM = 1.1 * 25.4;
+const PREVIEW_INNER_GUIDE_INSET_X_MM = (PREVIEW_BOX_WIDTH_MM - PREVIEW_INNER_GUIDE_WIDTH_MM) / 2;
+const PREVIEW_INNER_GUIDE_INSET_Y_MM = (PREVIEW_BOX_HEIGHT_MM - PREVIEW_INNER_GUIDE_HEIGHT_MM) / 2;
 const DEFAULT_ZOOM = 3;
 const DEFAULT_WELD_EXPORTED_DESIGN = true;
 const DEFAULT_LINE_SETTINGS = Object.freeze({
@@ -108,6 +112,7 @@ const zoomOutput = document.querySelector("#zoomOutput");
 const downloadButton = document.querySelector("#downloadButton");
 const copyButton = document.querySelector("#copyButton");
 const captureButton = document.querySelector("#captureButton");
+const completeNextButton = document.querySelector("#completeNextButton");
 
 const canvas = document.createElement("canvas");
 const ctx = canvas.getContext("2d");
@@ -542,6 +547,14 @@ function hydrateStoredOrder(order, index) {
       }
     } else if (!savedCompletedBuild) {
       savedSettingsSignature = null;
+    }
+
+    if (
+      completedSettingsSignature
+      && settingsSignatureMatches({ ...settings }, completedSettingsSignature)
+      && completedSettingsSignature === abandonedPendingSignature
+    ) {
+      completedSettingsSignature = savedCompletedBuild?.signature || null;
     }
   } else if (!savedCompletedBuild && savedSettingsSignature) {
     savedSettingsSignature = null;
@@ -1011,6 +1024,10 @@ function renderPreviewGuideOnly() {
 function appendPreviewGuide(previewBoxX, previewBoxY) {
   const guideCenterX = previewBoxX + PREVIEW_BOX_WIDTH_MM / 2;
   const guideCenterY = previewBoxY + PREVIEW_BOX_HEIGHT_MM / 2;
+  const leftInnerX = previewBoxX + PREVIEW_INNER_GUIDE_INSET_X_MM;
+  const rightInnerX = previewBoxX + PREVIEW_BOX_WIDTH_MM - PREVIEW_INNER_GUIDE_INSET_X_MM;
+  const topInnerY = previewBoxY + PREVIEW_INNER_GUIDE_INSET_Y_MM;
+  const bottomInnerY = previewBoxY + PREVIEW_BOX_HEIGHT_MM - PREVIEW_INNER_GUIDE_INSET_Y_MM;
   const topLabel = makeSvgElement("text", {
     class: "preview-guide-label",
     x: guideCenterX,
@@ -1036,6 +1053,34 @@ function appendPreviewGuide(previewBoxX, previewBoxY) {
       width: PREVIEW_BOX_WIDTH_MM,
       height: PREVIEW_BOX_HEIGHT_MM,
       rx: 1.6,
+    }),
+    makeSvgElement("line", {
+      class: "preview-guide-inner-line",
+      x1: leftInnerX,
+      y1: previewBoxY,
+      x2: leftInnerX,
+      y2: previewBoxY + PREVIEW_BOX_HEIGHT_MM,
+    }),
+    makeSvgElement("line", {
+      class: "preview-guide-inner-line",
+      x1: rightInnerX,
+      y1: previewBoxY,
+      x2: rightInnerX,
+      y2: previewBoxY + PREVIEW_BOX_HEIGHT_MM,
+    }),
+    makeSvgElement("line", {
+      class: "preview-guide-inner-line",
+      x1: previewBoxX,
+      y1: topInnerY,
+      x2: previewBoxX + PREVIEW_BOX_WIDTH_MM,
+      y2: topInnerY,
+    }),
+    makeSvgElement("line", {
+      class: "preview-guide-inner-line",
+      x1: previewBoxX,
+      y1: bottomInnerY,
+      x2: previewBoxX + PREVIEW_BOX_WIDTH_MM,
+      y2: bottomInnerY,
     }),
     makeSvgElement("circle", {
       class: "preview-guide-box",
@@ -1344,6 +1389,7 @@ function updateActiveOrderFromControls() {
   order.settings = getCurrentSettings();
   const currentSignature = buildSettingsSignature(order.settings);
   const matchingCompletedBuild = getBuildForSignature(order, getSettingsSignatureCandidates(order.settings));
+  const savedCompletedBuild = getBuildForSignature(order, order.savedSettingsSignature);
   const preservesPendingGeometry = order.pendingAnalysisSignature === currentSignature && !matchingCompletedBuild;
 
   if (matchingCompletedBuild) {
@@ -1375,7 +1421,13 @@ function updateActiveOrderFromControls() {
     order.status = "in-progress";
     order.analysisState = "idle";
     order.analysisBadge = null;
-    if (!getSavedCachedBuild(order)) {
+    if (
+      order.completedSettingsSignature
+      && settingsSignatureMatches(order.settings, order.completedSettingsSignature)
+    ) {
+      order.completedSettingsSignature = savedCompletedBuild?.signature || null;
+    }
+    if (!savedCompletedBuild) {
       order.savedSettingsSignature = null;
     } else if (order.analysisState === "running") {
       order.analysisState = "idle";
@@ -1447,21 +1499,29 @@ function isOrderReadyForExport(order) {
 
 function updateCaptureButtonState(activeOrder) {
   captureButton.textContent = "Complete";
+  completeNextButton.textContent = "Complete & Next";
 
   if (!activeOrder) {
     captureButton.disabled = true;
     captureButton.removeAttribute("aria-busy");
+    completeNextButton.disabled = true;
+    completeNextButton.removeAttribute("aria-busy");
     return;
   }
 
   if (activeOrder.analysisState === "running") {
     captureButton.disabled = true;
     captureButton.removeAttribute("aria-busy");
+    completeNextButton.disabled = true;
+    completeNextButton.removeAttribute("aria-busy");
     return;
   }
 
   captureButton.removeAttribute("aria-busy");
-  captureButton.disabled = !canCompleteActiveOrder(activeOrder);
+  completeNextButton.removeAttribute("aria-busy");
+  const canComplete = canCompleteActiveOrder(activeOrder);
+  captureButton.disabled = !canComplete;
+  completeNextButton.disabled = !canComplete;
 }
 
 function buildCompletedAnalysisBadge(analysis) {
@@ -1845,7 +1905,7 @@ async function importFromClipboard() {
   }
 }
 
-async function captureActiveOrder() {
+async function captureActiveOrder({ advanceToNext = false } = {}) {
   const order = getActiveOrder();
   if (!order || !textInput.value.trim()) {
     return;
@@ -1879,11 +1939,13 @@ async function captureActiveOrder() {
     "Running face analysis and caching the export-ready geometry for this completed design.",
   );
 
-  const activeIndex = orders.findIndex((candidate) => candidate.id === order.id);
-  const orderedCandidates = [...orders.slice(activeIndex + 1), ...orders.slice(0, activeIndex)];
-  const nextUncaptured = orderedCandidates.find((candidate) => candidate.status !== "captured" && candidate.status !== "exported");
-  if (nextUncaptured) {
-    selectOrder(nextUncaptured.id);
+  if (advanceToNext) {
+    const activeIndex = orders.findIndex((candidate) => candidate.id === order.id);
+    const orderedCandidates = [...orders.slice(activeIndex + 1), ...orders.slice(0, activeIndex)];
+    const nextUncaptured = orderedCandidates.find((candidate) => candidate.status !== "captured" && candidate.status !== "exported");
+    if (nextUncaptured) {
+      selectOrder(nextUncaptured.id);
+    }
   }
 
   try {
@@ -2448,9 +2510,9 @@ function fillBackingHoles(imageData, width, height) {
   for (let index = 0; index < width * height; index += 1) {
     if (!visited[index]) {
       const offset = index * 4;
-      data[offset] = 68;
-      data[offset + 1] = 111;
-      data[offset + 2] = 139;
+      data[offset] = 255;
+      data[offset + 1] = 0;
+      data[offset + 2] = 0;
       data[offset + 3] = 255;
     }
   }
@@ -2468,8 +2530,8 @@ function createBackingImage(letters, widthMm, heightMm, backingMm) {
   backingContext.textBaseline = "alphabetic";
   backingContext.lineJoin = "round";
   backingContext.lineCap = "round";
-  backingContext.strokeStyle = "#446f8b";
-  backingContext.fillStyle = "#446f8b";
+  backingContext.strokeStyle = "rgb(255, 0, 0)";
+  backingContext.fillStyle = "rgb(255, 0, 0)";
 
   letters.forEach((letter) => {
     backingContext.lineWidth = backingMm * 2 * scale;
@@ -2585,7 +2647,7 @@ function renderPreviewFromLayout(layout) {
   const backingLayer = analysis
     ? makeSvgElement("path", {
         d: analysis.backingPath,
-        fill: "#446f8b",
+        fill: "rgb(255, 0, 0)",
         transform: `translate(${frame.designX} ${frame.designY})`,
       })
     : makeSvgElement("image", {
@@ -3026,7 +3088,12 @@ clearQueueButton.addEventListener("click", clearAllOrders);
 exportCompletedButton.addEventListener("click", exportAllOrders);
 copyCompletedButton.addEventListener("click", copyAllOrders);
 orderSearchInput.addEventListener("input", renderOrderList);
-captureButton.addEventListener("click", captureActiveOrder);
+captureButton.addEventListener("click", () => {
+  captureActiveOrder();
+});
+completeNextButton.addEventListener("click", () => {
+  captureActiveOrder({ advanceToNext: true });
+});
 downloadButton.addEventListener("click", downloadSvg);
 copyButton.addEventListener("click", copyCurrentSvg);
 zoomOutButton.addEventListener("click", () => updateZoom(zoom / 1.2));

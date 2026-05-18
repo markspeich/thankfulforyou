@@ -2,10 +2,18 @@ import { expect, test } from "playwright/test";
 
 test.describe.configure({ mode: "serial" });
 
+function completeButton(page) {
+  return page.locator("#captureButton");
+}
+
+function completeAndNextButton(page) {
+  return page.locator("#completeNextButton");
+}
+
 async function completeDesign(page, queueLabel) {
   const row = page.locator("#orderList .order-row").filter({ hasText: queueLabel });
 
-  await page.getByRole("button", { name: "Complete" }).click();
+  await completeButton(page).click();
   await expect(row).toContainText("Complete");
   await expect.poll(async () => {
     return row.locator(".order-analysis-indicator.ok, .order-analysis-indicator.warning").count();
@@ -144,16 +152,19 @@ test.beforeEach(async ({ page }) => {
 });
 
 test("shows the production defaults", async ({ page }) => {
-  await expect(page.locator("#backingInput")).toHaveValue("3.1");
-  await expect(page.locator("#backingOutput")).toHaveText("3.100 mm");
+  await expect(page.locator("#backingInput")).toHaveValue("2.2");
+  await expect(page.locator("#backingInput")).toHaveAttribute("min", "0");
+  await expect(page.locator("#backingInput")).toHaveAttribute("step", "0.1");
+  await expect(page.locator("#backingOutput")).toHaveText("2.200 mm");
   await expect(page.locator("#weldExportedDesignInput")).toBeChecked();
   await expect(page.locator("#preview .preview-guide-label").first()).toHaveText('2.2"');
   await expect(page.locator("#preview circle.preview-guide-box")).toHaveCount(1);
 
-  const circleMetrics = await page.evaluate(() => {
+  const guideMetrics = await page.evaluate(() => {
     const guide = document.querySelector("#preview rect.preview-guide-box");
     const circle = document.querySelector("#preview circle.preview-guide-box");
-    if (!(guide instanceof SVGRectElement) || !(circle instanceof SVGCircleElement)) {
+    const labels = Array.from(document.querySelectorAll("#preview .preview-guide-label"));
+    if (!(guide instanceof SVGRectElement) || !(circle instanceof SVGCircleElement) || labels.length !== 2) {
       return null;
     }
 
@@ -163,12 +174,170 @@ test("shows the production defaults", async ({ page }) => {
       circleCenterX: Number(circle.getAttribute("cx")),
       circleCenterY: Number(circle.getAttribute("cy")),
       circleDiameter: Number(circle.getAttribute("r")) * 2,
+      labelFills: labels.map((label) => window.getComputedStyle(label).fill),
     };
   });
 
-  expect(circleMetrics.circleCenterX).toBeCloseTo(circleMetrics.guideCenterX, 6);
-  expect(circleMetrics.circleCenterY).toBeCloseTo(circleMetrics.guideCenterY, 6);
-  expect(circleMetrics.circleDiameter).toBeCloseTo(1.25 * 25.4, 6);
+  expect(guideMetrics.guideCenterX).toBeCloseTo(guideMetrics.circleCenterX, 6);
+  expect(guideMetrics.guideCenterY).toBeCloseTo(guideMetrics.circleCenterY, 6);
+  expect(guideMetrics.circleDiameter).toBeCloseTo(1.25 * 25.4, 6);
+  expect(guideMetrics.labelFills).toEqual(["rgb(12, 150, 217)", "rgb(12, 150, 217)"]);
+});
+
+test("allows the backing border slider to reach 0 mm", async ({ page }) => {
+  await page.locator("#backingInput").fill("0");
+  await expect(page.locator("#backingInput")).toHaveValue("0");
+  await expect(page.locator("#backingOutput")).toHaveText("0.000 mm");
+});
+
+test("renders lock text height inline without its own bordered section", async ({ page }) => {
+  await page.locator("#textInput").fill("Savannah\nRN");
+
+  const firstLineLockStyles = await page.locator('.line-control-card[data-line-index="0"] .line-control-toggle').evaluate((element) => {
+    const styles = window.getComputedStyle(element);
+    return {
+      backgroundColor: styles.backgroundColor,
+      borderTopWidth: styles.borderTopWidth,
+      borderRightWidth: styles.borderRightWidth,
+      borderBottomWidth: styles.borderBottomWidth,
+      borderLeftWidth: styles.borderLeftWidth,
+      paddingTop: styles.paddingTop,
+      paddingRight: styles.paddingRight,
+      paddingBottom: styles.paddingBottom,
+      paddingLeft: styles.paddingLeft,
+    };
+  });
+
+  expect(firstLineLockStyles).toEqual({
+    backgroundColor: "rgba(0, 0, 0, 0)",
+    borderTopWidth: "0px",
+    borderRightWidth: "0px",
+    borderBottomWidth: "0px",
+    borderLeftWidth: "0px",
+    paddingTop: "0px",
+    paddingRight: "0px",
+    paddingBottom: "0px",
+    paddingLeft: "0px",
+  });
+});
+
+test("renders the preview guide with thin solid blue outer and inner lines", async ({ page }) => {
+  const guideStyles = await page.evaluate(() => {
+    const box = document.querySelector("#preview rect.preview-guide-box");
+    const circle = document.querySelector("#preview circle.preview-guide-box");
+    const innerLines = Array.from(document.querySelectorAll("#preview line.preview-guide-inner-line"));
+    if (!(box instanceof SVGRectElement) || !(circle instanceof SVGCircleElement)) {
+      return null;
+    }
+
+    const boxStyle = window.getComputedStyle(box);
+    const circleStyle = window.getComputedStyle(circle);
+    const lineStyle = innerLines.length ? window.getComputedStyle(innerLines[0]) : null;
+    const verticalLines = innerLines
+      .filter((line) => line.getAttribute("x1") === line.getAttribute("x2"))
+      .sort((left, right) => Number(left.getAttribute("x1")) - Number(right.getAttribute("x1")));
+    const horizontalLines = innerLines
+      .filter((line) => line.getAttribute("y1") === line.getAttribute("y2"))
+      .sort((top, bottom) => Number(top.getAttribute("y1")) - Number(bottom.getAttribute("y1")));
+
+    return {
+      boxStroke: boxStyle.stroke,
+      circleStroke: circleStyle.stroke,
+      boxDashArray: boxStyle.strokeDasharray,
+      circleDashArray: circleStyle.strokeDasharray,
+      boxStrokeWidth: boxStyle.strokeWidth,
+      circleStrokeWidth: circleStyle.strokeWidth,
+      innerLineCount: innerLines.length,
+      innerLineStroke: lineStyle?.stroke ?? null,
+      innerLineDashArray: lineStyle?.strokeDasharray ?? null,
+      innerLineStrokeWidth: lineStyle?.strokeWidth ?? null,
+      verticalSpacingMm: verticalLines.length === 2
+        ? Number(verticalLines[1].getAttribute("x1")) - Number(verticalLines[0].getAttribute("x1"))
+        : null,
+      horizontalSpacingMm: horizontalLines.length === 2
+        ? Number(horizontalLines[1].getAttribute("y1")) - Number(horizontalLines[0].getAttribute("y1"))
+        : null,
+    };
+  });
+
+  expect(guideStyles.boxStroke).toBe("rgb(12, 150, 217)");
+  expect(guideStyles.circleStroke).toBe("rgb(12, 150, 217)");
+  expect(guideStyles.boxDashArray).toBe("none");
+  expect(guideStyles.circleDashArray).toBe("none");
+  expect(guideStyles.boxStrokeWidth).toBe("0.05px");
+  expect(guideStyles.circleStrokeWidth).toBe("0.05px");
+  expect(guideStyles.innerLineCount).toBe(4);
+  expect(guideStyles.innerLineStroke).toBe("rgb(12, 150, 217)");
+  expect(guideStyles.innerLineDashArray).toBe("none");
+  expect(guideStyles.innerLineStrokeWidth).toBe("0.05px");
+  expect(guideStyles.verticalSpacingMm).toBeCloseTo(1.6 * 25.4, 6);
+  expect(guideStyles.horizontalSpacingMm).toBeCloseTo(1.1 * 25.4, 6);
+});
+
+test("renders the analyzed backing preview in red", async ({ page }) => {
+  await page.route("**/api/layout-analyze", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify(buildMockAnalysisResponse()),
+    });
+  });
+
+  await page.locator("#textInput").fill("Savannah");
+  await completeDesign(page, "Design 1");
+
+  const backingFill = await page.evaluate(() => {
+    const paths = Array.from(document.querySelectorAll("#preview path"));
+    const backing = paths.find((path) => !path.classList.contains("face-layer"));
+    return backing?.getAttribute("fill") ?? null;
+  });
+
+  expect(backingFill).toBe("rgb(255, 0, 0)");
+
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+});
+
+test("renders the live backing preview in red while editing", async ({ page }) => {
+  await page.locator("#textInput").fill("Savannah");
+  await expect(page.locator("#connectionStatusLabel")).not.toHaveText("Analyzing layout...", { timeout: 15000 });
+
+  const backingPixel = await page.evaluate(async () => {
+    const backingImage = document.querySelector("#preview image");
+    if (!(backingImage instanceof SVGImageElement)) {
+      return null;
+    }
+
+    const href = backingImage.getAttribute("href");
+    if (!href) {
+      return null;
+    }
+
+    const image = new Image();
+    image.src = href;
+    await image.decode();
+
+    const canvas = document.createElement("canvas");
+    canvas.width = image.naturalWidth;
+    canvas.height = image.naturalHeight;
+    const context = canvas.getContext("2d");
+    context.drawImage(image, 0, 0);
+    const { data, width, height } = context.getImageData(0, 0, canvas.width, canvas.height);
+
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        const offset = (y * width + x) * 4;
+        if (data[offset + 3] < 240) {
+          continue;
+        }
+
+        return [data[offset], data[offset + 1], data[offset + 2], data[offset + 3]];
+      }
+    }
+
+    return null;
+  });
+
+  expect(backingPixel).toEqual([255, 0, 0, 255]);
 });
 
 test("keeps text inside the guide and centered for Mark RN", async ({ page }) => {
@@ -294,7 +463,7 @@ test("requires re-complete when lock text height changes a scaled design", async
 
   await expect(firstLineLock).toBeChecked();
   await expect(row).toContainText("In progress");
-  await expect(page.getByRole("button", { name: "Complete" })).toBeEnabled();
+  await expect(completeButton(page)).toBeEnabled();
   await expect(page.getByRole("button", { name: "Export This Design" })).toBeDisabled();
 
   await page.unrouteAll({ behavior: "ignoreErrors" });
@@ -311,14 +480,14 @@ test("does not restore a stale completed analysis badge after geometry changes d
   });
 
   await page.locator("#textInput").fill("Savannah\nRN");
-  await page.getByRole("button", { name: "Complete" }).click();
+  await completeButton(page).click();
 
   const row = page.locator("#orderList .order-row").filter({ hasText: "Design 1" });
   await expect(row.locator(".order-analysis-indicator.running")).toBeVisible();
 
   await page.locator('.line-control-card[data-line-index="0"] [data-setting="lockTextHeight"]').check();
   await expect(row).toContainText("In progress");
-  await expect(page.getByRole("button", { name: "Complete" })).toBeEnabled();
+  await expect(completeButton(page)).toBeEnabled();
   await expect(row.locator(".order-analysis-indicator.running")).toHaveCount(0);
 
   await expect(row.locator(".order-analysis-indicator.ok")).toHaveCount(0, { timeout: 20000 });
@@ -339,13 +508,13 @@ test("downgrades an abandoned first-time in-flight analysis to a retryable draft
   });
 
   await page.locator("#textInput").fill("Savannah\nRN");
-  await page.getByRole("button", { name: "Complete" }).click();
+  await completeButton(page).click();
   await page.reload();
 
   const row = page.locator("#orderList .order-row").filter({ hasText: "Design 1" });
   await expect(page.locator("#importStatus")).toContainText("Restored 1 design");
   await expect(row).toContainText("In progress");
-  await expect(page.getByRole("button", { name: "Complete" })).toBeEnabled();
+  await expect(completeButton(page)).toBeEnabled();
   await expect(page.getByRole("button", { name: "Export This Design" })).toBeDisabled();
 
   await page.unrouteAll({ behavior: "ignoreErrors" });
@@ -379,7 +548,7 @@ test("clears stale saved geometry signatures that have no completed build after 
   const row = page.locator("#orderList .order-row").filter({ hasText: "Design 1" });
   await expect(page.locator("#importStatus")).toContainText("Restored 1 design");
   await expect(row).toContainText("In progress");
-  await expect(page.getByRole("button", { name: "Complete" })).toBeEnabled();
+  await expect(completeButton(page)).toBeEnabled();
   await expect(page.getByRole("button", { name: "Export This Design" })).toBeDisabled();
 });
 
@@ -399,9 +568,9 @@ test("keeps the newest analysis request authoritative when Complete is clicked t
   const row = page.locator("#orderList .order-row").filter({ hasText: "Design 1" });
   const firstLineLock = page.locator('.line-control-card[data-line-index="0"] [data-setting="lockTextHeight"]');
 
-  await page.getByRole("button", { name: "Complete" }).click();
+  await completeButton(page).click();
   await firstLineLock.check();
-  await page.getByRole("button", { name: "Complete" }).click();
+  await completeButton(page).click();
   await expect(row.locator(".order-analysis-indicator.running")).toBeVisible();
 
   await page.waitForTimeout(900);
@@ -438,11 +607,11 @@ test("keeps the newest same-geometry analysis retry authoritative", async ({ pag
   await page.locator("#textInput").fill("Savannah\nRN");
   const row = page.locator("#orderList .order-row").filter({ hasText: "Design 1" });
 
-  await page.getByRole("button", { name: "Complete" }).click();
+  await completeButton(page).click();
   await expect(row.locator(".order-analysis-indicator.running")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Complete" })).toBeEnabled();
+  await expect(completeButton(page)).toBeEnabled();
 
-  await page.getByRole("button", { name: "Complete" }).click();
+  await completeButton(page).click();
   await expect(row.locator(".order-analysis-indicator.running")).toBeVisible();
   await expect(page.locator("#connectionStatusLabel")).not.toContainText("Analysis failed", { timeout: 2000 });
 
@@ -463,7 +632,7 @@ test("restores the completed state when geometry is reverted before analysis fin
   });
 
   await page.locator("#textInput").fill("Savannah\nRN");
-  await page.getByRole("button", { name: "Complete" }).click();
+  await completeButton(page).click();
 
   const row = page.locator("#orderList .order-row").filter({ hasText: "Design 1" });
   const firstLineLock = page.locator('.line-control-card[data-line-index="0"] [data-setting="lockTextHeight"]');
@@ -475,7 +644,7 @@ test("restores the completed state when geometry is reverted before analysis fin
 
   await expect(row).toContainText("Complete");
   await expect(page.getByRole("button", { name: "Export This Design" })).toBeEnabled({ timeout: 20000 });
-  await expect(page.getByRole("button", { name: "Complete" })).toBeDisabled();
+  await expect(completeButton(page)).toBeDisabled();
 
   await page.unrouteAll({ behavior: "ignoreErrors" });
 });
@@ -509,7 +678,7 @@ test("ignores an abandoned analysis failure after reverting to a completed geome
   const firstLineLock = page.locator('.line-control-card[data-line-index="0"] [data-setting="lockTextHeight"]');
 
   await firstLineLock.check();
-  await page.getByRole("button", { name: "Complete" }).click();
+  await completeButton(page).click();
   await expect(row.locator(".order-analysis-indicator.running")).toBeVisible();
 
   await firstLineLock.uncheck();
@@ -546,18 +715,18 @@ test("restores the previous completed geometry after refresh during a newer in-f
 
   const firstLineLock = page.locator('.line-control-card[data-line-index="0"] [data-setting="lockTextHeight"]');
   await firstLineLock.check();
-  await page.getByRole("button", { name: "Complete" }).click();
+  await completeButton(page).click();
   await page.reload();
 
   const row = page.locator("#orderList .order-row").filter({ hasText: "Design 1" });
   const restoredFirstLineLock = page.locator('.line-control-card[data-line-index="0"] [data-setting="lockTextHeight"]');
   await expect(page.locator("#importStatus")).toContainText("Restored 1 design");
   await expect(row).toContainText("In progress");
-  await expect(page.getByRole("button", { name: "Complete" })).toBeEnabled();
+  await expect(completeButton(page)).toBeEnabled();
 
   await restoredFirstLineLock.uncheck();
   await expect(row).toContainText("Complete");
-  await expect(page.getByRole("button", { name: "Complete" })).toBeDisabled();
+  await expect(completeButton(page)).toBeDisabled();
   await expect(page.getByRole("button", { name: "Export This Design" })).toBeEnabled();
 
   await page.unrouteAll({ behavior: "ignoreErrors" });
@@ -591,7 +760,7 @@ test("preserves the newest completed geometry across refresh after the operator 
   const secondLineHeight = page.locator('.line-control-card[data-line-index="1"] [data-setting="fontSizeMm"]');
 
   await firstLineLock.check();
-  await page.getByRole("button", { name: "Complete" }).click();
+  await completeButton(page).click();
   await secondLineHeight.fill("29");
   await page.waitForTimeout(1200);
   await page.reload();
@@ -602,7 +771,7 @@ test("preserves the newest completed geometry across refresh after the operator 
 
   await secondLineHeight.fill("34");
   await expect(row).toContainText("Complete", { timeout: 20000 });
-  await expect(page.getByRole("button", { name: "Complete" })).toBeDisabled();
+  await expect(completeButton(page)).toBeDisabled();
   await expect(page.getByRole("button", { name: "Export This Design" })).toBeEnabled();
 
   await page.unrouteAll({ behavior: "ignoreErrors" });
@@ -627,12 +796,12 @@ test("restores the previous completed geometry when a newer in-flight analysis i
 
   await firstLineLock.check();
   await expect(row).toContainText("In progress");
-  await page.getByRole("button", { name: "Complete" }).click();
+  await completeButton(page).click();
   await expect(row.locator(".order-analysis-indicator.running")).toBeVisible();
 
   await firstLineLock.uncheck();
   await expect(row).toContainText("Complete", { timeout: 20000 });
-  await expect(page.getByRole("button", { name: "Complete" })).toBeDisabled();
+  await expect(completeButton(page)).toBeDisabled();
   await expect(page.getByRole("button", { name: "Export This Design" })).toBeEnabled();
   await expect(page.locator("#connectionStatusLabel")).toContainText("Single connected face piece");
 
@@ -968,15 +1137,71 @@ test("keeps Complete button state independent from background analysis", async (
   await page.locator("#textInput").fill("Beta");
 
   await page.locator("#orderList .order-row").filter({ hasText: "Design 1" }).locator(".order-item").click();
-  await page.getByRole("button", { name: "Complete" }).click();
+  await completeAndNextButton(page).click();
 
   const completedRow = page.locator("#orderList .order-row").filter({ hasText: "Design 1" });
   await expect(completedRow).toContainText("Complete");
   await expect(completedRow.locator(".order-analysis-indicator.running")).toBeVisible();
   await expect(page.locator("#activeOrderName")).toHaveText("Design 2");
-  await expect(page.getByRole("button", { name: "Complete" })).toBeEnabled();
-  await expect(page.getByRole("button", { name: "Complete" })).not.toHaveText(/Saving/);
+  await expect(completeButton(page)).toBeEnabled();
+  await expect(completeButton(page)).not.toHaveText(/Saving/);
   await expect(completedRow.locator(".order-analysis-indicator.ok")).toBeVisible({ timeout: 20000 });
+
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+});
+
+test("Complete marks the active design finished without advancing to the next design", async ({ page }) => {
+  await page.route("**/api/layout-analyze", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify(buildMockAnalysisResponse()),
+    });
+  });
+
+  await page.locator("#textInput").fill("Alpha");
+  await page.getByRole("button", { name: "+ Add Design" }).click();
+  await page.locator("#textInput").fill("Beta");
+  await page.locator("#orderList .order-row").filter({ hasText: "Design 1" }).locator(".order-item").click();
+
+  await completeButton(page).click();
+
+  const firstRow = page.locator("#orderList .order-row").filter({ hasText: "Design 1" });
+  await expect(firstRow).toContainText("Complete");
+  await expect(firstRow.locator(".order-analysis-indicator.running")).toBeVisible();
+  await expect(page.locator("#activeOrderName")).toHaveText("Design 1");
+  await expect(completeButton(page)).toBeDisabled();
+  await expect(completeAndNextButton(page)).toBeDisabled();
+  await expect(firstRow.locator(".order-analysis-indicator.ok")).toBeVisible({ timeout: 20000 });
+
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+});
+
+test("Complete & Next marks the current design finished and advances to the next design", async ({ page }) => {
+  await page.route("**/api/layout-analyze", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify(buildMockAnalysisResponse()),
+    });
+  });
+
+  await page.locator("#textInput").fill("Alpha");
+  await page.getByRole("button", { name: "+ Add Design" }).click();
+  await page.locator("#textInput").fill("Beta");
+  await page.locator("#orderList .order-row").filter({ hasText: "Design 1" }).locator(".order-item").click();
+
+  await completeAndNextButton(page).click();
+
+  const firstRow = page.locator("#orderList .order-row").filter({ hasText: "Design 1" });
+  await expect(firstRow).toContainText("Complete");
+  await expect(firstRow.locator(".order-analysis-indicator.running")).toBeVisible();
+  await expect(page.locator("#activeOrderName")).toHaveText("Design 2");
+  await expect(completeButton(page)).toBeEnabled();
+  await expect(completeAndNextButton(page)).toBeEnabled();
+  await expect(firstRow.locator(".order-analysis-indicator.ok")).toBeVisible({ timeout: 20000 });
 
   await page.unrouteAll({ behavior: "ignoreErrors" });
 });
@@ -992,7 +1217,7 @@ test("disables Complete while the active design analysis is still running", asyn
   });
 
   await page.locator("#textInput").fill("Alpha");
-  await page.getByRole("button", { name: "Complete" }).click();
+  await completeButton(page).click();
 
   const activeRow = page.locator("#orderList .order-row").filter({ hasText: "Design 1" });
   await expect(activeRow.locator(".order-analysis-indicator.running")).toBeVisible();
@@ -1020,7 +1245,7 @@ test("keeps Complete disabled when reselecting a design whose analysis is still 
   await page.locator("#textInput").fill("Beta");
 
   await page.locator("#orderList .order-row").filter({ hasText: "Design 1" }).locator(".order-item").click();
-  await page.getByRole("button", { name: "Complete" }).click();
+  await completeAndNextButton(page).click();
 
   const firstRow = page.locator("#orderList .order-row").filter({ hasText: "Design 1" });
   await expect(firstRow.locator(".order-analysis-indicator.running")).toBeVisible();
@@ -1055,7 +1280,7 @@ test("does not allow a second Complete run while the same design analysis is sti
   await page.locator("#textInput").fill("Beta");
 
   await page.locator("#orderList .order-row").filter({ hasText: "Design 1" }).locator(".order-item").click();
-  await page.getByRole("button", { name: "Complete" }).click();
+  await completeAndNextButton(page).click();
 
   const firstRow = page.locator("#orderList .order-row").filter({ hasText: "Design 1" });
   await firstRow.locator(".order-item").click();
@@ -1094,7 +1319,7 @@ test("shows queue analysis indicators for running, connected, and multi-piece co
   });
 
   await page.locator("#textInput").fill("Alpha");
-  const saveAlpha = page.getByRole("button", { name: "Complete" }).click();
+  const saveAlpha = completeButton(page).click();
   await expect(page.locator("#orderList .order-row").filter({ hasText: "Design 1" }).locator(".order-analysis-indicator.running")).toBeVisible();
   await saveAlpha;
   await expect(page.locator("#orderList .order-row").filter({ hasText: "Design 1" }).locator(".order-analysis-indicator.ok")).toBeVisible({ timeout: 20000 });

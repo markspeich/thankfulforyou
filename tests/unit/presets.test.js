@@ -84,7 +84,7 @@ describe("presets", () => {
         bridgeMm: 0.5,
         lineBridgeMm: 0.5,
         offsetXMm: 0,
-        fontSizeMm: 34,
+        fontSizeMm: 23,
         verticalScale: 1,
         lockTextHeight: true,
       },
@@ -144,7 +144,7 @@ describe("presets", () => {
       bridgeMm: 0.5,
       lineBridgeMm: 0.5,
       offsetXMm: 0,
-      fontSizeMm: 21,
+      fontSizeMm: 23,
       verticalScale: 1,
       lockTextHeight: true,
     });
@@ -226,7 +226,7 @@ describe("presets", () => {
 
   it("returns preset-level global defaults", () => {
     expect(getPresetGlobalDefaults("skywalk-somekind")).toEqual({
-      backingMm: 3.1,
+      backingMm: 2.2,
       weldExportedDesign: true,
     });
   });
