@@ -184,6 +184,11 @@ test("shows the production defaults", async ({ page }) => {
   expect(guideMetrics.labelFills).toEqual(["rgb(12, 150, 217)", "rgb(12, 150, 217)"]);
 });
 
+test("keeps the queue sync status hidden until there is a message", async ({ page }) => {
+  await expect(page.locator("#queueSyncStatus")).toBeHidden();
+  await expect(page.locator("#orderSearchInput")).toBeVisible();
+});
+
 test("keeps the preview title above the scrollable pane", async ({ page }) => {
   const previewPanel = page.locator(".preview-panel");
   const previewTitle = page.locator(".preview-title");

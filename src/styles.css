@@ -775,6 +775,10 @@ button:disabled {
   background: #f8fbfc;
 }
 
+.status-card[hidden] {
+  display: none;
+}
+
 .status-card strong {
   font-size: 0.9rem;
 }
