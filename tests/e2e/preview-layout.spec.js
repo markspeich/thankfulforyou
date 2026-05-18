@@ -981,6 +981,93 @@ test("keeps Complete button state independent from background analysis", async (
   await page.unrouteAll({ behavior: "ignoreErrors" });
 });
 
+test("disables Complete while the active design analysis is still running", async ({ page }) => {
+  await page.route("**/api/layout-analyze", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify(buildMockAnalysisResponse()),
+    });
+  });
+
+  await page.locator("#textInput").fill("Alpha");
+  await page.getByRole("button", { name: "Complete" }).click();
+
+  const activeRow = page.locator("#orderList .order-row").filter({ hasText: "Design 1" });
+  await expect(activeRow.locator(".order-analysis-indicator.running")).toBeVisible();
+  await expect(page.locator("#captureButton")).toBeDisabled();
+  await expect(page.locator("#captureButton")).toHaveText("Complete");
+  await expect(activeRow.locator(".order-analysis-indicator.ok")).toBeVisible({ timeout: 20000 });
+  await expect(page.locator("#captureButton")).toBeDisabled();
+  await expect(page.locator("#captureButton")).toHaveText("Complete");
+
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+});
+
+test("keeps Complete disabled when reselecting a design whose analysis is still running", async ({ page }) => {
+  await page.route("**/api/layout-analyze", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify(buildMockAnalysisResponse()),
+    });
+  });
+
+  await page.locator("#textInput").fill("Alpha");
+  await page.getByRole("button", { name: "+ Add Design" }).click();
+  await page.locator("#textInput").fill("Beta");
+
+  await page.locator("#orderList .order-row").filter({ hasText: "Design 1" }).locator(".order-item").click();
+  await page.getByRole("button", { name: "Complete" }).click();
+
+  const firstRow = page.locator("#orderList .order-row").filter({ hasText: "Design 1" });
+  await expect(firstRow.locator(".order-analysis-indicator.running")).toBeVisible();
+  await expect(page.locator("#activeOrderName")).toHaveText("Design 2");
+
+  await firstRow.locator(".order-item").click();
+  await expect(page.locator("#activeOrderName")).toHaveText("Design 1");
+  await expect(page.locator("#captureButton")).toBeDisabled();
+  await expect(page.locator("#captureButton")).toHaveText("Complete");
+  await expect(firstRow.locator(".order-analysis-indicator.ok")).toBeVisible({ timeout: 20000 });
+  await expect(page.locator("#captureButton")).toBeDisabled();
+  await expect(page.locator("#captureButton")).toHaveText("Complete");
+
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+});
+
+test("does not allow a second Complete run while the same design analysis is still running", async ({ page }) => {
+  let analyzeCalls = 0;
+
+  await page.route("**/api/layout-analyze", async (route) => {
+    analyzeCalls += 1;
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify(buildMockAnalysisResponse()),
+    });
+  });
+
+  await page.locator("#textInput").fill("Alpha");
+  await page.getByRole("button", { name: "+ Add Design" }).click();
+  await page.locator("#textInput").fill("Beta");
+
+  await page.locator("#orderList .order-row").filter({ hasText: "Design 1" }).locator(".order-item").click();
+  await page.getByRole("button", { name: "Complete" }).click();
+
+  const firstRow = page.locator("#orderList .order-row").filter({ hasText: "Design 1" });
+  await firstRow.locator(".order-item").click();
+  await expect(page.locator("#captureButton")).toBeDisabled();
+  await expect(page.locator("#captureButton")).toHaveText("Complete");
+  await expect.poll(() => analyzeCalls).toBe(1);
+  await expect(firstRow.locator(".order-analysis-indicator.ok")).toBeVisible({ timeout: 20000 });
+  await expect.poll(() => analyzeCalls).toBe(1);
+
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+});
+
 test("shows queue analysis indicators for running, connected, and multi-piece completions", async ({ page }) => {
   await page.route("**/api/layout-analyze", async (route) => {
     const postData = route.request().postDataJSON();

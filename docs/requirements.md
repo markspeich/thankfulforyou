@@ -291,3 +291,6 @@ For batch Etsy order sessions, the preferred workflow is:
 8. Export all queued orders with text from the order navigation when a batch SVG is needed.
 9. Delete a single queue item when it should be excluded from the batch.
 10. Clear the full queue and its saved local batch state when starting a new batch.
+
+- Clicking `Complete` should immediately mark the current design as finished for editing, even if connectedness analysis is still running in the background.
+- After clicking `Complete`, the `Complete` button should stay disabled for that design until the operator changes the text or layout settings again.
