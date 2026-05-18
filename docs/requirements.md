@@ -224,11 +224,13 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Consider adding automatic bridge or spacing suggestions after enough production examples exist to validate them.
 - Consider more granular overlap controls than the current per-line settings if real jobs show consistent edge cases.
 - Consider broader import or export helpers beyond the current SVG-first LightBurn workflow once the first production flow is stable.
+- Consider a later internal-production Ruida direct-transfer workflow over USB after the SVG-based manufacturing flow is stable and validated.
 - Consider adding a preset-management workflow so operators can create or update preset JSON from the editor instead of editing files manually.
 
 ## Current Assumptions And Pending Decisions
 
 - The first production export target is SVG for LightBurn-oriented laser workflows.
+- The current shop connection to the OmTech Polar is USB, not Ethernet.
 - The first production font formats are OTF and TTF, matching the currently available Candlepin, Skywalk, and Somekind assets.
 - The current production workflow is manual-control-first. Automatic optimization may be added later, but operators must be able to adjust letter bridge, line bridge, per-line font, horizontal offset, text height, and backing border directly.
 - Operators will sometimes need to increase a line's apparent height without increasing its width. Treat that as a per-line geometry setting rather than a preview-only effect so preview, analysis, and SVG export stay aligned.
@@ -238,6 +240,8 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - The backing layer should be generated automatically as an offset silhouette in the production tool rather than remaining a preview-only approximation.
 - The 2.2 inch by 1.5 inch guide box defines the text fitting target, not the total finished backing size limit.
 - A production-safe minimum bridge width for 1/8 inch acrylic still needs explicit shop confirmation. Until confirmed otherwise, use 0.5 mm as the working default bridge target for Candlepin letter and line connections.
+- Direct communication with the Ruida controller may be possible in a later phase, but no clean public Ruida developer API should be assumed. Any direct machine workflow should be treated as a separate controller-integration effort built around Ruida-compatible job generation, USB transfer, and production validation.
+- If direct Ruida support is pursued, prefer USB as the first transport path for this shop because the machine is currently USB-connected and because the current production workflow does not need to depend on Ruida Ethernet/UDP behavior.
 - The initial hosted deployment target is Vercel.
 - The first production authentication step should use Vercel Deployment Protection so the hosted tool and its API routes stay private before any in-app user system is added.
 - A production deployment must include the real production font assets used for preview, analysis, and export. A deployment flow that omits those font files is not production-ready.
