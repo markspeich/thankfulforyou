@@ -23,6 +23,7 @@ import {
   isValidPresetId,
   loadPresetRegistry,
 } from "./presets.js";
+import { computeLineMaskMetrics } from "./text-metrics.js";
 import {
   buildSettingsSignature,
   getSettingsSignatureCandidates,
@@ -2220,9 +2221,15 @@ function createLineMask(letters, fontSizeMm, fontId, verticalScale) {
   const scale = PX_PER_MM * MASK_SCALE;
   const minLeft = Math.min(...letters.map((letter) => letter.leftEdge), 0);
   const maxRight = Math.max(...letters.map((letter) => letter.rightEdge), fontSizeMm);
+  const lineMaskMetrics = computeLineMaskMetrics(letters, {
+    fontSizeMm,
+    verticalScale,
+    pixelsPerMm: scale,
+    paddingPx: MASK_PADDING_PX,
+  });
   const width = Math.ceil((maxRight - minLeft) * scale) + MASK_PADDING_PX * 2;
-  const height = Math.ceil(fontSizeMm * 1.35 * verticalScale * scale) + MASK_PADDING_PX * 2;
-  const baseline = MASK_PADDING_PX + Math.ceil(fontSizeMm * verticalScale * scale);
+  const height = lineMaskMetrics.heightPx;
+  const baseline = lineMaskMetrics.baselinePx;
   const maskCanvas = document.createElement("canvas");
   const maskContext = maskCanvas.getContext("2d", { willReadFrequently: true });
 
@@ -2365,6 +2372,8 @@ function layoutCharacters(text, fontSizeMm, bridgeMm, fontId, verticalScale) {
       x,
       leftEdge,
       rightEdge,
+      ascentMm: mask.ascentMm,
+      descentMm: mask.descentMm,
       width: metrics.inkWidth,
       advance: metrics.advance,
     };

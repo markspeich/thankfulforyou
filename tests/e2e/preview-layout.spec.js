@@ -467,6 +467,56 @@ test("renders the live backing preview in red while editing", async ({ page }) =
   expect(backingPixel).toEqual([255, 0, 0, 255]);
 });
 
+test("keeps descenders inside the live face preview image", async ({ page }) => {
+  await page.locator("#textInput").fill("Mackenzie");
+  await page.locator('.line-control-card[data-line-index="0"] [data-setting="fontSizeMm"]').fill("28");
+  await expect(page.locator("#preview .face-layer")).toHaveCount(1);
+
+  const edgeContact = await page.evaluate(async () => {
+    const face = document.querySelector("#preview .face-layer");
+    if (!(face instanceof SVGImageElement)) {
+      return null;
+    }
+
+    const href = face.getAttribute("href");
+    if (!href) {
+      return null;
+    }
+
+    const image = new Image();
+    image.src = href;
+    await image.decode();
+
+    const canvas = document.createElement("canvas");
+    canvas.width = image.naturalWidth;
+    canvas.height = image.naturalHeight;
+    const context = canvas.getContext("2d");
+    context.drawImage(image, 0, 0);
+    const { data, width, height } = context.getImageData(0, 0, canvas.width, canvas.height);
+
+    let maxY = -1;
+
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        if (data[(y * width + x) * 4 + 3] <= 32) {
+          continue;
+        }
+
+        maxY = Math.max(maxY, y);
+      }
+    }
+
+    return {
+      height,
+      maxY,
+      touchesBottom: maxY === height - 1,
+    };
+  });
+
+  expect(edgeContact).not.toBeNull();
+  expect(edgeContact.touchesBottom).toBe(false);
+});
+
 test("keeps text inside the guide and centered for Mark RN", async ({ page }) => {
   await page.locator("#textInput").fill("Mark\nRN");
   await expect(page.locator("#connectionStatusLabel")).not.toHaveText("Analyzing layout...", { timeout: 15000 });
