@@ -294,6 +294,7 @@ The website should be a practical production tool rather than a marketing site. 
 - The selected-order controls should be organized as a stack of per-line control groups followed by one global `Backing Border` control.
 - Each per-line control group should clearly map to a specific entered text line and should appear or disappear as the number of entered lines changes.
 - The first text line should not show a `Line Bridge` control because there is no line above it to connect to.
+- The left-side order queue should not show browser-storage sync notifications such as `Saved in this browser`, `Restored from browser`, or `No saved batch`; only meaningful remote Neon sync statuses should appear there.
 - The selected-order header should hold the primary order actions in this order: `Save`, `Complete`, `Complete & Next`, `Copy This Design`, and `Export This Design`.
 
 The selected UI direction is the Production Queue layout. Use `docs/mockups/production-queue-ui-mockup-preview-top-controls-bottom.png` as the primary visual reference for the next UI implementation pass. The mockup intent is a left-side order queue with a batch export button above the order list, and a right-side selected-order editor with the selected order preview at the top, controls docked at the bottom, and an Export This Design button. Sample renders should use a white raised text layer over a red backing silhouette.

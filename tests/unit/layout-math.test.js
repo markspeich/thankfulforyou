@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  computeGuideOverflow,
   computeLineScaleFactors,
   computeMixedFitScale,
   computeMixedScaleBounds,
@@ -75,6 +76,11 @@ describe("layout math", () => {
 
     expect(bounds.textWidthMm).toBeGreaterThan(MAX_RENDER_WIDTH_MM);
     expect(bounds.overflowsGuide).toBe(true);
+    expect(computeGuideOverflow([
+      {
+        settings: { lockTextHeight: true },
+      },
+    ], bounds.textWidthMm, bounds.textHeightMm)).toBe(true);
   });
 
   it("uses the same safety-margin envelope as the fit-scale calculation", () => {
@@ -93,6 +99,14 @@ describe("layout math", () => {
     expect(bounds.textWidthMm).toBeGreaterThan(MAX_FIT_WIDTH_MM);
     expect(bounds.textWidthMm).toBeLessThanOrEqual(MAX_RENDER_WIDTH_MM);
     expect(bounds.overflowsGuide).toBe(true);
+  });
+
+  it("does not report locked-line guide overflow when every line is unlocked", () => {
+    expect(computeGuideOverflow([
+      {
+        settings: { lockTextHeight: false },
+      },
+    ], MAX_FIT_WIDTH_MM + 0.05, 10)).toBe(false);
   });
 
   it("allows unlocked lines to grow beyond the old global fit when locked lines stay fixed", () => {

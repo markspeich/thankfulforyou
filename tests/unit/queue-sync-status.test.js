@@ -3,12 +3,12 @@ import { describe, expect, it } from "vitest";
 import { buildQueueSyncStatus } from "../../src/queue-sync-status.js";
 
 describe("queue sync status", () => {
-  it("describes a queue that only exists in browser storage", () => {
-    expect(buildQueueSyncStatus("local-only", { count: 2 })).toEqual({
-      tone: "warning",
-      label: "Saved in this browser",
-      detail: "2 designs are stored locally. Click Save to sync this batch to Neon.",
-    });
+  it("suppresses a queue that only exists in browser storage", () => {
+    expect(buildQueueSyncStatus("local-only", { count: 2 })).toBeNull();
+  });
+
+  it("suppresses a queue restored from browser storage", () => {
+    expect(buildQueueSyncStatus("restored-local", { count: 2 })).toBeNull();
   });
 
   it("describes a queue restored from Neon", () => {
@@ -27,11 +27,7 @@ describe("queue sync status", () => {
     });
   });
 
-  it("describes an empty queue", () => {
-    expect(buildQueueSyncStatus("empty")).toEqual({
-      tone: "pending",
-      label: "No saved batch",
-      detail: "Drafts stay in this browser until you save a queue to Neon.",
-    });
+  it("suppresses an empty queue notice", () => {
+    expect(buildQueueSyncStatus("empty")).toBeNull();
   });
 });

@@ -1,4 +1,5 @@
 import {
+  computeGuideOverflow,
   DEFAULT_BACKING_MM,
   DESIGN_BLEED_MM,
   PREVIEW_BOX_HEIGHT_MM,
@@ -637,6 +638,15 @@ function updateQueueSyncStatus(kind, options = {}) {
   }
 
   const status = buildQueueSyncStatus(kind, options);
+  if (!status) {
+    queueSyncStatus.hidden = true;
+    queueSyncStatusLabel.textContent = "";
+    queueSyncStatusDetail.textContent = "";
+    queueSyncStatus.classList.remove("status-ok", "status-warning", "status-pending");
+    return;
+  }
+
+  queueSyncStatus.hidden = false;
   queueSyncStatus.classList.remove("status-ok", "status-warning", "status-pending");
   queueSyncStatus.classList.add(`status-${status.tone}`);
   queueSyncStatusLabel.textContent = status.label;
@@ -3242,7 +3252,7 @@ function buildOrderLayout(settings) {
   } = measureTextLayoutForFit(normalized.text, scaledLineSettings);
   const scaledBackingMm = normalized.backingMm * fitScale;
   const scaledBleedMm = DESIGN_BLEED_MM * fitScale;
-  const overflowsGuide = computeTextFitScale(textWidthMm, textHeightMm) < 1 - 1e-6;
+  const overflowsGuide = computeGuideOverflow(lines, textWidthMm, textHeightMm);
   const widthMm = textWidthMm + scaledBackingMm * 2 + scaledBleedMm * 2;
   const heightMm = textHeightMm + scaledBackingMm * 2 + scaledBleedMm * 2;
   const absoluteLetters = lineBounds.flatMap(({ line, centeredLeftMm }) => {

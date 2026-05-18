@@ -175,6 +175,17 @@ export function computeMixedScaleBounds(lines, lineScaleFactors) {
   };
 }
 
+export function computeGuideOverflow(lines, textWidthMm, textHeightMm) {
+  const hasLockedLines = Array.isArray(lines)
+    && lines.some((line) => line?.settings?.lockTextHeight ?? line?.lockTextHeight ?? false);
+
+  if (!hasLockedLines) {
+    return false;
+  }
+
+  return computeTextFitScale(textWidthMm, textHeightMm) < 1 - 1e-6;
+}
+
 export function buildScaledTextBounds(textWidthMm, textHeightMm, backingMm, scaleFactor) {
   return {
     left: (DESIGN_BLEED_MM + backingMm) * scaleFactor,

@@ -8,17 +8,9 @@ export function buildQueueSyncStatus(kind, options = {}) {
 
   switch (kind) {
     case "local-only":
-      return {
-        tone: "warning",
-        label: "Saved in this browser",
-        detail: `${formatCount(count, "design is", "designs are")} stored locally. Click Save to sync this batch to Neon.`,
-      };
     case "restored-local":
-      return {
-        tone: "warning",
-        label: "Restored from browser",
-        detail: `${formatCount(count, "design was", "designs were")} restored from local browser storage.`,
-      };
+    case "empty":
+      return null;
     case "restored-remote":
       return {
         tone: "ok",
@@ -31,12 +23,7 @@ export function buildQueueSyncStatus(kind, options = {}) {
         label: "Saved to Neon",
         detail: `${formatCount(count, "design is", "designs are")} synced to the remote saved batch.`,
       };
-    case "empty":
     default:
-      return {
-        tone: "pending",
-        label: "No saved batch",
-        detail: "Drafts stay in this browser until you save a queue to Neon.",
-      };
+      return null;
   }
 }
