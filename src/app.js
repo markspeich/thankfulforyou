@@ -23,6 +23,10 @@ import {
   isValidPresetId,
   loadPresetRegistry,
 } from "./presets.js";
+import {
+  buildSettingsSignature,
+  getSettingsSignatureCandidates,
+} from "./order-signatures.js";
 
 const FONT_OPTIONS = [
   {
@@ -114,6 +118,8 @@ let zoom = DEFAULT_ZOOM;
 let orderSequence = 1;
 let activeOrderId = null;
 const orders = [];
+let queuePersistenceTimeoutId = null;
+let orderListRenderFrameId = null;
 
 const statusLabels = {
   "not-started": "Not started",
@@ -220,26 +226,12 @@ function normalizeSettings(settings = {}) {
   };
 }
 
-function buildSettingsSignature(settings) {
-  const normalized = normalizeSettings(settings);
-  const { fitScale } = measureTextLayoutForFit(normalized.text, normalized.lines);
-  const includeLockTextHeight = Math.abs(fitScale - 1) > 1e-6;
+function settingsSignatureMatches(settings, signature) {
+  if (typeof signature !== "string" || !signature) {
+    return false;
+  }
 
-  return JSON.stringify({
-    text: normalized.text,
-    presetId: normalized.presetId,
-    backingMm: normalized.backingMm,
-    weldExportedDesign: normalized.weldExportedDesign,
-    lines: normalized.lines.map((line) => ({
-      fontId: line.fontId,
-      bridgeMm: Number(line.bridgeMm),
-      lineBridgeMm: Number(line.lineBridgeMm),
-      offsetXMm: Number(line.offsetXMm),
-      fontSizeMm: Number(line.fontSizeMm),
-      verticalScale: Number(line.verticalScale),
-      ...(includeLockTextHeight ? { lockTextHeight: Boolean(line.lockTextHeight) } : {}),
-    })),
-  });
+  return getSettingsSignatureCandidates(settings).includes(signature);
 }
 
 function normalizeStoredCachedBuild(cachedBuild) {
@@ -286,16 +278,25 @@ function normalizeStoredSignature(signature) {
   return typeof signature === "string" && signature ? signature : null;
 }
 
+function toSignatureCandidates(signature) {
+  if (Array.isArray(signature)) {
+    return signature.filter((candidate) => typeof candidate === "string" && candidate);
+  }
+
+  return typeof signature === "string" && signature ? [signature] : [];
+}
+
 function getStoredBuildForSignature(cachedBuild, previousCompletedBuild, signature) {
-  if (typeof signature !== "string" || !signature) {
+  const signatureCandidates = toSignatureCandidates(signature);
+  if (!signatureCandidates.length) {
     return null;
   }
 
-  if (cachedBuild?.signature === signature) {
+  if (signatureCandidates.includes(cachedBuild?.signature)) {
     return structuredClone(cachedBuild);
   }
 
-  if (previousCompletedBuild?.signature === signature) {
+  if (signatureCandidates.includes(previousCompletedBuild?.signature)) {
     return structuredClone(previousCompletedBuild);
   }
 
@@ -306,20 +307,25 @@ function getOrderSettingsSignature(order) {
   return order ? buildSettingsSignature(order.settings) : null;
 }
 
-function getCachedBuild(order, signature = getOrderSettingsSignature(order)) {
-  if (!order?.cachedBuild || !signature || order.cachedBuild.signature !== signature) {
+function getOrderSettingsSignatureCandidates(order) {
+  return order ? getSettingsSignatureCandidates(order.settings) : [];
+}
+
+function getCachedBuild(order, signature = getOrderSettingsSignatureCandidates(order)) {
+  if (!order?.cachedBuild) {
     return null;
   }
 
-  return structuredClone(order.cachedBuild);
+  return getStoredBuildForSignature(order.cachedBuild, null, signature);
 }
 
 function getBuildForSignature(order, signature) {
-  if (!order?.text.trim() || typeof signature !== "string" || !signature) {
+  const signatureCandidates = toSignatureCandidates(signature);
+  if (!order?.text.trim() || !signatureCandidates.length) {
     return null;
   }
 
-  const storedBuild = getStoredBuildForSignature(order.cachedBuild, order.previousCompletedBuild, signature);
+  const storedBuild = getStoredBuildForSignature(order.cachedBuild, order.previousCompletedBuild, signatureCandidates);
   if (storedBuild) {
     return storedBuild;
   }
@@ -327,7 +333,7 @@ function getBuildForSignature(order, signature) {
   if (
     order.capturedLayout
     && typeof order.capturedLayout === "object"
-    && order.savedSettingsSignature === signature
+    && signatureCandidates.includes(order.savedSettingsSignature)
     && order.capturedLayout.analysis
     && typeof order.capturedLayout.analysis === "object"
   ) {
@@ -336,7 +342,7 @@ function getBuildForSignature(order, signature) {
     delete layout.analysis;
 
     return {
-      signature,
+      signature: order.savedSettingsSignature,
       layout,
       analysis,
     };
@@ -526,7 +532,7 @@ function hydrateStoredOrder(order, index) {
     status = "in-progress";
     analysisBadge = null;
 
-    if (currentSignature === abandonedPendingSignature && pendingCompletedBuild) {
+    if (settingsSignatureMatches(settings, abandonedPendingSignature) && pendingCompletedBuild) {
       status = "captured";
       savedSettingsSignature = abandonedPendingSignature;
       analysisBadge = buildCompletedAnalysisBadge(pendingCompletedBuild.analysis);
@@ -542,11 +548,11 @@ function hydrateStoredOrder(order, index) {
       status = "in-progress";
       analysisBadge = null;
     }
-  } else if (savedCompletedBuild && currentSignature === savedSettingsSignature) {
+  } else if (savedCompletedBuild && settingsSignatureMatches(settings, savedSettingsSignature)) {
     if (status === "captured" || status === "exported" || analysisBadge?.state === "running") {
       analysisBadge = buildCompletedAnalysisBadge(savedCompletedBuild.analysis);
     }
-  } else if (currentSignature !== savedSettingsSignature && status !== "exported") {
+  } else if (!settingsSignatureMatches(settings, savedSettingsSignature) && status !== "exported") {
     status = "in-progress";
     analysisBadge = null;
   }
@@ -601,7 +607,33 @@ function persistQueueState() {
   }
 }
 
+function schedulePersistQueueState() {
+  if (queuePersistenceTimeoutId != null) {
+    window.clearTimeout(queuePersistenceTimeoutId);
+  }
+
+  queuePersistenceTimeoutId = window.setTimeout(() => {
+    queuePersistenceTimeoutId = null;
+    persistQueueState();
+  }, 150);
+}
+
+function scheduleRenderOrderList() {
+  if (orderListRenderFrameId != null) {
+    return;
+  }
+
+  orderListRenderFrameId = window.requestAnimationFrame(() => {
+    orderListRenderFrameId = null;
+    renderOrderList();
+  });
+}
+
 function clearPersistedQueueState() {
+  if (queuePersistenceTimeoutId != null) {
+    window.clearTimeout(queuePersistenceTimeoutId);
+    queuePersistenceTimeoutId = null;
+  }
   try {
     localStorage.removeItem(STORAGE_KEY);
   } catch {
@@ -1295,7 +1327,7 @@ function updateActiveOrderFromControls() {
   order.text = textInput.value;
   order.settings = getCurrentSettings();
   const currentSignature = buildSettingsSignature(order.settings);
-  const matchingCompletedBuild = getBuildForSignature(order, currentSignature);
+  const matchingCompletedBuild = getBuildForSignature(order, getSettingsSignatureCandidates(order.settings));
   const preservesPendingGeometry = order.pendingAnalysisSignature === currentSignature && !matchingCompletedBuild;
 
   if (matchingCompletedBuild) {
@@ -1331,8 +1363,8 @@ function updateActiveOrderFromControls() {
       order.analysisState = "idle";
     }
   }
-  persistQueueState();
-  renderOrderList();
+  schedulePersistQueueState();
+  scheduleRenderOrderList();
 }
 
 function getTrackedSettingsSignature(order) {
@@ -1361,7 +1393,7 @@ function hasUnsavedRenderChanges(order) {
     return false;
   }
 
-  return buildSettingsSignature(getCurrentSettings()) !== getTrackedSettingsSignature(order);
+  return !settingsSignatureMatches(getCurrentSettings(), getTrackedSettingsSignature(order));
 }
 
 function hasSavedCompletedState(order) {
