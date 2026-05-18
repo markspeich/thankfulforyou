@@ -4,7 +4,7 @@ const FALLBACK_PRESET_DEFINITIONS = [
     id: "all-candlepin",
     name: "All Candlepin",
     globalDefaults: {
-      backingMm: 3.1,
+      backingMm: 2.2,
       weldExportedDesign: true,
     },
     lineDefaults: {
@@ -33,7 +33,7 @@ const FALLBACK_PRESET_DEFINITIONS = [
     id: "skywalk-somekind",
     name: "Skywalk, Somekind",
     globalDefaults: {
-      backingMm: 3.1,
+      backingMm: 2.2,
       weldExportedDesign: true,
     },
     lineDefaults: {
@@ -69,6 +69,7 @@ const FALLBACK_PRESET_DEFINITIONS = [
           lineIndex: 1,
         },
         settings: {
+          fontSizeMm: 23,
           lockTextHeight: true,
         },
       },
@@ -81,7 +82,7 @@ const FALLBACK_PRESET_DEFINITIONS = [
           {
             lineIndex: 1,
             settings: {
-              fontSizeMm: 21,
+              fontSizeMm: 23,
             },
           },
         ],
@@ -93,7 +94,7 @@ const FALLBACK_PRESET_DEFINITIONS = [
     id: "skywalk-candlepin",
     name: "Skywalk, Candlepin",
     globalDefaults: {
-      backingMm: 3.1,
+      backingMm: 2.2,
       weldExportedDesign: true,
     },
     lineDefaults: {

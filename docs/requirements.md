@@ -39,7 +39,9 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - When text letters overlap, the overlap should be welded or unioned into one face-layer shape so internal seam lines are removed.
 - The backing layer follows the overall silhouette of the design and gives the text support and contrast.
 - The backing layer has a rounded offset border around the text silhouette.
-- The backing border should default to 3.1 mm.
+- The backing border should default to 2.2 mm.
+- The backing border slider should move in 0.1 mm increments.
+- The backing border control should allow values down to 0 mm.
 - The backing layer should be a solid acrylic silhouette. Enclosed holes created by font counters or tiny gaps in the backing border should be removed from the backing plate.
 - Multi-line layouts may intentionally overlap or touch between lines to help unify the design.
 - Different lines in the same badge reel design may use different fonts.
@@ -64,6 +66,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - The `Presets` dropdown must offer exactly these production presets: `All Candlepin`, `Skywalk, Somekind`, and `Skywalk, Candlepin`.
 - The `All Candlepin` preset must set every text line to the Candlepin font.
 - The `Skywalk, Somekind` preset must set the first text line to Skywalk and every subsequent line to Somekind.
+- The `Skywalk, Somekind` preset must set the second text line text height to 23 mm.
 - The `Skywalk, Candlepin` preset must set the first text line to Skywalk and every subsequent line to Candlepin.
 - Selecting a preset must overwrite all current per-line settings for the order so every line resets to the preset's predefined values, including font, letter bridge, line bridge where applicable, horizontal offset, and text height.
 - Production preset definitions should move toward a schema-validated JSON source of truth instead of duplicating preset ids, labels, line rules, and listing-specific overrides across HTML and JavaScript.

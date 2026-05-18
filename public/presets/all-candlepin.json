@@ -5,7 +5,7 @@
   "name": "All Candlepin",
   "description": "Use Candlepin on every line.",
   "globalDefaults": {
-    "backingMm": 3.1,
+    "backingMm": 2.2,
     "weldExportedDesign": true
   },
   "lineDefaults": {

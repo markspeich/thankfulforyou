@@ -5,7 +5,7 @@
   "name": "Skywalk, Candlepin",
   "description": "Use Skywalk on the first line and Candlepin on the remaining lines.",
   "globalDefaults": {
-    "backingMm": 3.1,
+    "backingMm": 2.2,
     "weldExportedDesign": true
   },
   "lineDefaults": {

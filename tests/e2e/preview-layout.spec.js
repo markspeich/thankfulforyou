@@ -144,8 +144,10 @@ test.beforeEach(async ({ page }) => {
 });
 
 test("shows the production defaults", async ({ page }) => {
-  await expect(page.locator("#backingInput")).toHaveValue("3.1");
-  await expect(page.locator("#backingOutput")).toHaveText("3.100 mm");
+  await expect(page.locator("#backingInput")).toHaveValue("2.2");
+  await expect(page.locator("#backingInput")).toHaveAttribute("min", "0");
+  await expect(page.locator("#backingInput")).toHaveAttribute("step", "0.1");
+  await expect(page.locator("#backingOutput")).toHaveText("2.200 mm");
   await expect(page.locator("#weldExportedDesignInput")).toBeChecked();
   await expect(page.locator("#preview .preview-guide-label").first()).toHaveText('2.2"');
   await expect(page.locator("#preview circle.preview-guide-box")).toHaveCount(1);
@@ -172,6 +174,12 @@ test("shows the production defaults", async ({ page }) => {
   expect(guideMetrics.guideCenterY).toBeCloseTo(guideMetrics.circleCenterY, 6);
   expect(guideMetrics.circleDiameter).toBeCloseTo(1.25 * 25.4, 6);
   expect(guideMetrics.labelFills).toEqual(["rgb(12, 150, 217)", "rgb(12, 150, 217)"]);
+});
+
+test("allows the backing border slider to reach 0 mm", async ({ page }) => {
+  await page.locator("#backingInput").fill("0");
+  await expect(page.locator("#backingInput")).toHaveValue("0");
+  await expect(page.locator("#backingOutput")).toHaveText("0.000 mm");
 });
 
 test("renders the preview guide with thin solid blue outer and inner lines", async ({ page }) => {
