@@ -112,6 +112,7 @@ const zoomOutput = document.querySelector("#zoomOutput");
 const downloadButton = document.querySelector("#downloadButton");
 const copyButton = document.querySelector("#copyButton");
 const captureButton = document.querySelector("#captureButton");
+const completeNextButton = document.querySelector("#completeNextButton");
 
 const canvas = document.createElement("canvas");
 const ctx = canvas.getContext("2d");
@@ -546,6 +547,14 @@ function hydrateStoredOrder(order, index) {
       }
     } else if (!savedCompletedBuild) {
       savedSettingsSignature = null;
+    }
+
+    if (
+      completedSettingsSignature
+      && settingsSignatureMatches({ ...settings }, completedSettingsSignature)
+      && completedSettingsSignature === abandonedPendingSignature
+    ) {
+      completedSettingsSignature = savedCompletedBuild?.signature || null;
     }
   } else if (!savedCompletedBuild && savedSettingsSignature) {
     savedSettingsSignature = null;
@@ -1380,6 +1389,7 @@ function updateActiveOrderFromControls() {
   order.settings = getCurrentSettings();
   const currentSignature = buildSettingsSignature(order.settings);
   const matchingCompletedBuild = getBuildForSignature(order, getSettingsSignatureCandidates(order.settings));
+  const savedCompletedBuild = getBuildForSignature(order, order.savedSettingsSignature);
   const preservesPendingGeometry = order.pendingAnalysisSignature === currentSignature && !matchingCompletedBuild;
 
   if (matchingCompletedBuild) {
@@ -1411,7 +1421,13 @@ function updateActiveOrderFromControls() {
     order.status = "in-progress";
     order.analysisState = "idle";
     order.analysisBadge = null;
-    if (!getSavedCachedBuild(order)) {
+    if (
+      order.completedSettingsSignature
+      && settingsSignatureMatches(order.settings, order.completedSettingsSignature)
+    ) {
+      order.completedSettingsSignature = savedCompletedBuild?.signature || null;
+    }
+    if (!savedCompletedBuild) {
       order.savedSettingsSignature = null;
     } else if (order.analysisState === "running") {
       order.analysisState = "idle";
@@ -1483,21 +1499,29 @@ function isOrderReadyForExport(order) {
 
 function updateCaptureButtonState(activeOrder) {
   captureButton.textContent = "Complete";
+  completeNextButton.textContent = "Complete & Next";
 
   if (!activeOrder) {
     captureButton.disabled = true;
     captureButton.removeAttribute("aria-busy");
+    completeNextButton.disabled = true;
+    completeNextButton.removeAttribute("aria-busy");
     return;
   }
 
   if (activeOrder.analysisState === "running") {
     captureButton.disabled = true;
     captureButton.removeAttribute("aria-busy");
+    completeNextButton.disabled = true;
+    completeNextButton.removeAttribute("aria-busy");
     return;
   }
 
   captureButton.removeAttribute("aria-busy");
-  captureButton.disabled = !canCompleteActiveOrder(activeOrder);
+  completeNextButton.removeAttribute("aria-busy");
+  const canComplete = canCompleteActiveOrder(activeOrder);
+  captureButton.disabled = !canComplete;
+  completeNextButton.disabled = !canComplete;
 }
 
 function buildCompletedAnalysisBadge(analysis) {
@@ -1881,7 +1905,7 @@ async function importFromClipboard() {
   }
 }
 
-async function captureActiveOrder() {
+async function captureActiveOrder({ advanceToNext = false } = {}) {
   const order = getActiveOrder();
   if (!order || !textInput.value.trim()) {
     return;
@@ -1915,11 +1939,13 @@ async function captureActiveOrder() {
     "Running face analysis and caching the export-ready geometry for this completed design.",
   );
 
-  const activeIndex = orders.findIndex((candidate) => candidate.id === order.id);
-  const orderedCandidates = [...orders.slice(activeIndex + 1), ...orders.slice(0, activeIndex)];
-  const nextUncaptured = orderedCandidates.find((candidate) => candidate.status !== "captured" && candidate.status !== "exported");
-  if (nextUncaptured) {
-    selectOrder(nextUncaptured.id);
+  if (advanceToNext) {
+    const activeIndex = orders.findIndex((candidate) => candidate.id === order.id);
+    const orderedCandidates = [...orders.slice(activeIndex + 1), ...orders.slice(0, activeIndex)];
+    const nextUncaptured = orderedCandidates.find((candidate) => candidate.status !== "captured" && candidate.status !== "exported");
+    if (nextUncaptured) {
+      selectOrder(nextUncaptured.id);
+    }
   }
 
   try {
@@ -3062,7 +3088,12 @@ clearQueueButton.addEventListener("click", clearAllOrders);
 exportCompletedButton.addEventListener("click", exportAllOrders);
 copyCompletedButton.addEventListener("click", copyAllOrders);
 orderSearchInput.addEventListener("input", renderOrderList);
-captureButton.addEventListener("click", captureActiveOrder);
+captureButton.addEventListener("click", () => {
+  captureActiveOrder();
+});
+completeNextButton.addEventListener("click", () => {
+  captureActiveOrder({ advanceToNext: true });
+});
 downloadButton.addEventListener("click", downloadSvg);
 copyButton.addEventListener("click", copyCurrentSvg);
 zoomOutButton.addEventListener("click", () => updateZoom(zoom / 1.2));

@@ -157,8 +157,9 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - The selected-order editor should focus on editable design text and layout settings rather than a separate editable design-label field.
 - Allow each order to store its own customer text and layout settings, including letter bridge, line bridge, text height, backing border, and guide visibility.
 - Provide a way to save the current preview and settings for the active order before moving to the next order.
-- Clicking `Complete` should immediately save the active design text and layout settings, mark the queue item complete, and disable the `Complete` button until the design changes again.
-- Clicking `Complete` should also start face analysis and cache the export-ready geometry tied to that completed state in the background.
+- Clicking `Complete` should immediately save the active design text and layout settings, mark the queue item complete, and disable both completion buttons until the design changes again.
+- Clicking `Complete` should also start face analysis and cache the export-ready geometry tied to that completed state in the background without advancing to another design.
+- Clicking `Complete & Next` should perform the same save, complete, and background-analysis work as `Complete`, then advance to the next queue item that is not already complete or exported when one exists.
 - The selected-order `Complete` button state should depend only on whether the active design has unsaved text or layout changes, not on whether background analysis and export-geometry caching have finished.
 - Show which orders are not started, in progress, complete, or exported so a batch of orders can be completed without losing track.
 - The design queue should show a compact per-design face-analysis indicator: a small spinner while background analysis is running, a checkmark when the completed face layer is one connected piece, or a warning sign with the compact piece count when the completed face layer has multiple disconnected pieces.
@@ -285,7 +286,7 @@ The website should be a practical production tool rather than a marketing site. 
 - The selected-order controls should be organized as a stack of per-line control groups followed by one global `Backing Border` control.
 - Each per-line control group should clearly map to a specific entered text line and should appear or disappear as the number of entered lines changes.
 - The first text line should not show a `Line Bridge` control because there is no line above it to connect to.
-- The selected-order header should hold the primary order actions, including `Complete` and `Export This Design`, to reduce the height of the control area.
+- The selected-order header should hold the primary order actions in this order: `Complete`, `Complete & Next`, `Copy This Design`, and `Export This Design`.
 
 The selected UI direction is the Production Queue layout. Use `docs/mockups/production-queue-ui-mockup-preview-top-controls-bottom.png` as the primary visual reference for the next UI implementation pass. The mockup intent is a left-side order queue with a batch export button above the order list, and a right-side selected-order editor with the selected order preview at the top, controls docked at the bottom, and an Export This Design button. Sample renders should use a white raised text layer over a red backing silhouette.
 
