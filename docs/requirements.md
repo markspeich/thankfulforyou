@@ -201,6 +201,9 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Re-importing a later Etsy batch must preserve any queue items already present in the current design queue instead of overwriting them.
 - During import, any Etsy line item that already exists in the current design queue should be skipped so the operator can import only newly arrived orders into the same working batch.
 - Imported queue items and subsequent design edits should persist across a browser refresh in local browser storage during the current batch workflow.
+- The app should support saving the current queue batch to remote hosted storage so the current batch can be restored on another browser or after local storage is lost.
+- Remote hosted batch persistence should store the same queue snapshot shape used by local browser persistence so hydration behavior stays consistent between local and hosted restores.
+- On startup, local browser queue data should take precedence over the hosted saved batch when both are present, so unsynced local edits are not overwritten silently.
 - Persisted queue-item data should include enough information to restore the queue, the selected design, imported Etsy metadata, current text, current per-line settings, backing border, weld toggle, and saved/exported status after refresh.
 - In the selected-order editor, show the imported Etsy color as a read-only label directly below the `Design Text` field whenever imported color metadata is available.
 - In the selected-order editor, show the imported Etsy quantity as a read-only label directly below the `Color` label whenever imported quantity metadata is available.
@@ -208,6 +211,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - The app should provide a queue action to delete a single design without affecting the rest of the current batch.
 - The app should provide a batch-reset action to clear all queued and persisted designs when the operator is ready to start a new batch.
 - Clearing all designs should also clear the corresponding persisted browser storage for that batch data.
+- Clearing all designs should also clear the corresponding hosted saved batch when remote persistence is configured.
 - In the selected-order editor, when imported listing title and 75 by 75 image data are available, show the listing title above the listing image and place both above the main text-entry controls.
 - SVG export should place the face text layer and offset backing layer side by side, with the backing layer to the right of the text layer.
 - In batch export SVG output, each order's face and backing paths should appear below the previous order's paths in a single vertically stacked file.
@@ -290,7 +294,7 @@ The website should be a practical production tool rather than a marketing site. 
 - The selected-order controls should be organized as a stack of per-line control groups followed by one global `Backing Border` control.
 - Each per-line control group should clearly map to a specific entered text line and should appear or disappear as the number of entered lines changes.
 - The first text line should not show a `Line Bridge` control because there is no line above it to connect to.
-- The selected-order header should hold the primary order actions in this order: `Complete`, `Complete & Next`, `Copy This Design`, and `Export This Design`.
+- The selected-order header should hold the primary order actions in this order: `Save`, `Complete`, `Complete & Next`, `Copy This Design`, and `Export This Design`.
 
 The selected UI direction is the Production Queue layout. Use `docs/mockups/production-queue-ui-mockup-preview-top-controls-bottom.png` as the primary visual reference for the next UI implementation pass. The mockup intent is a left-side order queue with a batch export button above the order list, and a right-side selected-order editor with the selected order preview at the top, controls docked at the bottom, and an Export This Design button. Sample renders should use a white raised text layer over a red backing silhouette.
 
