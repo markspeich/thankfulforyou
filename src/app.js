@@ -511,6 +511,7 @@ function hydrateStoredOrder(order, index) {
   const previousCompletedBuild = normalizeStoredCachedBuild(order.previousCompletedBuild);
   let status = isValidOrderStatus(order.status) ? order.status : "in-progress";
   let savedSettingsSignature = normalizeStoredSignature(order.savedSettingsSignature);
+  let completedSettingsSignature = normalizeStoredSignature(order.completedSettingsSignature);
   const persistedPendingAnalysisSignature = normalizeStoredSignature(order.pendingAnalysisSignature);
   let analysisBadge = normalizeStoredAnalysisBadge(order.analysisBadge);
   let effectiveCachedBuild = cachedBuild;
@@ -557,6 +558,18 @@ function hydrateStoredOrder(order, index) {
     analysisBadge = null;
   }
 
+  if (!completedSettingsSignature && (status === "captured" || status === "exported")) {
+    completedSettingsSignature = savedSettingsSignature || currentSignature;
+  }
+
+  if (
+    completedSettingsSignature
+    && !settingsSignatureMatches(settings, completedSettingsSignature)
+    && status === "not-started"
+  ) {
+    completedSettingsSignature = null;
+  }
+
   return {
     id: typeof order.id === "string" && order.id.trim() ? order.id : crypto.randomUUID(),
     text,
@@ -567,6 +580,7 @@ function hydrateStoredOrder(order, index) {
     cachedBuild: effectiveCachedBuild,
     previousCompletedBuild: effectivePreviousCompletedBuild,
     savedSettingsSignature,
+    completedSettingsSignature,
     analysisBadge,
     analysisState: "idle",
     pendingAnalysisSignature: null,
@@ -587,9 +601,10 @@ function buildPersistedQueueState() {
       source: order.source ? { ...order.source } : null,
       cachedBuild: order.cachedBuild ? structuredClone(order.cachedBuild) : null,
       previousCompletedBuild: order.previousCompletedBuild ? structuredClone(order.previousCompletedBuild) : null,
-    savedSettingsSignature: order.savedSettingsSignature,
-    analysisBadge: order.analysisBadge ? structuredClone(order.analysisBadge) : null,
-    pendingAnalysisSignature: order.pendingAnalysisSignature,
+      savedSettingsSignature: order.savedSettingsSignature,
+      completedSettingsSignature: order.completedSettingsSignature,
+      analysisBadge: order.analysisBadge ? structuredClone(order.analysisBadge) : null,
+      pendingAnalysisSignature: order.pendingAnalysisSignature,
     })),
   };
 }
@@ -739,6 +754,7 @@ function createQueueItem({
     cachedBuild: null,
     previousCompletedBuild: null,
     savedSettingsSignature: null,
+    completedSettingsSignature: null,
     analysisBadge: null,
     analysisState: "idle",
     pendingAnalysisSignature: null,
@@ -1332,6 +1348,7 @@ function updateActiveOrderFromControls() {
 
   if (matchingCompletedBuild) {
     order.savedSettingsSignature = matchingCompletedBuild.signature;
+    order.completedSettingsSignature = matchingCompletedBuild.signature;
     order.cachedBuild = structuredClone(matchingCompletedBuild);
     order.capturedLayout = {
       ...cloneSerializableData(matchingCompletedBuild.layout),
@@ -1348,6 +1365,7 @@ function updateActiveOrderFromControls() {
   } else if (preservesPendingGeometry) {
     order.status = "captured";
     order.analysisState = "running";
+    order.completedSettingsSignature = currentSignature;
     order.analysisBadge = {
       state: "running",
       shortLabel: "",
@@ -1375,17 +1393,20 @@ function getTrackedSettingsSignature(order) {
   return order.pendingAnalysisSignature || order.savedSettingsSignature;
 }
 
+function hasCompletedEditingState(order, settings = getCurrentSettings()) {
+  return Boolean(
+    order
+    && typeof order.completedSettingsSignature === "string"
+    && settingsSignatureMatches(settings, order.completedSettingsSignature),
+  );
+}
+
 function canCompleteActiveOrder(order) {
   if (!order || !order.text.trim()) {
     return false;
   }
 
-  const currentSignature = buildSettingsSignature(getCurrentSettings());
-  if (order.analysisState === "running" && order.pendingAnalysisSignature === currentSignature) {
-    return true;
-  }
-
-  return hasUnsavedRenderChanges(order);
+  return !hasCompletedEditingState(order);
 }
 
 function hasUnsavedRenderChanges(order) {
@@ -1422,6 +1443,25 @@ function isOrderReadyForExport(order) {
   }
 
   return true;
+}
+
+function updateCaptureButtonState(activeOrder) {
+  captureButton.textContent = "Complete";
+
+  if (!activeOrder) {
+    captureButton.disabled = true;
+    captureButton.removeAttribute("aria-busy");
+    return;
+  }
+
+  if (activeOrder.analysisState === "running") {
+    captureButton.disabled = true;
+    captureButton.removeAttribute("aria-busy");
+    return;
+  }
+
+  captureButton.removeAttribute("aria-busy");
+  captureButton.disabled = !canCompleteActiveOrder(activeOrder);
 }
 
 function buildCompletedAnalysisBadge(analysis) {
@@ -1611,7 +1651,7 @@ function renderOrderList() {
   renderImportedColor(activeOrder);
   activeOrderName.textContent = activeOrder ? buildQueueOrderNumber(activeOrder) : "No design selected";
   activeOrderMeta.textContent = buildActiveMeta(activeOrder);
-  captureButton.disabled = !canCompleteActiveOrder(activeOrder);
+  updateCaptureButtonState(activeOrder);
   downloadButton.disabled = !activeOrder || !isOrderReadyForExport(activeOrder);
   copyButton.disabled = !activeOrder || !isOrderReadyForExport(activeOrder) || !canCopySvgToClipboard();
 }
@@ -1821,6 +1861,7 @@ async function captureActiveOrder() {
   order.previousCompletedBuild = previousCompletedBuild ? structuredClone(previousCompletedBuild) : null;
   order.capturedLayout = structuredClone(layout);
   order.analysisState = "running";
+  order.completedSettingsSignature = signature;
   order.pendingAnalysisSignature = signature;
   order.pendingAnalysisRequestId = requestId;
   order.analysisBadge = {
