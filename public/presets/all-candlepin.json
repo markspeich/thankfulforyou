@@ -14,7 +14,8 @@
     "lineBridgeMm": 0.5,
     "offsetXMm": 0,
     "fontSizeMm": 34,
-    "verticalScale": 1
+    "verticalScale": 1,
+    "lockTextHeight": false
   },
   "lineRules": [
     {

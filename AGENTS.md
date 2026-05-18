@@ -59,4 +59,8 @@ When the user provides new product, workflow, material, manufacturing, design, o
 - Capture assumptions explicitly in `docs/requirements.md`.
 - Keep changes scoped and avoid unrelated refactors.
 - Prefer bash commands and examples over PowerShell unless PowerShell is absolutely necessary for the task or environment.
+- In this Windows worktree environment, `git` commands that touch worktree metadata such as `merge`, `add`, `commit`, and conflict resolution staging may require escalated permissions because `.git/worktrees/...` lockfiles can be blocked otherwise.
+- Do not assume `bash` is available here. The bundled `bash` path may route to WSL, and this machine currently has no installed WSL distribution.
+- In PowerShell, do not use `&&` as a command separator. Run git steps as separate commands or use a PowerShell-safe alternative.
+- When referring to stash entries in PowerShell, quote refs like `"stash@{0}"` so brace parsing does not corrupt the argument.
 - If adding dependencies, choose well-maintained libraries that handle font parsing, vector geometry, boolean operations, or SVG export reliably.

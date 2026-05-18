@@ -14,6 +14,7 @@ const FALLBACK_PRESET_DEFINITIONS = [
       offsetXMm: 0,
       fontSizeMm: 34,
       verticalScale: 1,
+      lockTextHeight: false,
     },
     lineRules: [
       {
@@ -42,6 +43,7 @@ const FALLBACK_PRESET_DEFINITIONS = [
       offsetXMm: 0,
       fontSizeMm: 34,
       verticalScale: 1,
+      lockTextHeight: false,
     },
     lineRules: [
       {
@@ -50,6 +52,7 @@ const FALLBACK_PRESET_DEFINITIONS = [
         },
         settings: {
           fontId: "skywalk",
+          fontSizeMm: 18,
         },
       },
       {
@@ -58,6 +61,15 @@ const FALLBACK_PRESET_DEFINITIONS = [
         },
         settings: {
           fontId: "somekind",
+        },
+      },
+      {
+        match: {
+          kind: "index",
+          lineIndex: 1,
+        },
+        settings: {
+          lockTextHeight: true,
         },
       },
     ],
@@ -91,6 +103,7 @@ const FALLBACK_PRESET_DEFINITIONS = [
       offsetXMm: 0,
       fontSizeMm: 34,
       verticalScale: 1,
+      lockTextHeight: false,
     },
     lineRules: [
       {
@@ -139,6 +152,7 @@ const ALLOWED_LINE_SETTINGS = [
   "offsetXMm",
   "fontSizeMm",
   "verticalScale",
+  "lockTextHeight",
 ];
 
 let presetRegistry = createPresetRegistry(FALLBACK_MANIFEST, FALLBACK_PRESET_DEFINITIONS);

@@ -16,6 +16,7 @@ const createDefaultLineSettings = () => ({
   offsetXMm: 0,
   fontSizeMm: 34,
   verticalScale: 1,
+  lockTextHeight: false,
 });
 
 describe("presets", () => {
@@ -74,8 +75,9 @@ describe("presets", () => {
         bridgeMm: 0.5,
         lineBridgeMm: 0.5,
         offsetXMm: 0,
-        fontSizeMm: 34,
+        fontSizeMm: 18,
         verticalScale: 1,
+        lockTextHeight: false,
       },
       {
         fontId: "somekind",
@@ -84,6 +86,7 @@ describe("presets", () => {
         offsetXMm: 0,
         fontSizeMm: 34,
         verticalScale: 1,
+        lockTextHeight: true,
       },
       {
         fontId: "somekind",
@@ -92,6 +95,32 @@ describe("presets", () => {
         offsetXMm: 0,
         fontSizeMm: 34,
         verticalScale: 1,
+        lockTextHeight: false,
+      },
+    ]);
+  });
+
+  it("includes lockTextHeight in generated line defaults", () => {
+    const lines = buildPresetLines("all-candlepin", 2, createDefaultLineSettings);
+
+    expect(lines).toEqual([
+      {
+        fontId: "candlepin",
+        bridgeMm: 0.5,
+        lineBridgeMm: 0.5,
+        offsetXMm: 0,
+        fontSizeMm: 34,
+        verticalScale: 1,
+        lockTextHeight: false,
+      },
+      {
+        fontId: "candlepin",
+        bridgeMm: 0.5,
+        lineBridgeMm: 0.5,
+        offsetXMm: 0,
+        fontSizeMm: 34,
+        verticalScale: 1,
+        lockTextHeight: false,
       },
     ]);
   });
@@ -106,8 +135,9 @@ describe("presets", () => {
       bridgeMm: 0.5,
       lineBridgeMm: 0.5,
       offsetXMm: 0,
-      fontSizeMm: 34,
+      fontSizeMm: 18,
       verticalScale: 1,
+      lockTextHeight: false,
     });
     expect(lines[1]).toEqual({
       fontId: "somekind",
@@ -116,6 +146,7 @@ describe("presets", () => {
       offsetXMm: 0,
       fontSizeMm: 21,
       verticalScale: 1,
+      lockTextHeight: true,
     });
     expect(lines[2]).toEqual({
       fontId: "somekind",
@@ -124,6 +155,7 @@ describe("presets", () => {
       offsetXMm: 0,
       fontSizeMm: 34,
       verticalScale: 1,
+      lockTextHeight: false,
     });
   });
 
@@ -139,6 +171,7 @@ describe("presets", () => {
       offsetXMm: 0,
       fontSizeMm: 34,
       verticalScale: 1,
+      lockTextHeight: false,
     });
     expect(lines[1]).toEqual({
       fontId: "candlepin",
@@ -147,6 +180,7 @@ describe("presets", () => {
       offsetXMm: 0,
       fontSizeMm: 21,
       verticalScale: 1,
+      lockTextHeight: false,
     });
     expect(lines[2]).toEqual({
       fontId: "candlepin",
@@ -155,7 +189,39 @@ describe("presets", () => {
       offsetXMm: 0,
       fontSizeMm: 34,
       verticalScale: 1,
+      lockTextHeight: false,
     });
+  });
+
+  it("preserves lockTextHeight overrides coming from preset data", () => {
+    setPresetRegistryForTests(
+      { defaultPresetId: "custom-lock" },
+      [
+        {
+          schemaVersion: 1,
+          id: "custom-lock",
+          name: "Custom Lock",
+          lineDefaults: {
+            fontId: "candlepin",
+            bridgeMm: 0.5,
+            lineBridgeMm: 0.5,
+            offsetXMm: 0,
+            fontSizeMm: 34,
+            verticalScale: 1,
+            lockTextHeight: false,
+          },
+          lineRules: [
+            {
+              match: { kind: "first" },
+              settings: { lockTextHeight: true },
+            },
+          ],
+        },
+      ],
+    );
+
+    const lines = buildPresetLines("custom-lock", 2, createDefaultLineSettings);
+    expect(lines.map((line) => line.lockTextHeight)).toEqual([true, false]);
   });
 
   it("returns preset-level global defaults", () => {

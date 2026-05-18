@@ -1,0 +1,76 @@
+import { describe, expect, it } from "vitest";
+
+import {
+  buildSettingsSignature,
+  getSettingsSignatureCandidates,
+} from "../../src/order-signatures.js";
+
+describe("order signatures", () => {
+  it("includes lockTextHeight in the current signature format", () => {
+    const signature = buildSettingsSignature({
+      text: "Mark\nRN",
+      presetId: "skywalk-somekind",
+      backingMm: 3.1,
+      weldExportedDesign: true,
+      lines: [
+        {
+          fontId: "skywalk",
+          bridgeMm: 0.5,
+          lineBridgeMm: 0.5,
+          offsetXMm: 0,
+          fontSizeMm: 34,
+          verticalScale: 1,
+          lockTextHeight: true,
+        },
+      ],
+    });
+
+    expect(JSON.parse(signature)).toMatchObject({
+      version: 2,
+      lines: [
+        {
+          lockTextHeight: true,
+        },
+      ],
+    });
+  });
+
+  it("returns both current and legacy signatures for compatibility", () => {
+    const candidates = getSettingsSignatureCandidates({
+      text: "Mark",
+      presetId: "all-candlepin",
+      backingMm: 3.1,
+      weldExportedDesign: false,
+      lines: [
+        {
+          fontId: "candlepin",
+          bridgeMm: 0.5,
+          lineBridgeMm: 0.5,
+          offsetXMm: 0,
+          fontSizeMm: 34,
+          verticalScale: 1,
+          lockTextHeight: true,
+        },
+      ],
+    });
+
+    expect(candidates).toHaveLength(2);
+    expect(JSON.parse(candidates[0])).toMatchObject({
+      version: 2,
+      lines: [{ lockTextHeight: true }],
+    });
+    expect(JSON.parse(candidates[1])).toMatchObject({
+      lines: [
+        {
+          fontId: "candlepin",
+          bridgeMm: 0.5,
+          lineBridgeMm: 0.5,
+          offsetXMm: 0,
+          fontSizeMm: 34,
+          verticalScale: 1,
+        },
+      ],
+    });
+    expect(JSON.parse(candidates[1]).lines[0]).not.toHaveProperty("lockTextHeight");
+  });
+});
