@@ -182,6 +182,37 @@ test("allows the backing border slider to reach 0 mm", async ({ page }) => {
   await expect(page.locator("#backingOutput")).toHaveText("0.000 mm");
 });
 
+test("renders lock text height inline without its own bordered section", async ({ page }) => {
+  await page.locator("#textInput").fill("Savannah\nRN");
+
+  const firstLineLockStyles = await page.locator('.line-control-card[data-line-index="0"] .line-control-toggle').evaluate((element) => {
+    const styles = window.getComputedStyle(element);
+    return {
+      backgroundColor: styles.backgroundColor,
+      borderTopWidth: styles.borderTopWidth,
+      borderRightWidth: styles.borderRightWidth,
+      borderBottomWidth: styles.borderBottomWidth,
+      borderLeftWidth: styles.borderLeftWidth,
+      paddingTop: styles.paddingTop,
+      paddingRight: styles.paddingRight,
+      paddingBottom: styles.paddingBottom,
+      paddingLeft: styles.paddingLeft,
+    };
+  });
+
+  expect(firstLineLockStyles).toEqual({
+    backgroundColor: "rgba(0, 0, 0, 0)",
+    borderTopWidth: "0px",
+    borderRightWidth: "0px",
+    borderBottomWidth: "0px",
+    borderLeftWidth: "0px",
+    paddingTop: "0px",
+    paddingRight: "0px",
+    paddingBottom: "0px",
+    paddingLeft: "0px",
+  });
+});
+
 test("renders the preview guide with thin solid blue outer and inner lines", async ({ page }) => {
   const guideStyles = await page.evaluate(() => {
     const box = document.querySelector("#preview rect.preview-guide-box");

@@ -738,11 +738,6 @@ button:disabled {
 
 .line-control-toggle {
   grid-column: 1 / -1;
-  min-height: 38px;
-  padding: 8px 10px;
-  background: #fff;
-  border: 1px solid var(--line);
-  border-radius: 6px;
 }
 
 .zoom-controls {
