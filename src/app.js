@@ -68,6 +68,8 @@ const PREVIEW_INNER_GUIDE_WIDTH_MM = 1.6 * 25.4;
 const PREVIEW_INNER_GUIDE_HEIGHT_MM = 1.1 * 25.4;
 const PREVIEW_INNER_GUIDE_INSET_X_MM = (PREVIEW_BOX_WIDTH_MM - PREVIEW_INNER_GUIDE_WIDTH_MM) / 2;
 const PREVIEW_INNER_GUIDE_INSET_Y_MM = (PREVIEW_BOX_HEIGHT_MM - PREVIEW_INNER_GUIDE_HEIGHT_MM) / 2;
+const LAYOUT_BOTTOM_SAFETY_MM = 0.5;
+const LIVE_BACKING_PREVIEW_PADDING_Y_MM = 1;
 const DEFAULT_ZOOM = 3;
 const DEFAULT_WELD_EXPORTED_DESIGN = true;
 const DEFAULT_LINE_SETTINGS = Object.freeze({
@@ -388,14 +390,21 @@ function buildExportPayload(layout, analysis = layout?.analysis || null, source 
     return null;
   }
 
+  const exportWidthMm = analysis?.widthMm != null
+    ? Math.max(layout.widthMm, Number(analysis.widthMm) || 0)
+    : layout.widthMm;
+  const exportHeightMm = analysis?.heightMm != null
+    ? Math.max(layout.heightMm, Number(analysis.heightMm) || 0)
+    : layout.heightMm;
+
   const colorName = typeof source?.colorName === "string" ? source.colorName.trim() : "";
   const quantity = source?.quantity == null ? "" : String(source.quantity).trim();
 
   if (analysis?.exportFacePath && analysis?.backingPath) {
     return {
       text: layout.text,
-      widthMm: layout.widthMm,
-      heightMm: layout.heightMm,
+      widthMm: exportWidthMm,
+      heightMm: exportHeightMm,
       backingMm: layout.backingMm,
       weldExportedDesign: layout.weldExportedDesign,
       colorName,
@@ -2793,12 +2802,13 @@ function fillBackingHoles(imageData, width, height) {
   }
 }
 
-function createBackingImage(letters, widthMm, heightMm, backingMm) {
+function createBackingImage(letters, widthMm, heightMm, backingMm, paddingYMm = 0) {
   const scale = PX_PER_MM * 3;
   const backingCanvas = document.createElement("canvas");
   const backingContext = backingCanvas.getContext("2d", { willReadFrequently: true });
+  const paddedHeightMm = heightMm + paddingYMm * 2;
   const widthPx = Math.ceil(widthMm * scale);
-  const heightPx = Math.ceil(heightMm * scale);
+  const heightPx = Math.ceil(paddedHeightMm * scale);
 
   backingCanvas.width = widthPx;
   backingCanvas.height = heightPx;
@@ -2814,7 +2824,7 @@ function createBackingImage(letters, widthMm, heightMm, backingMm) {
       backingContext,
       letter.character,
       letter.x * scale,
-      letter.y * scale,
+      (letter.y + paddingYMm) * scale,
       letter.fontSizeMm * scale,
       letter.fontId,
       letter.verticalScale ?? 1,
@@ -2901,14 +2911,26 @@ function createFaceImage(letters, widthMm, heightMm) {
 
 function renderPreviewFromLayout(layout) {
   const analysis = layout.analysis || null;
-  const facePreview = createFaceImage(layout.letters, layout.widthMm, layout.heightMm);
-  const previewBounds = facePreview.boundsMm.width > 0 && facePreview.boundsMm.height > 0
-    ? facePreview.boundsMm
+  const renderedWidthMm = analysis?.widthMm != null
+    ? Math.max(layout.widthMm, Number(analysis.widthMm) || 0)
+    : layout.widthMm;
+  const renderedHeightMm = analysis?.heightMm != null
+    ? Math.max(layout.heightMm, Number(analysis.heightMm) || 0)
+    : layout.heightMm;
+  const renderedLayout = {
+    ...layout,
+    widthMm: renderedWidthMm,
+    heightMm: renderedHeightMm,
+  };
+  const facePreview = createFaceImage(layout.letters, renderedWidthMm, renderedHeightMm);
+  const facePreviewBoundsSource = facePreview;
+  const previewBounds = facePreviewBoundsSource.boundsMm.width > 0 && facePreviewBoundsSource.boundsMm.height > 0
+    ? facePreviewBoundsSource.boundsMm
     : analysis?.faceBoundsMm || layout.textBoundsMm;
-  const frame = computePreviewFrame(layout, previewBounds);
+  const frame = computePreviewFrame(renderedLayout, previewBounds);
 
   lastLayout = {
-    ...layout,
+    ...renderedLayout,
     previewWidthMm: frame.previewWidthMm,
     previewHeightMm: frame.previewHeightMm,
     previewBoxX: frame.previewBoxX,
@@ -2919,6 +2941,7 @@ function renderPreviewFromLayout(layout) {
   preview.setAttribute("viewBox", `0 0 ${frame.previewWidthMm} ${frame.previewHeightMm}`);
   updateZoom(zoom);
 
+  const liveBackingPreviewPaddingYMm = analysis ? 0 : LIVE_BACKING_PREVIEW_PADDING_Y_MM;
   const backingLayer = analysis
     ? makeSvgElement("path", {
         d: analysis.backingPath,
@@ -2926,11 +2949,18 @@ function renderPreviewFromLayout(layout) {
         transform: `translate(${frame.designX} ${frame.designY})`,
       })
     : makeSvgElement("image", {
-        href: createBackingImage(layout.letters, layout.widthMm, layout.heightMm, layout.backingMm),
+        href: createBackingImage(
+          layout.letters,
+          renderedWidthMm,
+          renderedHeightMm,
+          layout.backingMm,
+          liveBackingPreviewPaddingYMm,
+        ),
         x: frame.designX,
-        y: frame.designY,
-        width: layout.widthMm,
-        height: layout.heightMm,
+        y: frame.designY - liveBackingPreviewPaddingYMm,
+        width: renderedWidthMm,
+        height: renderedHeightMm + liveBackingPreviewPaddingYMm * 2,
+        preserveAspectRatio: "none",
       });
   const faceLayer = analysis
     ? makeSvgElement("path", {
@@ -2944,8 +2974,8 @@ function renderPreviewFromLayout(layout) {
         href: facePreview.href,
         x: frame.designX,
         y: frame.designY,
-        width: layout.widthMm,
-        height: layout.heightMm,
+        width: renderedWidthMm,
+        height: renderedHeightMm,
       });
 
   preview.append(backingLayer, faceLayer);
@@ -3266,9 +3296,10 @@ function buildOrderLayout(settings) {
   } = measureTextLayoutForFit(normalized.text, scaledLineSettings);
   const scaledBackingMm = normalized.backingMm * fitScale;
   const scaledBleedMm = DESIGN_BLEED_MM * fitScale;
+  const scaledBottomSafetyMm = LAYOUT_BOTTOM_SAFETY_MM * fitScale;
   const overflowsGuide = computeGuideOverflow(lines, textWidthMm, textHeightMm);
   const widthMm = textWidthMm + scaledBackingMm * 2 + scaledBleedMm * 2;
-  const heightMm = textHeightMm + scaledBackingMm * 2 + scaledBleedMm * 2;
+  const heightMm = textHeightMm + scaledBackingMm * 2 + scaledBleedMm * 2 + scaledBottomSafetyMm;
   const absoluteLetters = lineBounds.flatMap(({ line, centeredLeftMm }) => {
     const font = getFontOption(line.settings.fontId);
     const rawLineX = scaledBleedMm + scaledBackingMm + centeredLeftMm - minLeftMm - line.mask.leftMm;

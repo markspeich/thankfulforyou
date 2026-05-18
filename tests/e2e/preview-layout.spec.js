@@ -119,6 +119,212 @@ async function measureVisibleTextBounds(page) {
   });
 }
 
+async function measurePreviewInkMargins(page, selector) {
+  return page.evaluate(async (imageSelector) => {
+    const imageElement = document.querySelector(imageSelector);
+    if (!(imageElement instanceof SVGImageElement)) {
+      return null;
+    }
+
+    const href = imageElement.getAttribute("href");
+    const imageWidthMm = Number(imageElement.getAttribute("width"));
+    const imageHeightMm = Number(imageElement.getAttribute("height"));
+    const image = new Image();
+    image.src = href;
+    await image.decode();
+
+    const canvas = document.createElement("canvas");
+    canvas.width = image.naturalWidth;
+    canvas.height = image.naturalHeight;
+    const context = canvas.getContext("2d");
+    context.drawImage(image, 0, 0);
+    const { data, width, height } = context.getImageData(0, 0, canvas.width, canvas.height);
+
+    let minX = width;
+    let maxX = -1;
+    let minY = height;
+    let maxY = -1;
+
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        const alpha = data[(y * width + x) * 4 + 3];
+        if (alpha <= 32) {
+          continue;
+        }
+
+        minX = Math.min(minX, x);
+        maxX = Math.max(maxX, x);
+        minY = Math.min(minY, y);
+        maxY = Math.max(maxY, y);
+      }
+    }
+
+    return {
+      imageWidthMm,
+      imageHeightMm,
+      marginsPx: {
+        top: minY,
+        bottom: height - maxY - 1,
+        left: minX,
+        right: width - maxX - 1,
+      },
+      marginsMm: {
+        top: (minY / height) * imageHeightMm,
+        bottom: ((height - maxY - 1) / height) * imageHeightMm,
+        left: (minX / width) * imageWidthMm,
+        right: ((width - maxX - 1) / width) * imageWidthMm,
+      },
+    };
+  }, selector);
+}
+
+async function measurePreviewInkBounds(page, selector) {
+  return page.evaluate(async (imageSelector) => {
+    const imageElement = document.querySelector(imageSelector);
+    if (!(imageElement instanceof SVGImageElement)) {
+      return null;
+    }
+
+    const href = imageElement.getAttribute("href");
+    const imageX = Number(imageElement.getAttribute("x"));
+    const imageY = Number(imageElement.getAttribute("y"));
+    const imageWidthMm = Number(imageElement.getAttribute("width"));
+    const imageHeightMm = Number(imageElement.getAttribute("height"));
+    const image = new Image();
+    image.src = href;
+    await image.decode();
+
+    const canvas = document.createElement("canvas");
+    canvas.width = image.naturalWidth;
+    canvas.height = image.naturalHeight;
+    const context = canvas.getContext("2d");
+    context.drawImage(image, 0, 0);
+    const { data, width, height } = context.getImageData(0, 0, canvas.width, canvas.height);
+
+    let minX = width;
+    let maxX = -1;
+    let minY = height;
+    let maxY = -1;
+
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        const alpha = data[(y * width + x) * 4 + 3];
+        if (alpha <= 32) {
+          continue;
+        }
+
+        minX = Math.min(minX, x);
+        maxX = Math.max(maxX, x);
+        minY = Math.min(minY, y);
+        maxY = Math.max(maxY, y);
+      }
+    }
+
+    return {
+      leftMm: imageX + (minX / width) * imageWidthMm,
+      rightMm: imageX + ((maxX + 1) / width) * imageWidthMm,
+      topMm: imageY + (minY / height) * imageHeightMm,
+      bottomMm: imageY + ((maxY + 1) / height) * imageHeightMm,
+    };
+  }, selector);
+}
+
+async function measureRenderedBottomContour(page, selector, scale = 10) {
+  return page.evaluate(async ({ backingSelector, renderScale }) => {
+    const sourceSvg = document.querySelector("#preview");
+    const sourceNode = document.querySelector(backingSelector);
+    if (!(sourceSvg instanceof SVGSVGElement) || !sourceNode) {
+      return null;
+    }
+
+    const viewBox = sourceSvg.viewBox.baseVal;
+    const namespace = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(namespace, "svg");
+    svg.setAttribute("xmlns", namespace);
+    svg.setAttribute("viewBox", `0 0 ${viewBox.width} ${viewBox.height}`);
+
+    const clonedNode = sourceNode.cloneNode(true);
+    svg.append(clonedNode);
+
+    const serialized = new XMLSerializer().serializeToString(svg);
+    const image = new Image();
+    image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(serialized)}`;
+    await image.decode();
+
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.ceil(viewBox.width * renderScale));
+    canvas.height = Math.max(1, Math.ceil(viewBox.height * renderScale));
+    const context = canvas.getContext("2d");
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+
+    const { data, width, height } = context.getImageData(0, 0, canvas.width, canvas.height);
+    const bottomContourMm = [];
+
+    for (let x = 0; x < width; x += 1) {
+      let bottomY = -1;
+      for (let y = height - 1; y >= 0; y -= 1) {
+        const alpha = data[(y * width + x) * 4 + 3];
+        if (alpha > 32) {
+          bottomY = y;
+          break;
+        }
+      }
+      bottomContourMm.push(bottomY < 0 ? null : ((bottomY + 1) / height) * viewBox.height);
+    }
+
+    return {
+      viewBoxWidthMm: viewBox.width,
+      viewBoxHeightMm: viewBox.height,
+      bottomContourMm,
+    };
+  }, { backingSelector: selector, renderScale: scale });
+}
+
+function pathBounds(path) {
+  const numbers = Array.from(path.matchAll(/-?\d+(?:\.\d+)?/g), (match) => Number(match[0]));
+  const xs = [];
+  const ys = [];
+
+  for (let index = 0; index + 1 < numbers.length; index += 2) {
+    xs.push(numbers[index]);
+    ys.push(numbers[index + 1]);
+  }
+
+  return {
+    left: Math.min(...xs),
+    top: Math.min(...ys),
+    right: Math.max(...xs),
+    bottom: Math.max(...ys),
+  };
+}
+
+async function measureSvgPathBounds(page, path) {
+  return page.evaluate((pathDefinition) => {
+    const namespace = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(namespace, "svg");
+    const pathElement = document.createElementNS(namespace, "path");
+
+    svg.setAttribute("width", "200");
+    svg.setAttribute("height", "200");
+    svg.style.position = "fixed";
+    svg.style.left = "-9999px";
+    svg.style.top = "-9999px";
+    pathElement.setAttribute("d", pathDefinition);
+    svg.append(pathElement);
+    document.body.append(svg);
+
+    const box = pathElement.getBBox();
+    svg.remove();
+
+    return {
+      left: box.x,
+      top: box.y,
+      right: box.x + box.width,
+      bottom: box.y + box.height,
+    };
+  }, path);
+}
+
 test.beforeEach(async ({ page }) => {
   async function waitForStartup() {
     await expect.poll(async () => {
@@ -315,6 +521,197 @@ test("allows the backing border slider to reach 0 mm", async ({ page }) => {
   await page.locator("#backingInput").fill("0");
   await expect(page.locator("#backingInput")).toHaveValue("0");
   await expect(page.locator("#backingOutput")).toHaveText("0.0 mm");
+});
+
+test("keeps the full backing border visible in the preview panel for a single-line design", async ({ page }) => {
+  await page.locator("#textInput").fill("Mackenzie");
+
+  const previewGeometry = await page.evaluate(() => {
+    const panel = document.querySelector(".preview-panel");
+    const svg = document.querySelector("#preview");
+    const backing = document.querySelector('#preview image:not(.face-layer), #preview path:not(.face-layer)');
+    if (!(panel instanceof HTMLElement) || !(svg instanceof SVGSVGElement) || !backing) {
+      return null;
+    }
+
+    const panelRect = panel.getBoundingClientRect();
+    const backingRect = backing.getBoundingClientRect();
+
+    return {
+      panelTop: panelRect.top,
+      panelBottom: panelRect.bottom,
+      backingTop: backingRect.top,
+      backingBottom: backingRect.bottom,
+      scrollTop: panel.scrollTop,
+    };
+  });
+
+  expect(previewGeometry).not.toBeNull();
+  expect(previewGeometry.scrollTop).toBeGreaterThanOrEqual(0);
+  expect(previewGeometry.backingTop).toBeGreaterThanOrEqual(previewGeometry.panelTop);
+  expect(previewGeometry.backingBottom).toBeLessThanOrEqual(previewGeometry.panelBottom);
+});
+
+test("preserves bottom ink margin in the live backing preview image", async ({ page }) => {
+  await page.locator("#textInput").fill("Mackenzie");
+
+  const margins = await measurePreviewInkMargins(page, '#preview image:not(.face-layer)');
+
+  expect(margins).not.toBeNull();
+  expect(margins.marginsPx.top).toBeGreaterThan(0);
+  expect(margins.marginsPx.bottom).toBeGreaterThan(0);
+});
+
+test("keeps the live face preview centered inside the backing preview", async ({ page }) => {
+  await page.locator("#textInput").fill("Mackenzie");
+
+  const backingBounds = await measurePreviewInkBounds(page, '#preview image:not(.face-layer)');
+  const faceBounds = await measurePreviewInkBounds(page, "#preview image.face-layer");
+
+  expect(backingBounds).not.toBeNull();
+  expect(faceBounds).not.toBeNull();
+
+  const centerDeltaX = ((faceBounds.leftMm + faceBounds.rightMm) / 2) - ((backingBounds.leftMm + backingBounds.rightMm) / 2);
+  const centerDeltaY = ((faceBounds.topMm + faceBounds.bottomMm) / 2) - ((backingBounds.topMm + backingBounds.bottomMm) / 2);
+
+  expect(Math.abs(centerDeltaX)).toBeLessThanOrEqual(0.1);
+  expect(Math.abs(centerDeltaY)).toBeLessThanOrEqual(0.1);
+});
+
+test("keeps the analyzed Mackenzie backing contour close to the live preview under the z descender", async ({ page }) => {
+  await page.locator("#textInput").fill("Mackenzie");
+
+  const liveContour = await measureRenderedBottomContour(page, '#preview image:not(.face-layer)');
+
+  await completeButton(page).click();
+  await expect(page.locator("#connectionStatusLabel")).toContainText(/Single connected face piece|separate face pieces/, { timeout: 20000 });
+
+  const analyzedContour = await measureRenderedBottomContour(page, '#preview path:not(.face-layer)');
+
+  expect(liveContour).not.toBeNull();
+  expect(analyzedContour).not.toBeNull();
+
+  const startIndex = Math.floor(liveContour.bottomContourMm.length * 0.62);
+  const endIndex = Math.floor(liveContour.bottomContourMm.length * 0.82);
+  const contourDifferences = [];
+
+  for (let index = startIndex; index < endIndex; index += 1) {
+    const liveBottom = liveContour.bottomContourMm[index];
+    const analyzedBottom = analyzedContour.bottomContourMm[index];
+    if (liveBottom == null || analyzedBottom == null) {
+      continue;
+    }
+    contourDifferences.push(liveBottom - analyzedBottom);
+  }
+
+  expect(contourDifferences.length).toBeGreaterThan(20);
+  const maxContourDifferenceMm = Math.max(...contourDifferences);
+  const averageContourDifferenceMm = contourDifferences.reduce((sum, value) => sum + value, 0) / contourDifferences.length;
+
+  expect(maxContourDifferenceMm).toBeLessThanOrEqual(0.1);
+  expect(averageContourDifferenceMm).toBeLessThanOrEqual(0.03);
+});
+
+test("preserves backing thickness under the analyzed Mackenzie z descender", async ({ page }) => {
+  await page.locator("#textInput").fill("Mackenzie");
+
+  const liveBackingContour = await measureRenderedBottomContour(page, '#preview image:not(.face-layer)', 40);
+  const liveFaceContour = await measureRenderedBottomContour(page, "#preview image.face-layer", 40);
+
+  await completeButton(page).click();
+  await expect(page.locator("#connectionStatusLabel")).toContainText(/Single connected face piece|separate face pieces/, { timeout: 20000 });
+
+  const analyzedBackingContour = await measureRenderedBottomContour(page, '#preview path:not(.face-layer)', 40);
+  const analyzedFaceContour = await measureRenderedBottomContour(page, "#preview path.face-layer", 40);
+
+  expect(liveBackingContour).not.toBeNull();
+  expect(liveFaceContour).not.toBeNull();
+  expect(analyzedBackingContour).not.toBeNull();
+  expect(analyzedFaceContour).not.toBeNull();
+
+  const startIndex = Math.floor(liveBackingContour.bottomContourMm.length * 0.69);
+  const endIndex = Math.floor(liveBackingContour.bottomContourMm.length * 0.8);
+  let deepestLiveIndex = -1;
+  let deepestLiveBackingMm = -Infinity;
+
+  for (let index = startIndex; index < endIndex; index += 1) {
+    const liveBackingBottom = liveBackingContour.bottomContourMm[index];
+    if (liveBackingBottom == null) {
+      continue;
+    }
+    if (liveBackingBottom > deepestLiveBackingMm) {
+      deepestLiveBackingMm = liveBackingBottom;
+      deepestLiveIndex = index;
+    }
+  }
+
+  expect(deepestLiveIndex).toBeGreaterThanOrEqual(0);
+  const liveBackingBottom = liveBackingContour.bottomContourMm[deepestLiveIndex];
+  const liveFaceBottom = liveFaceContour.bottomContourMm[deepestLiveIndex];
+  const analyzedBackingBottom = analyzedBackingContour.bottomContourMm[deepestLiveIndex];
+  const analyzedFaceBottom = analyzedFaceContour.bottomContourMm[deepestLiveIndex];
+
+  expect(liveBackingBottom).not.toBeNull();
+  expect(liveFaceBottom).not.toBeNull();
+  expect(analyzedBackingBottom).not.toBeNull();
+  expect(analyzedFaceBottom).not.toBeNull();
+
+  const liveThicknessMm = liveBackingBottom - liveFaceBottom;
+  const analyzedThicknessMm = analyzedBackingBottom - analyzedFaceBottom;
+
+  expect(liveThicknessMm - analyzedThicknessMm).toBeLessThanOrEqual(0.04);
+});
+
+test("keeps the exported backing path inside the captured layout height for Mackenzie", async ({ page }) => {
+  let exportPayload = null;
+
+  await page.route("**/api/export-svg", async (route) => {
+    exportPayload = route.request().postDataJSON();
+    await route.fulfill({
+      status: 200,
+      contentType: "image/svg+xml; charset=utf-8",
+      body: '<svg xmlns="http://www.w3.org/2000/svg"></svg>',
+    });
+  });
+
+  await page.locator("#textInput").fill("Mackenzie");
+  await completeButton(page).click();
+  await expect(page.locator("#connectionStatusLabel")).toContainText(/Single connected face piece|separate face pieces/, { timeout: 20000 });
+  await page.getByRole("button", { name: "Copy This Design" }).click();
+
+  expect(exportPayload).not.toBeNull();
+  expect(exportPayload.analysis?.backingPath).toBeTruthy();
+
+  const bounds = pathBounds(exportPayload.analysis.backingPath);
+
+  expect(bounds.top).toBeGreaterThanOrEqual(-0.01);
+  expect(bounds.bottom).toBeLessThanOrEqual(exportPayload.heightMm + 0.01);
+});
+
+test("keeps a small bottom safety margin in the exported backing path for Mackenzie", async ({ page }) => {
+  let exportPayload = null;
+
+  await page.route("**/api/export-svg", async (route) => {
+    exportPayload = route.request().postDataJSON();
+    await route.fulfill({
+      status: 200,
+      contentType: "image/svg+xml; charset=utf-8",
+      body: '<svg xmlns="http://www.w3.org/2000/svg"></svg>',
+    });
+  });
+
+  await page.locator("#textInput").fill("Mackenzie");
+  await completeButton(page).click();
+  await expect(page.locator("#connectionStatusLabel")).toContainText(/Single connected face piece|separate face pieces/, { timeout: 20000 });
+  await page.getByRole("button", { name: "Copy This Design" }).click();
+
+  expect(exportPayload).not.toBeNull();
+  expect(exportPayload.analysis?.backingPath).toBeTruthy();
+
+  const bounds = await measureSvgPathBounds(page, exportPayload.analysis.backingPath);
+  const bottomMarginMm = exportPayload.heightMm - bounds.bottom;
+
+  expect(bottomMarginMm).toBeGreaterThan(0.1);
 });
 
 test("renders lock text height inline without its own bordered section", async ({ page }) => {

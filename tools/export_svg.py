@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import sys
 import tempfile
 import urllib.parse
@@ -20,6 +21,8 @@ COLOR_LABEL_MARGIN_MM = 3.0
 COLOR_LABEL_FONT_SIZE_MM = 4.0
 COLOR_LABEL_LINE_HEIGHT_MM = 4.8
 REMOTE_FONT_MAX_BYTES = 2 * 1024 * 1024
+BACKING_PATH_BOTTOM_MARGIN_MM = 0.12
+BACKING_PATH_Y_OFFSET_MM = 0.05
 
 
 def svg_escape(value):
@@ -219,6 +222,37 @@ def polyline_closed_path(points, scale):
     commands.extend(f"L{x / scale:.3f} {y / scale:.3f}" for x, y in points[1:-1])
     commands.append("Z")
     return " ".join(commands)
+
+
+def translate_path(path, dx_mm=0.0, dy_mm=0.0):
+    token_pattern = re.compile(r"[MLQZ]|-?\d+(?:\.\d+)?")
+    tokens = token_pattern.findall(path)
+    translated = []
+    index = 0
+
+    while index < len(tokens):
+        token = tokens[index]
+        if token == "Z":
+            translated.append(token)
+            index += 1
+            continue
+        if token in ("M", "L"):
+            x = float(tokens[index + 1]) + dx_mm
+            y = float(tokens[index + 2]) + dy_mm
+            translated.append(f"{token}{x:.3f} {y:.3f}")
+            index += 3
+            continue
+        if token == "Q":
+            cx = float(tokens[index + 1]) + dx_mm
+            cy = float(tokens[index + 2]) + dy_mm
+            x = float(tokens[index + 3]) + dx_mm
+            y = float(tokens[index + 4]) + dy_mm
+            translated.append(f"Q{cx:.3f} {cy:.3f} {x:.3f} {y:.3f}")
+            index += 5
+            continue
+        raise ValueError(f"Unsupported path token: {token}")
+
+    return " ".join(translated)
 
 
 def trace_mask_outline(mask, scale, tolerance_mm, smooth_iterations, curve_mode="quadratic"):
@@ -515,7 +549,7 @@ def get_trace_profile(payload):
             "face_smooth_iterations": 0,
             "face_curve_mode": "polyline",
             "backing_tolerance_mm": 0.045,
-            "backing_smooth_iterations": 2,
+            "backing_smooth_iterations": 1,
             "backing_curve_mode": "quadratic",
         }
 
@@ -563,11 +597,19 @@ def analyze_single_layout(root, payload):
         smooth_iterations=profile["backing_smooth_iterations"],
         curve_mode=profile["backing_curve_mode"],
     )
+    backing_path = translate_path(backing_path, dy_mm=BACKING_PATH_Y_OFFSET_MM)
+    backing_bbox = backing_mask_for_path.getbbox()
+    required_height_mm = float(payload["heightMm"])
+    if backing_bbox:
+        required_height_mm = max(
+            required_height_mm,
+            backing_bbox[3] / scale + BACKING_PATH_BOTTOM_MARGIN_MM + BACKING_PATH_Y_OFFSET_MM,
+        )
     component_count = count_connected_components(face_mask)
 
     return {
         "widthMm": float(payload["widthMm"]),
-        "heightMm": float(payload["heightMm"]),
+        "heightMm": required_height_mm,
         "backingMm": backing,
         "text": payload.get("text", ""),
         "facePath": face_outline["path"],
