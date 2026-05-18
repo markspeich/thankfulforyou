@@ -155,7 +155,8 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Show no active order editor before an order has been added.
 - Clicking Add Order should immediately add a new row to the left-side order list, select that order, and show the editor on the right.
 - The selected-order editor should focus on editable design text and layout settings rather than a separate editable design-label field.
-- Allow each order to store its own customer text and layout settings, including letter bridge, line bridge, text height, backing border, and guide visibility.
+- The selected-order editor should include a per-design notes field for operator-only reminders about manual LightBurn follow-up steps, such as adding a shape that is not available in the app.
+- Allow each order to store its own customer text, notes, and layout settings, including letter bridge, line bridge, text height, backing border, and guide visibility.
 - Provide a way to save the current preview and settings for the active order before moving to the next order.
 - Clicking `Complete` should immediately save the active design text and layout settings, mark the queue item complete, and disable both completion buttons until the design changes again.
 - Clicking `Complete` should also start face analysis and cache the export-ready geometry tied to that completed state in the background without advancing to another design.
@@ -204,7 +205,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - The app should support saving the current queue batch to remote hosted storage so the current batch can be restored on another browser or after local storage is lost.
 - Remote hosted batch persistence should store the same queue snapshot shape used by local browser persistence so hydration behavior stays consistent between local and hosted restores.
 - On startup, local browser queue data should take precedence over the hosted saved batch when both are present, so unsynced local edits are not overwritten silently.
-- Persisted queue-item data should include enough information to restore the queue, the selected design, imported Etsy metadata, current text, current per-line settings, backing border, weld toggle, and saved/exported status after refresh.
+- Persisted queue-item data should include enough information to restore the queue, the selected design, imported Etsy metadata, current text, per-design notes, current per-line settings, backing border, weld toggle, and saved/exported status after refresh.
 - In the selected-order editor, show the imported Etsy color as a read-only label directly below the `Design Text` field whenever imported color metadata is available.
 - In the selected-order editor, show the imported Etsy quantity as a read-only label directly below the `Color` label whenever imported quantity metadata is available.
 - If the imported color name contains the word `White`, highlight that displayed color name in the editor.
@@ -217,6 +218,9 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - In batch export SVG output, each order's face and backing paths should appear below the previous order's paths in a single vertically stacked file.
 - In batch export SVG output, each design should start about `2.03 inches` below the top of the previous design so stacked exports use a tighter, more consistent vertical pitch.
 - In batch export SVG output, each order's text path should be grouped separately from its backing path so the name can be selected as one group without including the backing border.
+- When a design has notes entered, copied and exported SVG output should include that note as a small Arial text annotation for LightBurn-only operator reference.
+- The exported note annotation should help remind the operator about a manual post-export layout step, such as adding a shape that is not available in the app.
+- The exported note annotation should not affect geometry analysis, connectedness results, or cut-path generation.
 - Copied and exported SVG output should emit each design instance as three separate top-level selectable objects: one grouped name object, one backing-border path object, and one color-label text object when color metadata is present.
 - The exported backing layer should be an actual outline path for LightBurn, not only a filled shape or SVG stroke effect. The path can be imported and manually assigned to a LightBurn cut layer.
 - Exported face-layer paths should also be welded/unioned so overlapping letters do not create internal cut lines.
