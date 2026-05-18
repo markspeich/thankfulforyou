@@ -184,6 +184,55 @@ test("shows the production defaults", async ({ page }) => {
   expect(guideMetrics.labelFills).toEqual(["rgb(12, 150, 217)", "rgb(12, 150, 217)"]);
 });
 
+test("keeps the preview title above the scrollable pane", async ({ page }) => {
+  const previewPanel = page.locator(".preview-panel");
+  const previewTitle = page.locator(".preview-title");
+
+  const layout = await page.evaluate(() => {
+    const panel = document.querySelector(".preview-panel");
+    const title = document.querySelector(".preview-title");
+    if (!(panel instanceof HTMLElement) || !(title instanceof HTMLElement)) {
+      return null;
+    }
+
+    const panelRect = panel.getBoundingClientRect();
+    const titleRect = title.getBoundingClientRect();
+
+    return {
+      panelContainsTitle: panel.contains(title),
+      titleBottom: titleRect.bottom,
+      panelTop: panelRect.top,
+    };
+  });
+
+  expect(layout).not.toBeNull();
+  expect(layout.panelContainsTitle).toBe(false);
+  expect(layout.titleBottom).toBeLessThanOrEqual(layout.panelTop);
+
+  await previewPanel.hover();
+  await page.mouse.wheel(0, -800);
+
+  const afterZoom = await page.evaluate(() => {
+    const panel = document.querySelector(".preview-panel");
+    const title = document.querySelector(".preview-title");
+    if (!(panel instanceof HTMLElement) || !(title instanceof HTMLElement)) {
+      return null;
+    }
+
+    const panelRect = panel.getBoundingClientRect();
+    const titleRect = title.getBoundingClientRect();
+
+    return {
+      titleBottom: titleRect.bottom,
+      panelTop: panelRect.top,
+    };
+  });
+
+  expect(afterZoom).not.toBeNull();
+  expect(afterZoom.titleBottom).toBeLessThanOrEqual(afterZoom.panelTop);
+  await expect(previewTitle).toHaveText("Preview");
+});
+
 test("keeps wheel zoom without rendering floating zoom controls", async ({ page }) => {
   await expect(page.locator(".zoom-controls")).toHaveCount(0);
   await expect(page.locator("#zoomOutButton")).toHaveCount(0);
@@ -216,6 +265,50 @@ test("keeps wheel zoom without rendering floating zoom controls", async ({ page 
   });
 
   expect(previewSizeAfter.height).toBeGreaterThan(previewSizeBefore.height);
+});
+
+test("pans the preview with middle-click drag", async ({ page }) => {
+  const previewPanel = page.locator(".preview-panel");
+
+  await previewPanel.hover();
+  await page.mouse.wheel(0, -1000);
+
+  const panelBox = await previewPanel.boundingBox();
+  expect(panelBox).not.toBeNull();
+
+  const beforePan = await previewPanel.evaluate((element) => ({
+    cursor: window.getComputedStyle(element).cursor,
+    scrollLeft: element.scrollLeft,
+    scrollTop: element.scrollTop,
+  }));
+
+  const startX = panelBox.x + (panelBox.width * 0.65);
+  const startY = panelBox.y + (panelBox.height * 0.65);
+
+  await page.mouse.move(startX, startY);
+  await page.mouse.down({ button: "middle" });
+
+  await expect.poll(async () => {
+    return previewPanel.evaluate((element) => window.getComputedStyle(element).cursor);
+  }).toBe("grabbing");
+
+  await page.mouse.move(startX - 120, startY - 90, { steps: 8 });
+
+  await expect.poll(async () => {
+    return previewPanel.evaluate((element) => ({
+      scrollLeft: element.scrollLeft,
+      scrollTop: element.scrollTop,
+    }));
+  }).not.toEqual({
+    scrollLeft: beforePan.scrollLeft,
+    scrollTop: beforePan.scrollTop,
+  });
+
+  await page.mouse.up({ button: "middle" });
+
+  await expect.poll(async () => {
+    return previewPanel.evaluate((element) => window.getComputedStyle(element).cursor);
+  }).toBe(beforePan.cursor);
 });
 
 test("allows the backing border slider to reach 0 mm", async ({ page }) => {
