@@ -1144,7 +1144,7 @@ function lineValueText(setting, value) {
 }
 
 function updateBackingOutput() {
-  backingOutput.textContent = `${Number(backingInput.value).toFixed(3)} mm`;
+  backingOutput.textContent = `${Number(backingInput.value).toFixed(1)} mm`;
 }
 
 function renderLineControls(settings = getCurrentSettings()) {
