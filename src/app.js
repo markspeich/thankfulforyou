@@ -794,7 +794,6 @@ async function clearRemoteQueueSnapshot(options = {}) {
   }
 
   if (!quiet) {
-    updateImportStatus("Cleared the saved remote batch.", "success");
     updateQueueSyncStatus("empty");
   }
 }
@@ -814,7 +813,6 @@ async function saveQueueSnapshotToRemote(options = {}) {
 
     if (isQueueSnapshotEmpty(snapshot)) {
       await clearRemoteQueueSnapshot({ quiet: true });
-      updateImportStatus("Queue is empty, so the saved remote batch was cleared.", "success");
       updateQueueSyncStatus("empty");
       return;
     }
@@ -844,8 +842,6 @@ async function saveQueueSnapshotToRemote(options = {}) {
 
     if (typeof successMessage === "string" && successMessage.trim()) {
       updateImportStatus(successMessage.trim(), "success");
-    } else if (successMessage !== false) {
-      updateImportStatus(`Saved ${snapshot.orders.length} design${snapshot.orders.length === 1 ? "" : "s"} to Neon.`, "success");
     }
     updateQueueSyncStatus("saved-remote", { count: snapshot.orders.length });
   } catch (error) {
@@ -3330,11 +3326,7 @@ await loadPresetRegistry();
 renderPresetOptions();
 updateBackingOutput();
 const restoredQueue = await restoreInitialQueueState();
-if (restoredQueue.source === "local") {
-  updateImportStatus(`Restored ${restoredQueue.count} design${restoredQueue.count === 1 ? "" : "s"} from browser storage.`, "success");
-} else if (restoredQueue.source === "remote") {
-  updateImportStatus(`Restored ${restoredQueue.count} design${restoredQueue.count === 1 ? "" : "s"} from Neon.`, "success");
-} else if (importStatus.dataset.state !== "error") {
+if ((!restoredQueue.source || restoredQueue.count === 0) && importStatus.dataset.state !== "error") {
   updateImportStatus("Import Etsy clipboard data copied from the browser helper.", "pending");
 }
 const defaultPresetId = getDefaultPresetId();
