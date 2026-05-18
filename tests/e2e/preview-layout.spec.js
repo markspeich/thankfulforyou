@@ -1094,6 +1094,64 @@ test("skips already imported Etsy line items when importing another batch", asyn
   ]);
 });
 
+test("shows labeled buyer, listing, and emphasized personalization lines in queue rows", async ({ page }) => {
+  const payload = JSON.stringify({
+    items: [
+      {
+        orderNumber: "4057600528",
+        listingId: "1884223710",
+        listingTitle: "Custom Badge Reel for Nurse Practitioner with Floral Backing and Glitter Accent",
+        transactionId: "5078093505",
+        buyerName: "Marilyn Lopez",
+        personalization: "Yohanna APN",
+      },
+    ],
+  });
+
+  await page.evaluate((clipboardPayload) => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        readText: async () => clipboardPayload,
+      },
+    });
+  }, payload);
+
+  await page.getByRole("button", { name: "Import Clipboard" }).click();
+
+  const row = page.locator("#orderList .order-row").filter({ hasText: "#4057600528" });
+  const buyerLine = row.locator(".order-item-recipient");
+  const listingLine = row.locator(".order-item-listing");
+  const personalizationLine = row.locator(".order-item-personalization");
+
+  await expect(row).toContainText("#4057600528");
+  await expect(buyerLine).toHaveText("Buyer: Marilyn Lopez");
+  await expect(listingLine).toHaveText("Listing: Custom Badge Reel for Nurse Practitioner with Floral Backing and Glitter Accent");
+  await expect(personalizationLine).toHaveText("Personalization: Yohanna APN");
+
+  const lineMetrics = await page.evaluate(() => {
+    const buyerLine = document.querySelector(".order-item-recipient");
+    const listingLine = document.querySelector(".order-item-listing");
+    const personalizationLine = document.querySelector(".order-item-personalization");
+
+    if (!(buyerLine instanceof HTMLElement) || !(listingLine instanceof HTMLElement) || !(personalizationLine instanceof HTMLElement)) {
+      return null;
+    }
+
+    return {
+      buyerSize: window.getComputedStyle(buyerLine).fontSize,
+      listingSize: window.getComputedStyle(listingLine).fontSize,
+      personalizationSize: window.getComputedStyle(personalizationLine).fontSize,
+    };
+  });
+
+  expect(lineMetrics).toEqual({
+    buyerSize: "12.32px",
+    listingSize: "12.32px",
+    personalizationSize: "14.4px",
+  });
+});
+
 test("shows imported Etsy color and quantity below design text and highlights white colors", async ({ page }) => {
   const payload = JSON.stringify({
     items: [

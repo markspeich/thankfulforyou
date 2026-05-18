@@ -477,6 +477,11 @@ function buildQueueRecipient(order) {
 }
 
 function buildQueueListing(order) {
+  const listingTitle = order?.source?.listingTitle?.trim();
+  if (listingTitle) {
+    return listingTitle;
+  }
+
   const listingId = order?.source?.listingId?.trim();
   return listingId ? `Listing ${listingId}` : buildActiveMeta(order);
 }
@@ -1922,15 +1927,18 @@ function renderOrderList() {
 
     const recipientText = document.createElement("div");
     recipientText.className = "order-item-recipient";
-    recipientText.textContent = buildQueueRecipient(order);
+    recipientText.textContent = `Buyer: ${buildQueueRecipient(order)}`;
+    recipientText.title = buildQueueRecipient(order);
 
     const listingText = document.createElement("div");
     listingText.className = "order-item-listing";
-    listingText.textContent = buildQueueListing(order);
+    listingText.textContent = `Listing: ${buildQueueListing(order)}`;
+    listingText.title = buildQueueListing(order);
 
     const personalizationText = document.createElement("div");
     personalizationText.className = "order-item-personalization";
-    personalizationText.textContent = buildQueuePersonalization(order);
+    personalizationText.textContent = `Personalization: ${buildQueuePersonalization(order)}`;
+    personalizationText.title = buildQueuePersonalization(order);
 
     header.append(title, analysisIndicator, status);
     body.append(recipientText, listingText, personalizationText);
