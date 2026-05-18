@@ -755,6 +755,10 @@ button:disabled {
   color: #8a2f2f;
 }
 
+.order-entry .status-card {
+  margin-top: 12px;
+}
+
 .editor-meta {
   margin: 6px 0 0;
   color: var(--muted);

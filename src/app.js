@@ -28,6 +28,12 @@ import {
   buildSettingsSignature,
   getSettingsSignatureCandidates,
 } from "./order-signatures.js";
+import {
+  buildRemoteQueuePayload,
+  chooseInitialQueueSnapshot,
+  isQueueSnapshotEmpty,
+} from "./queue-sync.js";
+import { buildQueueSyncStatus } from "./queue-sync-status.js";
 
 const FONT_OPTIONS = [
   {
@@ -77,6 +83,9 @@ const addOrderButton = document.querySelector("#addOrderButton");
 const importClipboardButton = document.querySelector("#importClipboardButton");
 const clearQueueButton = document.querySelector("#clearQueueButton");
 const importStatus = document.querySelector("#importStatus");
+const queueSyncStatus = document.querySelector("#queueSyncStatus");
+const queueSyncStatusLabel = document.querySelector("#queueSyncStatusLabel");
+const queueSyncStatusDetail = document.querySelector("#queueSyncStatusDetail");
 const exportCompletedButton = document.querySelector("#exportCompletedButton");
 const copyCompletedButton = document.querySelector("#copyCompletedButton");
 const orderSearchInput = document.querySelector("#orderSearchInput");
@@ -123,6 +132,7 @@ let activeOrderId = null;
 const orders = [];
 let queuePersistenceTimeoutId = null;
 let orderListRenderFrameId = null;
+let suppressQueueSyncLocalNotice = false;
 
 const statusLabels = {
   "not-started": "Not started",
@@ -134,6 +144,7 @@ const IMPORT_SOURCE_TAG = "thankfulforyou-etsy-clipboard";
 const IMPORT_MOJIBAKE_PATTERN = /[ÂÃâ]/;
 const STORAGE_KEY = "thankfulforyou.designQueue";
 const STORAGE_VERSION = 1;
+const QUEUE_SNAPSHOT_API_PATH = "/api/queue-snapshot";
 
 function getFontOption(fontId) {
   return FONT_BY_ID.get(fontId) || FONT_OPTIONS[0];
@@ -620,14 +631,52 @@ function buildPersistedQueueState() {
   };
 }
 
+function updateQueueSyncStatus(kind, options = {}) {
+  if (!queueSyncStatus || !queueSyncStatusLabel || !queueSyncStatusDetail) {
+    return;
+  }
+
+  const status = buildQueueSyncStatus(kind, options);
+  queueSyncStatus.classList.remove("status-ok", "status-warning", "status-pending");
+  queueSyncStatus.classList.add(`status-${status.tone}`);
+  queueSyncStatusLabel.textContent = status.label;
+  queueSyncStatusDetail.textContent = status.detail;
+}
+
+function applyPersistedQueueState(parsed) {
+  if (!parsed || parsed.version !== STORAGE_VERSION || !Array.isArray(parsed.orders)) {
+    return false;
+  }
+
+  const restoredOrders = parsed.orders
+    .map((order, index) => hydrateStoredOrder(order, index))
+    .filter(Boolean);
+
+  orders.splice(0, orders.length, ...restoredOrders);
+  orderSequence = Math.max(
+    Number.isInteger(parsed.orderSequence) ? parsed.orderSequence : 1,
+    restoredOrders.length + 1,
+  );
+  activeOrderId = restoredOrders.some((order) => order.id === parsed.activeOrderId)
+    ? parsed.activeOrderId
+    : restoredOrders[0]?.id || null;
+  return restoredOrders.length > 0;
+}
+
 function persistQueueState() {
   try {
     if (!orders.length) {
       localStorage.removeItem(STORAGE_KEY);
+      if (!suppressQueueSyncLocalNotice) {
+        updateQueueSyncStatus("empty");
+      }
       return;
     }
 
     localStorage.setItem(STORAGE_KEY, JSON.stringify(buildPersistedQueueState()));
+    if (!suppressQueueSyncLocalNotice) {
+      updateQueueSyncStatus("local-only", { count: orders.length });
+    }
   } catch {
     // Ignore storage failures and continue with in-memory editing.
   }
@@ -667,36 +716,181 @@ function clearPersistedQueueState() {
   }
 }
 
-function loadPersistedQueueState() {
+function readPersistedQueueState() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) {
-      return false;
+      return null;
     }
 
     const parsed = JSON.parse(raw);
     if (!parsed || parsed.version !== STORAGE_VERSION || !Array.isArray(parsed.orders)) {
       clearPersistedQueueState();
-      return false;
+      return null;
     }
 
-    const restoredOrders = parsed.orders
-      .map((order, index) => hydrateStoredOrder(order, index))
-      .filter(Boolean);
-
-    orders.splice(0, orders.length, ...restoredOrders);
-    orderSequence = Math.max(
-      Number.isInteger(parsed.orderSequence) ? parsed.orderSequence : 1,
-      restoredOrders.length + 1,
-    );
-    activeOrderId = restoredOrders.some((order) => order.id === parsed.activeOrderId)
-      ? parsed.activeOrderId
-      : restoredOrders[0]?.id || null;
-    return restoredOrders.length > 0;
+    return parsed;
   } catch {
     clearPersistedQueueState();
-    return false;
+    return null;
   }
+}
+
+function loadPersistedQueueState() {
+  return applyPersistedQueueState(readPersistedQueueState());
+}
+
+async function fetchRemoteQueueSnapshot() {
+  const response = await fetch(`${QUEUE_SNAPSHOT_API_PATH}?workspaceKey=primary`, {
+    headers: {
+      Accept: "application/json",
+    },
+  });
+
+  if (response.status === 404) {
+    return null;
+  }
+
+  if (!response.ok) {
+    let message = "Unable to load the saved remote batch.";
+
+    try {
+      const payload = await response.json();
+      if (typeof payload?.error === "string" && payload.error.trim()) {
+        message = payload.error.trim();
+      }
+    } catch {
+      // Ignore JSON parsing failures and use the fallback message.
+    }
+
+    throw new Error(message);
+  }
+
+  const payload = await response.json();
+  return payload?.snapshot ?? null;
+}
+
+async function clearRemoteQueueSnapshot(options = {}) {
+  const { quiet = false } = options;
+  const response = await fetch(`${QUEUE_SNAPSHOT_API_PATH}?workspaceKey=primary`, {
+    method: "DELETE",
+  });
+
+  if (!response.ok && response.status !== 404) {
+    let message = "Unable to clear the saved remote batch.";
+
+    try {
+      const payload = await response.json();
+      if (typeof payload?.error === "string" && payload.error.trim()) {
+        message = payload.error.trim();
+      }
+    } catch {
+      // Ignore JSON parsing failures and use the fallback message.
+    }
+
+    throw new Error(message);
+  }
+
+  if (!quiet) {
+    updateQueueSyncStatus("empty");
+  }
+}
+
+async function saveQueueSnapshotToRemote(options = {}) {
+  const {
+    persistActiveDraft = true,
+    successMessage = null,
+  } = options;
+
+  if (persistActiveDraft) {
+    saveActiveOrderDraft();
+  }
+
+  try {
+    const snapshot = buildPersistedQueueState();
+
+    if (isQueueSnapshotEmpty(snapshot)) {
+      await clearRemoteQueueSnapshot({ quiet: true });
+      updateQueueSyncStatus("empty");
+      return;
+    }
+
+    const response = await fetch(QUEUE_SNAPSHOT_API_PATH, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(buildRemoteQueuePayload(snapshot)),
+    });
+
+    if (!response.ok) {
+      let message = "Unable to save the current batch remotely.";
+
+      try {
+        const payload = await response.json();
+        if (typeof payload?.error === "string" && payload.error.trim()) {
+          message = payload.error.trim();
+        }
+      } catch {
+        // Ignore JSON parsing failures and use the fallback message.
+      }
+
+      throw new Error(message);
+    }
+
+    if (typeof successMessage === "string" && successMessage.trim()) {
+      updateImportStatus(successMessage.trim(), "success");
+    }
+    updateQueueSyncStatus("saved-remote", { count: snapshot.orders.length });
+  } catch (error) {
+    updateImportStatus(
+      error instanceof Error ? error.message : "Unable to save the current batch remotely.",
+      "error",
+    );
+  }
+}
+
+async function restoreInitialQueueState() {
+  const localSnapshot = readPersistedQueueState();
+  let remoteSnapshot = null;
+
+  if (isQueueSnapshotEmpty(localSnapshot)) {
+    try {
+      remoteSnapshot = await fetchRemoteQueueSnapshot();
+    } catch (error) {
+      updateImportStatus(
+        error instanceof Error ? error.message : "Unable to load the saved remote batch.",
+        "error",
+      );
+    }
+  }
+
+  const initialSnapshot = chooseInitialQueueSnapshot({
+    localSnapshot,
+    remoteSnapshot,
+  });
+
+  if (!initialSnapshot.snapshot || !applyPersistedQueueState(initialSnapshot.snapshot)) {
+    updateQueueSyncStatus("empty");
+    return {
+      source: null,
+      count: 0,
+    };
+  }
+
+  if (initialSnapshot.source === "remote") {
+    suppressQueueSyncLocalNotice = true;
+    persistQueueState();
+    suppressQueueSyncLocalNotice = false;
+    updateQueueSyncStatus("restored-remote", { count: orders.length });
+  } else if (initialSnapshot.source === "local") {
+    updateQueueSyncStatus("restored-local", { count: orders.length });
+  }
+
+  return {
+    source: initialSnapshot.source,
+    count: orders.length,
+  };
 }
 
 function decodeHtmlEntities(value) {
@@ -1846,7 +2040,7 @@ function deleteOrder(orderId) {
   }
 }
 
-function clearAllOrders() {
+async function clearAllOrders() {
   saveActiveOrderDraft();
   if (!orders.length) {
     return;
@@ -1861,7 +2055,19 @@ function clearAllOrders() {
   orderSequence = 1;
   clearPersistedQueueState();
   resetEditorToEmptyState();
-  updateImportStatus("Batch cleared. Import Etsy clipboard data copied from the browser helper.", "pending");
+  try {
+    await clearRemoteQueueSnapshot({ quiet: true });
+    updateImportStatus("Batch cleared locally and remotely. Import Etsy clipboard data copied from the browser helper.", "pending");
+    updateQueueSyncStatus("empty");
+  } catch (error) {
+    updateImportStatus(
+      error instanceof Error
+        ? `Batch cleared locally, but remote clear failed: ${error.message}`
+        : "Batch cleared locally, but the saved remote batch could not be cleared.",
+      "error",
+    );
+    updateQueueSyncStatus("empty");
+  }
   renderOrderList();
 }
 
@@ -2004,6 +2210,11 @@ async function captureActiveOrder({ advanceToNext = false } = {}) {
       if (order.previousCompletedBuild?.signature === signature) {
         order.previousCompletedBuild = null;
       }
+
+      await saveQueueSnapshotToRemote({
+        persistActiveDraft: false,
+        successMessage: false,
+      });
     }
 
     persistQueueState();
@@ -3164,10 +3375,8 @@ await checkFonts();
 await loadPresetRegistry();
 renderPresetOptions();
 updateBackingOutput();
-const restoredQueue = loadPersistedQueueState();
-if (restoredQueue) {
-  updateImportStatus(`Restored ${orders.length} design${orders.length === 1 ? "" : "s"} from browser storage.`, "success");
-} else {
+const restoredQueue = await restoreInitialQueueState();
+if ((!restoredQueue.source || restoredQueue.count === 0) && importStatus.dataset.state !== "error") {
   updateImportStatus("Import Etsy clipboard data copied from the browser helper.", "pending");
 }
 const defaultPresetId = getDefaultPresetId();
