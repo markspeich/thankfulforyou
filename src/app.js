@@ -96,7 +96,6 @@ const orderList = document.querySelector("#orderList");
 const activeOrderName = document.querySelector("#activeOrderName");
 const activeOrderMeta = document.querySelector("#activeOrderMeta");
 const editorPanel = document.querySelector(".editor-panel");
-const saveButton = document.querySelector("#saveButton");
 const listingReferenceCard = document.querySelector("#listingReferenceCard");
 const listingReferenceTitle = document.querySelector("#listingReferenceTitle");
 const listingReferenceImage = document.querySelector("#listingReferenceImage");
@@ -743,15 +742,6 @@ function loadPersistedQueueState() {
   return applyPersistedQueueState(readPersistedQueueState());
 }
 
-function setSaveButtonBusy(isBusy) {
-  if (!saveButton) {
-    return;
-  }
-
-  saveButton.disabled = isBusy;
-  saveButton.textContent = isBusy ? "Saving..." : "Save";
-}
-
 async function fetchRemoteQueueSnapshot() {
   const response = await fetch(`${QUEUE_SNAPSHOT_API_PATH}?workspaceKey=primary`, {
     headers: {
@@ -818,7 +808,6 @@ async function saveQueueSnapshotToRemote(options = {}) {
   if (persistActiveDraft) {
     saveActiveOrderDraft();
   }
-  setSaveButtonBusy(true);
 
   try {
     const snapshot = buildPersistedQueueState();
@@ -864,8 +853,6 @@ async function saveQueueSnapshotToRemote(options = {}) {
       error instanceof Error ? error.message : "Unable to save the current batch remotely.",
       "error",
     );
-  } finally {
-    setSaveButtonBusy(false);
   }
 }
 
@@ -3313,9 +3300,6 @@ weldExportedDesignInput.addEventListener("input", () => {
 addOrderButton.addEventListener("click", addOrder);
 importClipboardButton.addEventListener("click", importFromClipboard);
 clearQueueButton.addEventListener("click", clearAllOrders);
-saveButton.addEventListener("click", () => {
-  saveQueueSnapshotToRemote();
-});
 exportCompletedButton.addEventListener("click", exportAllOrders);
 copyCompletedButton.addEventListener("click", copyAllOrders);
 orderSearchInput.addEventListener("input", renderOrderList);
