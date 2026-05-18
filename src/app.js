@@ -105,10 +105,6 @@ const previewPanel = document.querySelector(".preview-panel");
 const connectionStatus = document.querySelector("#connectionStatus");
 const connectionStatusLabel = document.querySelector("#connectionStatusLabel");
 const connectionStatusDetail = document.querySelector("#connectionStatusDetail");
-const zoomOutButton = document.querySelector("#zoomOutButton");
-const zoomInButton = document.querySelector("#zoomInButton");
-const zoomResetButton = document.querySelector("#zoomResetButton");
-const zoomOutput = document.querySelector("#zoomOutput");
 const downloadButton = document.querySelector("#downloadButton");
 const copyButton = document.querySelector("#copyButton");
 const captureButton = document.querySelector("#captureButton");
@@ -964,7 +960,6 @@ function restoreSelectionScrollState(state) {
 function updateZoom(nextZoom, anchor = null) {
   const previousZoom = zoom;
   zoom = clamp(nextZoom, 0.4, 6);
-  zoomOutput.textContent = `${Math.round(zoom * 100)}%`;
 
   if (lastLayout) {
     preview.style.setProperty("--preview-width", `${lastLayout.previewWidthMm * PX_PER_MM * zoom}px`);
@@ -3096,9 +3091,6 @@ completeNextButton.addEventListener("click", () => {
 });
 downloadButton.addEventListener("click", downloadSvg);
 copyButton.addEventListener("click", copyCurrentSvg);
-zoomOutButton.addEventListener("click", () => updateZoom(zoom / 1.2));
-zoomInButton.addEventListener("click", () => updateZoom(zoom * 1.2));
-zoomResetButton.addEventListener("click", () => updateZoom(DEFAULT_ZOOM));
 previewPanel.addEventListener("wheel", (event) => {
   event.preventDefault();
   const rect = previewPanel.getBoundingClientRect();

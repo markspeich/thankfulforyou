@@ -184,6 +184,40 @@ test("shows the production defaults", async ({ page }) => {
   expect(guideMetrics.labelFills).toEqual(["rgb(12, 150, 217)", "rgb(12, 150, 217)"]);
 });
 
+test("keeps wheel zoom without rendering floating zoom controls", async ({ page }) => {
+  await expect(page.locator(".zoom-controls")).toHaveCount(0);
+  await expect(page.locator("#zoomOutButton")).toHaveCount(0);
+  await expect(page.locator("#zoomInButton")).toHaveCount(0);
+  await expect(page.locator("#zoomResetButton")).toHaveCount(0);
+  await expect(page.locator("#zoomOutput")).toHaveCount(0);
+
+  const previewPanel = page.locator(".preview-panel");
+  const previewSizeBefore = await page.locator("#preview").evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    return {
+      width: rect.width,
+      height: rect.height,
+    };
+  });
+
+  await previewPanel.hover();
+  await page.mouse.wheel(0, -500);
+
+  await expect.poll(async () => {
+    return page.locator("#preview").evaluate((element) => element.getBoundingClientRect().width);
+  }).toBeGreaterThan(previewSizeBefore.width);
+
+  const previewSizeAfter = await page.locator("#preview").evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    return {
+      width: rect.width,
+      height: rect.height,
+    };
+  });
+
+  expect(previewSizeAfter.height).toBeGreaterThan(previewSizeBefore.height);
+});
+
 test("allows the backing border slider to reach 0 mm", async ({ page }) => {
   await page.locator("#backingInput").fill("0");
   await expect(page.locator("#backingInput")).toHaveValue("0");

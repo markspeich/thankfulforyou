@@ -740,34 +740,6 @@ button:disabled {
   grid-column: 1 / -1;
 }
 
-.zoom-controls {
-  position: absolute;
-  left: 50%;
-  bottom: 24px;
-  display: grid;
-  grid-template-columns: 42px 76px 42px 72px;
-  align-items: center;
-  gap: 8px;
-  padding: 9px;
-  background: rgba(255, 255, 255, 0.92);
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  box-shadow: 0 8px 28px rgba(31, 42, 54, 0.12);
-  transform: translateX(-50%);
-  z-index: 2;
-}
-
-.zoom-controls button {
-  min-height: 38px;
-}
-
-.zoom-controls output {
-  color: var(--ink);
-  font-size: 0.9rem;
-  font-weight: 700;
-  text-align: center;
-}
-
 .note {
   margin: 0;
   color: var(--muted);
