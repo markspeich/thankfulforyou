@@ -6,7 +6,9 @@ import {
   PREVIEW_LABEL_RIGHT_MM,
   PREVIEW_MARGIN_MM,
   PX_PER_MM,
-  buildScaledTextBounds,
+  computeLineScaleFactors,
+  computeMixedFitScale,
+  computeMixedScaleBounds,
   computePreviewFrame,
   computeTextFitScale,
   measureLineBounds,
@@ -59,6 +61,7 @@ const DEFAULT_LINE_SETTINGS = Object.freeze({
   offsetXMm: 0,
   fontSizeMm: 34,
   verticalScale: 1,
+  lockTextHeight: false,
 });
 
 const addOrderButton = document.querySelector("#addOrderButton");
@@ -139,6 +142,7 @@ function createDefaultLineSettings() {
     offsetXMm: DEFAULT_LINE_SETTINGS.offsetXMm,
     fontSizeMm: DEFAULT_LINE_SETTINGS.fontSizeMm,
     verticalScale: DEFAULT_LINE_SETTINGS.verticalScale,
+    lockTextHeight: DEFAULT_LINE_SETTINGS.lockTextHeight,
   };
 }
 
@@ -181,6 +185,9 @@ function normalizeLineSettings(lineSettings = {}) {
     offsetXMm: Number.isFinite(Number(lineSettings.offsetXMm)) ? Number(lineSettings.offsetXMm) : DEFAULT_LINE_SETTINGS.offsetXMm,
     fontSizeMm: Number.isFinite(Number(lineSettings.fontSizeMm)) ? Number(lineSettings.fontSizeMm) : DEFAULT_LINE_SETTINGS.fontSizeMm,
     verticalScale: Number.isFinite(Number(lineSettings.verticalScale)) ? Number(lineSettings.verticalScale) : DEFAULT_LINE_SETTINGS.verticalScale,
+    lockTextHeight: typeof lineSettings.lockTextHeight === "boolean"
+      ? lineSettings.lockTextHeight
+      : DEFAULT_LINE_SETTINGS.lockTextHeight,
   };
 }
 
@@ -215,6 +222,9 @@ function normalizeSettings(settings = {}) {
 
 function buildSettingsSignature(settings) {
   const normalized = normalizeSettings(settings);
+  const { fitScale } = measureTextLayoutForFit(normalized.text, normalized.lines);
+  const includeLockTextHeight = Math.abs(fitScale - 1) > 1e-6;
+
   return JSON.stringify({
     text: normalized.text,
     presetId: normalized.presetId,
@@ -227,6 +237,7 @@ function buildSettingsSignature(settings) {
       offsetXMm: Number(line.offsetXMm),
       fontSizeMm: Number(line.fontSizeMm),
       verticalScale: Number(line.verticalScale),
+      ...(includeLockTextHeight ? { lockTextHeight: Boolean(line.lockTextHeight) } : {}),
     })),
   });
 }
@@ -271,6 +282,26 @@ function normalizeStoredAnalysisBadge(analysisBadge) {
   };
 }
 
+function normalizeStoredSignature(signature) {
+  return typeof signature === "string" && signature ? signature : null;
+}
+
+function getStoredBuildForSignature(cachedBuild, previousCompletedBuild, signature) {
+  if (typeof signature !== "string" || !signature) {
+    return null;
+  }
+
+  if (cachedBuild?.signature === signature) {
+    return structuredClone(cachedBuild);
+  }
+
+  if (previousCompletedBuild?.signature === signature) {
+    return structuredClone(previousCompletedBuild);
+  }
+
+  return null;
+}
+
 function getOrderSettingsSignature(order) {
   return order ? buildSettingsSignature(order.settings) : null;
 }
@@ -281,6 +312,37 @@ function getCachedBuild(order, signature = getOrderSettingsSignature(order)) {
   }
 
   return structuredClone(order.cachedBuild);
+}
+
+function getBuildForSignature(order, signature) {
+  if (!order?.text.trim() || typeof signature !== "string" || !signature) {
+    return null;
+  }
+
+  const storedBuild = getStoredBuildForSignature(order.cachedBuild, order.previousCompletedBuild, signature);
+  if (storedBuild) {
+    return storedBuild;
+  }
+
+  if (
+    order.capturedLayout
+    && typeof order.capturedLayout === "object"
+    && order.savedSettingsSignature === signature
+    && order.capturedLayout.analysis
+    && typeof order.capturedLayout.analysis === "object"
+  ) {
+    const layout = structuredClone(order.capturedLayout);
+    const analysis = structuredClone(order.capturedLayout.analysis);
+    delete layout.analysis;
+
+    return {
+      signature,
+      layout,
+      analysis,
+    };
+  }
+
+  return null;
 }
 
 function cloneSerializableData(value) {
@@ -437,18 +499,72 @@ function hydrateStoredOrder(order, index) {
     ...(order.settings && typeof order.settings === "object" ? order.settings : {}),
     text,
   });
+  const currentSignature = buildSettingsSignature(settings);
+
+  const cachedBuild = normalizeStoredCachedBuild(order.cachedBuild);
+  const previousCompletedBuild = normalizeStoredCachedBuild(order.previousCompletedBuild);
+  let status = isValidOrderStatus(order.status) ? order.status : "in-progress";
+  let savedSettingsSignature = normalizeStoredSignature(order.savedSettingsSignature);
+  const persistedPendingAnalysisSignature = normalizeStoredSignature(order.pendingAnalysisSignature);
+  let analysisBadge = normalizeStoredAnalysisBadge(order.analysisBadge);
+  let effectiveCachedBuild = cachedBuild;
+  let effectivePreviousCompletedBuild = previousCompletedBuild;
+  const abandonedPendingSignature = persistedPendingAnalysisSignature
+    || (analysisBadge?.state === "running" ? savedSettingsSignature : null);
+  const savedCompletedBuild = getStoredBuildForSignature(
+    cachedBuild,
+    previousCompletedBuild,
+    savedSettingsSignature,
+  );
+  const pendingCompletedBuild = getStoredBuildForSignature(
+    cachedBuild,
+    previousCompletedBuild,
+    abandonedPendingSignature,
+  );
+
+  if (abandonedPendingSignature) {
+    status = "in-progress";
+    analysisBadge = null;
+
+    if (currentSignature === abandonedPendingSignature && pendingCompletedBuild) {
+      status = "captured";
+      savedSettingsSignature = abandonedPendingSignature;
+      analysisBadge = buildCompletedAnalysisBadge(pendingCompletedBuild.analysis);
+      if (previousCompletedBuild?.signature === abandonedPendingSignature) {
+        effectivePreviousCompletedBuild = null;
+      }
+    } else if (!savedCompletedBuild) {
+      savedSettingsSignature = null;
+    }
+  } else if (!savedCompletedBuild && savedSettingsSignature) {
+    savedSettingsSignature = null;
+    if (status === "captured" || status === "exported") {
+      status = "in-progress";
+      analysisBadge = null;
+    }
+  } else if (savedCompletedBuild && currentSignature === savedSettingsSignature) {
+    if (status === "captured" || status === "exported" || analysisBadge?.state === "running") {
+      analysisBadge = buildCompletedAnalysisBadge(savedCompletedBuild.analysis);
+    }
+  } else if (currentSignature !== savedSettingsSignature && status !== "exported") {
+    status = "in-progress";
+    analysisBadge = null;
+  }
 
   return {
     id: typeof order.id === "string" && order.id.trim() ? order.id : crypto.randomUUID(),
     text,
-    status: isValidOrderStatus(order.status) ? order.status : "in-progress",
+    status,
     settings,
     source: normalizeStoredSource(order.source),
     capturedLayout: null,
-    cachedBuild: normalizeStoredCachedBuild(order.cachedBuild),
-    savedSettingsSignature: typeof order.savedSettingsSignature === "string" ? order.savedSettingsSignature : null,
-    analysisBadge: normalizeStoredAnalysisBadge(order.analysisBadge),
+    cachedBuild: effectiveCachedBuild,
+    previousCompletedBuild: effectivePreviousCompletedBuild,
+    savedSettingsSignature,
+    analysisBadge,
     analysisState: "idle",
+    pendingAnalysisSignature: null,
+    pendingAnalysisRequestId: null,
   };
 }
 
@@ -464,8 +580,10 @@ function buildPersistedQueueState() {
       settings: normalizeSettings(order.settings),
       source: order.source ? { ...order.source } : null,
       cachedBuild: order.cachedBuild ? structuredClone(order.cachedBuild) : null,
-      savedSettingsSignature: order.savedSettingsSignature,
-      analysisBadge: order.analysisBadge ? structuredClone(order.analysisBadge) : null,
+      previousCompletedBuild: order.previousCompletedBuild ? structuredClone(order.previousCompletedBuild) : null,
+    savedSettingsSignature: order.savedSettingsSignature,
+    analysisBadge: order.analysisBadge ? structuredClone(order.analysisBadge) : null,
+    pendingAnalysisSignature: order.pendingAnalysisSignature,
     })),
   };
 }
@@ -587,9 +705,12 @@ function createQueueItem({
     source,
     capturedLayout: null,
     cachedBuild: null,
+    previousCompletedBuild: null,
     savedSettingsSignature: null,
     analysisBadge: null,
     analysisState: "idle",
+    pendingAnalysisSignature: null,
+    pendingAnalysisRequestId: null,
   };
 }
 
@@ -942,6 +1063,7 @@ function renderLineControls(settings = getCurrentSettings()) {
       createRangeField(index, "offsetXMm", "Horizontal Offset", -20, 20, 0.1, line.offsetXMm),
       createRangeField(index, "fontSizeMm", "Text Height", 18, 55, 1, line.fontSizeMm),
       createRangeField(index, "verticalScale", "Vertical Stretch", 0.75, 1.5, 0.01, line.verticalScale),
+      createCheckboxField(index, "lockTextHeight", "Lock Text Height", line.lockTextHeight),
     ];
 
     if (index > 0) {
@@ -1006,6 +1128,23 @@ function createRangeField(lineIndex, setting, labelText, min, max, step, value) 
   return label;
 }
 
+function createCheckboxField(lineIndex, setting, labelText, checked) {
+  const label = document.createElement("label");
+  label.className = "check-field line-control-toggle";
+
+  const input = document.createElement("input");
+  input.type = "checkbox";
+  input.checked = Boolean(checked);
+  input.dataset.lineIndex = String(lineIndex);
+  input.dataset.setting = setting;
+
+  const span = document.createElement("span");
+  span.textContent = labelText;
+
+  label.append(input, span);
+  return label;
+}
+
 function getCurrentSettings() {
   const rawLines = getRawTextLines(textInput.value);
   const presetId = presetInput.value;
@@ -1023,6 +1162,7 @@ function getCurrentSettings() {
     const offsetXInput = lineCard.querySelector('[data-setting="offsetXMm"]');
     const fontSizeInput = lineCard.querySelector('[data-setting="fontSizeMm"]');
     const verticalScaleInput = lineCard.querySelector('[data-setting="verticalScale"]');
+    const lockTextHeightInput = lineCard.querySelector('[data-setting="lockTextHeight"]');
 
     return normalizeLineSettings({
       fontId: fontSelect?.value,
@@ -1031,6 +1171,7 @@ function getCurrentSettings() {
       offsetXMm: offsetXInput?.value,
       fontSizeMm: fontSizeInput?.value,
       verticalScale: verticalScaleInput?.value,
+      lockTextHeight: lockTextHeightInput?.checked,
     });
   });
 
@@ -1153,10 +1294,66 @@ function updateActiveOrderFromControls() {
 
   order.text = textInput.value;
   order.settings = getCurrentSettings();
-  order.status = "in-progress";
-  order.analysisBadge = null;
+  const currentSignature = buildSettingsSignature(order.settings);
+  const matchingCompletedBuild = getBuildForSignature(order, currentSignature);
+  const preservesPendingGeometry = order.pendingAnalysisSignature === currentSignature && !matchingCompletedBuild;
+
+  if (matchingCompletedBuild) {
+    order.savedSettingsSignature = matchingCompletedBuild.signature;
+    order.cachedBuild = structuredClone(matchingCompletedBuild);
+    order.capturedLayout = {
+      ...cloneSerializableData(matchingCompletedBuild.layout),
+      analysis: cloneSerializableData(matchingCompletedBuild.analysis),
+    };
+    order.status = "captured";
+    order.analysisState = "idle";
+    order.pendingAnalysisSignature = null;
+    order.pendingAnalysisRequestId = null;
+    order.analysisBadge = buildCompletedAnalysisBadge(matchingCompletedBuild.analysis);
+    if (order.previousCompletedBuild?.signature === matchingCompletedBuild.signature) {
+      order.previousCompletedBuild = null;
+    }
+  } else if (preservesPendingGeometry) {
+    order.status = "captured";
+    order.analysisState = "running";
+    order.analysisBadge = {
+      state: "running",
+      shortLabel: "",
+      fullLabel: "Analysis running",
+    };
+  } else {
+    order.status = "in-progress";
+    order.analysisState = "idle";
+    order.analysisBadge = null;
+    if (!getSavedCachedBuild(order)) {
+      order.savedSettingsSignature = null;
+    } else if (order.analysisState === "running") {
+      order.analysisState = "idle";
+    }
+  }
   persistQueueState();
   renderOrderList();
+}
+
+function getTrackedSettingsSignature(order) {
+  if (!order) {
+    return null;
+  }
+
+  return order.pendingAnalysisSignature || order.savedSettingsSignature;
+}
+
+function canCompleteActiveOrder(order) {
+  if (!order || !order.text.trim()) {
+    return false;
+  }
+
+  const currentSignature = buildSettingsSignature(getCurrentSettings());
+  if (order.analysisState === "running" && order.pendingAnalysisSignature === currentSignature) {
+    return true;
+  }
+
+  return hasUnsavedRenderChanges(order);
 }
 
 function hasUnsavedRenderChanges(order) {
@@ -1164,7 +1361,7 @@ function hasUnsavedRenderChanges(order) {
     return false;
   }
 
-  return buildSettingsSignature(getCurrentSettings()) !== order.savedSettingsSignature;
+  return buildSettingsSignature(getCurrentSettings()) !== getTrackedSettingsSignature(order);
 }
 
 function hasSavedCompletedState(order) {
@@ -1180,29 +1377,7 @@ function getSavedCachedBuild(order) {
     return null;
   }
 
-  const cachedBuild = getCachedBuild(order, order.savedSettingsSignature);
-  if (cachedBuild) {
-    return cachedBuild;
-  }
-
-  if (
-    order.capturedLayout
-    && typeof order.capturedLayout === "object"
-    && order.capturedLayout.analysis
-    && typeof order.capturedLayout.analysis === "object"
-  ) {
-    const layout = structuredClone(order.capturedLayout);
-    const analysis = structuredClone(order.capturedLayout.analysis);
-    delete layout.analysis;
-
-    return {
-      signature: order.savedSettingsSignature,
-      layout,
-      analysis,
-    };
-  }
-
-  return null;
+  return getBuildForSignature(order, order.savedSettingsSignature);
 }
 
 function isOrderReadyForExport(order) {
@@ -1404,7 +1579,7 @@ function renderOrderList() {
   renderImportedColor(activeOrder);
   activeOrderName.textContent = activeOrder ? buildQueueOrderNumber(activeOrder) : "No design selected";
   activeOrderMeta.textContent = buildActiveMeta(activeOrder);
-  captureButton.disabled = !hasUnsavedRenderChanges(activeOrder);
+  captureButton.disabled = !canCompleteActiveOrder(activeOrder);
   downloadButton.disabled = !activeOrder || !isOrderReadyForExport(activeOrder);
   copyButton.disabled = !activeOrder || !isOrderReadyForExport(activeOrder) || !canCopySvgToClipboard();
 }
@@ -1608,10 +1783,14 @@ async function captureActiveOrder() {
   order.settings = getCurrentSettings();
   const layout = buildOrderLayout(order.settings);
   const signature = buildSettingsSignature(order.settings);
+  const requestId = crypto.randomUUID();
+  const previousCompletedBuild = getSavedCachedBuild(order);
 
-  order.savedSettingsSignature = signature;
+  order.previousCompletedBuild = previousCompletedBuild ? structuredClone(previousCompletedBuild) : null;
   order.capturedLayout = structuredClone(layout);
   order.analysisState = "running";
+  order.pendingAnalysisSignature = signature;
+  order.pendingAnalysisRequestId = requestId;
   order.analysisBadge = {
     state: "running",
     shortLabel: "",
@@ -1636,17 +1815,37 @@ async function captureActiveOrder() {
 
   try {
     const analysis = await analyzeLayout(layout);
+    const isLatestAnalysisRequest = order.pendingAnalysisRequestId === requestId;
+    const shouldApplyCompletedAnalysis = isLatestAnalysisRequest
+      && buildSettingsSignature(order.settings) === signature;
 
-    storeCachedBuild(order, signature, layout, analysis);
-    order.capturedLayout = {
-      ...cloneSerializableData(layout),
-      analysis: cloneSerializableData(analysis),
-    };
-    order.analysisState = "idle";
-    order.analysisBadge = buildCompletedAnalysisBadge(analysis);
+    if (isLatestAnalysisRequest) {
+      storeCachedBuild(order, signature, layout, analysis);
+      order.analysisState = "idle";
+      order.pendingAnalysisSignature = null;
+      order.pendingAnalysisRequestId = null;
+    }
+
+    if (shouldApplyCompletedAnalysis) {
+      order.savedSettingsSignature = signature;
+      order.capturedLayout = {
+        ...cloneSerializableData(layout),
+        analysis: cloneSerializableData(analysis),
+      };
+      order.status = "captured";
+      order.analysisBadge = buildCompletedAnalysisBadge(analysis);
+      if (order.previousCompletedBuild?.signature === signature) {
+        order.previousCompletedBuild = null;
+      }
+    }
+
     persistQueueState();
 
-    if (activeOrderId === order.id && buildSettingsSignature(getCurrentSettings()) === signature) {
+    if (
+      shouldApplyCompletedAnalysis
+      && activeOrderId === order.id
+      && buildSettingsSignature(getCurrentSettings()) === signature
+    ) {
       renderPreviewFromLayout({
         ...layout,
         analysis,
@@ -1657,13 +1856,20 @@ async function captureActiveOrder() {
     renderOrderList();
   } catch (error) {
     const detail = error instanceof Error && error.message ? ` ${error.message}` : "";
-    order.analysisState = "idle";
-    if (order.savedSettingsSignature === signature && !getCachedBuild(order, signature)) {
-      order.savedSettingsSignature = null;
-      order.status = "in-progress";
+    const isLatestAnalysisRequest = order.pendingAnalysisRequestId === requestId;
+    const shouldApplyFailedAnalysis = isLatestAnalysisRequest
+      && buildSettingsSignature(order.settings) === signature;
+
+    if (isLatestAnalysisRequest) {
+      order.analysisState = "idle";
+      order.pendingAnalysisSignature = null;
+      order.pendingAnalysisRequestId = null;
     }
-    order.analysisBadge = null;
-    if (activeOrderId === order.id) {
+    if (shouldApplyFailedAnalysis) {
+      order.status = "in-progress";
+      order.analysisBadge = null;
+    }
+    if (shouldApplyFailedAnalysis && activeOrderId === order.id) {
       updateConnectionStatus(
         "warning",
         "Analysis failed",
@@ -1673,7 +1879,9 @@ async function captureActiveOrder() {
     persistQueueState();
     renderOrderList();
   } finally {
-    order.analysisState = "idle";
+    if (order.pendingAnalysisRequestId === requestId || order.pendingAnalysisRequestId == null) {
+      order.analysisState = order.pendingAnalysisRequestId ? "running" : "idle";
+    }
     persistQueueState();
     renderOrderList();
   }
@@ -2033,6 +2241,65 @@ function layoutTextLines(text, lineSettings) {
   return lines;
 }
 
+function measureTextLayoutForFit(text, lineSettings) {
+  const lines = layoutTextLines(text, lineSettings);
+  if (!lines.length) {
+    return {
+      lines,
+      baseTextWidthMm: 1,
+      lineBounds: [],
+      minLeftMm: 0,
+      maxRightMm: 1,
+      minTopMm: 0,
+      maxBottomMm: 1,
+      textWidthMm: 1,
+      textHeightMm: 1,
+      fitScale: 1,
+    };
+  }
+
+  const baseTextWidthMm = Math.max(
+    1,
+    ...lines.map((line) => line.mask.widthMm),
+    ...lines.map((line) => line.settings.fontSizeMm),
+  );
+  const {
+    lineBounds,
+    minLeftMm,
+    maxRightMm,
+    minTopMm,
+    maxBottomMm,
+  } = measureLineBounds(baseTextWidthMm, lines);
+  const textWidthMm = Math.max(1, maxRightMm - minLeftMm);
+  const textHeightMm = Math.max(1, maxBottomMm - minTopMm);
+
+  return {
+    lines,
+    baseTextWidthMm,
+    lineBounds,
+    minLeftMm,
+    maxRightMm,
+    minTopMm,
+    maxBottomMm,
+    textWidthMm,
+    textHeightMm,
+    fitScale: computeTextFitScale(textWidthMm, textHeightMm),
+  };
+}
+
+function buildScaledLineSettings(lines, fitScale) {
+  return lines.map((line) => {
+    const lockTextHeight = Boolean(line?.settings?.lockTextHeight);
+    return normalizeLineSettings({
+      ...line.settings,
+      bridgeMm: Number(line.settings.bridgeMm) * fitScale,
+      lineBridgeMm: Number(line.settings.lineBridgeMm) * fitScale,
+      offsetXMm: Number(line.settings.offsetXMm) * fitScale,
+      fontSizeMm: Number(line.settings.fontSizeMm) * (lockTextHeight ? 1 : fitScale),
+    });
+  });
+}
+
 function makeSvgElement(name, attributes = {}) {
   const element = document.createElementNS("http://www.w3.org/2000/svg", name);
   Object.entries(attributes).forEach(([key, value]) => {
@@ -2314,8 +2581,26 @@ function render() {
     return;
   }
 
+  const savedBuild = getSavedCachedBuild(activeOrder);
+  if (savedBuild && savedBuild.signature === signature) {
+    renderPreviewFromLayout({
+      ...savedBuild.layout,
+      analysis: savedBuild.analysis,
+    });
+    updateConnectionStatusFromAnalysis(savedBuild.analysis);
+    return;
+  }
+
   const layout = buildOrderLayout(settings);
   renderPreviewFromLayout(layout);
+  if (layout.fit.overflowsGuide) {
+    updateConnectionStatus(
+      "warning",
+      "Guide overflow",
+      "One or more locked lines are preserving their text height, so this design extends beyond the 2.2 in by 1.5 in guide.",
+    );
+    return;
+  }
   updateConnectionStatus(
     "pending",
     "Complete to analyze connectedness",
@@ -2556,39 +2841,36 @@ async function copyAllOrders() {
 function buildOrderLayout(settings) {
   const normalized = normalizeSettings(settings);
   const text = normalized.text.trim();
-  const lines = layoutTextLines(normalized.text, normalized.lines);
-  const baseTextWidthMm = Math.max(
-    1,
-    ...lines.map((line) => line.mask.widthMm),
-    ...lines.map((line) => line.settings.fontSizeMm),
-  );
+  const { lines } = measureTextLayoutForFit(normalized.text, normalized.lines);
+  const fitScale = computeMixedFitScale(lines);
+  const lineScaleFactors = computeLineScaleFactors(lines, fitScale);
+  const scaledLineSettings = buildScaledLineSettings(lines, fitScale);
   const {
+    lines: fittedLines,
+    baseTextWidthMm,
     lineBounds,
     minLeftMm,
-    maxRightMm,
     minTopMm,
-    maxBottomMm,
-  } = measureLineBounds(baseTextWidthMm, lines);
-  const textWidthMm = Math.max(1, maxRightMm - minLeftMm);
-  const textHeightMm = Math.max(1, maxBottomMm - minTopMm);
-  const scaleFactor = computeTextFitScale(textWidthMm, textHeightMm);
-  const scaledBackingMm = normalized.backingMm * scaleFactor;
-  const rawWidthMm = textWidthMm + normalized.backingMm * 2 + DESIGN_BLEED_MM * 2;
-  const rawHeightMm = textHeightMm + normalized.backingMm * 2 + DESIGN_BLEED_MM * 2;
-  const widthMm = rawWidthMm * scaleFactor;
-  const heightMm = rawHeightMm * scaleFactor;
+    textWidthMm,
+    textHeightMm,
+  } = measureTextLayoutForFit(normalized.text, scaledLineSettings);
+  const scaledBackingMm = normalized.backingMm * fitScale;
+  const scaledBleedMm = DESIGN_BLEED_MM * fitScale;
+  const overflowsGuide = computeTextFitScale(textWidthMm, textHeightMm) < 1 - 1e-6;
+  const widthMm = textWidthMm + scaledBackingMm * 2 + scaledBleedMm * 2;
+  const heightMm = textHeightMm + scaledBackingMm * 2 + scaledBleedMm * 2;
   const absoluteLetters = lineBounds.flatMap(({ line, centeredLeftMm }) => {
     const font = getFontOption(line.settings.fontId);
-    const rawLineX = DESIGN_BLEED_MM + normalized.backingMm + centeredLeftMm - minLeftMm - line.mask.leftMm;
-    const rawBaselineY = DESIGN_BLEED_MM + normalized.backingMm + (line.y - minTopMm) + line.mask.baselineMm;
+    const rawLineX = scaledBleedMm + scaledBackingMm + centeredLeftMm - minLeftMm - line.mask.leftMm;
+    const rawBaselineY = scaledBleedMm + scaledBackingMm + (line.y - minTopMm) + line.mask.baselineMm;
 
     return line.letters.map((letter) => ({
       character: letter.character,
-      x: (rawLineX + letter.x) * scaleFactor,
-      y: rawBaselineY * scaleFactor,
+      x: rawLineX + letter.x,
+      y: rawBaselineY,
       fontId: line.settings.fontId,
       fontPath: font.exportPath,
-      fontSizeMm: line.settings.fontSizeMm * scaleFactor,
+      fontSizeMm: line.settings.fontSizeMm,
       verticalScale: line.settings.verticalScale,
     }));
   });
@@ -2599,7 +2881,17 @@ function buildOrderLayout(settings) {
     heightMm,
     backingMm: scaledBackingMm,
     weldExportedDesign: normalized.weldExportedDesign,
-    textBoundsMm: buildScaledTextBounds(textWidthMm, textHeightMm, normalized.backingMm, scaleFactor),
+    textBoundsMm: {
+      left: scaledBleedMm + scaledBackingMm,
+      top: scaledBleedMm + scaledBackingMm,
+      width: textWidthMm,
+      height: textHeightMm,
+    },
+    fit: {
+      fitScale,
+      lineScaleFactors,
+      overflowsGuide,
+    },
     letters: absoluteLetters,
   };
 }

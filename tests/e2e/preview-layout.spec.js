@@ -247,6 +247,417 @@ test("keeps the design queue scroll position when selecting a row", async ({ pag
   expect(Math.abs(scrollTopAfter - scrollTopBefore)).toBeLessThanOrEqual(4);
 });
 
+test("persists per-line lock text height state across refresh for multi-line designs", async ({ page }) => {
+  await page.locator("#textInput").fill("Savannah\nRN");
+
+  const firstLineCard = page.locator('.line-control-card[data-line-index="0"]');
+  const secondLineCard = page.locator('.line-control-card[data-line-index="1"]');
+  const firstLineLock = firstLineCard.locator('[data-setting="lockTextHeight"]');
+  const secondLineLock = secondLineCard.locator('[data-setting="lockTextHeight"]');
+  const firstLineHeight = firstLineCard.locator('[data-setting="fontSizeMm"]');
+  const secondLineHeight = secondLineCard.locator('[data-setting="fontSizeMm"]');
+
+  await firstLineLock.check();
+  await expect(firstLineHeight).toBeEnabled();
+  await firstLineHeight.fill("41");
+  await secondLineHeight.fill("29");
+  await expect(secondLineLock).not.toBeChecked();
+
+  await page.reload();
+
+  await expect(page.locator("#importStatus")).toContainText("Restored 1 design");
+  await expect(page.locator("#textInput")).toHaveValue("Savannah\nRN");
+  await expect(firstLineLock).toBeChecked();
+  await expect(secondLineLock).not.toBeChecked();
+  await expect(firstLineHeight).toBeEnabled();
+  await expect(firstLineHeight).toHaveValue("41");
+  await expect(secondLineHeight).toHaveValue("29");
+});
+
+test("requires re-complete when lock text height changes a scaled design", async ({ page }) => {
+  await page.route("**/api/layout-analyze", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify(buildMockAnalysisResponse()),
+    });
+  });
+
+  await page.locator("#textInput").fill("Savannah\nRN");
+  await completeDesign(page, "Design 1");
+
+  const row = page.locator("#orderList .order-row").filter({ hasText: "Design 1" });
+  const firstLineLock = page.locator('.line-control-card[data-line-index="0"] [data-setting="lockTextHeight"]');
+
+  await expect(page.getByRole("button", { name: "Export This Design" })).toBeEnabled();
+  await firstLineLock.check();
+
+  await expect(firstLineLock).toBeChecked();
+  await expect(row).toContainText("In progress");
+  await expect(page.getByRole("button", { name: "Complete" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Export This Design" })).toBeDisabled();
+
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+});
+
+test("does not restore a stale completed analysis badge after geometry changes during analysis", async ({ page }) => {
+  await page.route("**/api/layout-analyze", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify(buildMockAnalysisResponse()),
+    });
+  });
+
+  await page.locator("#textInput").fill("Savannah\nRN");
+  await page.getByRole("button", { name: "Complete" }).click();
+
+  const row = page.locator("#orderList .order-row").filter({ hasText: "Design 1" });
+  await expect(row.locator(".order-analysis-indicator.running")).toBeVisible();
+
+  await page.locator('.line-control-card[data-line-index="0"] [data-setting="lockTextHeight"]').check();
+  await expect(row).toContainText("In progress");
+  await expect(page.getByRole("button", { name: "Complete" })).toBeEnabled();
+  await expect(row.locator(".order-analysis-indicator.running")).toHaveCount(0);
+
+  await expect(row.locator(".order-analysis-indicator.ok")).toHaveCount(0, { timeout: 20000 });
+  await expect(row.locator(".order-analysis-indicator.warning")).toHaveCount(0);
+  await expect(row.locator(".order-analysis-indicator.running")).toHaveCount(0);
+
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+});
+
+test("downgrades an abandoned first-time in-flight analysis to a retryable draft after refresh", async ({ page }) => {
+  await page.route("**/api/layout-analyze", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify(buildMockAnalysisResponse()),
+    });
+  });
+
+  await page.locator("#textInput").fill("Savannah\nRN");
+  await page.getByRole("button", { name: "Complete" }).click();
+  await page.reload();
+
+  const row = page.locator("#orderList .order-row").filter({ hasText: "Design 1" });
+  await expect(page.locator("#importStatus")).toContainText("Restored 1 design");
+  await expect(row).toContainText("In progress");
+  await expect(page.getByRole("button", { name: "Complete" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Export This Design" })).toBeDisabled();
+
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+});
+
+test("clears stale saved geometry signatures that have no completed build after refresh", async ({ page }) => {
+  await page.locator("#textInput").fill("Savannah\nRN");
+  await page.evaluate(() => {
+    const raw = window.localStorage.getItem("thankfulforyou.designQueue");
+    if (!raw) {
+      return;
+    }
+
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed.orders) || !parsed.orders.length) {
+      return;
+    }
+
+    const [order] = parsed.orders;
+    order.savedSettingsSignature = JSON.stringify(order.settings);
+    order.pendingAnalysisSignature = null;
+    order.analysisBadge = null;
+    order.cachedBuild = null;
+    order.previousCompletedBuild = null;
+    order.status = "in-progress";
+    window.localStorage.setItem("thankfulforyou.designQueue", JSON.stringify(parsed));
+  });
+
+  await page.reload();
+
+  const row = page.locator("#orderList .order-row").filter({ hasText: "Design 1" });
+  await expect(page.locator("#importStatus")).toContainText("Restored 1 design");
+  await expect(row).toContainText("In progress");
+  await expect(page.getByRole("button", { name: "Complete" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Export This Design" })).toBeDisabled();
+});
+
+test("keeps the newest analysis request authoritative when Complete is clicked twice", async ({ page }) => {
+  let requestCount = 0;
+  await page.route("**/api/layout-analyze", async (route) => {
+    requestCount += 1;
+    await new Promise((resolve) => setTimeout(resolve, requestCount === 1 ? 700 : 1400));
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify(buildMockAnalysisResponse()),
+    });
+  });
+
+  await page.locator("#textInput").fill("Savannah\nRN");
+  const row = page.locator("#orderList .order-row").filter({ hasText: "Design 1" });
+  const firstLineLock = page.locator('.line-control-card[data-line-index="0"] [data-setting="lockTextHeight"]');
+
+  await page.getByRole("button", { name: "Complete" }).click();
+  await firstLineLock.check();
+  await page.getByRole("button", { name: "Complete" }).click();
+  await expect(row.locator(".order-analysis-indicator.running")).toBeVisible();
+
+  await page.waitForTimeout(900);
+  await expect(row.locator(".order-analysis-indicator.running")).toBeVisible();
+
+  await expect(row).toContainText("Complete", { timeout: 20000 });
+  await expect(page.getByRole("button", { name: "Export This Design" })).toBeEnabled();
+
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+});
+
+test("keeps the newest same-geometry analysis retry authoritative", async ({ page }) => {
+  let requestCount = 0;
+  await page.route("**/api/layout-analyze", async (route) => {
+    requestCount += 1;
+    if (requestCount === 1) {
+      await new Promise((resolve) => setTimeout(resolve, 700));
+      await route.fulfill({
+        status: 500,
+        contentType: "text/plain; charset=utf-8",
+        body: "forced analysis failure",
+      });
+      return;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify(buildMockAnalysisResponse()),
+    });
+  });
+
+  await page.locator("#textInput").fill("Savannah\nRN");
+  const row = page.locator("#orderList .order-row").filter({ hasText: "Design 1" });
+
+  await page.getByRole("button", { name: "Complete" }).click();
+  await expect(row.locator(".order-analysis-indicator.running")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Complete" })).toBeEnabled();
+
+  await page.getByRole("button", { name: "Complete" }).click();
+  await expect(row.locator(".order-analysis-indicator.running")).toBeVisible();
+  await expect(page.locator("#connectionStatusLabel")).not.toContainText("Analysis failed", { timeout: 2000 });
+
+  await expect(row).toContainText("Complete", { timeout: 20000 });
+  await expect(page.getByRole("button", { name: "Export This Design" })).toBeEnabled();
+
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+});
+
+test("restores the completed state when geometry is reverted before analysis finishes", async ({ page }) => {
+  await page.route("**/api/layout-analyze", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify(buildMockAnalysisResponse()),
+    });
+  });
+
+  await page.locator("#textInput").fill("Savannah\nRN");
+  await page.getByRole("button", { name: "Complete" }).click();
+
+  const row = page.locator("#orderList .order-row").filter({ hasText: "Design 1" });
+  const firstLineLock = page.locator('.line-control-card[data-line-index="0"] [data-setting="lockTextHeight"]');
+
+  await firstLineLock.check();
+  await expect(row).toContainText("In progress");
+
+  await firstLineLock.uncheck();
+
+  await expect(row).toContainText("Complete");
+  await expect(page.getByRole("button", { name: "Export This Design" })).toBeEnabled({ timeout: 20000 });
+  await expect(page.getByRole("button", { name: "Complete" })).toBeDisabled();
+
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+});
+
+test("ignores an abandoned analysis failure after reverting to a completed geometry", async ({ page }) => {
+  let requestCount = 0;
+  await page.route("**/api/layout-analyze", async (route) => {
+    requestCount += 1;
+    if (requestCount === 1) {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json; charset=utf-8",
+        body: JSON.stringify(buildMockAnalysisResponse()),
+      });
+      return;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await route.fulfill({
+      status: 500,
+      contentType: "text/plain; charset=utf-8",
+      body: "forced analysis failure",
+    });
+  });
+
+  await page.locator("#textInput").fill("Savannah\nRN");
+  await completeDesign(page, "Design 1");
+  await expect(page.getByRole("button", { name: "Export This Design" })).toBeEnabled();
+
+  const row = page.locator("#orderList .order-row").filter({ hasText: "Design 1" });
+  const firstLineLock = page.locator('.line-control-card[data-line-index="0"] [data-setting="lockTextHeight"]');
+
+  await firstLineLock.check();
+  await page.getByRole("button", { name: "Complete" }).click();
+  await expect(row.locator(".order-analysis-indicator.running")).toBeVisible();
+
+  await firstLineLock.uncheck();
+  await expect(row).toContainText("Complete");
+  await expect(page.getByRole("button", { name: "Export This Design" })).toBeEnabled();
+  await expect(page.locator("#connectionStatusLabel")).not.toContainText("Analysis failed", { timeout: 20000 });
+
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+});
+
+test("restores the previous completed geometry after refresh during a newer in-flight analysis", async ({ page }) => {
+  let requestCount = 0;
+  await page.route("**/api/layout-analyze", async (route) => {
+    requestCount += 1;
+    if (requestCount === 1) {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json; charset=utf-8",
+        body: JSON.stringify(buildMockAnalysisResponse()),
+      });
+      return;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify(buildMockAnalysisResponse()),
+    });
+  });
+
+  await page.locator("#textInput").fill("Savannah\nRN");
+  await completeDesign(page, "Design 1");
+
+  const firstLineLock = page.locator('.line-control-card[data-line-index="0"] [data-setting="lockTextHeight"]');
+  await firstLineLock.check();
+  await page.getByRole("button", { name: "Complete" }).click();
+  await page.reload();
+
+  const row = page.locator("#orderList .order-row").filter({ hasText: "Design 1" });
+  const restoredFirstLineLock = page.locator('.line-control-card[data-line-index="0"] [data-setting="lockTextHeight"]');
+  await expect(page.locator("#importStatus")).toContainText("Restored 1 design");
+  await expect(row).toContainText("In progress");
+  await expect(page.getByRole("button", { name: "Complete" })).toBeEnabled();
+
+  await restoredFirstLineLock.uncheck();
+  await expect(row).toContainText("Complete");
+  await expect(page.getByRole("button", { name: "Complete" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Export This Design" })).toBeEnabled();
+
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+});
+
+test("preserves the newest completed geometry across refresh after the operator moves on to a newer draft", async ({ page }) => {
+  let requestCount = 0;
+  await page.route("**/api/layout-analyze", async (route) => {
+    requestCount += 1;
+    if (requestCount === 1) {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json; charset=utf-8",
+        body: JSON.stringify(buildMockAnalysisResponse()),
+      });
+      return;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify(buildMockAnalysisResponse()),
+    });
+  });
+
+  await page.locator("#textInput").fill("Savannah\nRN");
+  await completeDesign(page, "Design 1");
+
+  const firstLineLock = page.locator('.line-control-card[data-line-index="0"] [data-setting="lockTextHeight"]');
+  const secondLineHeight = page.locator('.line-control-card[data-line-index="1"] [data-setting="fontSizeMm"]');
+
+  await firstLineLock.check();
+  await page.getByRole("button", { name: "Complete" }).click();
+  await secondLineHeight.fill("29");
+  await page.waitForTimeout(1200);
+  await page.reload();
+
+  const row = page.locator("#orderList .order-row").filter({ hasText: "Design 1" });
+  await expect(page.locator("#importStatus")).toContainText("Restored 1 design");
+  await expect(row).toContainText("In progress");
+
+  await secondLineHeight.fill("34");
+  await expect(row).toContainText("Complete", { timeout: 20000 });
+  await expect(page.getByRole("button", { name: "Complete" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Export This Design" })).toBeEnabled();
+
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+});
+
+test("restores the previous completed geometry when a newer in-flight analysis is abandoned", async ({ page }) => {
+  await page.route("**/api/layout-analyze", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify(buildMockAnalysisResponse()),
+    });
+  });
+
+  await page.locator("#textInput").fill("Savannah\nRN");
+  await completeDesign(page, "Design 1");
+  await expect(page.getByRole("button", { name: "Export This Design" })).toBeEnabled();
+
+  const row = page.locator("#orderList .order-row").filter({ hasText: "Design 1" });
+  const firstLineLock = page.locator('.line-control-card[data-line-index="0"] [data-setting="lockTextHeight"]');
+
+  await firstLineLock.check();
+  await expect(row).toContainText("In progress");
+  await page.getByRole("button", { name: "Complete" }).click();
+  await expect(row.locator(".order-analysis-indicator.running")).toBeVisible();
+
+  await firstLineLock.uncheck();
+  await expect(row).toContainText("Complete", { timeout: 20000 });
+  await expect(page.getByRole("button", { name: "Complete" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Export This Design" })).toBeEnabled();
+  await expect(page.locator("#connectionStatusLabel")).toContainText("Single connected face piece");
+
+  await page.getByRole("button", { name: "+ Add Design" }).click();
+  await page.locator("#orderList .order-row").filter({ hasText: "Design 1" }).locator(".order-item").click();
+  await expect(page.locator("#connectionStatusLabel")).toContainText("Single connected face piece");
+  await expect(page.getByRole("button", { name: "Export This Design" })).toBeEnabled();
+
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+});
+
+test("shows guide overflow when a locked line prevents fit", async ({ page }) => {
+  await page.locator("#textInput").fill("Mark\nRN");
+
+  const firstLineCard = page.locator('.line-control-card[data-line-index="0"]');
+  const secondLineCard = page.locator('.line-control-card[data-line-index="1"]');
+  await firstLineCard.locator('[data-setting="lockTextHeight"]').check();
+  await firstLineCard.locator('[data-setting="fontSizeMm"]').fill("55");
+  await secondLineCard.locator('[data-setting="fontSizeMm"]').fill("30");
+
+  await expect.poll(async () => {
+    return page.evaluate(() => document.body.innerText);
+  }).toContain("Guide overflow");
+});
+
 test("deletes a single design from the queue", async ({ page }) => {
   await page.getByRole("button", { name: "+ Add Design" }).click();
   await expect(page.locator("#orderCountOutput")).toHaveText("2");

@@ -14,7 +14,8 @@
     "lineBridgeMm": 0.5,
     "offsetXMm": 0,
     "fontSizeMm": 34,
-    "verticalScale": 1
+    "verticalScale": 1,
+    "lockTextHeight": false
   },
   "lineRules": [
     {
@@ -22,7 +23,8 @@
         "kind": "first"
       },
       "settings": {
-        "fontId": "skywalk"
+        "fontId": "skywalk",
+        "fontSizeMm": 18
       }
     },
     {
@@ -31,6 +33,15 @@
       },
       "settings": {
         "fontId": "somekind"
+      }
+    },
+    {
+      "match": {
+        "kind": "index",
+        "lineIndex": 1
+      },
+      "settings": {
+        "lockTextHeight": true
       }
     }
   ],
