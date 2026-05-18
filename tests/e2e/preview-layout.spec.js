@@ -155,7 +155,7 @@ test("shows the production defaults", async ({ page }) => {
   await expect(page.locator("#backingInput")).toHaveValue("2.2");
   await expect(page.locator("#backingInput")).toHaveAttribute("min", "0");
   await expect(page.locator("#backingInput")).toHaveAttribute("step", "0.1");
-  await expect(page.locator("#backingOutput")).toHaveText("2.200 mm");
+  await expect(page.locator("#backingOutput")).toHaveText("2.2 mm");
   await expect(page.locator("#weldExportedDesignInput")).toBeChecked();
   await expect(page.locator("#preview .preview-guide-label").first()).toHaveText('2.2"');
   await expect(page.locator("#preview circle.preview-guide-box")).toHaveCount(1);
@@ -187,7 +187,7 @@ test("shows the production defaults", async ({ page }) => {
 test("allows the backing border slider to reach 0 mm", async ({ page }) => {
   await page.locator("#backingInput").fill("0");
   await expect(page.locator("#backingInput")).toHaveValue("0");
-  await expect(page.locator("#backingOutput")).toHaveText("0.000 mm");
+  await expect(page.locator("#backingOutput")).toHaveText("0.0 mm");
 });
 
 test("renders lock text height inline without its own bordered section", async ({ page }) => {
