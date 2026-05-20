@@ -91,6 +91,7 @@ const queueSyncStatusLabel = document.querySelector("#queueSyncStatusLabel");
 const queueSyncStatusDetail = document.querySelector("#queueSyncStatusDetail");
 const exportCompletedButton = document.querySelector("#exportCompletedButton");
 const copyCompletedButton = document.querySelector("#copyCompletedButton");
+const queueToolsMenu = document.querySelector(".queue-tools-menu");
 const orderSearchInput = document.querySelector("#orderSearchInput");
 const orderCountOutput = document.querySelector("#orderCountOutput");
 const completeCountOutput = document.querySelector("#completeCountOutput");
@@ -1854,7 +1855,9 @@ function renderOrderList() {
   orderCountOutput.textContent = String(orders.length);
   completeCountOutput.textContent = String(completeCount);
   progressCountOutput.textContent = String(progressCount);
-  notStartedCountOutput.textContent = String(notStartedCount);
+  if (notStartedCountOutput) {
+    notStartedCountOutput.textContent = String(notStartedCount);
+  }
   clearQueueButton.disabled = orders.length === 0;
   exportCompletedButton.disabled = !allExportableOrdersReady;
   copyCompletedButton.disabled = !allExportableOrdersReady || !canCopySvgToClipboard();
@@ -1991,7 +1994,7 @@ function selectOrder(orderId) {
 
   syncOrderPresetFromListing(order);
   applySettings(order.settings);
-  schedulePersistQueueState();
+  persistQueueState();
   renderOrderList();
   restoreSelectionScrollState(selectionScrollState);
   scheduleDeferredPreviewRender();
@@ -3393,6 +3396,13 @@ importClipboardButton.addEventListener("click", importFromClipboard);
 clearQueueButton.addEventListener("click", clearAllOrders);
 exportCompletedButton.addEventListener("click", exportAllOrders);
 copyCompletedButton.addEventListener("click", copyAllOrders);
+[addOrderButton, importClipboardButton, clearQueueButton, exportCompletedButton, copyCompletedButton]
+  .filter(Boolean)
+  .forEach((button) => {
+    button.addEventListener("click", () => {
+      queueToolsMenu?.removeAttribute("open");
+    });
+  });
 orderSearchInput.addEventListener("input", renderOrderList);
 captureButton.addEventListener("click", () => {
   captureActiveOrder();

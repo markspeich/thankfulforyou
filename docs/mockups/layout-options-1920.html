@@ -1,0 +1,1016 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>1920x1080 Layout Mockups</title>
+    <style>
+      :root {
+        --bg: #eef2f4;
+        --panel: #ffffff;
+        --ink: #1d252b;
+        --muted: #64727d;
+        --line: #d6dde2;
+        --accent: #0b7d79;
+        --accent-soft: #dff4f2;
+        --preview-bg: #f7fafb;
+        --preview-grid: rgba(29, 37, 43, 0.08);
+        --warning: #946200;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background:
+          radial-gradient(circle at top left, rgba(11, 125, 121, 0.08), transparent 24%),
+          linear-gradient(180deg, #f7f9fa 0%, var(--bg) 100%);
+        color: var(--ink);
+        font-family: "Segoe UI", Arial, sans-serif;
+      }
+
+      main {
+        width: min(1680px, calc(100vw - 48px));
+        margin: 24px auto 40px;
+      }
+
+      h1 {
+        margin: 0 0 8px;
+        font-size: 2rem;
+        line-height: 1.1;
+      }
+
+      .subtitle {
+        margin: 0 0 22px;
+        color: var(--muted);
+        font-size: 1rem;
+        line-height: 1.45;
+      }
+
+      .summary {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 12px;
+        margin-bottom: 20px;
+      }
+
+      .summary-card {
+        padding: 12px 14px;
+        background: rgba(255, 255, 255, 0.85);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+      }
+
+      .summary-card strong {
+        display: block;
+        margin-bottom: 6px;
+        font-size: 0.84rem;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+
+      .summary-card span {
+        color: var(--muted);
+        font-size: 0.95rem;
+        line-height: 1.4;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 18px;
+      }
+
+      .grid .card:last-child {
+        grid-column: 1 / -1;
+      }
+
+      .card {
+        position: relative;
+        padding: 16px;
+        background: rgba(255, 255, 255, 0.94);
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        box-shadow: 0 18px 42px rgba(23, 35, 43, 0.08);
+      }
+
+      .card.recommended {
+        border-color: rgba(11, 125, 121, 0.45);
+        box-shadow: 0 20px 44px rgba(11, 125, 121, 0.12);
+      }
+
+      .badge {
+        position: absolute;
+        top: 14px;
+        right: 14px;
+        padding: 5px 10px;
+        border-radius: 999px;
+        font-size: 0.76rem;
+        font-weight: 700;
+        letter-spacing: 0.03em;
+        text-transform: uppercase;
+        background: #eef3f6;
+        color: var(--muted);
+      }
+
+      .recommended .badge {
+        background: var(--accent-soft);
+        color: var(--accent);
+      }
+
+      .card h2 {
+        margin: 0 0 6px;
+        font-size: 1.2rem;
+      }
+
+      .card p {
+        margin: 0 0 12px;
+        color: var(--muted);
+        line-height: 1.45;
+      }
+
+      .notes {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 8px;
+        margin: 0 0 14px;
+      }
+
+      .note {
+        padding: 8px 10px;
+        background: #f8fafb;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        font-size: 0.82rem;
+        line-height: 1.35;
+      }
+
+      .note strong {
+        display: block;
+        margin-bottom: 4px;
+        color: var(--ink);
+      }
+
+      .monitor {
+        aspect-ratio: 16 / 9;
+        padding: 10px;
+        background: #dbe3e8;
+        border-radius: 14px;
+        border: 1px solid #c7d1d8;
+      }
+
+      .screen {
+        display: grid;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: #fbfcfd;
+        border: 1px solid #cbd5db;
+        border-radius: 10px;
+      }
+
+      .layout-a {
+        grid-template-columns: 31% 69%;
+      }
+
+      .layout-b {
+        grid-template-columns: 34% 66%;
+      }
+
+      .layout-c {
+        grid-template-columns: 32% 68%;
+      }
+
+      .layout-d {
+        grid-template-columns: 35% 65%;
+      }
+
+      .layout-e {
+        grid-template-columns: 33% 67%;
+      }
+
+      .queue {
+        display: grid;
+        grid-template-rows: auto auto auto minmax(0, 1fr);
+        gap: 8px;
+        padding: 12px;
+        border-right: 1px solid var(--line);
+        background: #f8fbfc;
+      }
+
+      .queue.big-list {
+        gap: 6px;
+      }
+
+      .queue h3,
+      .editor-head h3 {
+        margin: 0;
+        font-size: 0.95rem;
+      }
+
+      .queue-toolbar,
+      .queue-stats,
+      .queue-mini {
+        display: grid;
+        gap: 8px;
+      }
+
+      .queue-toolbar.two {
+        grid-template-columns: 1fr 1fr;
+      }
+
+      .queue-stats {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .chip,
+      .stat,
+      .button,
+      .input,
+      .line-card,
+      .global-card,
+      .status,
+      .mini-preview,
+      .tab,
+      .rail-item {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fff;
+      }
+
+      .button,
+      .input,
+      .chip,
+      .rail-item,
+      .tab {
+        min-height: 24px;
+      }
+
+      .button {
+        background: #edf7f6;
+      }
+
+      .stat {
+        padding: 8px;
+        text-align: center;
+        font-size: 0.72rem;
+        color: var(--muted);
+      }
+
+      .stat strong {
+        display: block;
+        margin-top: 4px;
+        color: var(--accent);
+        font-size: 1rem;
+      }
+
+      .queue-list {
+        display: grid;
+        gap: 7px;
+        min-height: 0;
+      }
+
+      .queue-row {
+        display: grid;
+        gap: 5px;
+        padding: 9px 10px;
+        background: #fff;
+        border: 1px solid var(--line);
+        border-left: 4px solid transparent;
+        border-radius: 10px;
+      }
+
+      .queue-row.active {
+        background: #e9f7f5;
+        border-left-color: var(--accent);
+      }
+
+      .queue-row span {
+        display: block;
+        font-size: 0.72rem;
+        color: var(--muted);
+      }
+
+      .queue-row strong {
+        font-size: 0.84rem;
+      }
+
+      .editor {
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr);
+        min-width: 0;
+      }
+
+      .editor-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 12px 14px;
+        border-bottom: 1px solid var(--line);
+        background: #fff;
+      }
+
+      .editor-actions {
+        display: grid;
+        grid-auto-flow: column;
+        grid-auto-columns: minmax(66px, auto);
+        gap: 6px;
+      }
+
+      .action {
+        height: 24px;
+        border-radius: 7px;
+        background: #e7f6f4;
+        border: 1px solid #b9ddd9;
+      }
+
+      .editor-body {
+        display: grid;
+        min-height: 0;
+      }
+
+      .preview-area {
+        display: grid;
+        align-content: start;
+        gap: 8px;
+        padding: 12px;
+      }
+
+      .preview-box {
+        position: relative;
+        display: grid;
+        min-height: 0;
+        background:
+          radial-gradient(circle, var(--preview-grid) 1px, transparent 1px),
+          var(--preview-bg);
+        background-size: 14px 14px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        overflow: hidden;
+      }
+
+      .preview-box.large {
+        min-height: 260px;
+      }
+
+      .preview-box.medium {
+        min-height: 228px;
+      }
+
+      .preview-box.short {
+        min-height: 196px;
+      }
+
+      .preview-box::before {
+        content: "";
+        position: absolute;
+        inset: 13% 21%;
+        border: 2px solid rgba(12, 150, 217, 0.65);
+        border-radius: 12px;
+      }
+
+      .shape {
+        position: absolute;
+        left: 50%;
+        top: 51%;
+        width: 56%;
+        height: 44%;
+        transform: translate(-50%, -50%);
+        border-radius: 42% 44% 41% 46%;
+        background: #d24545;
+        box-shadow: 0 14px 26px rgba(39, 49, 56, 0.12);
+      }
+
+      .shape::before,
+      .shape::after {
+        content: "";
+        position: absolute;
+        left: 50%;
+        transform: translateX(-50%);
+        color: #fbfcfd;
+        font-weight: 700;
+        letter-spacing: 0.03em;
+        text-align: center;
+      }
+
+      .shape::before {
+        top: 28%;
+        font-size: 22px;
+        content: "Morgan";
+      }
+
+      .shape::after {
+        top: 56%;
+        font-size: 13px;
+        content: "RN, BSN";
+      }
+
+      .controls-area {
+        display: grid;
+        gap: 8px;
+        min-height: 0;
+        padding: 12px;
+        border-top: 1px solid var(--line);
+        background: #fff;
+      }
+
+      .text-block {
+        display: grid;
+        gap: 7px;
+        padding: 10px;
+        background: #fbfcfd;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+      }
+
+      .text-rows {
+        display: grid;
+        gap: 6px;
+      }
+
+      .control-shell {
+        display: grid;
+        gap: 8px;
+        min-height: 0;
+      }
+
+      .line-grid.two-up {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+      }
+
+      .line-grid.stack {
+        display: grid;
+        gap: 8px;
+      }
+
+      .line-card,
+      .global-card,
+      .status {
+        padding: 8px;
+      }
+
+      .line-card strong,
+      .global-card strong,
+      .status strong,
+      .text-block strong {
+        display: block;
+        margin-bottom: 5px;
+        font-size: 0.78rem;
+      }
+
+      .sliders {
+        display: grid;
+        gap: 6px;
+      }
+
+      .slider {
+        height: 10px;
+        border-radius: 999px;
+        background: linear-gradient(90deg, #d7ecea 0%, #d7ecea 58%, #eef1f3 58%, #eef1f3 100%);
+      }
+
+      .status {
+        background: #f5f9fb;
+      }
+
+      .status.warn {
+        background: #fff7e9;
+      }
+
+      .status span {
+        display: block;
+        color: var(--muted);
+        font-size: 0.72rem;
+        line-height: 1.3;
+      }
+
+      .split-main {
+        display: grid;
+        grid-template-columns: 58% 42%;
+        min-height: 0;
+      }
+
+      .tabs {
+        display: grid;
+        grid-auto-flow: column;
+        grid-auto-columns: minmax(0, 1fr);
+        gap: 6px;
+      }
+
+      .tab.active {
+        background: #e9f7f5;
+        border-color: #b7ddd9;
+      }
+
+      .right-stack {
+        display: grid;
+        grid-template-rows: auto auto minmax(0, 1fr);
+        gap: 8px;
+        padding: 12px 12px 12px 0;
+      }
+
+      .floating-controls {
+        display: grid;
+        gap: 8px;
+        padding: 10px;
+        background: #fff;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+      }
+
+      .floating-controls .line-grid.two-up {
+        grid-template-columns: 1fr;
+      }
+
+      .inspector-grid {
+        display: grid;
+        grid-template-columns: 80px minmax(0, 1fr);
+        min-height: 0;
+      }
+
+      .left-rail {
+        display: grid;
+        align-content: start;
+        gap: 6px;
+        padding: 12px 8px;
+        border-right: 1px solid var(--line);
+        background: #f9fbfc;
+      }
+
+      .rail-item {
+        height: 64px;
+        background: #fff;
+      }
+
+      .content-stack {
+        display: grid;
+        grid-template-rows: auto auto minmax(0, 1fr);
+        min-height: 0;
+      }
+
+      .content-stack .editor-head {
+        padding-inline: 12px;
+      }
+
+      .preview-status-row {
+        display: grid;
+        grid-template-columns: 1fr 250px;
+        gap: 8px;
+        padding: 0 12px 10px;
+      }
+
+      .foot {
+        margin-top: 18px;
+        padding: 14px 16px;
+        color: var(--muted);
+        background: rgba(255, 255, 255, 0.82);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        line-height: 1.5;
+      }
+
+      .foot strong {
+        color: var(--ink);
+      }
+
+      @media (max-width: 1200px) {
+        .summary,
+        .grid,
+        .notes {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Five 1920x1080 Workspace Layouts</h1>
+      <p class="subtitle">
+        Each option keeps <strong>Design Text</strong> visible, gives the queue more width than the current layout,
+        and reserves enough editor space to show the preview plus at least two line-control groups.
+      </p>
+
+      <section class="summary">
+        <div class="summary-card">
+          <strong>New Requirement</strong>
+          <span>Preview must remain visible on a standard 1920×1080 monitor during active editing.</span>
+        </div>
+        <div class="summary-card">
+          <strong>Queue Goal</strong>
+          <span>The left queue grows from roughly 310 to 388 px into a more useful 595 to 670 px range.</span>
+        </div>
+        <div class="summary-card">
+          <strong>Control Goal</strong>
+          <span>Two line cards should stay visible without pushing the preview out of view.</span>
+        </div>
+        <div class="summary-card">
+          <strong>Recommendation</strong>
+          <span>Option B is the safest production-first direction with the least scanning friction.</span>
+        </div>
+      </section>
+
+      <section class="foot" style="margin-bottom: 18px;">
+        <strong>What the screenshot changed:</strong> the current editor is losing height in three places at once:
+        a tall header action row, a large top control slab with wide cards, and a full-width status band before the preview.
+        The options below specifically shrink those vertical stacks so the preview can stay meaningfully visible on 1920×1080.
+      </section>
+
+      <section class="grid">
+        <article class="card">
+          <div class="badge">Option A</div>
+          <h2>Preview Top, Controls Bottom Strip</h2>
+          <p>Closest to your current mental model. The queue gets wider, and the controls become a shallower bottom dock instead of a tall top block.</p>
+          <div class="notes">
+            <div class="note"><strong>Queue</strong>31% of screen width</div>
+            <div class="note"><strong>Preview</strong>Large full-width panel</div>
+            <div class="note"><strong>Best For</strong>Minimal behavior change</div>
+          </div>
+          <div class="monitor">
+            <div class="screen layout-a">
+              <div class="queue">
+                <h3>Design Queue</h3>
+                <div class="queue-toolbar two">
+                  <div class="button"></div>
+                  <div class="button"></div>
+                </div>
+                <div class="queue-stats">
+                  <div class="stat">Complete<strong>6</strong></div>
+                  <div class="stat">Progress<strong>4</strong></div>
+                  <div class="stat">New<strong>9</strong></div>
+                </div>
+                <div class="queue-list">
+                  <div class="input"></div>
+                  <div class="queue-row active"><strong>Morgan RN</strong><span>Skywalk + Somekind</span><span>In progress</span></div>
+                  <div class="queue-row"><strong>Ashley</strong><span>All Candlepin</span><span>Complete</span></div>
+                  <div class="queue-row"><strong>Danielle NP</strong><span>Skywalk + Candlepin</span><span>Needs review</span></div>
+                  <div class="queue-row"><strong>Rebecca</strong><span>Clipboard import</span><span>New</span></div>
+                  <div class="queue-row"><strong>Sarah PTA</strong><span>Somekind credentials</span><span>Complete</span></div>
+                </div>
+              </div>
+              <div class="editor">
+                <div class="editor-head">
+                  <h3>Selected Design</h3>
+                  <div class="editor-actions">
+                    <div class="action"></div>
+                    <div class="action"></div>
+                    <div class="action"></div>
+                    <div class="action"></div>
+                  </div>
+                </div>
+                <div class="editor-body" style="grid-template-rows: minmax(0, 1fr) auto;">
+                  <div class="preview-area">
+                    <div class="preview-box large">
+                      <div class="shape"></div>
+                    </div>
+                  </div>
+                  <div class="controls-area">
+                    <div class="text-block">
+                      <strong>Design Text + Preset</strong>
+                      <div class="text-rows">
+                        <div class="input"></div>
+                        <div class="input"></div>
+                      </div>
+                    </div>
+                    <div class="line-grid two-up">
+                      <div class="line-card">
+                        <strong>Line 1</strong>
+                        <div class="sliders"><div class="slider"></div><div class="slider"></div><div class="slider"></div></div>
+                      </div>
+                      <div class="line-card">
+                        <strong>Line 2</strong>
+                        <div class="sliders"><div class="slider"></div><div class="slider"></div><div class="slider"></div></div>
+                      </div>
+                    </div>
+                    <div class="global-card"><strong>Backing Border + Weld Export</strong><div class="slider"></div></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article class="card recommended">
+          <div class="badge">Recommended</div>
+          <h2>Preview Left, Compact Inspector Right</h2>
+          <p>The editor becomes a stable split workspace: the preview owns the left side, and a compact inspector on the right keeps text, status, and two line cards in view.</p>
+          <div class="notes">
+            <div class="note"><strong>Queue</strong>34% of screen width</div>
+            <div class="note"><strong>Preview</strong>Always visible while scrolling controls</div>
+            <div class="note"><strong>Best For</strong>Production editing all day</div>
+          </div>
+          <div class="monitor">
+            <div class="screen layout-b">
+              <div class="queue big-list">
+                <h3>Design Queue</h3>
+                <div class="queue-toolbar two">
+                  <div class="button"></div>
+                  <div class="button"></div>
+                </div>
+                <div class="queue-mini">
+                  <div class="button"></div>
+                  <div class="button"></div>
+                  <div class="input"></div>
+                </div>
+                <div class="queue-list">
+                  <div class="queue-row active"><strong>Morgan RN</strong><span>Skywalk + Somekind</span><span>Connectedness pending</span></div>
+                  <div class="queue-row"><strong>Ashley</strong><span>All Candlepin</span><span>Ready</span></div>
+                  <div class="queue-row"><strong>Danielle NP</strong><span>Skywalk + Candlepin</span><span>Warning 2 pieces</span></div>
+                  <div class="queue-row"><strong>Rebecca</strong><span>Imported clipboard</span><span>Ready</span></div>
+                  <div class="queue-row"><strong>Sarah PTA</strong><span>Manual</span><span>Ready</span></div>
+                  <div class="queue-row"><strong>Kelly RN</strong><span>Manual</span><span>New</span></div>
+                </div>
+              </div>
+              <div class="editor">
+                <div class="editor-head">
+                  <h3>Selected Design</h3>
+                  <div class="editor-actions">
+                    <div class="action"></div>
+                    <div class="action"></div>
+                    <div class="action"></div>
+                    <div class="action"></div>
+                  </div>
+                </div>
+                <div class="editor-body split-main">
+                  <div class="preview-area">
+                    <div class="preview-box large">
+                      <div class="shape"></div>
+                    </div>
+                    <div class="status"><strong>Connectedness</strong><span>One acrylic piece target stays visible without stealing preview height.</span></div>
+                  </div>
+                  <div class="right-stack">
+                    <div class="text-block">
+                      <strong>Design Text</strong>
+                      <div class="text-rows">
+                        <div class="input"></div>
+                        <div class="input"></div>
+                      </div>
+                    </div>
+                    <div class="global-card">
+                      <strong>Preset + Backing Border</strong>
+                      <div class="sliders"><div class="slider"></div><div class="slider"></div></div>
+                    </div>
+                    <div class="floating-controls">
+                      <div class="line-grid stack">
+                        <div class="line-card">
+                          <strong>Line 1</strong>
+                          <div class="sliders"><div class="slider"></div><div class="slider"></div><div class="slider"></div></div>
+                        </div>
+                        <div class="line-card">
+                          <strong>Line 2</strong>
+                          <div class="sliders"><div class="slider"></div><div class="slider"></div><div class="slider"></div></div>
+                        </div>
+                      </div>
+                      <div class="status warn"><strong>Fit Warnings</strong><span>If a third line is added, only the inspector scrolls. The preview remains pinned.</span></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="badge">Option C</div>
+          <h2>Tabbed Bottom Dock</h2>
+          <p>This keeps a tall preview by reducing control density. The bottom dock shows text plus only one control family at a time using tabs.</p>
+          <div class="notes">
+            <div class="note"><strong>Queue</strong>32% of screen width</div>
+            <div class="note"><strong>Preview</strong>Tallest preview area of all options</div>
+            <div class="note"><strong>Tradeoff</strong>Extra click to switch tabs</div>
+          </div>
+          <div class="monitor">
+            <div class="screen layout-c">
+              <div class="queue">
+                <h3>Design Queue</h3>
+                <div class="queue-toolbar two">
+                  <div class="button"></div>
+                  <div class="button"></div>
+                </div>
+                <div class="queue-stats">
+                  <div class="stat">Done<strong>5</strong></div>
+                  <div class="stat">Open<strong>7</strong></div>
+                  <div class="stat">New<strong>8</strong></div>
+                </div>
+                <div class="queue-list">
+                  <div class="input"></div>
+                  <div class="queue-row active"><strong>Morgan RN</strong><span>Editing</span><span>2 lines</span></div>
+                  <div class="queue-row"><strong>Ashley</strong><span>Complete</span><span>1 line</span></div>
+                  <div class="queue-row"><strong>Danielle NP</strong><span>Warning</span><span>2 lines</span></div>
+                  <div class="queue-row"><strong>Rebecca</strong><span>Ready</span><span>1 line</span></div>
+                </div>
+              </div>
+              <div class="editor">
+                <div class="editor-head">
+                  <h3>Selected Design</h3>
+                  <div class="editor-actions">
+                    <div class="action"></div>
+                    <div class="action"></div>
+                    <div class="action"></div>
+                    <div class="action"></div>
+                  </div>
+                </div>
+                <div class="editor-body" style="grid-template-rows: minmax(0, 1fr) auto;">
+                  <div class="preview-area">
+                    <div class="preview-box large">
+                      <div class="shape"></div>
+                    </div>
+                  </div>
+                  <div class="controls-area">
+                    <div class="text-block">
+                      <strong>Design Text</strong>
+                      <div class="text-rows">
+                        <div class="input"></div>
+                        <div class="input"></div>
+                      </div>
+                    </div>
+                    <div class="tabs">
+                      <div class="tab active"></div>
+                      <div class="tab"></div>
+                      <div class="tab"></div>
+                    </div>
+                    <div class="line-grid two-up">
+                      <div class="line-card">
+                        <strong>Line 1</strong>
+                        <div class="sliders"><div class="slider"></div><div class="slider"></div><div class="slider"></div></div>
+                      </div>
+                      <div class="line-card">
+                        <strong>Line 2</strong>
+                        <div class="sliders"><div class="slider"></div><div class="slider"></div><div class="slider"></div></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="badge">Option D</div>
+          <h2>Queue-Dominant with Slim Preview Shelf</h2>
+          <p>Best if queue throughput matters most. The queue becomes almost a third of the workspace, while the editor uses a shorter preview and denser control cards.</p>
+          <div class="notes">
+            <div class="note"><strong>Queue</strong>35% of screen width</div>
+            <div class="note"><strong>Preview</strong>Still visible, but smaller</div>
+            <div class="note"><strong>Tradeoff</strong>Weaker inspection comfort</div>
+          </div>
+          <div class="monitor">
+            <div class="screen layout-d">
+              <div class="queue big-list">
+                <h3>Design Queue</h3>
+                <div class="queue-toolbar two">
+                  <div class="button"></div>
+                  <div class="button"></div>
+                </div>
+                <div class="queue-mini">
+                  <div class="button"></div>
+                  <div class="button"></div>
+                  <div class="button"></div>
+                  <div class="input"></div>
+                </div>
+                <div class="queue-list">
+                  <div class="queue-row active"><strong>Morgan RN</strong><span>Edited 2m ago</span><span>Ready</span></div>
+                  <div class="queue-row"><strong>Ashley</strong><span>Ready</span><span>1 line</span></div>
+                  <div class="queue-row"><strong>Danielle NP</strong><span>Warning</span><span>2 pieces</span></div>
+                  <div class="queue-row"><strong>Rebecca</strong><span>New</span><span>Clipboard</span></div>
+                  <div class="queue-row"><strong>Sarah PTA</strong><span>Ready</span><span>2 lines</span></div>
+                  <div class="queue-row"><strong>Kelly RN</strong><span>Ready</span><span>2 lines</span></div>
+                  <div class="queue-row"><strong>Nicole</strong><span>New</span><span>1 line</span></div>
+                </div>
+              </div>
+              <div class="editor">
+                <div class="editor-head">
+                  <h3>Selected Design</h3>
+                  <div class="editor-actions">
+                    <div class="action"></div>
+                    <div class="action"></div>
+                    <div class="action"></div>
+                    <div class="action"></div>
+                  </div>
+                </div>
+                <div class="editor-body" style="grid-template-rows: auto auto minmax(0, 1fr);">
+                  <div class="preview-area" style="padding-bottom: 6px;">
+                    <div class="preview-box short">
+                      <div class="shape"></div>
+                    </div>
+                  </div>
+                  <div class="controls-area" style="border-top: 0; padding-top: 0;">
+                    <div class="text-block">
+                      <strong>Design Text + Preset</strong>
+                      <div class="text-rows">
+                        <div class="input"></div>
+                        <div class="input"></div>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="controls-area" style="padding-top: 0;">
+                    <div class="line-grid two-up">
+                      <div class="line-card">
+                        <strong>Line 1</strong>
+                        <div class="sliders"><div class="slider"></div><div class="slider"></div><div class="slider"></div></div>
+                      </div>
+                      <div class="line-card">
+                        <strong>Line 2</strong>
+                        <div class="sliders"><div class="slider"></div><div class="slider"></div><div class="slider"></div></div>
+                      </div>
+                    </div>
+                    <div class="global-card"><strong>Global + Status</strong><div class="slider"></div></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="badge">Option E</div>
+          <h2>Mini Queue Rail + Expanded Queue List</h2>
+          <p>A hybrid that makes the queue more information-dense by adding a slim left rail for batch actions, freeing more height for the order list itself.</p>
+          <div class="notes">
+            <div class="note"><strong>Queue</strong>33% total, but more of it is actual list area</div>
+            <div class="note"><strong>Preview</strong>Large and centered</div>
+            <div class="note"><strong>Best For</strong>Fast queue browsing</div>
+          </div>
+          <div class="monitor">
+            <div class="screen layout-e">
+              <div class="inspector-grid">
+                <div class="left-rail">
+                  <div class="rail-item"></div>
+                  <div class="rail-item"></div>
+                  <div class="rail-item"></div>
+                  <div class="rail-item"></div>
+                </div>
+                <div class="queue big-list" style="border-right: 1px solid var(--line);">
+                  <h3>Design Queue</h3>
+                  <div class="queue-stats">
+                    <div class="stat">Done<strong>6</strong></div>
+                    <div class="stat">Open<strong>4</strong></div>
+                    <div class="stat">New<strong>9</strong></div>
+                  </div>
+                  <div class="queue-list">
+                    <div class="input"></div>
+                    <div class="queue-row active"><strong>Morgan RN</strong><span>Skywalk + Somekind</span><span>Ready to complete</span></div>
+                    <div class="queue-row"><strong>Ashley</strong><span>All Candlepin</span><span>Ready</span></div>
+                    <div class="queue-row"><strong>Danielle NP</strong><span>Warning</span><span>Needs bridge tweak</span></div>
+                    <div class="queue-row"><strong>Rebecca</strong><span>Manual</span><span>New</span></div>
+                    <div class="queue-row"><strong>Sarah PTA</strong><span>Imported</span><span>Ready</span></div>
+                  </div>
+                </div>
+              </div>
+              <div class="content-stack">
+                <div class="editor-head">
+                  <h3>Selected Design</h3>
+                  <div class="editor-actions">
+                    <div class="action"></div>
+                    <div class="action"></div>
+                    <div class="action"></div>
+                    <div class="action"></div>
+                  </div>
+                </div>
+                <div class="preview-status-row">
+                  <div class="preview-box medium">
+                    <div class="shape"></div>
+                  </div>
+                  <div class="status"><strong>Connectedness</strong><span>Visible next to the preview instead of below the controls.</span></div>
+                </div>
+                <div class="controls-area" style="border-top: 1px solid var(--line);">
+                  <div class="text-block">
+                    <strong>Design Text + Preset</strong>
+                    <div class="text-rows">
+                      <div class="input"></div>
+                      <div class="input"></div>
+                    </div>
+                  </div>
+                  <div class="line-grid two-up">
+                    <div class="line-card">
+                      <strong>Line 1</strong>
+                      <div class="sliders"><div class="slider"></div><div class="slider"></div><div class="slider"></div></div>
+                    </div>
+                    <div class="line-card">
+                      <strong>Line 2</strong>
+                      <div class="sliders"><div class="slider"></div><div class="slider"></div><div class="slider"></div></div>
+                    </div>
+                  </div>
+                  <div class="global-card"><strong>Backing Border + Export Weld</strong><div class="slider"></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </article>
+      </section>
+
+      <section class="foot">
+        <strong>My read:</strong> if we want the lowest-risk production improvement, Option B is the best balance.
+        It gives the queue more real estate, keeps the preview visible while you work, and preserves a stable place
+        for always-on text plus two line groups. Option A is the easiest transition if you want to stay closest to
+        the current preview-top-controls-bottom direction. Option D is the most queue-friendly, but it gives up too
+        much preview comfort for precise design inspection.
+      </section>
+    </main>
+  </body>
+</html>

@@ -10,11 +10,25 @@
     <main class="app-shell">
       <section class="production-workspace">
         <aside class="orders-panel" aria-label="Design navigation">
-          <h1>Design Queue</h1>
-
-          <div class="queue-export-actions">
-            <button id="exportCompletedButton" class="primary-action" type="button">Export All Designs</button>
-            <button id="copyCompletedButton" class="primary-action" type="button">Copy All Designs</button>
+          <div class="queue-header">
+            <h1>Design Queue</h1>
+            <details class="queue-tools-menu">
+              <summary class="queue-tools-toggle" aria-label="Queue tools"></summary>
+              <div class="queue-tools-popover">
+                <div class="queue-tools-actions">
+                  <button id="exportCompletedButton" class="primary-action" type="button">Export All Designs</button>
+                  <button id="copyCompletedButton" class="primary-action" type="button">Copy All Designs</button>
+                  <button id="addOrderButton" class="secondary-action" type="button">+ Add Design</button>
+                  <button id="importClipboardButton" class="secondary-action" type="button">Import Clipboard</button>
+                  <button id="clearQueueButton" class="secondary-action destructive-action" type="button">Clear Batch</button>
+                </div>
+                <p id="importStatus" class="note">Import Etsy clipboard data copied from the browser helper.</p>
+                <div id="queueSyncStatus" class="status-card" aria-live="polite" hidden>
+                  <strong id="queueSyncStatusLabel"></strong>
+                  <span id="queueSyncStatusDetail"></span>
+                </div>
+              </div>
+            </details>
           </div>
 
           <div class="order-stats" aria-label="Design status summary">
@@ -26,33 +40,18 @@
               <span>In Progress</span>
               <strong id="progressCountOutput">0</strong>
             </div>
-            <div>
-              <span>Not Started</span>
-              <strong id="notStartedCountOutput">0</strong>
-            </div>
           </div>
-
-          <section class="order-entry" aria-label="Queue actions">
-            <div class="queue-actions">
-              <button id="addOrderButton" class="secondary-action" type="button">+ Add Design</button>
-              <button id="importClipboardButton" class="secondary-action" type="button">Import Clipboard</button>
-            </div>
-            <button id="clearQueueButton" class="secondary-action destructive-action" type="button">Clear Batch</button>
-            <p id="importStatus" class="note">Import Etsy clipboard data copied from the browser helper.</p>
-            <div id="queueSyncStatus" class="status-card" aria-live="polite" hidden>
-              <strong id="queueSyncStatusLabel"></strong>
-              <span id="queueSyncStatusDetail"></span>
-            </div>
-          </section>
-
-          <label class="search-field">
-            <span class="visually-hidden">Search designs</span>
-            <input id="orderSearchInput" type="search" autocomplete="off" placeholder="Search designs...">
-          </label>
+          <output id="notStartedCountOutput" class="visually-hidden">0</output>
 
           <section class="order-queue" aria-label="Design queue">
             <div class="section-heading">Queue <output id="orderCountOutput">0</output></div>
-            <div id="orderList" class="order-list" role="list"></div>
+            <div class="order-queue-card">
+              <label class="search-field">
+                <span class="visually-hidden">Search designs</span>
+                <input id="orderSearchInput" type="search" autocomplete="off" placeholder="Search designs...">
+              </label>
+              <div id="orderList" class="order-list" role="list"></div>
+            </div>
           </section>
         </aside>
 
@@ -71,31 +70,55 @@
           </header>
 
           <div class="editor-body">
-            <aside class="controls" aria-label="Layout controls">
-              <div class="control-card">
-                <div class="text-controls">
-                  <section id="listingReferenceCard" class="listing-reference-card is-hidden" aria-label="Imported Etsy listing reference">
-                    <p id="listingReferenceTitle" class="listing-reference-title"></p>
-                    <div class="listing-reference-meta">
-                      <img id="listingReferenceImage" class="listing-reference-image" alt="">
-                      <div class="listing-reference-details">
-                        <div id="importedColorField" class="imported-color-field is-hidden" aria-live="polite">
-                          <span class="imported-color-label">Color</span>
-                          <span id="importedColorValue" class="imported-color-value"></span>
+            <section class="editor-workspace">
+              <section class="editor-main-column" aria-label="Design preview workspace">
+                <section class="editor-top-card" aria-label="Order-level information">
+                  <div class="editor-top-grid">
+                    <section class="top-card-section top-card-reference" aria-label="Listing details">
+                      <section id="listingReferenceCard" class="listing-reference-card is-hidden" aria-label="Imported Etsy listing reference">
+                        <p id="listingReferenceTitle" class="listing-reference-title"></p>
+                        <div class="listing-reference-meta">
+                          <img id="listingReferenceImage" class="listing-reference-image" alt="">
+                          <div class="listing-reference-details">
+                            <div id="importedColorField" class="imported-color-field is-hidden" aria-live="polite">
+                              <span class="imported-color-label">Color</span>
+                              <span id="importedColorValue" class="imported-color-value"></span>
+                            </div>
+                            <div id="importedQuantityField" class="imported-color-field is-hidden" aria-live="polite">
+                              <span class="imported-color-label">Quantity</span>
+                              <span id="importedQuantityValue" class="imported-color-value"></span>
+                            </div>
+                          </div>
                         </div>
-                        <div id="importedQuantityField" class="imported-color-field is-hidden" aria-live="polite">
-                          <span class="imported-color-label">Quantity</span>
-                          <span id="importedQuantityValue" class="imported-color-value"></span>
-                        </div>
-                      </div>
-                    </div>
-                  </section>
+                      </section>
+                    </section>
 
-                  <label class="field compact-field">
-                    <span>Design Text</span>
-                    <textarea id="textInput" autocomplete="off" rows="3" placeholder="Enter one or more lines of text"></textarea>
-                  </label>
+                    <section class="top-card-section top-card-text" aria-label="Design text">
+                      <label class="field compact-field">
+                        <span>Design Text</span>
+                        <textarea id="textInput" autocomplete="off" rows="3" placeholder="Enter one or more lines of text"></textarea>
+                      </label>
+                    </section>
+                  </div>
+                </section>
 
+                <section class="preview-workspace" aria-label="Badge reel preview">
+                  <div class="preview-header-row">
+                    <h3 class="preview-title">Preview</h3>
+                    <span class="preview-caption">Pinned while inspector scrolls</span>
+                  </div>
+                  <div class="preview-panel">
+                    <svg id="preview" role="img" aria-label="Preview of overlapped badge reel text"></svg>
+                  </div>
+                  <div id="connectionStatus" class="status-card status-pending" aria-live="polite">
+                    <strong id="connectionStatusLabel">Connectedness pending</strong>
+                    <span id="connectionStatusDetail">Enter text to analyze whether the face layer cuts as one acrylic piece.</span>
+                  </div>
+                </section>
+              </section>
+
+              <aside class="line-controls-rail" aria-label="Layout controls">
+                <section class="global-controls-panel" aria-label="Global controls">
                   <label class="field compact-field">
                     <span>Presets</span>
                     <select id="presetInput"></select>
@@ -106,34 +129,17 @@
                     <span>Weld Exported Design</span>
                   </label>
 
-                  <div class="global-control-card">
-                    <label class="field compact-field">
-                      <span>Backing Border</span>
-                      <div class="range-row">
-                        <input id="backingInput" type="range" min="0" max="10" step="0.1" value="2.2">
-                        <output id="backingOutput">2.200 mm</output>
-                      </div>
-                    </label>
-                  </div>
-                </div>
+                  <label class="field compact-field">
+                    <span>Backing Border</span>
+                    <div class="range-row">
+                      <input id="backingInput" type="range" min="0" max="10" step="0.1" value="2.2">
+                      <output id="backingOutput">2.200 mm</output>
+                    </div>
+                  </label>
+                </section>
 
-                <div class="line-controls-panel">
-                  <div id="lineControls" class="line-controls"></div>
-                </div>
-              </div>
-
-              <div id="connectionStatus" class="status-card status-pending" aria-live="polite">
-                <strong id="connectionStatusLabel">Connectedness pending</strong>
-                <span id="connectionStatusDetail">Enter text to analyze whether the face layer cuts as one acrylic piece.</span>
-              </div>
-
-            </aside>
-
-            <section class="preview-workspace" aria-label="Badge reel preview">
-              <h3 class="preview-title">Preview</h3>
-              <div class="preview-panel">
-                <svg id="preview" role="img" aria-label="Preview of overlapped badge reel text"></svg>
-              </div>
+                <div id="lineControls" class="line-controls"></div>
+              </aside>
             </section>
           </div>
         </section>

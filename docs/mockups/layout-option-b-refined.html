@@ -1,0 +1,766 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Option B1 Refined</title>
+    <style>
+      :root {
+        --bg: #edf2f5;
+        --paper: #ffffff;
+        --panel: #fbfcfd;
+        --line: #d7dee5;
+        --line-strong: #c8d2db;
+        --ink: #173552;
+        --text: #1f2a33;
+        --muted: #6a7986;
+        --teal: #0b8b89;
+        --teal-soft: #e7f6f4;
+        --blue-soft: #ddecfb;
+        --success-bg: #eef8f1;
+        --success-line: #9dcfb0;
+        --slider: #a54bc4;
+        --preview-grid: rgba(23, 53, 82, 0.08);
+        --shadow: 0 18px 40px rgba(28, 40, 50, 0.08);
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        font-family: "Segoe UI", Arial, sans-serif;
+        color: var(--text);
+        background:
+          radial-gradient(circle at top left, rgba(11, 139, 137, 0.08), transparent 24%),
+          linear-gradient(180deg, #f8fafb 0%, var(--bg) 100%);
+      }
+
+      main {
+        width: max-content;
+        margin: 18px auto 28px;
+      }
+
+      .frame {
+        padding: 12px;
+        background: linear-gradient(180deg, #d7e1e8 0%, #cfd9e2 100%);
+        border: 1px solid #bcc9d3;
+        border-radius: 22px;
+        box-shadow: var(--shadow);
+      }
+
+      .screen {
+        display: grid;
+        grid-template-columns: 27% 73%;
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        background: var(--paper);
+        border: 1px solid var(--line-strong);
+        border-radius: 18px;
+      }
+
+      .queue {
+        display: grid;
+        grid-template-rows: auto auto auto minmax(0, 1fr);
+        gap: 12px;
+        padding: 22px 16px 16px;
+        background: linear-gradient(180deg, #f7fbfd 0%, #f5f9fb 100%);
+        border-right: 1px solid var(--line);
+      }
+
+      .queue-top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .queue-top h1 {
+        margin: 0;
+        color: var(--ink);
+        font-size: 1.7rem;
+        line-height: 1;
+      }
+
+      .ellipse {
+        position: relative;
+        width: 42px;
+        height: 42px;
+        background: #fff;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+      }
+
+      .ellipse::before {
+        content: "";
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        width: 4px;
+        height: 4px;
+        background: var(--muted);
+        border-radius: 50%;
+        transform: translate(-50%, -50%);
+        box-shadow: -8px 0 0 var(--muted), 8px 0 0 var(--muted);
+      }
+
+      .queue-stats {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+      }
+
+      .stat-card,
+      .queue-list-card,
+      .header-action,
+      .text-card,
+      .preview-shell,
+      .preview-status,
+      .inspector-card,
+      .line-card,
+      .list-item,
+      .search,
+      .preview-header {
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: #fff;
+      }
+
+      .stat-card {
+        padding: 8px 10px;
+        text-align: center;
+      }
+
+      .stat-card span {
+        display: block;
+        color: var(--muted);
+        font-size: 0.77rem;
+      }
+
+      .stat-card strong {
+        display: block;
+        margin-top: 4px;
+        color: var(--teal);
+        font-size: 1.28rem;
+        line-height: 1.1;
+      }
+
+      .queue-label-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        color: var(--ink);
+        font-size: 0.82rem;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0.02em;
+      }
+
+      .queue-list-card {
+        min-height: 0;
+        padding: 0;
+        overflow: hidden;
+        background: linear-gradient(180deg, #ffffff 0%, #f9fbfc 100%);
+      }
+
+      .queue-list-inner {
+        display: grid;
+        gap: 8px;
+        padding: 10px;
+      }
+
+      .search {
+        height: 38px;
+      }
+
+      .list-item {
+        display: grid;
+        gap: 6px;
+        padding: 12px 12px 14px;
+        border-left: 4px solid transparent;
+        background: #fff;
+      }
+
+      .list-item.active {
+        background: #eaf7f6;
+        border-left-color: var(--teal);
+      }
+
+      .list-top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+      }
+
+      .list-item strong {
+        color: var(--ink);
+        font-size: 0.86rem;
+      }
+
+      .list-item span {
+        display: block;
+        color: var(--muted);
+        font-size: 0.74rem;
+        line-height: 1.3;
+      }
+
+      .pill {
+        padding: 5px 9px;
+        color: #2d6da6;
+        background: var(--blue-soft);
+        border-radius: 999px;
+        font-size: 0.7rem;
+        font-weight: 800;
+        text-transform: uppercase;
+      }
+
+      .editor {
+        display: grid;
+        grid-template-rows: auto auto minmax(0, 1fr);
+        min-width: 0;
+      }
+
+      .editor-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 18px;
+        padding: 16px 22px 12px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .editor-title h2 {
+        margin: 0 0 6px;
+        color: var(--ink);
+        font-size: 2rem;
+        line-height: 1;
+      }
+
+      .editor-title p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 0.92rem;
+        line-height: 1.35;
+      }
+
+      .header-actions {
+        display: grid;
+        grid-auto-flow: column;
+        grid-auto-columns: minmax(80px, auto);
+        gap: 8px;
+      }
+
+      .header-action {
+        min-height: 52px;
+        display: grid;
+        place-items: center;
+        padding: 0 14px;
+        color: #fff;
+        background: #8ca1b1;
+        font-size: 0.82rem;
+        font-weight: 800;
+        text-align: center;
+        line-height: 1.1;
+        border-radius: 12px;
+      }
+
+      .header-action.primary {
+        background: var(--teal);
+      }
+
+      .top-card {
+        margin: 14px 22px 12px;
+        padding: 14px;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+      }
+
+      .top-card-grid {
+        display: grid;
+        grid-template-columns: 0.9fr 1.1fr 0.72fr;
+        gap: 16px;
+        align-items: start;
+      }
+
+      .text-card {
+        padding: 0;
+        background: transparent;
+        border: 0;
+        border-radius: 0;
+      }
+
+      .card-top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        margin-bottom: 12px;
+      }
+
+      .card-top strong {
+        color: var(--ink);
+        font-size: 0.98rem;
+      }
+
+      .subtle {
+        color: var(--muted);
+        font-size: 0.8rem;
+      }
+
+      .listing {
+        display: grid;
+        grid-template-columns: 84px minmax(0, 1fr);
+        gap: 12px;
+        padding: 8px 0 0;
+        background: transparent;
+        border: 0;
+        border-radius: 0;
+      }
+
+      .thumb {
+        position: relative;
+        width: 84px;
+        height: 84px;
+        border-radius: 10px;
+        background: linear-gradient(135deg, #ceb59b 0%, #a48468 100%);
+        overflow: hidden;
+      }
+
+      .thumb::after {
+        content: "SLPnDPT";
+        position: absolute;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        color: #fff;
+        font-size: 0.78rem;
+        font-weight: 900;
+      }
+
+      .listing span {
+        display: block;
+        color: var(--muted);
+        font-size: 0.82rem;
+        line-height: 1.35;
+      }
+
+      .listing strong {
+        color: var(--ink);
+        font-size: 0.9rem;
+      }
+
+      .field {
+        display: grid;
+        gap: 8px;
+      }
+
+      .field label {
+        color: var(--ink);
+        font-size: 0.86rem;
+        font-weight: 700;
+      }
+
+      .textarea,
+      .input-box,
+      .toggle,
+      .range {
+        background: #fff;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+      }
+
+      .textarea {
+        min-height: 126px;
+      }
+
+      .workspace {
+        display: grid;
+        grid-template-columns: 69% 31%;
+        min-height: 0;
+        padding: 0 22px 20px;
+        gap: 12px;
+      }
+
+      .preview-column {
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr) auto;
+        gap: 8px;
+        min-height: 0;
+      }
+
+      .preview-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 12px 16px;
+      }
+
+      .preview-header strong {
+        color: var(--ink);
+        font-size: 1rem;
+      }
+
+      .preview-shell {
+        position: relative;
+        min-height: 0;
+        overflow: hidden;
+        background:
+          radial-gradient(circle, var(--preview-grid) 1px, transparent 1px),
+          #fbfdfe;
+        background-size: 18px 18px;
+        min-height: 0;
+      }
+
+      .guide {
+        position: absolute;
+        inset: 10% 17%;
+        border: 2px solid rgba(17, 152, 224, 0.65);
+        border-radius: 16px;
+      }
+
+      .guide-text {
+        position: absolute;
+        left: 50%;
+        top: 10%;
+        transform: translateX(-50%);
+        color: #1395df;
+        font-size: 0.98rem;
+        font-weight: 800;
+      }
+
+      .badge-shape {
+        position: absolute;
+        left: 50%;
+        top: 60%;
+        width: 74%;
+        height: 60%;
+        transform: translate(-50%, -50%);
+        background: #f31f1f;
+        border-radius: 38% 44% 28% 36%;
+        box-shadow: 0 20px 28px rgba(32, 42, 49, 0.12);
+      }
+
+      .badge-shape::after {
+        content: "DPT";
+        position: absolute;
+        left: 50%;
+        top: 58%;
+        transform: translate(-50%, -50%);
+        color: #fff;
+        font-size: 5.8rem;
+        font-weight: 900;
+        letter-spacing: 0.03em;
+      }
+
+      .preview-status {
+        padding: 12px 14px;
+        background: var(--success-bg);
+        border-color: var(--success-line);
+      }
+
+      .preview-status strong {
+        display: block;
+        margin-bottom: 4px;
+        color: #166a44;
+        font-size: 0.9rem;
+      }
+
+      .preview-status span {
+        color: var(--muted);
+        font-size: 0.82rem;
+        line-height: 1.35;
+      }
+
+      .inspector {
+        display: grid;
+        min-height: 0;
+      }
+
+      .inspector-card {
+        padding: 14px;
+        background: var(--panel);
+      }
+
+      .global-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+        margin-bottom: 10px;
+      }
+
+      .input-box {
+        height: 50px;
+      }
+
+      .toggle {
+        height: 50px;
+      }
+
+      .range-wrap {
+        display: grid;
+        gap: 8px;
+      }
+
+      .range {
+        position: relative;
+        height: 12px;
+        overflow: hidden;
+      }
+
+      .range::before {
+        content: "";
+        position: absolute;
+        inset: 0 34% 0 0;
+        background: var(--slider);
+      }
+
+      .line-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 10px;
+        min-height: 0;
+        align-content: start;
+      }
+
+      .line-card {
+        padding: 14px;
+        background: var(--panel);
+      }
+
+      .line-card h3 {
+        margin: 0 0 12px;
+        color: var(--ink);
+        font-size: 1rem;
+      }
+
+      .control {
+        display: grid;
+        gap: 6px;
+        margin-bottom: 10px;
+      }
+
+      .control:last-child {
+        margin-bottom: 0;
+      }
+
+      .control span {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        color: var(--ink);
+        font-size: 0.79rem;
+        font-weight: 700;
+      }
+
+      .control em {
+        color: var(--muted);
+        font-style: normal;
+        font-weight: 600;
+      }
+
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="frame">
+        <div class="screen">
+          <aside class="queue">
+            <div class="queue-top">
+              <h1>Design Queue</h1>
+              <div class="ellipse" title="Queue tools"></div>
+            </div>
+
+            <div class="queue-stats">
+              <div class="stat-card">
+                <span>Complete</span>
+                <strong>12</strong>
+              </div>
+              <div class="stat-card">
+                <span>In Progress</span>
+                <strong>0</strong>
+              </div>
+            </div>
+
+            <div class="queue-list-card">
+              <div class="queue-list-inner">
+                <div class="queue-label-row">
+                  <span>Queue</span>
+                  <span>12</span>
+                </div>
+                <div class="search"></div>
+                <div class="list-item active">
+                  <div class="list-top">
+                    <strong>#4065771697</strong>
+                    <div class="pill">Exported</div>
+                  </div>
+                  <span>Buyer: Sarah Fairchild</span>
+                  <span>Listing: NICU Nurse Badge Reel</span>
+                  <span>Personalization: Sarah</span>
+                </div>
+                <div class="list-item">
+                  <div class="list-top">
+                    <strong>#4060256092</strong>
+                    <div class="pill">Ready</div>
+                  </div>
+                  <span>Buyer: Michelle Vance</span>
+                  <span>Listing: L&amp;D Nurse Badge Reel</span>
+                  <span>Personalization: Office Manager</span>
+                </div>
+                <div class="list-item">
+                  <div class="list-top">
+                    <strong>#4066107435</strong>
+                    <div class="pill">Ready</div>
+                  </div>
+                  <span>Buyer: Magalie Lippe</span>
+                  <span>Listing: Custom Badge Reel</span>
+                  <span>Personalization: Endocrine / Squad</span>
+                </div>
+                <div class="list-item">
+                  <div class="list-top">
+                    <strong>#4060721932</strong>
+                    <div class="pill">Ready</div>
+                  </div>
+                  <span>Buyer: Sherri Gleich</span>
+                  <span>Listing: Nurse Keychain</span>
+                  <span>Personalization: Sherri</span>
+                </div>
+              </div>
+            </div>
+          </aside>
+
+          <section class="editor">
+            <header class="editor-header">
+              <div class="editor-title">
+                <h2>#4066824515</h2>
+                <p>Etsy #4066824515 · Listing 4336586508 · Kristy Habiby</p>
+              </div>
+
+              <div class="header-actions">
+                <div class="header-action">Complete</div>
+                <div class="header-action">Complete<br>&amp; Next</div>
+                <div class="header-action primary">Copy This<br>Design</div>
+                <div class="header-action primary">Export This<br>Design</div>
+              </div>
+            </header>
+
+            <section class="top-card">
+              <div class="top-card-grid">
+                <div class="text-card">
+                  <div class="card-top">
+                    <strong>Listing Details</strong>
+                    <span class="subtle">Imported Etsy reference</span>
+                  </div>
+                  <div class="listing">
+                    <div class="thumb"></div>
+                    <div>
+                      <span><strong>Therapist Title Badge Reels</strong></span>
+                      <span>Color: Glitter Green</span>
+                      <span>Quantity: 1</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="text-card">
+                  <div class="card-top">
+                    <strong>Design Text</strong>
+                    <span class="subtle">Always visible</span>
+                  </div>
+                  <div class="field">
+                    <label>Order Text</label>
+                    <div class="textarea"></div>
+                  </div>
+                </div>
+
+                <div class="text-card">
+                  <div class="card-top">
+                    <strong>Global Controls</strong>
+                    <span class="subtle">Shared order settings</span>
+                  </div>
+                  <div class="global-grid">
+                    <div class="field">
+                      <label>Preset</label>
+                      <div class="input-box"></div>
+                    </div>
+                    <div class="field">
+                      <label>Weld Exported Design</label>
+                      <div class="toggle"></div>
+                    </div>
+                  </div>
+                  <div class="range-wrap">
+                    <label style="color: var(--ink); font-size: 0.86rem; font-weight: 700;">Backing Border</label>
+                    <div class="range"></div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section class="workspace">
+              <div class="preview-column">
+                <div class="preview-header">
+                  <strong>Preview</strong>
+                  <span class="subtle">Pinned while inspector scrolls</span>
+                </div>
+                <div class="preview-shell">
+                  <div class="guide-text">2.2"</div>
+                  <div class="guide"></div>
+                  <div class="badge-shape"></div>
+                </div>
+                <div class="preview-status">
+                  <strong>Single connected face piece</strong>
+                  <span>The connectedness summary stays beside the preview instead of creating another full-width row.</span>
+                </div>
+              </div>
+
+              <div class="inspector">
+                <div class="line-grid">
+                  <div class="line-card">
+                    <h3>Line 1</h3>
+                    <div class="control">
+                      <span>Font <em>Candlepin Laser</em></span>
+                      <div class="input-box"></div>
+                    </div>
+                    <div class="control">
+                      <span>Letter Bridge <em>0.5 mm</em></span>
+                      <div class="range"></div>
+                    </div>
+                    <div class="control">
+                      <span>Horizontal Offset <em>0.0 mm</em></span>
+                      <div class="range"></div>
+                    </div>
+                    <div class="control">
+                      <span>Text Height <em>34 mm</em></span>
+                      <div class="range"></div>
+                    </div>
+                  </div>
+
+                  <div class="line-card">
+                    <h3>Line 2</h3>
+                    <div class="control">
+                      <span>Font <em>Somekind</em></span>
+                      <div class="input-box"></div>
+                    </div>
+                    <div class="control">
+                      <span>Line Bridge <em>0.5 mm</em></span>
+                      <div class="range"></div>
+                    </div>
+                    <div class="control">
+                      <span>Vertical Stretch <em>100%</em></span>
+                      <div class="range"></div>
+                    </div>
+                    <div class="control">
+                      <span>Lock Text Height <em>Off</em></span>
+                      <div class="toggle"></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+          </section>
+        </div>
+      </div>
+    </main>
+  </body>
+</html>

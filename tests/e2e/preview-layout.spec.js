@@ -10,6 +10,25 @@ function completeAndNextButton(page) {
   return page.locator("#completeNextButton");
 }
 
+function queueToolsToggle(page) {
+  return page.locator(".queue-tools-toggle");
+}
+
+async function openQueueTools(page) {
+  const menu = page.locator(".queue-tools-menu");
+  if (await menu.evaluate((node) => node.hasAttribute("open"))) {
+    return;
+  }
+
+  await queueToolsToggle(page).click();
+  await expect(menu).toHaveAttribute("open", "");
+}
+
+async function clickQueueAction(page, name) {
+  await openQueueTools(page);
+  await page.getByRole("button", { name }).click();
+}
+
 async function completeDesign(page, queueLabel) {
   const row = page.locator("#orderList .order-row").filter({ hasText: queueLabel });
 
@@ -350,11 +369,11 @@ test.beforeEach(async ({ page }) => {
 
   if ((await orderCount.textContent()) !== "0") {
     page.once("dialog", (dialog) => dialog.accept());
-    await page.getByRole("button", { name: "Clear Batch" }).click();
+    await clickQueueAction(page, "Clear Batch");
     await expect(orderCount).toHaveText("0");
   }
 
-  await page.getByRole("button", { name: "+ Add Design" }).click();
+  await clickQueueAction(page, "+ Add Design");
 });
 
 test("shows the production defaults", async ({ page }) => {
@@ -437,6 +456,76 @@ test("keeps the preview title above the scrollable pane", async ({ page }) => {
   expect(afterZoom).not.toBeNull();
   expect(afterZoom.titleBottom).toBeLessThanOrEqual(afterZoom.panelTop);
   await expect(previewTitle).toHaveText("Preview");
+});
+
+test("uses the refined desktop B1 workspace proportions", async ({ page }) => {
+  await page.setViewportSize({ width: 1920, height: 1080 });
+
+  const layout = await page.evaluate(() => {
+    const workspace = document.querySelector(".production-workspace");
+    const queue = document.querySelector(".orders-panel");
+    const topCard = document.querySelector(".editor-top-card");
+    const editorWorkspace = document.querySelector(".editor-workspace");
+    const previewWorkspace = document.querySelector(".preview-workspace");
+    const lineRail = document.querySelector(".line-controls-rail");
+    const previewPanel = document.querySelector(".preview-panel");
+    const queueMenu = document.querySelector(".queue-tools-menu");
+    const stats = Array.from(document.querySelectorAll(".order-stats > div"));
+    const rect = (node) => {
+      if (!(node instanceof HTMLElement)) {
+        return null;
+      }
+
+      const box = node.getBoundingClientRect();
+      return { width: box.width, height: box.height, top: box.top, left: box.left };
+    };
+
+    return {
+      workspace: rect(workspace),
+      queue: rect(queue),
+      topCard: rect(topCard),
+      editorWorkspace: rect(editorWorkspace),
+      previewWorkspace: rect(previewWorkspace),
+      lineRail: rect(lineRail),
+      previewPanel: rect(previewPanel),
+      hasQueueMenu: queueMenu instanceof HTMLElement,
+      visibleStatCount: stats.length,
+    };
+  });
+
+  expect(layout.workspace).not.toBeNull();
+  expect(layout.queue.width / layout.workspace.width).toBeGreaterThan(0.24);
+  expect(layout.queue.width / layout.workspace.width).toBeLessThan(0.31);
+  expect(layout.previewWorkspace.width).toBeGreaterThan(layout.lineRail.width);
+  expect(layout.previewPanel.height).toBeGreaterThan(420);
+  expect(layout.visibleStatCount).toBe(2);
+  expect(layout.hasQueueMenu).toBe(true);
+});
+
+test("keeps additional line control groups reachable in the right-side inspector", async ({ page }) => {
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  await page.locator("#textInput").fill("DPT\nRN\nBSN");
+
+  const lineTitles = page.locator(".line-control-title");
+  await expect(lineTitles).toHaveCount(3);
+  await expect(lineTitles.nth(2)).toHaveText("Line 3");
+
+  const inspector = page.locator("#lineControls");
+  const beforeScrollTop = await inspector.evaluate((node) => node.scrollTop);
+  await lineTitles.nth(2).scrollIntoViewIfNeeded();
+  await expect(lineTitles.nth(2)).toBeVisible();
+  await expect.poll(async () => {
+    return inspector.evaluate((node) => node.scrollTop);
+  }).toBeGreaterThanOrEqual(beforeScrollTop);
+
+  const inspectorMetrics = await inspector.evaluate((node) => ({
+    clientHeight: node.clientHeight,
+    scrollHeight: node.scrollHeight,
+    overflowY: getComputedStyle(node).overflowY,
+  }));
+
+  expect(inspectorMetrics.overflowY).toBe("auto");
+  expect(inspectorMetrics.scrollHeight).toBeGreaterThanOrEqual(inspectorMetrics.clientHeight);
 });
 
 test("keeps wheel zoom without rendering floating zoom controls", async ({ page }) => {
@@ -951,7 +1040,7 @@ test("restores the current batch after refresh and clears it when requested", as
   await expect(page.locator("#weldExportedDesignInput")).not.toBeChecked();
 
   page.once("dialog", (dialog) => dialog.accept());
-  await page.getByRole("button", { name: "Clear Batch" }).click();
+  await clickQueueAction(page, "Clear Batch");
 
   await expect(page.locator("#orderCountOutput")).toHaveText("0");
   await expect(page.locator("#importStatus")).toContainText("Batch cleared");
@@ -965,7 +1054,7 @@ test("restores the current batch after refresh and clears it when requested", as
 
 test("keeps the design queue scroll position when selecting a row", async ({ page }) => {
   for (let index = 0; index < 14; index += 1) {
-    await page.getByRole("button", { name: "+ Add Design" }).click();
+    await clickQueueAction(page, "+ Add Design");
   }
 
   await expect(page.locator("#orderCountOutput")).toHaveText("15");
@@ -1379,7 +1468,7 @@ test("restores the previous completed geometry when a newer in-flight analysis i
   await expect(page.getByRole("button", { name: "Export This Design" })).toBeEnabled();
   await expect(page.locator("#connectionStatusLabel")).toContainText("Single connected face piece");
 
-  await page.getByRole("button", { name: "+ Add Design" }).click();
+  await clickQueueAction(page, "+ Add Design");
   await page.locator("#orderList .order-row").filter({ hasText: "Design 1" }).locator(".order-item").click();
   await expect(page.locator("#connectionStatusLabel")).toContainText("Single connected face piece");
   await expect(page.getByRole("button", { name: "Export This Design" })).toBeEnabled();
@@ -1402,7 +1491,7 @@ test("shows guide overflow when a locked line prevents fit", async ({ page }) =>
 });
 
 test("deletes a single design from the queue", async ({ page }) => {
-  await page.getByRole("button", { name: "+ Add Design" }).click();
+  await clickQueueAction(page, "+ Add Design");
   await expect(page.locator("#orderCountOutput")).toHaveText("2");
 
   page.once("dialog", (dialog) => dialog.accept());
@@ -1461,7 +1550,7 @@ test("skips already imported Etsy line items when importing another batch", asyn
     });
   }, firstPayload);
 
-  await page.getByRole("button", { name: "Import Clipboard" }).click();
+  await clickQueueAction(page, "Import Clipboard");
 
   await expect(page.locator("#orderCountOutput")).toHaveText("3");
   await expect(page.locator("#importStatus")).toContainText("Imported 2 Etsy designs from the clipboard.");
@@ -1475,7 +1564,7 @@ test("skips already imported Etsy line items when importing another batch", asyn
     });
   }, secondPayload);
 
-  await page.getByRole("button", { name: "Import Clipboard" }).click();
+  await clickQueueAction(page, "Import Clipboard");
 
   await expect(page.locator("#orderCountOutput")).toHaveText("4");
   await expect(page.locator("#importStatus")).toContainText("Imported 1 new Etsy design and skipped 1 already in the queue.");
@@ -1519,7 +1608,7 @@ test("shows imported Etsy color and quantity below design text and highlights wh
     });
   }, payload);
 
-  await page.getByRole("button", { name: "Import Clipboard" }).click();
+  await clickQueueAction(page, "Import Clipboard");
 
   await expect(page.locator("#importedColorField")).toBeVisible();
   await expect(page.locator("#importedColorValue")).toHaveText("White Glitter");
@@ -1527,7 +1616,7 @@ test("shows imported Etsy color and quantity below design text and highlights wh
   await expect(page.locator("#importedQuantityField")).toBeVisible();
   await expect(page.locator("#importedQuantityValue")).toHaveText("2");
 
-  await page.locator("#orderList .order-row").filter({ hasText: "#4057629148" }).locator(".order-item").click();
+  await page.locator("#orderList .order-row").filter({ hasText: "#4057629148" }).click();
 
   await expect(page.locator("#importedColorField")).toBeVisible();
   await expect(page.locator("#importedColorValue")).toHaveText("Red");
@@ -1584,7 +1673,7 @@ test("includes imported color and quantity in the export payload", async ({ page
     });
   });
 
-  await page.getByRole("button", { name: "Import Clipboard" }).click();
+  await clickQueueAction(page, "Import Clipboard");
   await completeDesign(page, "#4057600528");
   await page.locator("#orderList .order-row").filter({ hasText: "#4057600528" }).locator(".order-item").click();
   await page.getByRole("button", { name: "Export This Design" }).click();
@@ -1642,10 +1731,10 @@ test("copies the current design and all queued designs to the clipboard", async 
   await completeDesign(page, "Design 1");
   await page.getByRole("button", { name: "Copy This Design" }).click();
 
-  await page.getByRole("button", { name: "+ Add Design" }).click();
+  await clickQueueAction(page, "+ Add Design");
   await page.locator("#textInput").fill("Beta");
   await completeDesign(page, "Design 2");
-  await page.getByRole("button", { name: "Copy All Designs" }).click();
+  await clickQueueAction(page, "Copy All Designs");
 
   await expect.poll(async () => {
     return page.evaluate(() => window.__copiedSvgPayloads);
@@ -1707,7 +1796,7 @@ test("keeps Complete button state independent from background analysis", async (
   });
 
   await page.locator("#textInput").fill("Alpha");
-  await page.getByRole("button", { name: "+ Add Design" }).click();
+  await clickQueueAction(page, "+ Add Design");
   await page.locator("#textInput").fill("Beta");
 
   await page.locator("#orderList .order-row").filter({ hasText: "Design 1" }).locator(".order-item").click();
@@ -1735,7 +1824,7 @@ test("Complete marks the active design finished without advancing to the next de
   });
 
   await page.locator("#textInput").fill("Alpha");
-  await page.getByRole("button", { name: "+ Add Design" }).click();
+  await clickQueueAction(page, "+ Add Design");
   await page.locator("#textInput").fill("Beta");
   await page.locator("#orderList .order-row").filter({ hasText: "Design 1" }).locator(".order-item").click();
 
@@ -1763,7 +1852,7 @@ test("Complete & Next marks the current design finished and advances to the next
   });
 
   await page.locator("#textInput").fill("Alpha");
-  await page.getByRole("button", { name: "+ Add Design" }).click();
+  await clickQueueAction(page, "+ Add Design");
   await page.locator("#textInput").fill("Beta");
   await page.locator("#orderList .order-row").filter({ hasText: "Design 1" }).locator(".order-item").click();
 
@@ -1815,7 +1904,7 @@ test("keeps Complete disabled when reselecting a design whose analysis is still 
   });
 
   await page.locator("#textInput").fill("Alpha");
-  await page.getByRole("button", { name: "+ Add Design" }).click();
+  await clickQueueAction(page, "+ Add Design");
   await page.locator("#textInput").fill("Beta");
 
   await page.locator("#orderList .order-row").filter({ hasText: "Design 1" }).locator(".order-item").click();
@@ -1850,7 +1939,7 @@ test("does not allow a second Complete run while the same design analysis is sti
   });
 
   await page.locator("#textInput").fill("Alpha");
-  await page.getByRole("button", { name: "+ Add Design" }).click();
+  await clickQueueAction(page, "+ Add Design");
   await page.locator("#textInput").fill("Beta");
 
   await page.locator("#orderList .order-row").filter({ hasText: "Design 1" }).locator(".order-item").click();
@@ -1898,7 +1987,7 @@ test("shows queue analysis indicators for running, connected, and multi-piece co
   await saveAlpha;
   await expect(page.locator("#orderList .order-row").filter({ hasText: "Design 1" }).locator(".order-analysis-indicator.ok")).toBeVisible({ timeout: 20000 });
 
-  await page.getByRole("button", { name: "+ Add Design" }).click();
+  await clickQueueAction(page, "+ Add Design");
   await page.locator("#textInput").fill("Beta");
   await completeDesign(page, "Design 2");
 
@@ -1979,10 +2068,10 @@ test("exports completed designs without re-running analysis", async ({ page }) =
 
   await page.locator("#textInput").fill("Alpha");
   await completeDesign(page, "Design 1");
-  await page.getByRole("button", { name: "+ Add Design" }).click();
+  await clickQueueAction(page, "+ Add Design");
   await page.locator("#textInput").fill("Beta");
   await completeDesign(page, "Design 2");
-  await page.getByRole("button", { name: "Export All Designs" }).click();
+  await clickQueueAction(page, "Export All Designs");
 
   await expect.poll(() => exportRequested, { timeout: 20000 }).toBe(true);
   expect(exportAnalyzeCounts).toEqual({
