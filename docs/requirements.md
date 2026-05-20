@@ -198,7 +198,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Etsy listing ID `4465975709` must also apply a listing-specific per-line default of `21 mm` text height on line 2 while keeping the rest of the `Skywalk, Candlepin` preset defaults unchanged.
 - Imported Etsy data should create one queue row per personalized Etsy line item rather than one row per Etsy order.
 - Because one Etsy order may create multiple queue rows, user-facing queue and editor language should refer to designs or queue items rather than assuming one row always equals one Etsy order.
-- Imported Etsy queue rows should display as exactly four text lines: line 1 the Etsy order number, line 2 the recipient or buyer name, line 3 the Etsy listing ID, and line 4 the personalization text.
+- Imported Etsy queue rows should display as exactly four text lines: line 1 the Etsy order number, line 2 `Buyer: <buyer name>`, line 3 `Listing: <listing title>` truncated when needed, and line 4 `Personalization: <personalization>` using the same queue-row text styling as the other metadata lines except for a larger font size.
 - Re-importing a later Etsy batch must preserve any queue items already present in the current design queue instead of overwriting them.
 - During import, any Etsy line item that already exists in the current design queue should be skipped so the operator can import only newly arrived orders into the same working batch.
 - Imported queue items and subsequent design edits should persist across a browser refresh in local browser storage during the current batch workflow.

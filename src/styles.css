@@ -298,6 +298,7 @@ h2 {
 
 .order-row:last-child {
   padding-bottom: 0;
+  box-shadow: none;
 }
 
 .order-row:hover,
@@ -486,6 +487,10 @@ h2 {
   line-height: 1.35;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.order-item-personalization {
+  font-size: 0.9rem;
 }
 
 .order-item-meta {
@@ -857,6 +862,10 @@ button:disabled {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #f8fbfc;
+}
+
+.status-card[hidden] {
+  display: none;
 }
 
 .status-card strong {

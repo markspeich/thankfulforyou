@@ -58,6 +58,16 @@ When the user provides new product, workflow, material, manufacturing, design, o
 - Ask for clarification when manufacturing constraints affect geometry decisions.
 - Capture assumptions explicitly in `docs/requirements.md`.
 - Keep changes scoped and avoid unrelated refactors.
+- To start the local dev server in this worktree, run `npm start` from the repository root.
+- Use `npm start` as the canonical dev entrypoint for this app instead of invoking `node` directly with a guessed script.
+- The dev server port is determined by `tools/dev_port.mjs`. Do not hardcode or guess a worktree URL from `AGENTS.md`.
+- After starting the server, read the printed `Badge reel layout tool: http://localhost:...` line and use that exact URL.
+- If the URL is needed before launch, compute it from the helper with `node --input-type=module -e "import { resolveDevBaseUrl } from './tools/dev_port.mjs'; console.log(resolveDevBaseUrl())"`.
+- If a different port is needed, set it explicitly in PowerShell with `$env:PORT = "4801"` and then run `npm start`.
+- Keep the dev server running in a foreground or other persistent terminal session. In this Windows Codex worktree setup, detached hidden launches can exit early and leave the browser unable to connect.
+- Do not assume `node_modules` must already exist before launching the dev server. In this repo, the HTTP dev server can start without an install, though tests and other tooling may still require dependencies.
+- After launch, verify the server with a quick HTTP request instead of trusting process startup alone.
+- Remember that the geometry API routes depend on Python. A running frontend server does not guarantee that export and analysis requests will succeed.
 - Prefer bash commands and examples over PowerShell unless PowerShell is absolutely necessary for the task or environment.
 - In this Windows worktree environment, `git` commands that touch worktree metadata such as `merge`, `add`, `commit`, and conflict resolution staging may require escalated permissions because `.git/worktrees/...` lockfiles can be blocked otherwise.
 - Do not assume `bash` is available here. The bundled `bash` path may route to WSL, and this machine currently has no installed WSL distribution.
