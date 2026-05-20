@@ -21,6 +21,7 @@ function buildSignaturePayload(settings = {}, options = {}) {
       lineBridgeMm: toFiniteNumber(line.lineBridgeMm),
       offsetXMm: toFiniteNumber(line.offsetXMm),
       fontSizeMm: toFiniteNumber(line.fontSizeMm),
+      horizontalScale: toFiniteNumber(line.horizontalScale),
       verticalScale: toFiniteNumber(line.verticalScale),
       ...(includeLockTextHeight ? { lockTextHeight: Boolean(line.lockTextHeight) } : {}),
     })),

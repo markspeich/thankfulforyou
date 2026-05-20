@@ -15,6 +15,7 @@ const createDefaultLineSettings = () => ({
   lineBridgeMm: 0.5,
   offsetXMm: 0,
   fontSizeMm: 34,
+  horizontalScale: 1,
   verticalScale: 1,
   lockTextHeight: false,
 });
@@ -76,6 +77,7 @@ describe("presets", () => {
         lineBridgeMm: 0.5,
         offsetXMm: 0,
         fontSizeMm: 18,
+        horizontalScale: 1,
         verticalScale: 1,
         lockTextHeight: false,
       },
@@ -85,6 +87,7 @@ describe("presets", () => {
         lineBridgeMm: 0.5,
         offsetXMm: 0,
         fontSizeMm: 23,
+        horizontalScale: 1,
         verticalScale: 1,
         lockTextHeight: true,
       },
@@ -94,6 +97,7 @@ describe("presets", () => {
         lineBridgeMm: 0.5,
         offsetXMm: 0,
         fontSizeMm: 34,
+        horizontalScale: 1,
         verticalScale: 1,
         lockTextHeight: false,
       },
@@ -110,6 +114,7 @@ describe("presets", () => {
         lineBridgeMm: 0.5,
         offsetXMm: 0,
         fontSizeMm: 34,
+        horizontalScale: 1,
         verticalScale: 1,
         lockTextHeight: false,
       },
@@ -119,6 +124,7 @@ describe("presets", () => {
         lineBridgeMm: 0.5,
         offsetXMm: 0,
         fontSizeMm: 34,
+        horizontalScale: 1,
         verticalScale: 1,
         lockTextHeight: false,
       },
@@ -136,6 +142,7 @@ describe("presets", () => {
       lineBridgeMm: 0.5,
       offsetXMm: 0,
       fontSizeMm: 18,
+      horizontalScale: 1,
       verticalScale: 1,
       lockTextHeight: false,
     });
@@ -145,6 +152,7 @@ describe("presets", () => {
       lineBridgeMm: 0.5,
       offsetXMm: 0,
       fontSizeMm: 23,
+      horizontalScale: 1,
       verticalScale: 1,
       lockTextHeight: true,
     });
@@ -154,6 +162,7 @@ describe("presets", () => {
       lineBridgeMm: 0.5,
       offsetXMm: 0,
       fontSizeMm: 34,
+      horizontalScale: 1,
       verticalScale: 1,
       lockTextHeight: false,
     });
@@ -170,6 +179,7 @@ describe("presets", () => {
       lineBridgeMm: 0.5,
       offsetXMm: 0,
       fontSizeMm: 34,
+      horizontalScale: 1,
       verticalScale: 1,
       lockTextHeight: false,
     });
@@ -179,6 +189,7 @@ describe("presets", () => {
       lineBridgeMm: 0.5,
       offsetXMm: 0,
       fontSizeMm: 21,
+      horizontalScale: 1,
       verticalScale: 1,
       lockTextHeight: false,
     });
@@ -188,6 +199,7 @@ describe("presets", () => {
       lineBridgeMm: 0.5,
       offsetXMm: 0,
       fontSizeMm: 34,
+      horizontalScale: 1,
       verticalScale: 1,
       lockTextHeight: false,
     });
@@ -207,6 +219,7 @@ describe("presets", () => {
             lineBridgeMm: 0.5,
             offsetXMm: 0,
             fontSizeMm: 34,
+            horizontalScale: 1,
             verticalScale: 1,
             lockTextHeight: false,
           },
@@ -222,6 +235,38 @@ describe("presets", () => {
 
     const lines = buildPresetLines("custom-lock", 2, createDefaultLineSettings);
     expect(lines.map((line) => line.lockTextHeight)).toEqual([true, false]);
+  });
+
+  it("preserves horizontalScale overrides coming from preset data", () => {
+    setPresetRegistryForTests(
+      { defaultPresetId: "custom-width" },
+      [
+        {
+          schemaVersion: 1,
+          id: "custom-width",
+          name: "Custom Width",
+          lineDefaults: {
+            fontId: "candlepin",
+            bridgeMm: 0.5,
+            lineBridgeMm: 0.5,
+            offsetXMm: 0,
+            fontSizeMm: 34,
+            horizontalScale: 1,
+            verticalScale: 1,
+            lockTextHeight: false,
+          },
+          lineRules: [
+            {
+              match: { kind: "first" },
+              settings: { horizontalScale: 1.25 },
+            },
+          ],
+        },
+      ],
+    );
+
+    const lines = buildPresetLines("custom-width", 2, createDefaultLineSettings);
+    expect(lines.map((line) => line.horizontalScale)).toEqual([1.25, 1]);
   });
 
   it("returns preset-level global defaults", () => {

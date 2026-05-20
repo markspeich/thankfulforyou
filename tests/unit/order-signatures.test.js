@@ -6,7 +6,7 @@ import {
 } from "../../src/order-signatures.js";
 
 describe("order signatures", () => {
-  it("includes lockTextHeight in the current signature format", () => {
+  it("includes lockTextHeight and horizontalScale in the current signature format", () => {
     const signature = buildSettingsSignature({
       text: "Mark\nRN",
       presetId: "skywalk-somekind",
@@ -19,6 +19,7 @@ describe("order signatures", () => {
           lineBridgeMm: 0.5,
           offsetXMm: 0,
           fontSizeMm: 34,
+          horizontalScale: 1.2,
           verticalScale: 1,
           lockTextHeight: true,
         },
@@ -29,6 +30,7 @@ describe("order signatures", () => {
       version: 2,
       lines: [
         {
+          horizontalScale: 1.2,
           lockTextHeight: true,
         },
       ],
@@ -48,6 +50,7 @@ describe("order signatures", () => {
           lineBridgeMm: 0.5,
           offsetXMm: 0,
           fontSizeMm: 34,
+          horizontalScale: 1.2,
           verticalScale: 1,
           lockTextHeight: true,
         },
@@ -57,7 +60,7 @@ describe("order signatures", () => {
     expect(candidates).toHaveLength(2);
     expect(JSON.parse(candidates[0])).toMatchObject({
       version: 2,
-      lines: [{ lockTextHeight: true }],
+      lines: [{ horizontalScale: 1.2, lockTextHeight: true }],
     });
     expect(JSON.parse(candidates[1])).toMatchObject({
       lines: [
@@ -67,6 +70,7 @@ describe("order signatures", () => {
           lineBridgeMm: 0.5,
           offsetXMm: 0,
           fontSizeMm: 34,
+          horizontalScale: 1.2,
           verticalScale: 1,
         },
       ],

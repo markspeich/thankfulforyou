@@ -203,6 +203,44 @@ describe("export_svg face tracing", () => {
     expect(stretched.facePath).not.toBe(base.facePath);
   });
 
+  test("applies per-letter horizontal stretch without meaningfully increasing outline height", { timeout: 15000 }, () => {
+    const baseLayout = {
+      text: "T",
+      widthMm: 40,
+      heightMm: 40,
+      backingMm: 3.1,
+      letters: [
+        {
+          character: "T",
+          fontId: "candlepin",
+          fontPath: "public/fonts/Candlepin-Laser.otf",
+          fontSizeMm: 20,
+          horizontalScale: 1,
+          verticalScale: 1,
+          x: 5,
+          y: 28,
+        },
+      ],
+    };
+
+    const base = analyzeLayout(baseLayout);
+    const stretched = analyzeLayout({
+      ...baseLayout,
+      letters: [
+        {
+          ...baseLayout.letters[0],
+          horizontalScale: 1.35,
+        },
+      ],
+    });
+
+    expect(base.faceBoundsMm).toBeTruthy();
+    expect(stretched.faceBoundsMm).toBeTruthy();
+    expect(stretched.faceBoundsMm.width).toBeGreaterThan(base.faceBoundsMm.width * 1.25);
+    expect(stretched.faceBoundsMm.height).toBeLessThan(base.faceBoundsMm.height * 1.05);
+    expect(stretched.facePath).not.toBe(base.facePath);
+  });
+
   test("reuses precomputed export geometry without rebuilding outlines", () => {
     const svg = exportSvg({
       text: "Cached",

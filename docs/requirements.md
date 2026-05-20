@@ -74,9 +74,11 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Preset ids should remain stable once in use so saved queue data can continue resolving previously selected presets.
 - Per-line preset and saved-order data must persist the `Lock Text Height` setting so reusable presets and restored queue items preserve which lines are protected from automatic fit resizing.
 - Allow font selection per line of text.
+- Allow horizontal-only stretching per line of text so operators can make a line wider without making it taller.
+- Per-line `Horizontal Stretch` controls should allow values up to `200%`.
 - Allow vertical-only stretching per line of text so operators can make a line taller without making it wider.
 - Provide one control group per text line.
-- Each per-line control group must include a Font dropdown, Letter Bridge slider, Horizontal Offset slider, Text Height slider, and Vertical Stretch slider.
+- Each per-line control group must include a Font dropdown, Letter Bridge slider, Horizontal Offset slider, Text Height slider, Horizontal Stretch slider, and Vertical Stretch slider.
 - Each per-line control group must also include a `Lock Text Height` control that prevents automatic boundary-fit resizing from changing that line's configured text height.
 - The `Lock Text Height` control should appear inline with the rest of the line controls and should not render inside its own bordered subsection.
 - Each per-line control group after the first must also include a Line Bridge slider for controlling the connection to the line above it.
@@ -93,9 +95,11 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Treat `Text Height` as the authored physical size for each line in millimeters.
 - When a line's `Lock Text Height` control is enabled, preserve that line's authored text height during automatic boundary-fit resizing instead of scaling it with the rest of the design.
 - Automatic boundary-fit resizing should continue scaling unlocked lines proportionally to make the best use of the 2.2 inch by 1.5 inch guide box.
+- `Horizontal Stretch` must remain editable and continue affecting final rendered geometry even when `Lock Text Height` is enabled, because the lock applies only to authored text height.
 - `Vertical Stretch` must remain editable and continue affecting final rendered geometry even when `Lock Text Height` is enabled, because the lock applies only to authored text height.
 - If one or more locked lines prevent the final design from fitting within the guide box, preserve the locked text height and allow the final design to overflow the guide rather than silently breaking the lock.
 - Manual edits to `Text Height` must continue working when `Lock Text Height` is enabled; the lock only prevents automatic fit resizing from changing the line's authored text height.
+- Horizontal-only stretch must contribute to the measured text width and connectedness analysis while preserving the intended line height as much as practical.
 - Vertical-only stretch must contribute to the measured text height and connectedness analysis while preserving the intended line width as much as practical.
 - The backing border does not need to fit within the 2.2 inch by 1.5 inch text guide limit and may extend beyond it.
 - Detect whether text geometry is connected as a single piece.
@@ -107,6 +111,13 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - When a design's settings have not changed since the last save, the app should reuse its most recently saved analyzed export-ready geometry for queue revisit and SVG export instead of recomputing the same layout and paths again.
 - Add a `Weld Exported Design` checkbox directly below the order text field.
 - The `Weld Exported Design` checkbox must default to checked.
+- Add a global `Horizontal Stretch` slider in the Global controls box.
+- The global `Horizontal Stretch` slider should allow values up to `200%`.
+- The global `Horizontal Stretch` slider must overwrite every current text line's per-line `Horizontal Stretch` value when adjusted.
+- When all text lines share the same horizontal stretch value, the global `Horizontal Stretch` slider should display that shared value; when lines differ, its readout should indicate a mixed state until the operator adjusts it.
+- Add a global `Vertical Stretch` slider in the Global controls box.
+- The global `Vertical Stretch` slider must overwrite every current text line's per-line `Vertical Stretch` value when adjusted.
+- When all text lines share the same vertical stretch value, the global `Vertical Stretch` slider should display that shared value; when lines differ, its readout should indicate a mixed state until the operator adjusts it.
 - The preview area should include a non-exported 2.2 inch by 1.5 inch background guide box, and the rendered design should be centered within that box on screen.
 - The preview guide should include a non-exported 1.25 inch circle centered inside the 2.2 inch by 1.5 inch guide box, matching the box guide style.
 - The preview guide should use thin solid `rgb(12, 150, 217)` strokes instead of dashed strokes.
@@ -300,7 +311,7 @@ The website should be a practical production tool rather than a marketing site. 
 - Queue batch actions should move behind a compact queue-tools affordance beside the `Design Queue` title instead of occupying a permanent full-width button block above the list.
 - Under the selected-order header action row on desktop, the content area should split into two main columns.
 - The left editor column should contain the imported listing details, imported color and quantity, the `Design Text` field, and the preview with connectedness status.
-- The right editor column should contain the global controls for `Presets`, `Weld Exported Design`, and `Backing Border`, followed by the per-line controls for `Line 1`, `Line 2`, and any additional lines.
+- The right editor column should contain the global controls for `Presets`, `Weld Exported Design`, global `Horizontal Stretch`, global `Vertical Stretch`, and `Backing Border`, followed by the per-line controls for `Line 1`, `Line 2`, and any additional lines.
 - In the selected-order workspace, the preview should remain the dominant element in the left column, with connectedness status directly below the preview instead of in a separate full-width row above it.
 - In the selected-order workspace, the per-line controls should sit in a narrower right-side rail and should stack one line card per row instead of showing line cards side by side.
 - The right-side control rail should own its own vertical scrolling so additional line-control groups remain reachable as operators add more text lines.

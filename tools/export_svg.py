@@ -417,8 +417,10 @@ def build_face_outline_path(root, payload):
 
         glyph = font_data["glyph_set"][glyph_name]
         scale_x = float(letter["fontSizeMm"]) / float(font_data["units_per_em"])
+        horizontal_scale = float(letter.get("horizontalScale", 1))
         vertical_scale = float(letter.get("verticalScale", 1))
-        scale_y = scale_x * vertical_scale
+        scale_x = scale_x * horizontal_scale
+        scale_y = scale_x / max(horizontal_scale, 1e-9) * vertical_scale
         transform = (
             scale_x,
             0,
@@ -484,6 +486,7 @@ def render_text_mask(
         if not character:
             continue
 
+        horizontal_scale = max(0.01, float(letter.get("horizontalScale", 1)))
         vertical_scale = max(0.01, float(letter.get("verticalScale", 1)))
         bbox = temp_draw.textbbox(
             (0, 0),
@@ -510,9 +513,12 @@ def render_text_mask(
             stroke_fill=255,
         )
 
-        if abs(vertical_scale - 1.0) > 1e-6:
+        if abs(horizontal_scale - 1.0) > 1e-6 or abs(vertical_scale - 1.0) > 1e-6:
             glyph_image = glyph_image.resize(
-                (glyph_width, max(1, round(glyph_height * vertical_scale))),
+                (
+                    max(1, round(glyph_width * horizontal_scale)),
+                    max(1, round(glyph_height * vertical_scale)),
+                ),
                 Image.Resampling.BICUBIC,
             )
 

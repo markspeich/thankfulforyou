@@ -78,6 +78,7 @@ const DEFAULT_LINE_SETTINGS = Object.freeze({
   lineBridgeMm: 0.5,
   offsetXMm: 0,
   fontSizeMm: 34,
+  horizontalScale: 1,
   verticalScale: 1,
   lockTextHeight: false,
 });
@@ -116,6 +117,10 @@ const importedQuantityField = document.querySelector("#importedQuantityField");
 const importedQuantityValue = document.querySelector("#importedQuantityValue");
 const presetInput = document.querySelector("#presetInput");
 const weldExportedDesignInput = document.querySelector("#weldExportedDesignInput");
+const globalHorizontalScaleInput = document.querySelector("#globalHorizontalScaleInput");
+const globalHorizontalScaleOutput = document.querySelector("#globalHorizontalScaleOutput");
+const globalVerticalScaleInput = document.querySelector("#globalVerticalScaleInput");
+const globalVerticalScaleOutput = document.querySelector("#globalVerticalScaleOutput");
 const lineControls = document.querySelector("#lineControls");
 const backingInput = document.querySelector("#backingInput");
 const backingOutput = document.querySelector("#backingOutput");
@@ -176,6 +181,7 @@ function createDefaultLineSettings() {
     lineBridgeMm: DEFAULT_LINE_SETTINGS.lineBridgeMm,
     offsetXMm: DEFAULT_LINE_SETTINGS.offsetXMm,
     fontSizeMm: DEFAULT_LINE_SETTINGS.fontSizeMm,
+    horizontalScale: DEFAULT_LINE_SETTINGS.horizontalScale,
     verticalScale: DEFAULT_LINE_SETTINGS.verticalScale,
     lockTextHeight: DEFAULT_LINE_SETTINGS.lockTextHeight,
   };
@@ -219,6 +225,9 @@ function normalizeLineSettings(lineSettings = {}) {
     lineBridgeMm: Number.isFinite(Number(lineSettings.lineBridgeMm)) ? Number(lineSettings.lineBridgeMm) : DEFAULT_LINE_SETTINGS.lineBridgeMm,
     offsetXMm: Number.isFinite(Number(lineSettings.offsetXMm)) ? Number(lineSettings.offsetXMm) : DEFAULT_LINE_SETTINGS.offsetXMm,
     fontSizeMm: Number.isFinite(Number(lineSettings.fontSizeMm)) ? Number(lineSettings.fontSizeMm) : DEFAULT_LINE_SETTINGS.fontSizeMm,
+    horizontalScale: Number.isFinite(Number(lineSettings.horizontalScale))
+      ? Number(lineSettings.horizontalScale)
+      : DEFAULT_LINE_SETTINGS.horizontalScale,
     verticalScale: Number.isFinite(Number(lineSettings.verticalScale)) ? Number(lineSettings.verticalScale) : DEFAULT_LINE_SETTINGS.verticalScale,
     lockTextHeight: typeof lineSettings.lockTextHeight === "boolean"
       ? lineSettings.lockTextHeight
@@ -1385,11 +1394,71 @@ function lineValueText(setting, value) {
     return `${Math.round(Number(value) * 100)}%`;
   }
 
+  if (setting === "horizontalScale") {
+    return `${Math.round(Number(value) * 100)}%`;
+  }
+
   return `${Number(value).toFixed(1)} mm`;
 }
 
 function updateBackingOutput() {
   backingOutput.textContent = `${Number(backingInput.value).toFixed(1)} mm`;
+}
+
+function summarizeHorizontalScale(lines = []) {
+  if (!lines.length) {
+    return {
+      value: DEFAULT_LINE_SETTINGS.horizontalScale,
+      mixed: false,
+    };
+  }
+
+  const values = lines.map((line) => normalizeLineSettings(line).horizontalScale);
+  const first = values[0];
+
+  return {
+    value: first,
+    mixed: values.some((value) => Math.abs(value - first) > 1e-6),
+  };
+}
+
+function summarizeVerticalScale(lines = []) {
+  if (!lines.length) {
+    return {
+      value: DEFAULT_LINE_SETTINGS.verticalScale,
+      mixed: false,
+    };
+  }
+
+  const values = lines.map((line) => normalizeLineSettings(line).verticalScale);
+  const first = values[0];
+
+  return {
+    value: first,
+    mixed: values.some((value) => Math.abs(value - first) > 1e-6),
+  };
+}
+
+function updateGlobalHorizontalScaleControl(settings = getCurrentSettings()) {
+  if (!globalHorizontalScaleInput || !globalHorizontalScaleOutput) {
+    return;
+  }
+
+  const normalized = normalizeSettings(settings);
+  const { value, mixed } = summarizeHorizontalScale(normalized.lines);
+  globalHorizontalScaleInput.value = String(value);
+  globalHorizontalScaleOutput.textContent = mixed ? "Mixed" : lineValueText("horizontalScale", value);
+}
+
+function updateGlobalVerticalScaleControl(settings = getCurrentSettings()) {
+  if (!globalVerticalScaleInput || !globalVerticalScaleOutput) {
+    return;
+  }
+
+  const normalized = normalizeSettings(settings);
+  const { value, mixed } = summarizeVerticalScale(normalized.lines);
+  globalVerticalScaleInput.value = String(value);
+  globalVerticalScaleOutput.textContent = mixed ? "Mixed" : lineValueText("verticalScale", value);
 }
 
 function setQueueActionLabel(button, label) {
@@ -1452,6 +1521,7 @@ function renderLineControls(settings = getCurrentSettings()) {
       createRangeField(index, "bridgeMm", "Letter Bridge", 0, 4, 0.1, line.bridgeMm),
       createRangeField(index, "offsetXMm", "Horizontal Offset", -20, 20, 0.1, line.offsetXMm),
       createRangeField(index, "fontSizeMm", "Text Height", 18, 55, 1, line.fontSizeMm),
+      createRangeField(index, "horizontalScale", "Horizontal Stretch", 0.75, 2, 0.01, line.horizontalScale),
       createRangeField(index, "verticalScale", "Vertical Stretch", 0.75, 1.5, 0.01, line.verticalScale),
       createCheckboxField(index, "lockTextHeight", "Lock Text Height", line.lockTextHeight),
     ];
@@ -1551,6 +1621,7 @@ function getCurrentSettings() {
     const lineBridgeInput = lineCard.querySelector('[data-setting="lineBridgeMm"]');
     const offsetXInput = lineCard.querySelector('[data-setting="offsetXMm"]');
     const fontSizeInput = lineCard.querySelector('[data-setting="fontSizeMm"]');
+    const horizontalScaleInput = lineCard.querySelector('[data-setting="horizontalScale"]');
     const verticalScaleInput = lineCard.querySelector('[data-setting="verticalScale"]');
     const lockTextHeightInput = lineCard.querySelector('[data-setting="lockTextHeight"]');
 
@@ -1560,6 +1631,7 @@ function getCurrentSettings() {
       lineBridgeMm: lineBridgeInput?.value,
       offsetXMm: offsetXInput?.value,
       fontSizeMm: fontSizeInput?.value,
+      horizontalScale: horizontalScaleInput?.value,
       verticalScale: verticalScaleInput?.value,
       lockTextHeight: lockTextHeightInput?.checked,
     });
@@ -1582,6 +1654,8 @@ function applySettings(settings) {
   backingInput.value = String(normalized.backingMm);
   updateBackingOutput();
   renderLineControls(normalized);
+  updateGlobalHorizontalScaleControl(normalized);
+  updateGlobalVerticalScaleControl(normalized);
 }
 
 function applyPresetSelection(presetId) {
@@ -2357,27 +2431,27 @@ async function checkFonts() {
   );
 }
 
-function measureCharacter(character, fontSizeMm, fontId) {
+function measureCharacter(character, fontSizeMm, fontId, horizontalScale = 1) {
   const fontSizePx = fontSizeMm * PX_PER_MM;
   ctx.font = getCanvasFont(fontSizePx, fontId);
   const metrics = ctx.measureText(character);
-  const left = (metrics.actualBoundingBoxLeft || 0) / PX_PER_MM;
-  const right = (metrics.actualBoundingBoxRight || metrics.width) / PX_PER_MM;
+  const left = ((metrics.actualBoundingBoxLeft || 0) / PX_PER_MM) * horizontalScale;
+  const right = ((metrics.actualBoundingBoxRight || metrics.width) / PX_PER_MM) * horizontalScale;
 
   return {
-    advance: metrics.width / PX_PER_MM,
+    advance: (metrics.width / PX_PER_MM) * horizontalScale,
     left,
     right,
     inkWidth: left + right,
   };
 }
 
-function drawScaledText(context, character, x, y, fontSizePx, fontId, verticalScale, mode = "fill") {
+function drawScaledText(context, character, x, y, fontSizePx, fontId, horizontalScale, verticalScale, mode = "fill") {
   context.save();
   context.font = getCanvasFont(fontSizePx, fontId);
   context.textBaseline = "alphabetic";
   context.translate(x, y);
-  context.scale(1, verticalScale);
+  context.scale(horizontalScale, verticalScale);
 
   if (mode === "stroke" || mode === "both") {
     context.strokeText(character, 0, 0);
@@ -2390,7 +2464,7 @@ function drawScaledText(context, character, x, y, fontSizePx, fontId, verticalSc
   context.restore();
 }
 
-function createGlyphMask(character, fontSizeMm, fontId, verticalScale) {
+function createGlyphMask(character, fontSizeMm, fontId, horizontalScale, verticalScale) {
   const fontSizePx = fontSizeMm * PX_PER_MM * MASK_SCALE;
   const maskCanvas = document.createElement("canvas");
   const maskContext = maskCanvas.getContext("2d", { willReadFrequently: true });
@@ -2401,7 +2475,9 @@ function createGlyphMask(character, fontSizeMm, fontId, verticalScale) {
   const right = Math.ceil(metrics.actualBoundingBoxRight || metrics.width);
   const ascent = Math.ceil(metrics.actualBoundingBoxAscent || fontSizePx * 0.8);
   const descent = Math.ceil(metrics.actualBoundingBoxDescent || fontSizePx * 0.25);
-  const width = Math.max(1, left + right + MASK_PADDING_PX * 2);
+  const scaledLeft = Math.ceil(left * horizontalScale);
+  const scaledRight = Math.ceil(right * horizontalScale);
+  const width = Math.max(1, scaledLeft + scaledRight + MASK_PADDING_PX * 2);
   const scaledAscent = Math.ceil(ascent * verticalScale);
   const scaledDescent = Math.ceil(descent * verticalScale);
   const height = Math.max(1, scaledAscent + scaledDescent + MASK_PADDING_PX * 2);
@@ -2410,7 +2486,7 @@ function createGlyphMask(character, fontSizeMm, fontId, verticalScale) {
   maskCanvas.width = width;
   maskCanvas.height = height;
   maskContext.fillStyle = "#000";
-  drawScaledText(maskContext, character, MASK_PADDING_PX + left, baseline, fontSizePx, fontId, verticalScale);
+  drawScaledText(maskContext, character, MASK_PADDING_PX + scaledLeft, baseline, fontSizePx, fontId, horizontalScale, verticalScale);
 
   const imageData = maskContext.getImageData(0, 0, width, height);
 
@@ -2420,8 +2496,8 @@ function createGlyphMask(character, fontSizeMm, fontId, verticalScale) {
     width,
     height,
     baseline,
-    leftMm: left / MASK_SCALE / PX_PER_MM,
-    rightMm: right / MASK_SCALE / PX_PER_MM,
+    leftMm: scaledLeft / MASK_SCALE / PX_PER_MM,
+    rightMm: scaledRight / MASK_SCALE / PX_PER_MM,
     ascentMm: scaledAscent / MASK_SCALE / PX_PER_MM,
     descentMm: scaledDescent / MASK_SCALE / PX_PER_MM,
   };
@@ -2500,7 +2576,7 @@ function createEmptyLineMask(fontSizeMm, verticalScale) {
   };
 }
 
-function createLineMask(letters, fontSizeMm, fontId, verticalScale) {
+function createLineMask(letters, fontSizeMm, fontId, horizontalScale, verticalScale) {
   if (!letters.length) {
     return createEmptyLineMask(fontSizeMm, verticalScale);
   }
@@ -2532,6 +2608,7 @@ function createLineMask(letters, fontSizeMm, fontId, verticalScale) {
       baseline,
       fontSizeMm * scale,
       fontId,
+      horizontalScale,
       verticalScale,
     );
   });
@@ -2632,17 +2709,17 @@ function findLineOffsetMm(upperMask, lowerMask, bridgeMm) {
   return (upperMask.height - MASK_PADDING_PX * 2) / scale - bridgeMm;
 }
 
-function layoutCharacters(text, fontSizeMm, bridgeMm, fontId, verticalScale) {
+function layoutCharacters(text, fontSizeMm, bridgeMm, fontId, horizontalScale, verticalScale) {
   const characters = [...text];
   if (!characters.length) {
     return [];
   }
 
-  const masks = characters.map((character) => createGlyphMask(character, fontSizeMm, fontId, verticalScale));
+  const masks = characters.map((character) => createGlyphMask(character, fontSizeMm, fontId, horizontalScale, verticalScale));
   const positions = [];
 
   return characters.map((character, index) => {
-    const metrics = measureCharacter(character, fontSizeMm, fontId);
+    const metrics = measureCharacter(character, fontSizeMm, fontId, horizontalScale);
     const mask = masks[index];
     const maskOrigin = index === 0
       ? 0
@@ -2677,6 +2754,7 @@ function layoutTextLines(text, lineSettings) {
       settings.fontSizeMm,
       settings.bridgeMm,
       settings.fontId,
+      settings.horizontalScale,
       settings.verticalScale,
     );
     return {
@@ -2684,7 +2762,7 @@ function layoutTextLines(text, lineSettings) {
       text: lineText,
       settings,
       letters,
-      mask: createLineMask(letters, settings.fontSizeMm, settings.fontId, settings.verticalScale),
+      mask: createLineMask(letters, settings.fontSizeMm, settings.fontId, settings.horizontalScale, settings.verticalScale),
       offsetXMm: settings.offsetXMm,
       y: 0,
     };
@@ -2870,6 +2948,7 @@ function createBackingImage(letters, widthMm, heightMm, backingMm, paddingYMm = 
       (letter.y + paddingYMm) * scale,
       letter.fontSizeMm * scale,
       letter.fontId,
+      letter.horizontalScale ?? 1,
       letter.verticalScale ?? 1,
       "both",
     );
@@ -2942,6 +3021,7 @@ function createFaceImage(letters, widthMm, heightMm) {
       letter.y * scale,
       letter.fontSizeMm * scale,
       letter.fontId,
+      letter.horizontalScale ?? 1,
       letter.verticalScale ?? 1,
     );
   });
@@ -3355,6 +3435,7 @@ function buildOrderLayout(settings) {
       fontId: line.settings.fontId,
       fontPath: font.exportPath,
       fontSizeMm: line.settings.fontSizeMm,
+      horizontalScale: line.settings.horizontalScale,
       verticalScale: line.settings.verticalScale,
     }));
   });
@@ -3383,6 +3464,8 @@ function buildOrderLayout(settings) {
 function handleTextInput() {
   const nextSettings = normalizeSettings(getCurrentSettings());
   renderLineControls(nextSettings);
+  updateGlobalHorizontalScaleControl(nextSettings);
+  updateGlobalVerticalScaleControl(nextSettings);
   updateActiveOrderFromControls();
   render();
 }
@@ -3407,6 +3490,40 @@ function handleLineControlsChange(event) {
     }
   }
 
+  updateGlobalHorizontalScaleControl();
+  updateGlobalVerticalScaleControl();
+  render();
+  updateActiveOrderFromControls();
+}
+
+function applyGlobalHorizontalScale(value) {
+  const currentSettings = normalizeSettings(getCurrentSettings());
+  const nextValue = Number(value);
+  const nextSettings = normalizeSettings({
+    ...currentSettings,
+    lines: currentSettings.lines.map((line) => ({
+      ...line,
+      horizontalScale: nextValue,
+    })),
+  });
+
+  applySettings(nextSettings);
+  render();
+  updateActiveOrderFromControls();
+}
+
+function applyGlobalVerticalScale(value) {
+  const currentSettings = normalizeSettings(getCurrentSettings());
+  const nextValue = Number(value);
+  const nextSettings = normalizeSettings({
+    ...currentSettings,
+    lines: currentSettings.lines.map((line) => ({
+      ...line,
+      verticalScale: nextValue,
+    })),
+  });
+
+  applySettings(nextSettings);
   render();
   updateActiveOrderFromControls();
 }
@@ -3421,6 +3538,12 @@ presetInput.addEventListener("change", () => {
 });
 lineControls.addEventListener("input", handleLineControlsChange);
 lineControls.addEventListener("change", handleLineControlsChange);
+globalHorizontalScaleInput?.addEventListener("input", () => {
+  applyGlobalHorizontalScale(globalHorizontalScaleInput.value);
+});
+globalVerticalScaleInput?.addEventListener("input", () => {
+  applyGlobalVerticalScale(globalVerticalScaleInput.value);
+});
 backingInput.addEventListener("input", () => {
   updateBackingOutput();
   render();
@@ -3499,6 +3622,20 @@ const defaultPresetId = getDefaultPresetId();
 const defaultPresetBaseSettings = getPresetBaseSettings(defaultPresetId);
 
 renderLineControls(normalizeSettings({
+  text: "",
+  presetId: defaultPresetId,
+  backingMm: defaultPresetBaseSettings.backingMm,
+  weldExportedDesign: defaultPresetBaseSettings.weldExportedDesign,
+  lines: [],
+}));
+updateGlobalHorizontalScaleControl(normalizeSettings({
+  text: "",
+  presetId: defaultPresetId,
+  backingMm: defaultPresetBaseSettings.backingMm,
+  weldExportedDesign: defaultPresetBaseSettings.weldExportedDesign,
+  lines: [],
+}));
+updateGlobalVerticalScaleControl(normalizeSettings({
   text: "",
   presetId: defaultPresetId,
   backingMm: defaultPresetBaseSettings.backingMm,
