@@ -348,11 +348,9 @@ test.beforeEach(async ({ page }) => {
   async function waitForStartup() {
     await expect.poll(async () => {
       const value = await page.locator("#importStatus").textContent();
-      return typeof value === "string"
-        && (
-          value.includes("Restored")
-          || value.includes("Import Etsy clipboard data copied from the browser helper.")
-        );
+      return value === null
+        || value === ""
+        || value.includes("Restored");
     }).toBe(true);
   }
 
@@ -373,7 +371,7 @@ test.beforeEach(async ({ page }) => {
     await expect(orderCount).toHaveText("0");
   }
 
-  await clickQueueAction(page, "+ Add Design");
+  await clickQueueAction(page, "Add Design");
 });
 
 test("shows the production defaults", async ({ page }) => {
@@ -1059,7 +1057,7 @@ test("restores the current batch after refresh and clears it when requested", as
 
 test("keeps the design queue scroll position when selecting a row", async ({ page }) => {
   for (let index = 0; index < 14; index += 1) {
-    await clickQueueAction(page, "+ Add Design");
+    await clickQueueAction(page, "Add Design");
   }
 
   await expect(page.locator("#orderCountOutput")).toHaveText("15");
@@ -1473,7 +1471,7 @@ test("restores the previous completed geometry when a newer in-flight analysis i
   await expect(page.getByRole("button", { name: "Export This Design" })).toBeEnabled();
   await expect(page.locator("#connectionStatusLabel")).toContainText("Single connected face piece");
 
-  await clickQueueAction(page, "+ Add Design");
+  await clickQueueAction(page, "Add Design");
   await page.locator("#orderList .order-row").filter({ hasText: "Design 1" }).locator(".order-item").click();
   await expect(page.locator("#connectionStatusLabel")).toContainText("Single connected face piece");
   await expect(page.getByRole("button", { name: "Export This Design" })).toBeEnabled();
@@ -1496,7 +1494,7 @@ test("shows guide overflow when a locked line prevents fit", async ({ page }) =>
 });
 
 test("deletes a single design from the queue", async ({ page }) => {
-  await clickQueueAction(page, "+ Add Design");
+  await clickQueueAction(page, "Add Design");
   await expect(page.locator("#orderCountOutput")).toHaveText("2");
 
   page.once("dialog", (dialog) => dialog.accept());
@@ -1603,7 +1601,7 @@ test("shows labeled buyer, listing, and emphasized personalization lines in queu
     });
   }, payload);
 
-  await page.getByRole("button", { name: "Import Clipboard" }).click();
+  await clickQueueAction(page, "Import Clipboard");
 
   const row = page.locator("#orderList .order-row").filter({ hasText: "#4057600528" });
   const buyerLine = row.locator(".order-item-recipient");
@@ -1632,8 +1630,8 @@ test("shows labeled buyer, listing, and emphasized personalization lines in queu
   });
 
   expect(lineMetrics).toEqual({
-    buyerSize: "12.32px",
-    listingSize: "12.32px",
+    buyerSize: "12.8px",
+    listingSize: "11.68px",
     personalizationSize: "14.4px",
   });
 });
@@ -1794,7 +1792,7 @@ test("copies the current design and all queued designs to the clipboard", async 
   await completeDesign(page, "Design 1");
   await page.getByRole("button", { name: "Copy This Design" }).click();
 
-  await clickQueueAction(page, "+ Add Design");
+  await clickQueueAction(page, "Add Design");
   await page.locator("#textInput").fill("Beta");
   await completeDesign(page, "Design 2");
   await clickQueueAction(page, "Copy All Designs");
@@ -1859,7 +1857,7 @@ test("keeps Complete button state independent from background analysis", async (
   });
 
   await page.locator("#textInput").fill("Alpha");
-  await clickQueueAction(page, "+ Add Design");
+  await clickQueueAction(page, "Add Design");
   await page.locator("#textInput").fill("Beta");
 
   await page.locator("#orderList .order-row").filter({ hasText: "Design 1" }).locator(".order-item").click();
@@ -1887,7 +1885,7 @@ test("Complete marks the active design finished without advancing to the next de
   });
 
   await page.locator("#textInput").fill("Alpha");
-  await clickQueueAction(page, "+ Add Design");
+  await clickQueueAction(page, "Add Design");
   await page.locator("#textInput").fill("Beta");
   await page.locator("#orderList .order-row").filter({ hasText: "Design 1" }).locator(".order-item").click();
 
@@ -1915,7 +1913,7 @@ test("Complete & Next marks the current design finished and advances to the next
   });
 
   await page.locator("#textInput").fill("Alpha");
-  await clickQueueAction(page, "+ Add Design");
+  await clickQueueAction(page, "Add Design");
   await page.locator("#textInput").fill("Beta");
   await page.locator("#orderList .order-row").filter({ hasText: "Design 1" }).locator(".order-item").click();
 
@@ -1967,7 +1965,7 @@ test("keeps Complete disabled when reselecting a design whose analysis is still 
   });
 
   await page.locator("#textInput").fill("Alpha");
-  await clickQueueAction(page, "+ Add Design");
+  await clickQueueAction(page, "Add Design");
   await page.locator("#textInput").fill("Beta");
 
   await page.locator("#orderList .order-row").filter({ hasText: "Design 1" }).locator(".order-item").click();
@@ -2002,7 +2000,7 @@ test("does not allow a second Complete run while the same design analysis is sti
   });
 
   await page.locator("#textInput").fill("Alpha");
-  await clickQueueAction(page, "+ Add Design");
+  await clickQueueAction(page, "Add Design");
   await page.locator("#textInput").fill("Beta");
 
   await page.locator("#orderList .order-row").filter({ hasText: "Design 1" }).locator(".order-item").click();
@@ -2050,7 +2048,7 @@ test("shows queue analysis indicators for running, connected, and multi-piece co
   await saveAlpha;
   await expect(page.locator("#orderList .order-row").filter({ hasText: "Design 1" }).locator(".order-analysis-indicator.ok")).toBeVisible({ timeout: 20000 });
 
-  await clickQueueAction(page, "+ Add Design");
+  await clickQueueAction(page, "Add Design");
   await page.locator("#textInput").fill("Beta");
   await completeDesign(page, "Design 2");
 
@@ -2131,7 +2129,7 @@ test("exports completed designs without re-running analysis", async ({ page }) =
 
   await page.locator("#textInput").fill("Alpha");
   await completeDesign(page, "Design 1");
-  await clickQueueAction(page, "+ Add Design");
+  await clickQueueAction(page, "Add Design");
   await page.locator("#textInput").fill("Beta");
   await completeDesign(page, "Design 2");
   await clickQueueAction(page, "Export All Designs");

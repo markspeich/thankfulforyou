@@ -92,6 +92,11 @@ const queueSyncStatusDetail = document.querySelector("#queueSyncStatusDetail");
 const exportCompletedButton = document.querySelector("#exportCompletedButton");
 const copyCompletedButton = document.querySelector("#copyCompletedButton");
 const queueToolsMenu = document.querySelector(".queue-tools-menu");
+const queueActionLabelByButton = new Map(
+  [addOrderButton, importClipboardButton, clearQueueButton, exportCompletedButton, copyCompletedButton]
+    .filter(Boolean)
+    .map((button) => [button, button.querySelector(".queue-tool-label")]),
+);
 const orderSearchInput = document.querySelector("#orderSearchInput");
 const orderCountOutput = document.querySelector("#orderCountOutput");
 const completeCountOutput = document.querySelector("#completeCountOutput");
@@ -123,6 +128,11 @@ const downloadButton = document.querySelector("#downloadButton");
 const copyButton = document.querySelector("#copyButton");
 const captureButton = document.querySelector("#captureButton");
 const completeNextButton = document.querySelector("#completeNextButton");
+const editorActionLabelByButton = new Map(
+  [captureButton, completeNextButton, copyButton, downloadButton]
+    .filter(Boolean)
+    .map((button) => [button, button.querySelector(".editor-action-label")]),
+);
 
 const canvas = document.createElement("canvas");
 const ctx = canvas.getContext("2d");
@@ -1147,7 +1157,9 @@ function parseImportedItems(payloadText) {
 }
 
 function updateImportStatus(message, state = "pending") {
-  importStatus.textContent = message;
+  const hasMessage = typeof message === "string" && message.trim().length > 0;
+  importStatus.hidden = !hasMessage;
+  importStatus.textContent = hasMessage ? message : "";
   importStatus.dataset.state = state;
 }
 
@@ -1378,6 +1390,26 @@ function lineValueText(setting, value) {
 
 function updateBackingOutput() {
   backingOutput.textContent = `${Number(backingInput.value).toFixed(1)} mm`;
+}
+
+function setQueueActionLabel(button, label) {
+  const labelNode = queueActionLabelByButton.get(button);
+  if (labelNode) {
+    labelNode.textContent = label;
+    return;
+  }
+
+  button.textContent = label;
+}
+
+function setEditorActionLabel(button, label) {
+  const labelNode = editorActionLabelByButton.get(button);
+  if (labelNode) {
+    labelNode.textContent = label;
+    return;
+  }
+
+  button.textContent = label;
 }
 
 function renderLineControls(settings = getCurrentSettings()) {
@@ -1763,8 +1795,8 @@ function isOrderReadyForExport(order) {
 }
 
 function updateCaptureButtonState(activeOrder) {
-  captureButton.textContent = "Complete";
-  completeNextButton.textContent = "Complete & Next";
+  setEditorActionLabel(captureButton, "Complete");
+  setEditorActionLabel(completeNextButton, "Complete & Next");
 
   if (!activeOrder) {
     captureButton.disabled = true;
@@ -2073,7 +2105,7 @@ function deleteOrder(orderId) {
     activeOrderId = null;
     orderSequence = 1;
     clearPersistedQueueState();
-    updateImportStatus("Queue cleared. Import Etsy clipboard data copied from the browser helper.", "pending");
+    updateImportStatus("Queue cleared.", "pending");
   } else {
     persistQueueState();
   }
@@ -2101,7 +2133,7 @@ async function clearAllOrders() {
   resetEditorToEmptyState();
   try {
     await clearRemoteQueueSnapshot({ quiet: true });
-    updateImportStatus("Batch cleared locally and remotely. Import Etsy clipboard data copied from the browser helper.", "pending");
+    updateImportStatus("Batch cleared locally and remotely.", "pending");
     updateQueueSyncStatus("empty");
   } catch (error) {
     updateImportStatus(
@@ -2122,7 +2154,7 @@ async function importFromClipboard() {
   }
 
   importClipboardButton.disabled = true;
-  importClipboardButton.textContent = "Importing...";
+  setQueueActionLabel(importClipboardButton, "Importing...");
 
   try {
     const clipboardText = await navigator.clipboard.readText();
@@ -2183,7 +2215,7 @@ async function importFromClipboard() {
     updateImportStatus(message, "error");
   } finally {
     importClipboardButton.disabled = false;
-    importClipboardButton.textContent = "Import Clipboard";
+    setQueueActionLabel(importClipboardButton, "Import Clipboard");
   }
 }
 
@@ -3066,7 +3098,7 @@ async function downloadSvg() {
   }
 
   downloadButton.disabled = true;
-  downloadButton.textContent = "Exporting...";
+  setEditorActionLabel(downloadButton, "Exporting...");
   downloadButton.setAttribute("aria-busy", "true");
 
   try {
@@ -3096,7 +3128,7 @@ async function downloadSvg() {
   } catch {
   } finally {
     downloadButton.disabled = false;
-    downloadButton.textContent = "Export This Design";
+    setEditorActionLabel(downloadButton, "Export This Design");
     downloadButton.removeAttribute("aria-busy");
     renderOrderList();
   }
@@ -3109,7 +3141,7 @@ async function copyCurrentSvg() {
   }
 
   copyButton.disabled = true;
-  copyButton.textContent = "Copying...";
+  setEditorActionLabel(copyButton, "Copying...");
   copyButton.setAttribute("aria-busy", "true");
 
   try {
@@ -3132,7 +3164,7 @@ async function copyCurrentSvg() {
   } catch {
   } finally {
     copyButton.disabled = !order.text.trim() || !canCopySvgToClipboard();
-    copyButton.textContent = "Copy This Design";
+    setEditorActionLabel(copyButton, "Copy This Design");
     copyButton.removeAttribute("aria-busy");
     renderOrderList();
   }
@@ -3211,7 +3243,7 @@ async function exportAllOrders() {
   }
 
   exportCompletedButton.disabled = true;
-  exportCompletedButton.textContent = "Exporting...";
+  setQueueActionLabel(exportCompletedButton, "Exporting...");
   exportCompletedButton.setAttribute("aria-busy", "true");
 
   try {
@@ -3237,7 +3269,7 @@ async function exportAllOrders() {
   } catch {
   } finally {
     exportCompletedButton.disabled = false;
-    exportCompletedButton.textContent = "Export All Designs";
+    setQueueActionLabel(exportCompletedButton, "Export All Designs");
     exportCompletedButton.removeAttribute("aria-busy");
     renderOrderList();
   }
@@ -3263,7 +3295,7 @@ async function copyAllOrders() {
   }
 
   copyCompletedButton.disabled = true;
-  copyCompletedButton.textContent = "Copying...";
+  setQueueActionLabel(copyCompletedButton, "Copying...");
   copyCompletedButton.setAttribute("aria-busy", "true");
 
   try {
@@ -3283,7 +3315,7 @@ async function copyAllOrders() {
   } catch {
   } finally {
     copyCompletedButton.disabled = exportableOrders.length === 0 || !canCopySvgToClipboard();
-    copyCompletedButton.textContent = "Copy All Designs";
+    setQueueActionLabel(copyCompletedButton, "Copy All Designs");
     copyCompletedButton.removeAttribute("aria-busy");
     renderOrderList();
   }
@@ -3411,6 +3443,17 @@ copyCompletedButton.addEventListener("click", copyAllOrders);
       queueToolsMenu?.removeAttribute("open");
     });
   });
+document.addEventListener("pointerdown", (event) => {
+  if (!queueToolsMenu?.hasAttribute("open")) {
+    return;
+  }
+
+  if (event.target instanceof Node && queueToolsMenu.contains(event.target)) {
+    return;
+  }
+
+  queueToolsMenu.removeAttribute("open");
+});
 orderSearchInput.addEventListener("input", renderOrderList);
 captureButton.addEventListener("click", () => {
   captureActiveOrder();
@@ -3450,7 +3493,7 @@ renderPresetOptions();
 updateBackingOutput();
 const restoredQueue = await restoreInitialQueueState();
 if ((!restoredQueue.source || restoredQueue.count === 0) && importStatus.dataset.state !== "error") {
-  updateImportStatus("Import Etsy clipboard data copied from the browser helper.", "pending");
+  updateImportStatus("", "pending");
 }
 const defaultPresetId = getDefaultPresetId();
 const defaultPresetBaseSettings = getPresetBaseSettings(defaultPresetId);
