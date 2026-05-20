@@ -2840,6 +2840,10 @@ function buildScaledLineSettings(lines, fitScale) {
   });
 }
 
+function hasLockedTextHeight(lines) {
+  return Array.isArray(lines) && lines.some((line) => Boolean(line?.settings?.lockTextHeight));
+}
+
 function makeSvgElement(name, attributes = {}) {
   const element = document.createElementNS("http://www.w3.org/2000/svg", name);
   Object.entries(attributes).forEach(([key, value]) => {
@@ -3401,13 +3405,9 @@ async function copyAllOrders() {
   }
 }
 
-function buildOrderLayout(settings) {
-  const normalized = normalizeSettings(settings);
+function assembleOrderLayout(normalized, sourceLines, fitScale, fitted) {
   const text = normalized.text.trim();
-  const { lines } = measureTextLayoutForFit(normalized.text, normalized.lines);
-  const fitScale = computeMixedFitScale(lines);
-  const lineScaleFactors = computeLineScaleFactors(lines, fitScale);
-  const scaledLineSettings = buildScaledLineSettings(lines, fitScale);
+  const lineScaleFactors = computeLineScaleFactors(sourceLines, fitScale);
   const {
     lines: fittedLines,
     baseTextWidthMm,
@@ -3416,11 +3416,11 @@ function buildOrderLayout(settings) {
     minTopMm,
     textWidthMm,
     textHeightMm,
-  } = measureTextLayoutForFit(normalized.text, scaledLineSettings);
+  } = fitted;
   const scaledBackingMm = normalized.backingMm * fitScale;
   const scaledBleedMm = DESIGN_BLEED_MM * fitScale;
   const scaledBottomSafetyMm = LAYOUT_BOTTOM_SAFETY_MM * fitScale;
-  const overflowsGuide = computeGuideOverflow(lines, textWidthMm, textHeightMm);
+  const overflowsGuide = computeGuideOverflow(sourceLines, textWidthMm, textHeightMm);
   const widthMm = textWidthMm + scaledBackingMm * 2 + scaledBleedMm * 2;
   const heightMm = textHeightMm + scaledBackingMm * 2 + scaledBleedMm * 2 + scaledBottomSafetyMm;
   const absoluteLetters = lineBounds.flatMap(({ line, centeredLeftMm }) => {
@@ -3459,6 +3459,35 @@ function buildOrderLayout(settings) {
     },
     letters: absoluteLetters,
   };
+}
+
+function buildOrderLayout(settings) {
+  const normalized = normalizeSettings(settings);
+  const { lines } = measureTextLayoutForFit(normalized.text, normalized.lines);
+  let fitScale = computeMixedFitScale(lines);
+  let scaledLineSettings = buildScaledLineSettings(lines, fitScale);
+  let fitted = measureTextLayoutForFit(normalized.text, scaledLineSettings);
+  let layout = assembleOrderLayout(normalized, lines, fitScale, fitted);
+
+  for (let index = 0; index < 3; index += 1) {
+    if (layout.fit.overflowsGuide && hasLockedTextHeight(lines)) {
+      break;
+    }
+
+    const faceBounds = createFaceImage(layout.letters, layout.widthMm, layout.heightMm).boundsMm;
+    const residualFitScale = computeTextFitScale(faceBounds.width, faceBounds.height);
+
+    if (!Number.isFinite(residualFitScale) || Math.abs(residualFitScale - 1) < 0.001) {
+      break;
+    }
+
+    fitScale *= residualFitScale;
+    scaledLineSettings = buildScaledLineSettings(lines, fitScale);
+    fitted = measureTextLayoutForFit(normalized.text, scaledLineSettings);
+    layout = assembleOrderLayout(normalized, lines, fitScale, fitted);
+  }
+
+  return layout;
 }
 
 function handleTextInput() {

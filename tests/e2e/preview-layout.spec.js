@@ -465,6 +465,17 @@ test("applies the global vertical stretch slider to every line and persists the 
   await expect(secondLineVerticalStretch).toHaveValue("1.4");
 });
 
+test("refines auto-fit against the rendered face ink bounds", async ({ page }) => {
+  await page.locator("#textInput").fill("PT\nCyndie");
+  await page.locator("#presetInput").selectOption("skywalk-candlepin");
+
+  const bounds = await measureVisibleTextBounds(page);
+
+  expect(bounds).not.toBeNull();
+  expect(bounds.textHeightMm).toBeGreaterThan(bounds.guideHeightMm - 0.25);
+  expect(bounds.textHeightMm).toBeLessThanOrEqual(bounds.guideHeightMm);
+});
+
 test("keeps the queue sync status hidden until there is a message", async ({ page }) => {
   await expect(page.locator("#queueSyncStatus")).toBeHidden();
   await expect(page.locator("#orderSearchInput")).toBeVisible();
