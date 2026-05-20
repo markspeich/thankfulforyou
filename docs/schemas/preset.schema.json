@@ -92,6 +92,10 @@
           "type": "number",
           "exclusiveMinimum": 0
         },
+        "horizontalScale": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
         "verticalScale": {
           "type": "number",
           "exclusiveMinimum": 0

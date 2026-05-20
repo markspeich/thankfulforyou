@@ -169,6 +169,12 @@ test.beforeEach(async ({ page }) => {
 });
 
 test("shows the production defaults", async ({ page }) => {
+  await expect(page.locator("#globalHorizontalScaleInput")).toHaveValue("1");
+  await expect(page.locator("#globalHorizontalScaleInput")).toHaveAttribute("max", "2");
+  await expect(page.locator("#globalHorizontalScaleOutput")).toHaveText("100%");
+  await expect(page.locator("#globalVerticalScaleInput")).toHaveValue("1");
+  await expect(page.locator("#globalVerticalScaleInput")).toHaveAttribute("max", "1.5");
+  await expect(page.locator("#globalVerticalScaleOutput")).toHaveText("100%");
   await expect(page.locator("#backingInput")).toHaveValue("2.2");
   await expect(page.locator("#backingInput")).toHaveAttribute("min", "0");
   await expect(page.locator("#backingInput")).toHaveAttribute("step", "0.1");
@@ -199,6 +205,58 @@ test("shows the production defaults", async ({ page }) => {
   expect(guideMetrics.guideCenterY).toBeCloseTo(guideMetrics.circleCenterY, 6);
   expect(guideMetrics.circleDiameter).toBeCloseTo(1.25 * 25.4, 6);
   expect(guideMetrics.labelFills).toEqual(["rgb(12, 150, 217)", "rgb(12, 150, 217)"]);
+});
+
+test("applies the global horizontal stretch slider to every line and persists the result", async ({ page }) => {
+  await page.locator("#textInput").fill("Savannah\nRN");
+
+  const firstLineHorizontalStretch = page.locator('.line-control-card[data-line-index="0"] [data-setting="horizontalScale"]');
+  const secondLineHorizontalStretch = page.locator('.line-control-card[data-line-index="1"] [data-setting="horizontalScale"]');
+  const globalHorizontalStretch = page.locator("#globalHorizontalScaleInput");
+  const globalHorizontalStretchOutput = page.locator("#globalHorizontalScaleOutput");
+
+  await firstLineHorizontalStretch.fill("1.12");
+  await expect(globalHorizontalStretchOutput).toHaveText("Mixed");
+
+  await globalHorizontalStretch.fill("2");
+
+  await expect(globalHorizontalStretchOutput).toHaveText("200%");
+  await expect(firstLineHorizontalStretch).toHaveValue("2");
+  await expect(secondLineHorizontalStretch).toHaveValue("2");
+
+  await page.waitForTimeout(250);
+  await page.reload();
+
+  await expect(page.locator("#textInput")).toHaveValue("Savannah\nRN");
+  await expect(globalHorizontalStretchOutput).toHaveText("200%");
+  await expect(firstLineHorizontalStretch).toHaveValue("2");
+  await expect(secondLineHorizontalStretch).toHaveValue("2");
+});
+
+test("applies the global vertical stretch slider to every line and persists the result", async ({ page }) => {
+  await page.locator("#textInput").fill("Savannah\nRN");
+
+  const firstLineVerticalStretch = page.locator('.line-control-card[data-line-index="0"] [data-setting="verticalScale"]');
+  const secondLineVerticalStretch = page.locator('.line-control-card[data-line-index="1"] [data-setting="verticalScale"]');
+  const globalVerticalStretch = page.locator("#globalVerticalScaleInput");
+  const globalVerticalStretchOutput = page.locator("#globalVerticalScaleOutput");
+
+  await firstLineVerticalStretch.fill("1.12");
+  await expect(globalVerticalStretchOutput).toHaveText("Mixed");
+
+  await globalVerticalStretch.fill("1.4");
+
+  await expect(globalVerticalStretchOutput).toHaveText("140%");
+  await expect(firstLineVerticalStretch).toHaveValue("1.4");
+  await expect(secondLineVerticalStretch).toHaveValue("1.4");
+
+  await page.waitForTimeout(250);
+  await page.reload();
+
+  await expect(page.locator("#textInput")).toHaveValue("Savannah\nRN");
+  await expect(globalVerticalStretchOutput).toHaveText("140%");
+  await expect(firstLineVerticalStretch).toHaveValue("1.4");
+  await expect(secondLineVerticalStretch).toHaveValue("1.4");
 });
 
 test("keeps the queue sync status hidden until there is a message", async ({ page }) => {
