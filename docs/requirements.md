@@ -290,14 +290,23 @@ The website should be a practical production tool rather than a marketing site. 
 - Simple controls for adjusting overlap, line spacing, horizontal positioning, scale, and per-line font choice.
 - Export-ready output for production use.
 - A two-pane master-detail layout, with order navigation on the left and the selected order editor on the right.
-- In the selected-order editor, the render/preview should occupy the top of the right side of the screen and the order editor controls should sit at the bottom.
-- The selected-order controls should be organized as a stack of per-line control groups followed by one global `Backing Border` control.
+- On a standard 1920 by 1080 production monitor, the selected-order editor must keep the preview meaningfully visible while also keeping the first two line-control groups available without hiding the preview below the fold.
+- On desktop, the left queue should use roughly the leftmost quarter of the screen instead of the previous narrow column, so queue rows can show more order context without taking over the editor workspace.
+- The left queue should keep only `Complete` and `In Progress` summary counters visible in the main panel; `Not Started` does not need a visible counter in the desktop layout.
+- Queue batch actions should move behind a compact queue-tools affordance beside the `Design Queue` title instead of occupying a permanent full-width button block above the list.
+- Under the selected-order header action row on desktop, the content area should split into two main columns.
+- The left editor column should contain the imported listing details, imported color and quantity, the `Design Text` field, and the preview with connectedness status.
+- The right editor column should contain the global controls for `Presets`, `Weld Exported Design`, and `Backing Border`, followed by the per-line controls for `Line 1`, `Line 2`, and any additional lines.
+- In the selected-order workspace, the preview should remain the dominant element in the left column, with connectedness status directly below the preview instead of in a separate full-width row above it.
+- In the selected-order workspace, the per-line controls should sit in a narrower right-side rail and should stack one line card per row instead of showing line cards side by side.
+- The right-side control rail should own its own vertical scrolling so additional line-control groups remain reachable as operators add more text lines.
 - Each per-line control group should clearly map to a specific entered text line and should appear or disappear as the number of entered lines changes.
 - The first text line should not show a `Line Bridge` control because there is no line above it to connect to.
 - The left-side order queue should not show browser-storage sync notifications such as `Saved in this browser`, `Restored from browser`, or `No saved batch`; only meaningful remote Neon sync statuses should appear there.
 - The selected-order header should hold the primary order actions in this order: `Save`, `Complete`, `Complete & Next`, `Copy This Design`, and `Export This Design`.
+- The selected-order header action buttons should remain visibly smaller than the preview and top-card content so they do not dominate the editor visually on desktop.
 
-The selected UI direction is the Production Queue layout. Use `docs/mockups/production-queue-ui-mockup-preview-top-controls-bottom.png` as the primary visual reference for the next UI implementation pass. The mockup intent is a left-side order queue with a batch export button above the order list, and a right-side selected-order editor with the selected order preview at the top, controls docked at the bottom, and an Export This Design button. Sample renders should use a white raised text layer over a red backing silhouette.
+The selected UI direction is the refined B1 Production Queue layout. Use `docs/mockups/layout-option-b-refined.html` as the primary visual reference for the current desktop implementation pass. The mockup intent is a left-side order queue with compact queue tools and a right-side two-column editor where the left column holds listing details, design text, and preview while the right column holds global controls plus stacked line controls. Sample renders should use a white raised text layer over a red backing silhouette.
 
 For batch Etsy order sessions, the preferred workflow is:
 
