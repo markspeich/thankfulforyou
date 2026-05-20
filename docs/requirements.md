@@ -316,6 +316,7 @@ The website should be a practical production tool rather than a marketing site. 
 - The left-side order queue should not show browser-storage sync notifications such as `Saved in this browser`, `Restored from browser`, or `No saved batch`; only meaningful remote Neon sync statuses should appear there.
 - The selected-order header should hold the primary order actions in this order: `Save`, `Complete`, `Complete & Next`, `Copy This Design`, and `Export This Design`.
 - The selected-order header action buttons should remain visibly smaller than the preview and top-card content so they do not dominate the editor visually on desktop.
+- Command buttons should use one shared enabled color, one shared disabled color, and one shared enabled-hover color across queue tools, editor actions, export/copy/save/complete actions, and destructive actions. Non-command row-selection buttons may remain visually neutral.
 
 The selected UI direction is the refined B1 Production Queue layout. Use `docs/mockups/layout-option-b-refined.html` as the primary visual reference for the current desktop implementation pass. The mockup intent is a left-side order queue with compact queue tools and a right-side two-column editor where the left column holds listing details, design text, and preview while the right column holds global controls plus stacked line controls. Sample renders should use a white raised text layer over a red backing silhouette.
 
