@@ -733,7 +733,7 @@ button:disabled {
 
 .editor-workspace {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) clamp(280px, 26vw, 380px);
+  grid-template-columns: minmax(0, 1fr) clamp(248px, 22vw, 320px);
   gap: 12px;
   height: 100%;
   min-height: 0;
