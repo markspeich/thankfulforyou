@@ -648,6 +648,10 @@ button:hover {
 
 button:disabled {
   background: #7f98a8;
+  cursor: not-allowed;
+}
+
+button[aria-busy="true"] {
   cursor: wait;
 }
 
