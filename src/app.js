@@ -142,6 +142,7 @@ const canvas = document.createElement("canvas");
 const ctx = canvas.getContext("2d");
 const MASK_SCALE = 3;
 const MASK_PADDING_PX = 12;
+const measuredLineCache = new Map();
 let lastLayout = null;
 let zoom = DEFAULT_ZOOM;
 let previewMiddlePan = null;
@@ -2537,6 +2538,7 @@ function createGlyphMask(character, fontSizeMm, fontId, horizontalScale, vertica
   return {
     character,
     data: imageData.data,
+    opaqueRows: buildOpaqueRows(imageData, width, height),
     width,
     height,
     baseline,
@@ -2555,22 +2557,46 @@ function maskHasInk(mask, x, y) {
   return mask.data[(y * mask.width + x) * 4 + 3] > 32;
 }
 
+function buildOpaqueRows(imageData, width, height) {
+  const rows = new Array(height).fill(null);
+
+  for (let y = 0; y < height; y += 1) {
+    let row = null;
+
+    for (let x = 0; x < width; x += 1) {
+      if (imageData.data[(y * width + x) * 4 + 3] <= 32) {
+        continue;
+      }
+
+      if (!row) {
+        row = [];
+        rows[y] = row;
+      }
+
+      row.push(x);
+    }
+  }
+
+  return rows;
+}
+
 function getOverlapWidthPx(leftMask, rightMask, dxPx) {
   const baselineDelta = leftMask.baseline - rightMask.baseline;
   let minX = Infinity;
   let maxX = -Infinity;
 
   for (let rightY = 0; rightY < rightMask.height; rightY += 1) {
+    const row = rightMask.opaqueRows?.[rightY];
+    if (!row) {
+      continue;
+    }
+
     const leftY = rightY + baselineDelta;
     if (leftY < 0 || leftY >= leftMask.height) {
       continue;
     }
 
-    for (let rightX = 0; rightX < rightMask.width; rightX += 1) {
-      if (!maskHasInk(rightMask, rightX, rightY)) {
-        continue;
-      }
-
+    for (const rightX of row) {
       const leftX = rightX + dxPx;
       if (maskHasInk(leftMask, leftX, leftY)) {
         minX = Math.min(minX, leftX);
@@ -2607,6 +2633,7 @@ function createEmptyLineMask(fontSizeMm, verticalScale) {
     width: 1,
     height,
     baseline,
+    opaqueRows: [null],
     inkLeft: 0,
     inkRight: 0,
     leftMm: 0,
@@ -2660,37 +2687,42 @@ function createLineMask(letters, fontSizeMm, fontId, horizontalScale, verticalSc
   const imageData = maskContext.getImageData(0, 0, width, height);
   let inkLeft = width;
   let inkRight = 0;
+  let inkTop = height;
+  let inkBottom = 0;
   let hasInk = false;
+  const opaqueRows = new Array(height).fill(null);
 
   for (let y = 0; y < height; y += 1) {
+    let row = null;
+
     for (let x = 0; x < width; x += 1) {
-      if (imageData.data[(y * width + x) * 4 + 3] > 32) {
-        inkLeft = Math.min(inkLeft, x);
-        inkRight = Math.max(inkRight, x);
-        hasInk = true;
+      if (imageData.data[(y * width + x) * 4 + 3] <= 32) {
+        continue;
       }
+
+      if (!row) {
+        row = [];
+        opaqueRows[y] = row;
+      }
+
+      row.push(x);
+      inkLeft = Math.min(inkLeft, x);
+      inkRight = Math.max(inkRight, x);
+      inkTop = Math.min(inkTop, y);
+      inkBottom = Math.max(inkBottom, y);
+      hasInk = true;
     }
   }
 
   const visualLeftMm = hasInk ? minLeft + (inkLeft - MASK_PADDING_PX) / scale : minLeft;
   const visualRightMm = hasInk ? minLeft + (inkRight - MASK_PADDING_PX) / scale : maxRight;
-  let inkTop = height;
-  let inkBottom = 0;
-
-  for (let y = 0; y < height; y += 1) {
-    for (let x = 0; x < width; x += 1) {
-      if (imageData.data[(y * width + x) * 4 + 3] > 32) {
-        inkTop = Math.min(inkTop, y);
-        inkBottom = Math.max(inkBottom, y);
-      }
-    }
-  }
 
   const visualTopMm = hasInk ? (inkTop - MASK_PADDING_PX) / scale : 0;
   const visualBottomMm = hasInk ? (inkBottom - MASK_PADDING_PX) / scale : fontSizeMm * verticalScale;
 
   return {
     data: imageData.data,
+    opaqueRows,
     width,
     height,
     baseline,
@@ -2712,16 +2744,17 @@ function getLineOverlapHeightPx(upperMask, lowerMask, dxPx, dyPx) {
   let maxY = -Infinity;
 
   for (let lowerY = 0; lowerY < lowerMask.height; lowerY += 1) {
+    const row = lowerMask.opaqueRows?.[lowerY];
+    if (!row) {
+      continue;
+    }
+
     const upperY = lowerY + dyPx;
     if (upperY < 0 || upperY >= upperMask.height) {
       continue;
     }
 
-    for (let lowerX = 0; lowerX < lowerMask.width; lowerX += 1) {
-      if (!maskHasInk(lowerMask, lowerX, lowerY)) {
-        continue;
-      }
-
+    for (const lowerX of row) {
       const upperX = lowerX + dxPx;
       if (maskHasInk(upperMask, upperX, upperY)) {
         minY = Math.min(minY, upperY);
@@ -2731,6 +2764,20 @@ function getLineOverlapHeightPx(upperMask, lowerMask, dxPx, dyPx) {
   }
 
   return Number.isFinite(minY) ? maxY - minY + 1 : 0;
+}
+
+function buildMeasuredLineCacheKey(text, settings) {
+  return JSON.stringify([
+    text,
+    settings.fontId,
+    settings.bridgeMm,
+    settings.lineBridgeMm,
+    settings.offsetXMm,
+    settings.fontSizeMm,
+    settings.horizontalScale,
+    settings.verticalScale,
+    settings.lockTextHeight,
+  ]);
 }
 
 function findLineOffsetMm(upperMask, lowerMask, bridgeMm) {
@@ -2788,26 +2835,51 @@ function layoutCharacters(text, fontSizeMm, bridgeMm, fontId, horizontalScale, v
   });
 }
 
+function buildMeasuredLine(text, settings) {
+  const letters = layoutCharacters(
+    text,
+    settings.fontSizeMm,
+    settings.bridgeMm,
+    settings.fontId,
+    settings.horizontalScale,
+    settings.verticalScale,
+  );
+
+  return {
+    text,
+    settings,
+    letters,
+    mask: createLineMask(letters, settings.fontSizeMm, settings.fontId, settings.horizontalScale, settings.verticalScale),
+    offsetXMm: settings.offsetXMm,
+  };
+}
+
+function getMeasuredLine(text, settings) {
+  const cacheKey = buildMeasuredLineCacheKey(text, settings);
+  let measuredLine = measuredLineCache.get(cacheKey);
+
+  if (!measuredLine) {
+    measuredLine = buildMeasuredLine(text, settings);
+    measuredLineCache.set(cacheKey, measuredLine);
+  }
+
+  return measuredLine;
+}
+
 function layoutTextLines(text, lineSettings) {
   const rawLines = getRawTextLines(text);
   const normalizedSettings = normalizeSettings({ text, lines: lineSettings }).lines;
   const lines = rawLines.map((lineText, index) => {
     const settings = normalizedSettings[index] || createDefaultLineSettings();
-    const letters = layoutCharacters(
-      lineText,
-      settings.fontSizeMm,
-      settings.bridgeMm,
-      settings.fontId,
-      settings.horizontalScale,
-      settings.verticalScale,
-    );
+    const measuredLine = getMeasuredLine(lineText, settings);
+
     return {
       index,
-      text: lineText,
-      settings,
-      letters,
-      mask: createLineMask(letters, settings.fontSizeMm, settings.fontId, settings.horizontalScale, settings.verticalScale),
-      offsetXMm: settings.offsetXMm,
+      text: measuredLine.text,
+      settings: measuredLine.settings,
+      letters: measuredLine.letters,
+      mask: measuredLine.mask,
+      offsetXMm: measuredLine.offsetXMm,
       y: 0,
     };
   });
@@ -3046,7 +3118,7 @@ function measureCanvasInkBounds(canvas, widthMm, heightMm) {
   };
 }
 
-function createFaceImage(letters, widthMm, heightMm) {
+function renderFaceCanvas(letters, widthMm, heightMm) {
   const scale = PX_PER_MM * 3;
   const faceCanvas = document.createElement("canvas");
   const faceContext = faceCanvas.getContext("2d");
@@ -3074,8 +3146,17 @@ function createFaceImage(letters, widthMm, heightMm) {
   });
 
   return {
-    href: faceCanvas.toDataURL("image/png"),
+    canvas: faceCanvas,
     boundsMm: measureCanvasInkBounds(faceCanvas, widthMm, heightMm),
+  };
+}
+
+function createFaceImage(letters, widthMm, heightMm) {
+  const facePreview = renderFaceCanvas(letters, widthMm, heightMm);
+
+  return {
+    href: facePreview.canvas.toDataURL("image/png"),
+    boundsMm: facePreview.boundsMm,
   };
 }
 
@@ -3500,7 +3581,7 @@ function buildOrderLayout(settings) {
       break;
     }
 
-    const faceBounds = createFaceImage(layout.letters, layout.widthMm, layout.heightMm).boundsMm;
+    const faceBounds = renderFaceCanvas(layout.letters, layout.widthMm, layout.heightMm).boundsMm;
     const residualFitScale = computeTextFitScale(faceBounds.width, faceBounds.height);
 
     if (!Number.isFinite(residualFitScale) || Math.abs(residualFitScale - 1) < 0.001) {
@@ -3522,6 +3603,15 @@ function handleTextInput() {
   updateGlobalHorizontalScaleControl(nextSettings);
   updateGlobalVerticalScaleControl(nextSettings);
   updateActiveOrderFromControls();
+  render();
+}
+
+function updatePreviewForControlEvent({ defer = false } = {}) {
+  if (defer) {
+    scheduleDeferredPreviewRender();
+    return;
+  }
+
   render();
 }
 
@@ -3547,11 +3637,15 @@ function handleLineControlsChange(event) {
 
   updateGlobalHorizontalScaleControl();
   updateGlobalVerticalScaleControl();
-  render();
+  const isDeferredSliderInput = target instanceof HTMLInputElement
+    && target.type === "range"
+    && event.type === "input";
+  updatePreviewForControlEvent({ defer: isDeferredSliderInput });
   updateActiveOrderFromControls();
 }
 
-function applyGlobalHorizontalScale(value) {
+function applyGlobalHorizontalScale(value, options = {}) {
+  const { deferPreview = false } = options;
   const currentSettings = normalizeSettings(getCurrentSettings());
   const nextValue = Number(value);
   const nextSettings = normalizeSettings({
@@ -3563,11 +3657,12 @@ function applyGlobalHorizontalScale(value) {
   });
 
   applySettings(nextSettings);
-  render();
+  updatePreviewForControlEvent({ defer: deferPreview });
   updateActiveOrderFromControls();
 }
 
-function applyGlobalVerticalScale(value) {
+function applyGlobalVerticalScale(value, options = {}) {
+  const { deferPreview = false } = options;
   const currentSettings = normalizeSettings(getCurrentSettings());
   const nextValue = Number(value);
   const nextSettings = normalizeSettings({
@@ -3579,7 +3674,7 @@ function applyGlobalVerticalScale(value) {
   });
 
   applySettings(nextSettings);
-  render();
+  updatePreviewForControlEvent({ defer: deferPreview });
   updateActiveOrderFromControls();
 }
 
@@ -3594,12 +3689,23 @@ presetInput.addEventListener("change", () => {
 lineControls.addEventListener("input", handleLineControlsChange);
 lineControls.addEventListener("change", handleLineControlsChange);
 globalHorizontalScaleInput?.addEventListener("input", () => {
+  applyGlobalHorizontalScale(globalHorizontalScaleInput.value, { deferPreview: true });
+});
+globalHorizontalScaleInput?.addEventListener("change", () => {
   applyGlobalHorizontalScale(globalHorizontalScaleInput.value);
 });
 globalVerticalScaleInput?.addEventListener("input", () => {
+  applyGlobalVerticalScale(globalVerticalScaleInput.value, { deferPreview: true });
+});
+globalVerticalScaleInput?.addEventListener("change", () => {
   applyGlobalVerticalScale(globalVerticalScaleInput.value);
 });
 backingInput.addEventListener("input", () => {
+  updateBackingOutput();
+  updatePreviewForControlEvent({ defer: true });
+  updateActiveOrderFromControls();
+});
+backingInput.addEventListener("change", () => {
   updateBackingOutput();
   render();
   updateActiveOrderFromControls();

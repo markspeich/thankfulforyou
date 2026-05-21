@@ -259,6 +259,109 @@ test("applies the global vertical stretch slider to every line and persists the 
   await expect(secondLineVerticalStretch).toHaveValue("1.4");
 });
 
+test("coalesces rapid slider input into a single deferred preview rebuild", async ({ page }) => {
+  await page.addInitScript(() => {
+    const originalToDataUrl = HTMLCanvasElement.prototype.toDataURL;
+    let toDataUrlCount = 0;
+
+    HTMLCanvasElement.prototype.toDataURL = function (...args) {
+      toDataUrlCount += 1;
+      return originalToDataUrl.apply(this, args);
+    };
+
+    window.__previewPerf = {
+      read() {
+        return { toDataUrlCount };
+      },
+      reset() {
+        toDataUrlCount = 0;
+      },
+    };
+  });
+
+  await page.reload();
+
+  const orderCount = page.locator("#orderCountOutput");
+  if ((await orderCount.textContent()) !== "0") {
+    page.once("dialog", (dialog) => dialog.accept());
+    await clickQueueAction(page, "Clear Batch");
+    await expect(orderCount).toHaveText("0");
+  }
+
+  await clickQueueAction(page, "Add Design");
+  await page.locator("#textInput").fill("Savannah\nRN");
+  await page.waitForTimeout(250);
+  await page.evaluate(() => window.__previewPerf.reset());
+
+  await page.evaluate(async () => {
+    const slider = document.querySelector('.line-control-card[data-line-index="0"] [data-setting="horizontalScale"]');
+    if (!(slider instanceof HTMLInputElement)) {
+      throw new Error("Expected the first line horizontal stretch slider.");
+    }
+
+    for (const value of ["1.05", "1.1", "1.2", "1.35"]) {
+      slider.value = value;
+      slider.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+
+    await new Promise((resolve) => window.setTimeout(resolve, 300));
+  });
+
+  const perf = await page.evaluate(() => window.__previewPerf.read());
+  expect(perf.toDataUrlCount).toBeLessThanOrEqual(6);
+  await expect(page.locator('.line-control-card[data-line-index="0"] [data-setting="horizontalScale"]')).toHaveValue("1.35");
+});
+
+test("avoids redundant preview image encodes during a settled slider render", async ({ page }) => {
+  await page.addInitScript(() => {
+    const originalToDataUrl = HTMLCanvasElement.prototype.toDataURL;
+    let toDataUrlCount = 0;
+
+    HTMLCanvasElement.prototype.toDataURL = function (...args) {
+      toDataUrlCount += 1;
+      return originalToDataUrl.apply(this, args);
+    };
+
+    window.__previewPerf = {
+      read() {
+        return { toDataUrlCount };
+      },
+      reset() {
+        toDataUrlCount = 0;
+      },
+    };
+  });
+
+  await page.reload();
+
+  const orderCount = page.locator("#orderCountOutput");
+  if ((await orderCount.textContent()) !== "0") {
+    page.once("dialog", (dialog) => dialog.accept());
+    await clickQueueAction(page, "Clear Batch");
+    await expect(orderCount).toHaveText("0");
+  }
+
+  await clickQueueAction(page, "Add Design");
+  await page.locator("#textInput").fill("Savannah\nRN");
+  await page.waitForTimeout(250);
+  await page.evaluate(() => window.__previewPerf.reset());
+
+  await page.evaluate(async () => {
+    const slider = document.querySelector('.line-control-card[data-line-index="0"] [data-setting="horizontalScale"]');
+    if (!(slider instanceof HTMLInputElement)) {
+      throw new Error("Expected the first line horizontal stretch slider.");
+    }
+
+    slider.value = "1.35";
+    slider.dispatchEvent(new Event("input", { bubbles: true }));
+
+    await new Promise((resolve) => window.setTimeout(resolve, 300));
+  });
+
+  const perf = await page.evaluate(() => window.__previewPerf.read());
+  expect(perf.toDataUrlCount).toBeLessThanOrEqual(3);
+});
+
 test("refines auto-fit against the rendered face ink bounds", async ({ page }) => {
   await page.locator("#textInput").fill("PT\nCyndie");
   await page.locator("#presetInput").selectOption("skywalk-candlepin");
