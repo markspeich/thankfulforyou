@@ -127,6 +127,7 @@ const backingOutput = document.querySelector("#backingOutput");
 const preview = document.querySelector("#preview");
 const previewPanel = document.querySelector(".preview-panel");
 const connectionStatus = document.querySelector("#connectionStatus");
+const connectionStatusIndicator = document.querySelector("#connectionStatusIndicator");
 const connectionStatusLabel = document.querySelector("#connectionStatusLabel");
 const connectionStatusDetail = document.querySelector("#connectionStatusDetail");
 const downloadButton = document.querySelector("#downloadButton");
@@ -573,6 +574,11 @@ function hydrateStoredOrder(order, index) {
     previousCompletedBuild,
     savedSettingsSignature,
   );
+  const completedSettingsBuild = getStoredBuildForSignature(
+    cachedBuild,
+    previousCompletedBuild,
+    completedSettingsSignature,
+  );
   const pendingCompletedBuild = getStoredBuildForSignature(
     cachedBuild,
     previousCompletedBuild,
@@ -594,12 +600,8 @@ function hydrateStoredOrder(order, index) {
       savedSettingsSignature = null;
     }
 
-    if (
-      completedSettingsSignature
-      && settingsSignatureMatches({ ...settings }, completedSettingsSignature)
-      && completedSettingsSignature === abandonedPendingSignature
-    ) {
-      completedSettingsSignature = savedCompletedBuild?.signature || null;
+    if (completedSettingsSignature === abandonedPendingSignature) {
+      completedSettingsSignature = pendingCompletedBuild?.signature || null;
     }
   } else if (!savedCompletedBuild && savedSettingsSignature) {
     savedSettingsSignature = null;
@@ -624,6 +626,15 @@ function hydrateStoredOrder(order, index) {
     completedSettingsSignature
     && !settingsSignatureMatches(settings, completedSettingsSignature)
     && status === "not-started"
+  ) {
+    completedSettingsSignature = null;
+  }
+
+  if (
+    status === "in-progress"
+    && completedSettingsSignature
+    && settingsSignatureMatches(settings, completedSettingsSignature)
+    && !completedSettingsBuild
   ) {
     completedSettingsSignature = null;
   }
@@ -736,6 +747,15 @@ function schedulePersistQueueState() {
     queuePersistenceTimeoutId = null;
     persistQueueState();
   }, 150);
+}
+
+function flushPersistQueueState() {
+  if (queuePersistenceTimeoutId != null) {
+    window.clearTimeout(queuePersistenceTimeoutId);
+    queuePersistenceTimeoutId = null;
+  }
+
+  persistQueueState();
 }
 
 function scheduleRenderOrderList() {
@@ -1379,10 +1399,54 @@ function appendPreviewGuide(previewBoxX, previewBoxY) {
   );
 }
 
-function updateConnectionStatus(state, label, detail) {
+function renderAnalysisIndicator(container, analysisSummary) {
+  if (!container) {
+    return;
+  }
+
+  container.replaceChildren();
+  container.className = `order-analysis-indicator${analysisSummary ? ` ${analysisSummary.state}` : ""}${analysisSummary ? "" : " is-hidden"}`;
+  container.setAttribute("aria-hidden", analysisSummary ? "false" : "true");
+  container.removeAttribute("title");
+  container.removeAttribute("aria-label");
+
+  if (!analysisSummary) {
+    return;
+  }
+
+  if (analysisSummary.state === "running") {
+    const spinner = document.createElement("span");
+    spinner.className = "order-analysis-spinner";
+    spinner.setAttribute("aria-hidden", "true");
+    container.append(spinner);
+  } else if (analysisSummary.state === "ok") {
+    const icon = document.createElement("span");
+    icon.className = "order-analysis-icon";
+    icon.textContent = "\u2713";
+    container.append(icon);
+  } else if (analysisSummary.state === "warning") {
+    const icon = document.createElement("span");
+    icon.className = "order-analysis-icon";
+    icon.textContent = "\u26A0";
+    container.append(icon);
+
+    const count = document.createElement("span");
+    count.className = "order-analysis-count";
+    count.textContent = analysisSummary.shortLabel;
+    container.append(count);
+  }
+
+  if (analysisSummary.fullLabel) {
+    container.setAttribute("title", analysisSummary.fullLabel);
+    container.setAttribute("aria-label", analysisSummary.fullLabel);
+  }
+}
+
+function updateConnectionStatus(state, label, detail, analysisSummary = null) {
   connectionStatus.className = `status-card status-${state}`;
   connectionStatusLabel.textContent = label;
   connectionStatusDetail.textContent = detail;
+  renderAnalysisIndicator(connectionStatusIndicator, analysisSummary);
 }
 
 function lineValueText(setting, value) {
@@ -2006,35 +2070,7 @@ function renderOrderList() {
 
     const analysisSummary = getQueueAnalysisSummary(order);
     const analysisIndicator = document.createElement("span");
-    analysisIndicator.className = `order-analysis-indicator${analysisSummary ? ` ${analysisSummary.state}` : ""}${analysisSummary ? "" : " is-hidden"}`;
-    analysisIndicator.setAttribute("aria-hidden", analysisSummary ? "false" : "true");
-
-    if (analysisSummary?.state === "running") {
-      const spinner = document.createElement("span");
-      spinner.className = "order-analysis-spinner";
-      spinner.setAttribute("aria-hidden", "true");
-      analysisIndicator.append(spinner);
-    } else if (analysisSummary?.state === "ok") {
-      const icon = document.createElement("span");
-      icon.className = "order-analysis-icon";
-      icon.textContent = "\u2713";
-      analysisIndicator.append(icon);
-    } else if (analysisSummary?.state === "warning") {
-      const icon = document.createElement("span");
-      icon.className = "order-analysis-icon";
-      icon.textContent = "\u26A0";
-      analysisIndicator.append(icon);
-
-      const count = document.createElement("span");
-      count.className = "order-analysis-count";
-      count.textContent = analysisSummary.shortLabel;
-      analysisIndicator.append(count);
-    }
-
-    if (analysisSummary?.fullLabel) {
-      analysisIndicator.setAttribute("title", analysisSummary.fullLabel);
-      analysisIndicator.setAttribute("aria-label", analysisSummary.fullLabel);
-    }
+    renderAnalysisIndicator(analysisIndicator, analysisSummary);
 
     const status = document.createElement("span");
     status.className = `order-status ${order.status}`;
@@ -2325,6 +2361,11 @@ async function captureActiveOrder({ advanceToNext = false } = {}) {
     "pending",
     "Analyzing completed layout...",
     "Running face analysis and caching the export-ready geometry for this completed design.",
+    {
+      state: "running",
+      shortLabel: "",
+      fullLabel: "Analysis running",
+    },
   );
 
   if (advanceToNext) {
@@ -2396,6 +2437,9 @@ async function captureActiveOrder({ advanceToNext = false } = {}) {
     if (shouldApplyFailedAnalysis) {
       order.status = "in-progress";
       order.analysisBadge = null;
+      if (order.completedSettingsSignature === signature) {
+        order.completedSettingsSignature = getBuildForSignature(order, signature)?.signature || null;
+      }
     }
     if (shouldApplyFailedAnalysis && activeOrderId === order.id) {
       updateConnectionStatus(
@@ -3110,11 +3154,14 @@ function renderPreviewFromLayout(layout) {
 }
 
 function updateConnectionStatusFromAnalysis(analysis) {
+  const analysisBadge = buildCompletedAnalysisBadge(analysis);
+
   if (analysis.isConnected) {
     updateConnectionStatus(
       "ok",
       "Single connected face piece",
       "The current face-layer analysis reads as one connected acrylic component.",
+      analysisBadge,
     );
     return;
   }
@@ -3123,6 +3170,7 @@ function updateConnectionStatusFromAnalysis(analysis) {
     "warning",
     `${analysis.connectedComponentCount} separate face pieces`,
     "The current face-layer analysis still contains disconnected acrylic pieces. Adjust the bridges or line layout before export.",
+    analysisBadge,
   );
 }
 
@@ -3638,6 +3686,7 @@ window.addEventListener("mouseup", (event) => {
   }
 });
 window.addEventListener("blur", endPreviewMiddlePan);
+window.addEventListener("pagehide", flushPersistQueueState);
 
 await checkFonts();
 await loadPresetRegistry();
