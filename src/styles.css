@@ -382,7 +382,12 @@ h2 {
   box-shadow: none;
 }
 
-.order-row:hover,
+.order-row:hover {
+  background: #f4fbfa;
+  border-color: #dbeceb;
+  border-left-color: #00807c;
+}
+
 .order-row.active {
   background: #eaf7f6;
   border-color: #cce4e2;
@@ -650,7 +655,7 @@ button {
   font-weight: 700;
 }
 
-button:hover:not(:disabled) {
+button:hover:not(:disabled):not(.order-item) {
   background: var(--button-enabled-hover);
 }
 
