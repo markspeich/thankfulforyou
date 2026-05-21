@@ -708,7 +708,7 @@ test("restores the current batch after refresh and clears it when requested", as
 
   await page.reload();
 
-  await expect(page.locator("#importStatus")).toContainText("Restored 1 design");
+  await expect(page.locator("#importStatus")).toBeHidden();
   await expect(page.locator("#activeOrderName")).toHaveText("Design 1");
   await expect(page.locator("#textInput")).toHaveValue("Savannah\nRN");
   await expect(page.locator("#backingInput")).toHaveValue("4.2");
@@ -772,7 +772,7 @@ test("persists per-line lock text height state across refresh for multi-line des
 
   await page.reload();
 
-  await expect(page.locator("#importStatus")).toContainText("Restored 1 design");
+  await expect(page.locator("#importStatus")).toBeHidden();
   await expect(page.locator("#textInput")).toHaveValue("Savannah\nRN");
   await expect(firstLineLock).toBeChecked();
   await expect(secondLineLock).not.toBeChecked();
@@ -821,12 +821,17 @@ test("does not restore a stale completed analysis badge after geometry changes d
   await completeButton(page).click();
 
   const row = page.locator("#orderList .order-row").filter({ hasText: "Design 1" });
+  const card = page.locator("#connectionStatus");
   await expect(row.locator(".order-analysis-indicator.running")).toBeVisible();
+  await expect(card.locator(".order-analysis-indicator.running")).toBeVisible();
 
   await page.locator('.line-control-card[data-line-index="0"] [data-setting="lockTextHeight"]').check();
   await expect(row).toContainText("In progress");
   await expect(completeButton(page)).toBeEnabled();
   await expect(row.locator(".order-analysis-indicator.running")).toHaveCount(0);
+  await expect(card.locator(".order-analysis-indicator.running")).toHaveCount(0);
+  await expect(card.locator(".order-analysis-indicator.ok")).toHaveCount(0);
+  await expect(card.locator(".order-analysis-indicator.warning")).toHaveCount(0);
 
   await expect(row.locator(".order-analysis-indicator.ok")).toHaveCount(0, { timeout: 20000 });
   await expect(row.locator(".order-analysis-indicator.warning")).toHaveCount(0);
@@ -850,7 +855,7 @@ test("downgrades an abandoned first-time in-flight analysis to a retryable draft
   await page.reload();
 
   const row = page.locator("#orderList .order-row").filter({ hasText: "Design 1" });
-  await expect(page.locator("#importStatus")).toContainText("Restored 1 design");
+  await expect(page.locator("#importStatus")).toBeHidden();
   await expect(row).toContainText("In progress");
   await expect(completeButton(page)).toBeEnabled();
   await expect(page.getByRole("button", { name: "Export This Design" })).toBeDisabled();
@@ -884,7 +889,7 @@ test("clears stale saved geometry signatures that have no completed build after 
   await page.reload();
 
   const row = page.locator("#orderList .order-row").filter({ hasText: "Design 1" });
-  await expect(page.locator("#importStatus")).toContainText("Restored 1 design");
+  await expect(page.locator("#importStatus")).toBeHidden();
   await expect(row).toContainText("In progress");
   await expect(completeButton(page)).toBeEnabled();
   await expect(page.getByRole("button", { name: "Export This Design" })).toBeDisabled();
@@ -947,6 +952,8 @@ test("keeps the newest same-geometry analysis retry authoritative", async ({ pag
 
   await completeButton(page).click();
   await expect(row.locator(".order-analysis-indicator.running")).toBeVisible();
+  await expect(completeButton(page)).toBeDisabled();
+  await expect(page.locator("#connectionStatusLabel")).toContainText("Analysis failed", { timeout: 20000 });
   await expect(completeButton(page)).toBeEnabled();
 
   await completeButton(page).click();
@@ -1058,7 +1065,7 @@ test("restores the previous completed geometry after refresh during a newer in-f
 
   const row = page.locator("#orderList .order-row").filter({ hasText: "Design 1" });
   const restoredFirstLineLock = page.locator('.line-control-card[data-line-index="0"] [data-setting="lockTextHeight"]');
-  await expect(page.locator("#importStatus")).toContainText("Restored 1 design");
+  await expect(page.locator("#importStatus")).toBeHidden();
   await expect(row).toContainText("In progress");
   await expect(completeButton(page)).toBeEnabled();
 
@@ -1104,7 +1111,7 @@ test("preserves the newest completed geometry across refresh after the operator 
   await page.reload();
 
   const row = page.locator("#orderList .order-row").filter({ hasText: "Design 1" });
-  await expect(page.locator("#importStatus")).toContainText("Restored 1 design");
+  await expect(page.locator("#importStatus")).toBeHidden();
   await expect(row).toContainText("In progress");
 
   await secondLineHeight.fill("34");
@@ -1142,11 +1149,13 @@ test("restores the previous completed geometry when a newer in-flight analysis i
   await expect(completeButton(page)).toBeDisabled();
   await expect(page.getByRole("button", { name: "Export This Design" })).toBeEnabled();
   await expect(page.locator("#connectionStatusLabel")).toContainText("Single connected face piece");
+  await expect(page.locator("#connectionStatus .order-analysis-indicator.ok")).toBeVisible();
 
   await clickQueueAction(page, "Add Design");
   await page.locator("#orderList .order-row").filter({ hasText: "Design 1" }).locator(".order-item").click();
   await expect(page.locator("#connectionStatusLabel")).toContainText("Single connected face piece");
   await expect(page.getByRole("button", { name: "Export This Design" })).toBeEnabled();
+  await expect(page.locator("#connectionStatus .order-analysis-indicator.ok")).toBeVisible();
 
   await page.unrouteAll({ behavior: "ignoreErrors" });
 });
@@ -1717,8 +1726,10 @@ test("shows queue analysis indicators for running, connected, and multi-piece co
   await page.locator("#textInput").fill("Alpha");
   const saveAlpha = completeButton(page).click();
   await expect(page.locator("#orderList .order-row").filter({ hasText: "Design 1" }).locator(".order-analysis-indicator.running")).toBeVisible();
+  await expect(page.locator("#connectionStatus .order-analysis-indicator.running")).toBeVisible();
   await saveAlpha;
   await expect(page.locator("#orderList .order-row").filter({ hasText: "Design 1" }).locator(".order-analysis-indicator.ok")).toBeVisible({ timeout: 20000 });
+  await expect(page.locator("#connectionStatus .order-analysis-indicator.ok")).toBeVisible();
 
   await clickQueueAction(page, "Add Design");
   await page.locator("#textInput").fill("Beta");
@@ -1727,6 +1738,9 @@ test("shows queue analysis indicators for running, connected, and multi-piece co
   const betaIndicator = page.locator("#orderList .order-row").filter({ hasText: "Design 2" }).locator(".order-analysis-indicator.warning");
   await expect(betaIndicator).toContainText("⚠");
   await expect(betaIndicator).toContainText("3");
+  const betaCardIndicator = page.locator("#connectionStatus .order-analysis-indicator.warning");
+  await expect(betaCardIndicator).toBeVisible();
+  await expect(betaCardIndicator).toContainText("3");
 
   await page.unrouteAll({ behavior: "ignoreErrors" });
 });
@@ -1763,7 +1777,7 @@ test("recovers queue analysis indicators from cached analysis when a stale runni
   });
 
   await page.reload();
-  await expect(page.locator("#importStatus")).toContainText("Restored 1 design");
+  await expect(page.locator("#importStatus")).toBeHidden();
 
   const row = page.locator("#orderList .order-row").filter({ hasText: "Design 1" });
   await expect(row.locator(".order-analysis-indicator.ok")).toBeVisible({ timeout: 20000 });

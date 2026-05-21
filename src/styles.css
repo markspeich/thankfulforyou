@@ -1001,6 +1001,27 @@ button:disabled {
   line-height: 1.4;
 }
 
+#connectionStatus {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  column-gap: 10px;
+}
+
+#connectionStatus .order-analysis-indicator {
+  align-self: start;
+  margin-top: 1px;
+}
+
+#connectionStatus .order-analysis-indicator.is-hidden {
+  display: none;
+}
+
+.status-card-copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
 .status-ok {
   border-color: #8fc7ad;
   background: #edf8f1;

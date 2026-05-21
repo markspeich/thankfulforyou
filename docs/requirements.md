@@ -310,6 +310,7 @@ The website should be a practical production tool rather than a marketing site. 
 - The left editor column should contain the imported listing details, imported color and quantity, the `Design Text` field, and the preview with connectedness status.
 - The right editor column should contain the global controls for `Presets`, `Weld Exported Design`, global `Horizontal Stretch`, global `Vertical Stretch`, and `Backing Border`, followed by the per-line controls for `Line 1`, `Line 2`, and any additional lines.
 - In the selected-order workspace, the preview should remain the dominant element in the left column, with connectedness status directly below the preview instead of in a separate full-width row above it.
+- The connectedness status card below the preview should show the same left-side face-analysis indicators used in the queue row: spinner while completed-layout analysis is running, checkmark for one connected face piece, and warning plus compact piece count for multiple disconnected face pieces.
 - In the selected-order workspace, the per-line controls should sit in a narrower right-side rail and should stack one line card per row instead of showing line cards side by side.
 - The right-side control rail should own its own vertical scrolling so additional line-control groups remain reachable as operators add more text lines.
 - Each per-line control group should clearly map to a specific entered text line and should appear or disappear as the number of entered lines changes.
