@@ -15,10 +15,10 @@ describe("favicon wiring", () => {
     expect(existsSync(join(root, "public", "favicon.svg"))).toBe(true);
   });
 
-  it("uses the simplified red tile with white TFU lettering", () => {
-    expect(faviconSvg).toContain('fill="#ff1e14"');
+  it("uses enlarged white TFU lettering with a red outline", () => {
     expect(faviconSvg).toContain('fill="#ffffff"');
+    expect(faviconSvg).toContain('stroke="#ff1e14"');
     expect(faviconSvg).toContain("TFU");
-    expect(faviconSvg).toContain("<rect");
+    expect(faviconSvg).toContain("stroke-width=\"8\"");
   });
 });

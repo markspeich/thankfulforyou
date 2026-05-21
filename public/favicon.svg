@@ -1,5 +1,4 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <rect width="64" height="64" fill="#ff1e14"/>
   <text
     x="32"
     y="44"
@@ -8,6 +7,10 @@
     font-size="35"
     font-weight="700"
     letter-spacing="-2.7"
+    stroke="#ff1e14"
+    stroke-linejoin="round"
+    stroke-width="8"
+    paint-order="stroke fill"
     text-anchor="middle"
   >
     TFU
