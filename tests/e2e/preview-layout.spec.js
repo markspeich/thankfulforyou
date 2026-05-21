@@ -754,6 +754,28 @@ test("keeps the design queue scroll position when selecting a row", async ({ pag
   expect(Math.abs(scrollTopAfter - scrollTopBefore)).toBeLessThanOrEqual(4);
 });
 
+test("uses a lighter hover color for inactive design queue rows", async ({ page }) => {
+  await clickQueueAction(page, "Add Design");
+
+  const firstRow = page.locator("#orderList .order-row").filter({ hasText: "Design 1" });
+  const secondRow = page.locator("#orderList .order-row").filter({ hasText: "Design 2" });
+  const secondItem = secondRow.locator(".order-item");
+
+  await firstRow.locator(".order-item").click();
+
+  const activeBackground = await firstRow.evaluate((element) => window.getComputedStyle(element).backgroundColor);
+  await secondItem.hover();
+  await expect.poll(async () => {
+    return secondRow.evaluate((element) => window.getComputedStyle(element).backgroundColor);
+  }).toBe("rgb(244, 251, 250)");
+  const hoveredBackground = await secondRow.evaluate((element) => window.getComputedStyle(element).backgroundColor);
+  const hoveredItemBackground = await secondItem.evaluate((element) => window.getComputedStyle(element).backgroundColor);
+
+  expect(activeBackground).toBe("rgb(234, 247, 246)");
+  expect(hoveredBackground).not.toBe(activeBackground);
+  expect(hoveredItemBackground).toBe("rgba(0, 0, 0, 0)");
+});
+
 test("persists per-line lock text height state across refresh for multi-line designs", async ({ page }) => {
   await page.locator("#textInput").fill("Savannah\nRN");
 
