@@ -1738,6 +1738,16 @@ function getActiveOrder() {
   return orders.find((order) => order.id === activeOrderId) || null;
 }
 
+function getNextIncompleteOrder(orderId) {
+  const activeIndex = orders.findIndex((candidate) => candidate.id === orderId);
+  if (activeIndex < 0) {
+    return null;
+  }
+
+  const orderedCandidates = [...orders.slice(activeIndex + 1), ...orders.slice(0, activeIndex)];
+  return orderedCandidates.find((candidate) => candidate.status !== "captured" && candidate.status !== "exported") || null;
+}
+
 function summarizeOrderText(text) {
   const summary = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).join(" / ");
   return summary || "No text entered";
@@ -1946,8 +1956,9 @@ function updateCaptureButtonState(activeOrder) {
   captureButton.removeAttribute("aria-busy");
   completeNextButton.removeAttribute("aria-busy");
   const canComplete = canCompleteActiveOrder(activeOrder);
+  const hasNextIncompleteOrder = canComplete && Boolean(getNextIncompleteOrder(activeOrder.id));
   captureButton.disabled = !canComplete;
-  completeNextButton.disabled = !canComplete;
+  completeNextButton.disabled = !hasNextIncompleteOrder;
 }
 
 function buildCompletedAnalysisBadge(analysis) {
@@ -2360,9 +2371,7 @@ async function captureActiveOrder({ advanceToNext = false } = {}) {
   );
 
   if (advanceToNext) {
-    const activeIndex = orders.findIndex((candidate) => candidate.id === order.id);
-    const orderedCandidates = [...orders.slice(activeIndex + 1), ...orders.slice(0, activeIndex)];
-    const nextUncaptured = orderedCandidates.find((candidate) => candidate.status !== "captured" && candidate.status !== "exported");
+    const nextUncaptured = getNextIncompleteOrder(order.id);
     if (nextUncaptured) {
       selectOrder(nextUncaptured.id);
     }

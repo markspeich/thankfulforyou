@@ -4,6 +4,7 @@ import sys
 import tempfile
 import urllib.parse
 import urllib.request
+import unicodedata
 from collections import defaultdict, deque
 from pathlib import Path
 
@@ -363,7 +364,51 @@ def load_outline_font(root, font_ref, cache):
     raise FileNotFoundError(f"Could not locate outline font for {font_ref or 'fallback font'}; checked {checked_paths}")
 
 
-def build_face_outline_path(root, payload):
+def sanitize_text_token(value):
+    if not value:
+        return ""
+
+    sanitized = []
+    for character in str(value):
+        category = unicodedata.category(character)
+        if category == "Cf":
+            continue
+        if category.startswith("C") and character not in ("\t", "\n", "\r"):
+            continue
+        sanitized.append(character)
+
+    return "".join(sanitized)
+
+
+def mask_bounds_mm(mask, scale):
+    width, height = mask.size
+    pixels = mask.load()
+    min_x = None
+    min_y = None
+    max_x = None
+    max_y = None
+
+    for y in range(height):
+        for x in range(width):
+            if pixels[x, y] <= 0:
+                continue
+            min_x = x if min_x is None else min(min_x, x)
+            min_y = y if min_y is None else min(min_y, y)
+            max_x = x if max_x is None else max(max_x, x)
+            max_y = y if max_y is None else max(max_y, y)
+
+    if min_x is None or min_y is None or max_x is None or max_y is None:
+        return None
+
+    return {
+        "left": min_x / scale,
+        "top": min_y / scale,
+        "width": (max_x + 1 - min_x) / scale,
+        "height": (max_y + 1 - min_y) / scale,
+    }
+
+
+def build_face_outline_path(root, payload, scale=50, tolerance_mm=0.025, smooth_iterations=1, curve_mode="quadratic"):
     font_cache = {}
     path_fragments = []
     min_x = None
@@ -372,13 +417,44 @@ def build_face_outline_path(root, payload):
     max_y = None
 
     for letter in payload["letters"]:
-        character = letter.get("character", "")
+        character = sanitize_text_token(letter.get("character", ""))
         if not character:
             continue
 
         font_data = load_outline_font(root, letter.get("fontPath"), font_cache)
-        glyph_name = font_data["cmap"].get(ord(character))
+        glyph_name = font_data["cmap"].get(ord(character)) if len(character) == 1 else None
+        if glyph_name == ".notdef":
+            glyph_name = None
         if not glyph_name:
+            letter_mask = render_text_mask(
+                root,
+                {
+                    "widthMm": payload["widthMm"],
+                    "heightMm": payload["heightMm"],
+                    "letters": [{ **letter, "character": character }],
+                },
+                scale=scale,
+            )
+            letter_path = text_outline_path(
+                letter_mask,
+                scale,
+                tolerance_mm=tolerance_mm,
+                smooth_iterations=smooth_iterations,
+                curve_mode=curve_mode,
+            )
+            if letter_path:
+                path_fragments.append(letter_path)
+
+            letter_bounds = mask_bounds_mm(letter_mask, scale)
+            if letter_bounds:
+                glyph_min_x = letter_bounds["left"]
+                glyph_min_y = letter_bounds["top"]
+                glyph_max_x = letter_bounds["left"] + letter_bounds["width"]
+                glyph_max_y = letter_bounds["top"] + letter_bounds["height"]
+                min_x = glyph_min_x if min_x is None else min(min_x, glyph_min_x)
+                min_y = glyph_min_y if min_y is None else min(min_y, glyph_min_y)
+                max_x = glyph_max_x if max_x is None else max(max_x, glyph_max_x)
+                max_y = glyph_max_y if max_y is None else max(max_y, glyph_max_y)
             continue
 
         glyph = font_data["glyph_set"][glyph_name]
@@ -448,7 +524,7 @@ def render_text_mask(
             max(1, round(float(letter["fontSizeMm"]) * scale)),
             font_cache,
         )
-        character = letter.get("character", "")
+        character = sanitize_text_token(letter.get("character", ""))
         if not character:
             continue
 
@@ -548,7 +624,14 @@ def analyze_single_layout(root, payload):
     scale = profile["scale"]
     backing = float(payload["backingMm"])
     weld_exported_design = payload.get("weldExportedDesign", True)
-    face_outline = build_face_outline_path(root, payload)
+    face_outline = build_face_outline_path(
+        root,
+        payload,
+        scale=scale,
+        tolerance_mm=profile["face_tolerance_mm"],
+        smooth_iterations=profile["face_smooth_iterations"],
+        curve_mode=profile["face_curve_mode"],
+    )
     face_mask = render_text_mask(root, payload, scale=scale)
     backing_mask = render_text_mask(root, payload, scale=scale, stroke_mm=backing)
 
@@ -758,8 +841,19 @@ def build_analysis(payload):
     return json.dumps(analyze_single_layout(root, payload))
 
 
+def read_stdin_json():
+    raw = sys.stdin.buffer.read()
+    if not raw:
+        return None
+
+    try:
+        return json.loads(raw.decode("utf-8"))
+    except UnicodeDecodeError:
+        return json.loads(raw.decode(sys.stdin.encoding or "utf-8"))
+
+
 def main():
-    payload = json.loads(sys.stdin.read())
+    payload = read_stdin_json()
     if isinstance(payload, dict) and payload.get("mode") == "analyze":
         sys.stdout.write(build_analysis(payload["layout"]))
         return
