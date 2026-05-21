@@ -24,6 +24,15 @@
   --page: #f3f5f7;
   --blue: #446f8b;
   --white-acrylic: #f8fbfc;
+  --button-enabled: #007b78;
+  --button-enabled-hover: #006764;
+  --button-disabled: #7f98a8;
+  --button-text: #ffffff;
+  --button-border: #007b78;
+  --button-border-hover: #006764;
+  --button-border-disabled: #7f98a8;
+  --button-icon: #ffffff;
+  --button-focus: #6b9fbe;
 }
 
 * {
@@ -152,9 +161,9 @@ select {
   gap: 10px;
   width: 100%;
   padding: 11px 12px;
-  color: var(--ink);
-  background: #f8fafb;
-  border: 1px solid #dbe3e9;
+  color: var(--button-text);
+  background: var(--button-enabled);
+  border: 1px solid var(--button-border);
   border-radius: 10px;
   font-size: 0.88rem;
   font-weight: 700;
@@ -162,14 +171,20 @@ select {
   transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
 }
 
-.queue-tool-button:hover {
-  color: var(--ink);
-  background: #eef4f7;
-  border-color: #b9cad5;
+.queue-tool-button:hover:not(:disabled) {
+  color: var(--button-text);
+  background: var(--button-enabled-hover);
+  border-color: var(--button-border-hover);
+}
+
+.queue-tool-button:disabled {
+  color: var(--button-text);
+  background: var(--button-disabled);
+  border-color: var(--button-border-disabled);
 }
 
 .queue-tool-button:focus-visible {
-  outline: 2px solid #6b9fbe;
+  outline: 2px solid var(--button-focus);
   outline-offset: 2px;
 }
 
@@ -180,7 +195,7 @@ select {
   justify-content: center;
   width: 18px;
   height: 18px;
-  color: #456b82;
+  color: var(--button-icon);
 }
 
 .queue-tool-icon svg {
@@ -305,15 +320,6 @@ h2 {
   min-height: 54px;
 }
 
-.destructive-action {
-  color: #8a2f2f;
-  border-color: #c66d6d;
-}
-
-.destructive-action:hover {
-  background: #8a2f2f;
-}
-
 .section-heading {
   display: flex;
   align-items: center;
@@ -424,21 +430,27 @@ h2 {
   min-height: 32px;
   padding: 0;
   margin: 0 10px 0 0;
-  color: #00706d;
-  background: transparent;
-  border: 0;
+  color: var(--button-text);
+  background: var(--button-enabled);
+  border: 1px solid var(--button-border);
   border-radius: 999px;
 }
 
-.order-delete-button:hover {
-  color: #b42318;
-  background: rgba(180, 35, 24, 0.12);
+.order-delete-button:hover:not(:disabled) {
+  color: var(--button-text);
+  background: var(--button-enabled-hover);
+  border-color: var(--button-border-hover);
+}
+
+.order-delete-button:focus-visible {
+  outline: 2px solid var(--button-focus);
+  outline-offset: 2px;
 }
 
 .order-row.active .order-delete-button:not(:hover):not(:focus-visible),
 .order-row:hover .order-delete-button:not(:hover):not(:focus-visible) {
-  color: #00706d;
-  background: transparent;
+  color: var(--button-text);
+  background: var(--button-enabled);
 }
 
 .order-delete-button svg {
@@ -449,14 +461,10 @@ h2 {
 }
 
 .order-delete-button:hover,
-.order-delete-button:focus-visible,
 .order-row:hover .order-delete-button:hover,
-.order-row:hover .order-delete-button:focus-visible,
-.order-row.active .order-delete-button:hover,
-.order-row.active .order-delete-button:focus-visible {
-  color: #b42318;
-  background: rgba(180, 35, 24, 0.12);
-  outline: none;
+.order-row.active .order-delete-button:hover {
+  color: var(--button-text);
+  background: var(--button-enabled-hover);
 }
 
 .order-item-header {
@@ -634,20 +642,21 @@ h2 {
 
 button {
   min-height: 42px;
-  color: #fff;
-  background: #007b78;
+  color: var(--button-text);
+  background: var(--button-enabled);
   border: 0;
   border-radius: 6px;
   cursor: pointer;
   font-weight: 700;
 }
 
-button:hover {
-  background: #006764;
+button:hover:not(:disabled) {
+  background: var(--button-enabled-hover);
 }
 
 button:disabled {
-  background: #7f98a8;
+  color: var(--button-text);
+  background: var(--button-disabled);
   cursor: wait;
 }
 
@@ -658,9 +667,9 @@ button:disabled {
   gap: 9px;
   min-height: 46px;
   padding: 0 14px;
-  color: var(--ink);
-  background: #f8fafb;
-  border: 1px solid #dbe3e9;
+  color: var(--button-text);
+  background: var(--button-enabled);
+  border: 1px solid var(--button-border);
   border-radius: 10px;
   font-size: 0.82rem;
   font-weight: 700;
@@ -669,14 +678,20 @@ button:disabled {
   transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
 }
 
-.editor-action-button:hover {
-  color: var(--ink);
-  background: #eef4f7;
-  border-color: #b9cad5;
+.editor-action-button:hover:not(:disabled) {
+  color: var(--button-text);
+  background: var(--button-enabled-hover);
+  border-color: var(--button-border-hover);
+}
+
+.editor-action-button:disabled {
+  color: var(--button-text);
+  background: var(--button-disabled);
+  border-color: var(--button-border-disabled);
 }
 
 .editor-action-button:focus-visible {
-  outline: 2px solid #6b9fbe;
+  outline: 2px solid var(--button-focus);
   outline-offset: 2px;
 }
 
@@ -687,7 +702,7 @@ button:disabled {
   justify-content: center;
   width: 18px;
   height: 18px;
-  color: #456b82;
+  color: var(--button-icon);
 }
 
 .editor-action-icon svg {
@@ -984,6 +999,27 @@ button:disabled {
   color: var(--muted);
   font-size: 0.83rem;
   line-height: 1.4;
+}
+
+#connectionStatus {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  column-gap: 10px;
+}
+
+#connectionStatus .order-analysis-indicator {
+  align-self: start;
+  margin-top: 1px;
+}
+
+#connectionStatus .order-analysis-indicator.is-hidden {
+  display: none;
+}
+
+.status-card-copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
 }
 
 .status-ok {

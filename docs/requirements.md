@@ -281,6 +281,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Automated checks against a protected Vercel preview should use Vercel Protection Bypass for Automation so smoke tests can keep Deployment Protection enabled while still exercising the hosted UI and API routes.
 - Local development and browser automation should share one deterministic per-worktree port-resolution helper so multiple git worktrees can run in parallel without port collisions or hardcoded test URLs drifting from the local server.
 - In the current Windows Codex worktree environment, local server launch workflow should prefer a foreground or otherwise persistent terminal session over a detached hidden process, because detached launches may exit early and break browser connectivity.
+- When the operator asks Codex to `finish this worktree`, Codex should treat that as the standard post-feature workflow: merge latest `main` into the current worktree and resolve conflicts, run appropriate verification, commit the worktree changes to the current feature branch, merge that feature branch into `main`, and push `main`.
 
 ## Open Questions
 
@@ -309,6 +310,7 @@ The website should be a practical production tool rather than a marketing site. 
 - The left editor column should contain the imported listing details, imported color and quantity, the `Design Text` field, and the preview with connectedness status.
 - The right editor column should contain the global controls for `Presets`, `Weld Exported Design`, global `Horizontal Stretch`, global `Vertical Stretch`, and `Backing Border`, followed by the per-line controls for `Line 1`, `Line 2`, and any additional lines.
 - In the selected-order workspace, the preview should remain the dominant element in the left column, with connectedness status directly below the preview instead of in a separate full-width row above it.
+- The connectedness status card below the preview should show the same left-side face-analysis indicators used in the queue row: spinner while completed-layout analysis is running, checkmark for one connected face piece, and warning plus compact piece count for multiple disconnected face pieces.
 - In the selected-order workspace, the per-line controls should sit in a narrower right-side rail and should stack one line card per row instead of showing line cards side by side.
 - The right-side control rail should own its own vertical scrolling so additional line-control groups remain reachable as operators add more text lines.
 - Each per-line control group should clearly map to a specific entered text line and should appear or disappear as the number of entered lines changes.
@@ -316,7 +318,8 @@ The website should be a practical production tool rather than a marketing site. 
 - The left-side order queue should not show browser-storage sync notifications such as `Saved in this browser`, `Restored from browser`, or `No saved batch`; only meaningful remote Neon sync statuses should appear there.
 - The selected-order header should hold the primary order actions in this order: `Save`, `Complete`, `Complete & Next`, `Copy This Design`, and `Export This Design`.
 - The selected-order header action buttons should remain visibly smaller than the preview and top-card content so they do not dominate the editor visually on desktop.
-- The app favicon should use a full red square tile with bold enlarged white `TFU` lettering centered inside, prioritizing legibility in a browser tab at favicon size over decorative detail.
+- The app favicon should use bold enlarged white `TFU` lettering with a red outline around the letters themselves, prioritizing legibility in a browser tab at favicon size over decorative detail.
+- Command buttons should use one shared enabled color, one shared disabled color, and one shared enabled-hover color across queue tools, editor actions, export/copy/save/complete actions, and destructive actions. Non-command row-selection buttons may remain visually neutral.
 
 The selected UI direction is the refined B1 Production Queue layout. Use `docs/mockups/layout-option-b-refined.html` as the primary visual reference for the current desktop implementation pass. The mockup intent is a left-side order queue with compact queue tools and a right-side two-column editor where the left column holds listing details, design text, and preview while the right column holds global controls plus stacked line controls. Sample renders should use a white raised text layer over a red backing silhouette.
 
