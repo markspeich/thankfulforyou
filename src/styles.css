@@ -215,6 +215,25 @@ select {
 
 .queue-tools-group-danger .queue-tool-button {
   margin-top: 2px;
+  color: #fff4f2;
+  background: #b9382b;
+  border-color: #8f261b;
+}
+
+.queue-tools-group-danger .queue-tool-button:hover:not(:disabled) {
+  color: #fff8f6;
+  background: #a32f23;
+  border-color: #781e15;
+}
+
+.queue-tools-group-danger .queue-tool-button:disabled {
+  color: #ffe3df;
+  background: #d4867c;
+  border-color: #c17369;
+}
+
+.queue-tools-group-danger .queue-tool-icon {
+  color: #fff4f2;
 }
 
 .editor-panel {
@@ -318,6 +337,20 @@ h2 {
 
 .compact-field textarea {
   min-height: 54px;
+}
+
+.design-text-field {
+  font-size: 0.96rem;
+}
+
+.design-text-field > span {
+  font-size: 0.98rem;
+}
+
+.design-text-field textarea {
+  min-height: 74px;
+  font-size: 1.02rem;
+  line-height: 1.45;
 }
 
 .section-heading {
