@@ -1627,8 +1627,39 @@ test("Complete & Next marks the current design finished and advances to the next
   await expect(firstRow.locator(".order-analysis-indicator.running")).toBeVisible();
   await expect(page.locator("#activeOrderName")).toHaveText("Design 2");
   await expect(completeButton(page)).toBeEnabled();
-  await expect(completeAndNextButton(page)).toBeEnabled();
+  await expect(completeAndNextButton(page)).toBeDisabled();
   await expect(firstRow.locator(".order-analysis-indicator.ok")).toBeVisible({ timeout: 20000 });
+
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+});
+
+test("disables Complete & Next when every other design is already complete", async ({ page }) => {
+  await page.route("**/api/layout-analyze", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify(buildMockAnalysisResponse()),
+    });
+  });
+
+  await page.locator("#textInput").fill("Alpha");
+  await clickQueueAction(page, "Add Design");
+  await page.locator("#textInput").fill("Beta");
+  await clickQueueAction(page, "Add Design");
+  await page.locator("#textInput").fill("Gamma");
+
+  await page.locator("#orderList .order-row").filter({ hasText: "Design 1" }).locator(".order-item").click();
+  await completeAndNextButton(page).click();
+  await expect(page.locator("#activeOrderName")).toHaveText("Design 2");
+
+  await completeButton(page).click();
+  await expect(page.locator("#activeOrderName")).toHaveText("Design 2");
+
+  await page.locator("#orderList .order-row").filter({ hasText: "Design 3" }).locator(".order-item").click();
+  await expect(page.locator("#activeOrderName")).toHaveText("Design 3");
+  await expect(completeButton(page)).toBeEnabled();
+  await expect(completeAndNextButton(page)).toBeDisabled();
 
   await page.unrouteAll({ behavior: "ignoreErrors" });
 });

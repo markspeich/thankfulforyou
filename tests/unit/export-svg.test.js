@@ -241,6 +241,151 @@ describe("export_svg face tracing", () => {
     expect(stretched.facePath).not.toBe(base.facePath);
   });
 
+  test("analyzes multi-character letter tokens without crashing outline export", { timeout: 15000 }, () => {
+    const analysis = analyzeLayout({
+      text: "Chuck!",
+      widthMm: 60,
+      heightMm: 30,
+      backingMm: 3.1,
+      weldExportedDesign: false,
+      letters: [
+        {
+          character: "Ch",
+          fontId: "candlepin",
+          fontPath: "public/fonts/Candlepin-Laser.otf",
+          fontSizeMm: 18,
+          x: 4,
+          y: 22,
+        },
+        {
+          character: "u",
+          fontId: "candlepin",
+          fontPath: "public/fonts/Candlepin-Laser.otf",
+          fontSizeMm: 18,
+          x: 18,
+          y: 22,
+        },
+        {
+          character: "ck!",
+          fontId: "candlepin",
+          fontPath: "public/fonts/Candlepin-Laser.otf",
+          fontSizeMm: 18,
+          x: 28,
+          y: 22,
+        },
+      ],
+    });
+
+    expect(analysis.facePath).toContain("M");
+    expect(analysis.exportFacePath).toContain("M");
+    expect(analysis.faceBoundsMm.width).toBeGreaterThan(0);
+    expect(analysis.faceBoundsMm.height).toBeGreaterThan(0);
+  });
+
+  test("ignores hidden format characters inside analyzed letter tokens", { timeout: 15000 }, () => {
+    const base = analyzeLayout({
+      text: "j",
+      widthMm: 30,
+      heightMm: 30,
+      backingMm: 3.1,
+      weldExportedDesign: false,
+      letters: [
+        {
+          character: "j",
+          fontId: "candlepin",
+          fontPath: "public/fonts/Candlepin-Laser.otf",
+          fontSizeMm: 18,
+          x: 10,
+          y: 22,
+        },
+      ],
+    });
+
+    const hidden = analyzeLayout({
+      text: "j",
+      widthMm: 30,
+      heightMm: 30,
+      backingMm: 3.1,
+      weldExportedDesign: false,
+      letters: [
+        {
+          character: "\u200Bj",
+          fontId: "candlepin",
+          fontPath: "public/fonts/Candlepin-Laser.otf",
+          fontSizeMm: 18,
+          x: 10,
+          y: 22,
+        },
+      ],
+    });
+
+    expect(hidden.facePath).toBe(base.facePath);
+    expect(hidden.faceBoundsMm).toEqual(base.faceBoundsMm);
+  });
+
+  test("preserves utf-8 smart punctuation in analyzed payloads", { timeout: 15000 }, () => {
+    const analysis = analyzeLayout({
+      text: "That’s",
+      widthMm: 40,
+      heightMm: 20,
+      backingMm: 3.1,
+      weldExportedDesign: false,
+      letters: [
+        {
+          character: "T",
+          fontId: "candlepin",
+          fontPath: "public/fonts/Candlepin-Laser.otf",
+          fontSizeMm: 18,
+          x: 2,
+          y: 16,
+        },
+        {
+          character: "h",
+          fontId: "candlepin",
+          fontPath: "public/fonts/Candlepin-Laser.otf",
+          fontSizeMm: 18,
+          x: 9,
+          y: 16,
+        },
+        {
+          character: "a",
+          fontId: "candlepin",
+          fontPath: "public/fonts/Candlepin-Laser.otf",
+          fontSizeMm: 18,
+          x: 14,
+          y: 16,
+        },
+        {
+          character: "t",
+          fontId: "candlepin",
+          fontPath: "public/fonts/Candlepin-Laser.otf",
+          fontSizeMm: 18,
+          x: 19,
+          y: 16,
+        },
+        {
+          character: "’",
+          fontId: "candlepin",
+          fontPath: "public/fonts/Candlepin-Laser.otf",
+          fontSizeMm: 18,
+          x: 24,
+          y: 16,
+        },
+        {
+          character: "s",
+          fontId: "candlepin",
+          fontPath: "public/fonts/Candlepin-Laser.otf",
+          fontSizeMm: 18,
+          x: 26,
+          y: 16,
+        },
+      ],
+    });
+
+    expect(analysis.text).toBe("That’s");
+    expect(analysis.facePath).not.toContain("â");
+  });
+
   test("reuses precomputed export geometry without rebuilding outlines", () => {
     const svg = exportSvg({
       text: "Cached",

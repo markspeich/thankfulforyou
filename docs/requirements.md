@@ -233,6 +233,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Exported face-layer paths should also be welded/unioned so overlapping letters do not create internal cut lines.
 - Exported cut paths should be smooth enough for laser production and should avoid visibly pixelated/stair-stepped contours.
 - Exported cut paths should also avoid excessive vertex counts by applying conservative path simplification that reduces tiny traced stair-steps without materially changing the underlying outline shape.
+- Layout analysis and export should not fail when a queued text token contains more than one Unicode code point; when direct outline lookup cannot represent a token, the export pipeline should fall back to traced token geometry instead of crashing the design row.
 
 ## Later-Phase Workflow Enhancements
 
@@ -338,3 +339,4 @@ For batch Etsy order sessions, the preferred workflow is:
 
 - Clicking `Complete` should immediately mark the current design as finished for editing, even if connectedness analysis is still running in the background.
 - After clicking `Complete`, the `Complete` button should stay disabled for that design until the operator changes the text or layout settings again.
+- The `Complete & Next` button should be disabled whenever there are no other queued designs that are still incomplete.
