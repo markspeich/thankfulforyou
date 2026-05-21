@@ -58,7 +58,7 @@ When the user provides new product, workflow, material, manufacturing, design, o
 - Ask for clarification when manufacturing constraints affect geometry decisions.
 - Capture assumptions explicitly in `docs/requirements.md`.
 - Keep changes scoped and avoid unrelated refactors.
-- When the user says `finish this worktree`, complete the standard post-feature workflow: merge latest `main` into the current worktree and resolve conflicts, run appropriate verification, commit the worktree changes to the current feature branch, merge that feature branch into `main`, and push `main`.
+- When the user says `finish this worktree`, complete the standard post-feature workflow: merge latest `main` into the current worktree and resolve conflicts, run appropriate verification, commit the worktree changes to the current feature branch, merge that feature branch into `main`, push `main`, and delete the finished feature branch.
 - To start the local dev server in this worktree, run `npm start` from the repository root.
 - Use `npm start` as the canonical dev entrypoint for this app instead of invoking `node` directly with a guessed script.
 - The dev server port is determined by `tools/dev_port.mjs`. Do not hardcode or guess a worktree URL from `AGENTS.md`.
