@@ -1081,6 +1081,65 @@ test("preserves completed export-ready state when a pasted layout is unchanged",
   await page.unrouteAll({ behavior: "ignoreErrors" });
 });
 
+test("restores complete and export state when pasted controls return to a previously completed layout", async ({ page }) => {
+  await page.route("**/api/layout-analyze", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify(buildMockAnalysisResponse()),
+    });
+  });
+
+  const copyLayoutControlsButton = page.getByRole("button", { name: "Copy Layout Controls" });
+  const pasteLayoutControlsButton = page.getByRole("button", { name: "Paste Layout Controls" });
+
+  await page.locator("#textInput").fill("Savannah\nRN");
+  await page.locator("#presetInput").selectOption("skywalk-candlepin");
+  await page.locator("#backingInput").fill("3.4");
+  await page.locator("#weldExportedDesignInput").uncheck();
+  await page.locator('.line-control-card[data-line-index="0"] [data-setting="horizontalScale"]').fill("1.27");
+  await page.locator('.line-control-card[data-line-index="0"] [data-setting="fontSizeMm"]').fill("40");
+  await page.locator('.line-control-card[data-line-index="1"] [data-setting="lineBridgeMm"]').fill("2.2");
+  await page.locator('.line-control-card[data-line-index="1"] [data-setting="verticalScale"]').fill("1.18");
+  await copyLayoutControlsButton.click();
+
+  await clickQueueAction(page, "Add Design");
+  await page.locator("#textInput").fill("Taylor\nDNP");
+  await page.locator("#presetInput").selectOption("skywalk-candlepin");
+  await page.locator("#backingInput").fill("3.4");
+  await page.locator("#weldExportedDesignInput").uncheck();
+  await page.locator('.line-control-card[data-line-index="0"] [data-setting="horizontalScale"]').fill("1.27");
+  await page.locator('.line-control-card[data-line-index="0"] [data-setting="fontSizeMm"]').fill("40");
+  await page.locator('.line-control-card[data-line-index="1"] [data-setting="lineBridgeMm"]').fill("2.2");
+  await page.locator('.line-control-card[data-line-index="1"] [data-setting="verticalScale"]').fill("1.18");
+
+  await completeDesign(page, "Design 2");
+  const targetRow = page.locator("#orderList .order-row").filter({ hasText: "Design 2" });
+  await expect(targetRow).toContainText("Complete");
+  await expect(page.getByRole("button", { name: "Export This Design" })).toBeEnabled();
+
+  await page.locator('.line-control-card[data-line-index="0"] [data-setting="horizontalScale"]').fill("1.11");
+  await expect(targetRow).toContainText("In progress");
+  await expect(completeButton(page)).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Export This Design" })).toBeDisabled();
+
+  await page.locator("#orderList .order-row").filter({ hasText: "Design 1" }).locator(".order-item").click();
+  await copyLayoutControlsButton.click();
+  await targetRow.locator(".order-item").click();
+  await expect(pasteLayoutControlsButton).toBeEnabled();
+
+  await pasteLayoutControlsButton.click();
+
+  await expectWorkflowAlertSuccess(page, "Pasted layout controls from Design 1 onto Design 2.");
+  await expect(page.locator('.line-control-card[data-line-index="0"] [data-setting="horizontalScale"]')).toHaveValue("1.27");
+  await expect(targetRow).toContainText("Complete");
+  await expect(targetRow.locator(".order-analysis-indicator.ok, .order-analysis-indicator.warning")).toHaveCount(1);
+  await expect(completeButton(page)).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Export This Design" })).toBeEnabled();
+
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+});
+
 test("warns when a pasted layout cannot include extra source lines", async ({ page }) => {
   const copyLayoutControlsButton = page.getByRole("button", { name: "Copy Layout Controls" });
   const pasteLayoutControlsButton = page.getByRole("button", { name: "Paste Layout Controls" });

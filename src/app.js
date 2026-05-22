@@ -1952,16 +1952,10 @@ function pasteLayoutControlsIntoActiveOrder() {
     order.source.manualPresetOverride = true;
   }
 
-  if (changed) {
-    clearOrderCompletionState(order, nextSettings);
-  } else {
-    order.text = currentSettings.text;
-    order.settings = nextSettings;
-  }
-
+  order.text = currentSettings.text;
+  order.settings = nextSettings;
   applySettings(order.settings);
-  persistQueueState();
-  renderOrderList();
+  updateActiveOrderFromControls();
   render();
   updateWorkflowAlert(alertMessage, "success");
 }
