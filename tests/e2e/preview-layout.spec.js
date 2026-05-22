@@ -29,6 +29,74 @@ async function clickQueueAction(page, name) {
   await page.getByRole("button", { name }).click();
 }
 
+function expectPressedStateDelta(pressedState, properties) {
+  for (const property of properties) {
+    expect(pressedState.active[property]).not.toBe(pressedState.before[property]);
+  }
+}
+
+async function measurePressedState(page, selector, assertedProperties) {
+  const locator = page.locator(selector);
+  await expect(locator).toBeVisible();
+  await locator.scrollIntoViewIfNeeded();
+  await page.mouse.move(1, 1);
+  await expect.poll(async () => locator.evaluate((element) => element.matches(":hover"))).toBe(false);
+  await page.waitForTimeout(160);
+
+  const before = await locator.evaluate((element) => {
+    const style = window.getComputedStyle(element);
+    return {
+      color: style.color,
+      backgroundColor: style.backgroundColor,
+      borderColor: style.borderColor,
+      boxShadow: style.boxShadow,
+      transform: style.transform,
+    };
+  });
+
+  const box = await locator.boundingBox();
+  if (!box) {
+    throw new Error(`Expected ${selector} to have a bounding box`);
+  }
+
+  const centerX = box.x + box.width / 2;
+  const centerY = box.y + box.height / 2;
+  await page.mouse.move(centerX, centerY);
+  await expect.poll(async () => locator.evaluate((element) => element.matches(":hover"))).toBe(true);
+  await page.mouse.down();
+  await expect.poll(async () => locator.evaluate((element) => element.matches(":active"))).toBe(true);
+  await expect.poll(async () => {
+    const style = await locator.evaluate((element) => {
+      const computedStyle = window.getComputedStyle(element);
+      return {
+        color: computedStyle.color,
+        backgroundColor: computedStyle.backgroundColor,
+        borderColor: computedStyle.borderColor,
+        boxShadow: computedStyle.boxShadow,
+        transform: computedStyle.transform,
+      };
+    });
+
+    return assertedProperties.every((property) => style[property] !== before[property]);
+  }).toBe(true);
+
+  const active = await locator.evaluate((element) => {
+    const style = window.getComputedStyle(element);
+    return {
+      color: style.color,
+      backgroundColor: style.backgroundColor,
+      borderColor: style.borderColor,
+      boxShadow: style.boxShadow,
+      transform: style.transform,
+    };
+  });
+
+  await page.mouse.move(1, 1);
+  await page.mouse.up();
+
+  return { before, active };
+}
+
 async function completeDesign(page, queueLabel) {
   const row = page.locator("#orderList .order-row").filter({ hasText: queueLabel });
 
@@ -891,6 +959,24 @@ test("uses a lighter hover color for inactive design queue rows", async ({ page 
   expect(activeBackground).toBe("rgb(234, 247, 246)");
   expect(hoveredBackground).not.toBe(activeBackground);
   expect(hoveredItemBackground).toBe("rgba(0, 0, 0, 0)");
+});
+
+test("applies a pressed-state hook to editor and queue command buttons", async ({ page }) => {
+  await page.locator("#textInput").fill("Savannah");
+
+  const editorProperties = ["boxShadow", "transform"];
+  const editorPressed = await measurePressedState(page, "#captureButton", editorProperties);
+  expectPressedStateDelta(editorPressed, editorProperties);
+
+  await openQueueTools(page);
+
+  const queueProperties = ["backgroundColor", "borderColor", "boxShadow", "transform"];
+  const queuePressed = await measurePressedState(page, "#addOrderButton", queueProperties);
+  expectPressedStateDelta(queuePressed, queueProperties);
+
+  const dangerProperties = ["backgroundColor", "borderColor", "boxShadow", "transform"];
+  const dangerPressed = await measurePressedState(page, "#clearQueueButton", dangerProperties);
+  expectPressedStateDelta(dangerPressed, dangerProperties);
 });
 
 test("persists per-line lock text height state across refresh for multi-line designs", async ({ page }) => {

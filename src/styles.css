@@ -26,13 +26,17 @@
   --white-acrylic: #f8fbfc;
   --button-enabled: #007b78;
   --button-enabled-hover: #006764;
+  --button-enabled-active: #005756;
   --button-disabled: #7f98a8;
   --button-text: #ffffff;
   --button-border: #007b78;
   --button-border-hover: #006764;
+  --button-border-active: #004b49;
   --button-border-disabled: #7f98a8;
   --button-icon: #ffffff;
   --button-focus: #6b9fbe;
+  --button-shadow-active: inset 0 2px 0 rgba(16, 45, 52, 0.22);
+  --button-pressed-translate-y: 1px;
 }
 
 * {
@@ -156,31 +160,52 @@ select {
 }
 
 .queue-tool-button {
+  --button-current-text: var(--button-text);
+  --button-current-text-hover: var(--button-current-text);
+  --button-current-text-active: var(--button-current-text-hover);
+  --button-current-text-disabled: var(--button-current-text);
+  --button-current-enabled: var(--button-enabled);
+  --button-current-enabled-hover: var(--button-enabled-hover);
+  --button-current-enabled-active: var(--button-enabled-active);
+  --button-current-disabled: var(--button-disabled);
+  --button-current-border: var(--button-border);
+  --button-current-border-hover: var(--button-border-hover);
+  --button-current-border-active: var(--button-border-active);
+  --button-current-border-disabled: var(--button-border-disabled);
+  --button-current-shadow-active: var(--button-shadow-active);
   display: flex;
   align-items: center;
   gap: 10px;
   width: 100%;
   padding: 11px 12px;
-  color: var(--button-text);
-  background: var(--button-enabled);
-  border: 1px solid var(--button-border);
+  color: var(--button-current-text);
+  background: var(--button-current-enabled);
+  border: 1px solid var(--button-current-border);
   border-radius: 10px;
   font-size: 0.88rem;
   font-weight: 700;
   text-align: left;
-  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+  transition: background-color 120ms ease, border-color 120ms ease, box-shadow 120ms ease, color 120ms ease, transform 120ms ease;
 }
 
 .queue-tool-button:hover:not(:disabled) {
-  color: var(--button-text);
-  background: var(--button-enabled-hover);
-  border-color: var(--button-border-hover);
+  color: var(--button-current-text-hover);
+  background: var(--button-current-enabled-hover);
+  border-color: var(--button-current-border-hover);
+}
+
+.queue-tool-button:active:not(:disabled) {
+  color: var(--button-current-text-active);
+  background: var(--button-current-enabled-active);
+  border-color: var(--button-current-border-active);
+  box-shadow: var(--button-current-shadow-active);
+  transform: translateY(var(--button-pressed-translate-y));
 }
 
 .queue-tool-button:disabled {
-  color: var(--button-text);
-  background: var(--button-disabled);
-  border-color: var(--button-border-disabled);
+  color: var(--button-current-text-disabled);
+  background: var(--button-current-disabled);
+  border-color: var(--button-current-border-disabled);
 }
 
 .queue-tool-button:focus-visible {
@@ -214,22 +239,35 @@ select {
 }
 
 .queue-tools-group-danger .queue-tool-button {
+  --button-current-text: #fff4f2;
+  --button-current-text-hover: #fff8f6;
+  --button-current-text-active: #fff8f6;
+  --button-current-text-disabled: #ffe3df;
+  --button-current-enabled: #b9382b;
+  --button-current-enabled-hover: #a32f23;
+  --button-current-enabled-active: #8b241a;
+  --button-current-disabled: #d4867c;
+  --button-current-border: #8f261b;
+  --button-current-border-hover: #781e15;
+  --button-current-border-active: #62170f;
+  --button-current-border-disabled: #c17369;
+  --button-current-shadow-active: inset 0 2px 0 rgba(96, 19, 13, 0.26);
   margin-top: 2px;
-  color: #fff4f2;
-  background: #b9382b;
-  border-color: #8f261b;
+  color: var(--button-current-text);
+  background: var(--button-current-enabled);
+  border-color: var(--button-current-border);
 }
 
 .queue-tools-group-danger .queue-tool-button:hover:not(:disabled) {
-  color: #fff8f6;
-  background: #a32f23;
-  border-color: #781e15;
+  color: var(--button-current-text-hover);
+  background: var(--button-current-enabled-hover);
+  border-color: var(--button-current-border-hover);
 }
 
 .queue-tools-group-danger .queue-tool-button:disabled {
-  color: #ffe3df;
-  background: #d4867c;
-  border-color: #c17369;
+  color: var(--button-current-text-disabled);
+  background: var(--button-current-disabled);
+  border-color: var(--button-current-border-disabled);
 }
 
 .queue-tools-group-danger .queue-tool-icon {
@@ -688,7 +726,7 @@ button {
   font-weight: 700;
 }
 
-button:hover:not(:disabled):not(.order-item) {
+button:hover:not(:disabled):not(.order-item):not(.queue-tool-button) {
   background: var(--button-enabled-hover);
 }
 
@@ -699,33 +737,51 @@ button:disabled {
 }
 
 .editor-action-button {
+  --button-current-text: var(--button-text);
+  --button-current-enabled: var(--button-enabled);
+  --button-current-enabled-hover: var(--button-enabled-hover);
+  --button-current-enabled-active: var(--button-enabled-active);
+  --button-current-disabled: var(--button-disabled);
+  --button-current-border: var(--button-border);
+  --button-current-border-hover: var(--button-border-hover);
+  --button-current-border-active: var(--button-border-active);
+  --button-current-border-disabled: var(--button-border-disabled);
+  --button-current-shadow-active: var(--button-shadow-active);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 9px;
   min-height: 46px;
   padding: 0 14px;
-  color: var(--button-text);
-  background: var(--button-enabled);
-  border: 1px solid var(--button-border);
+  color: var(--button-current-text);
+  background: var(--button-current-enabled);
+  border: 1px solid var(--button-current-border);
   border-radius: 10px;
   font-size: 0.82rem;
   font-weight: 700;
   line-height: 1.1;
   text-align: center;
-  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+  transition: background-color 120ms ease, border-color 120ms ease, box-shadow 120ms ease, color 120ms ease, transform 120ms ease;
 }
 
 .editor-action-button:hover:not(:disabled) {
-  color: var(--button-text);
-  background: var(--button-enabled-hover);
-  border-color: var(--button-border-hover);
+  color: var(--button-current-text);
+  background: var(--button-current-enabled-hover);
+  border-color: var(--button-current-border-hover);
+}
+
+.editor-action-button:active:not(:disabled) {
+  color: var(--button-current-text);
+  background: var(--button-current-enabled-active);
+  border-color: var(--button-current-border-active);
+  box-shadow: var(--button-current-shadow-active);
+  transform: translateY(var(--button-pressed-translate-y));
 }
 
 .editor-action-button:disabled {
-  color: var(--button-text);
-  background: var(--button-disabled);
-  border-color: var(--button-border-disabled);
+  color: var(--button-current-text);
+  background: var(--button-current-disabled);
+  border-color: var(--button-current-border-disabled);
 }
 
 .editor-action-button:focus-visible {
