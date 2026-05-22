@@ -311,6 +311,8 @@ The website should be a practical production tool rather than a marketing site. 
 - The left queue should keep only `Complete` and `In Progress` summary counters visible in the main panel; `Not Started` does not need a visible counter in the desktop layout.
 - Queue batch actions should move behind a compact queue-tools affordance beside the `Design Queue` title instead of occupying a permanent full-width button block above the list.
 - After `Import Clipboard` runs, its status message should appear as a brief main-screen alert near the bottom center of the viewport instead of only inside the queue-tools popup.
+- Layout-control copy and paste feedback should use that same bottom-center floating main-screen alert pattern instead of introducing a separate notification style.
+- Future lightweight workflow confirmations and warnings of this kind should reuse the same floating alert technique so queue actions, copy/paste actions, and similar operator feedback stay visually consistent.
 - Under the selected-order header action row on desktop, the content area should split into two main columns.
 - The left editor column should contain the imported listing details, imported color and quantity, the `Design Text` field, and the preview with connectedness status.
 - In the selected-order editor, the `Design Text` title and textarea should use slightly larger type than the surrounding compact controls so entered personalization is easier to read while editing.
@@ -323,6 +325,13 @@ The website should be a practical production tool rather than a marketing site. 
 - The first text line should not show a `Line Bridge` control because there is no line above it to connect to.
 - The left-side order queue should not show browser-storage sync notifications such as `Saved in this browser`, `Restored from browser`, or `No saved batch`; only meaningful remote Neon sync statuses should appear there.
 - The selected-order header should hold the primary order actions in this order: `Save`, `Complete`, `Complete & Next`, `Copy This Design`, and `Export This Design`.
+- The selected-order header should also support `Copy Layout Controls` and `Paste Layout Controls` actions for reusing one design's layout settings on another queued design without reusing the order text itself.
+- `Copy Layout Controls` should capture only layout-related settings from the currently selected design.
+- `Paste Layout Controls` should apply the copied layout settings to the currently selected design when the selected design is different from the copied source design.
+- Copying or pasting layout controls must not copy order text, quantity, buyer metadata, listing metadata, completion state, saved export data, or cached analysis results.
+- Pasting layout controls should copy preset selection, backing border, weld-export setting, global stretch settings, and per-line layout settings such as font choice, letter bridge, line bridge, offsets, text height, horizontal stretch, vertical stretch, and `Lock Text Height`.
+- When the copied source and target design have different text-line counts, pasted layout controls should apply line by line only for matching line indexes and should leave unmatched target lines unchanged.
+- After pasting layout controls, the target design should be treated as changed, any saved completed/export-ready state should be cleared for that design, and the operator should need to complete it again so fresh analysis and export data are produced.
 - The selected-order header action buttons should remain visibly smaller than the preview and top-card content so they do not dominate the editor visually on desktop.
 - The app favicon should use bold enlarged white `TFU` lettering with a red outline around the letters themselves, prioritizing legibility in a browser tab at favicon size over decorative detail.
 - Command buttons should use one shared enabled color, one shared disabled color, and one shared enabled-hover color across queue tools, editor actions, export/copy/save/complete actions, and destructive actions. Non-command row-selection buttons may remain visually neutral.
