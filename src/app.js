@@ -35,6 +35,10 @@ import {
   isQueueSnapshotEmpty,
 } from "./queue-sync.js";
 import { buildQueueSyncStatus } from "./queue-sync-status.js";
+import {
+  applyLayoutControlsSnapshot,
+  buildLayoutControlsSnapshot,
+} from "./layout-controls-clipboard.js";
 
 const FONT_OPTIONS = [
   {
@@ -135,10 +139,12 @@ const connectionStatusLabel = document.querySelector("#connectionStatusLabel");
 const connectionStatusDetail = document.querySelector("#connectionStatusDetail");
 const downloadButton = document.querySelector("#downloadButton");
 const copyButton = document.querySelector("#copyButton");
+const copyLayoutControlsButton = document.querySelector("#copyLayoutControlsButton");
+const pasteLayoutControlsButton = document.querySelector("#pasteLayoutControlsButton");
 const captureButton = document.querySelector("#captureButton");
 const completeNextButton = document.querySelector("#completeNextButton");
 const editorActionLabelByButton = new Map(
-  [captureButton, completeNextButton, copyButton, downloadButton]
+  [captureButton, completeNextButton, copyButton, copyLayoutControlsButton, pasteLayoutControlsButton, downloadButton]
     .filter(Boolean)
     .map((button) => [button, button.querySelector(".editor-action-label")]),
 );
@@ -160,6 +166,7 @@ let queuePersistenceTimeoutId = null;
 let orderListRenderFrameId = null;
 let deferredPreviewRenderToken = 0;
 let suppressQueueSyncLocalNotice = false;
+let copiedLayoutControlsSnapshot = null;
 
 const statusLabels = {
   "not-started": "Not started",
@@ -1836,6 +1843,25 @@ function renderImportedColor(order) {
   importedQuantityValue.textContent = hasQuantity ? quantity : "";
 }
 
+function clearOrderCompletionState(order, settings = order?.settings) {
+  if (!order) {
+    return;
+  }
+
+  order.settings = normalizeSettings(settings);
+  order.text = order.settings.text;
+  order.status = "in-progress";
+  order.capturedLayout = null;
+  order.cachedBuild = null;
+  order.previousCompletedBuild = null;
+  order.savedSettingsSignature = null;
+  order.completedSettingsSignature = null;
+  order.analysisBadge = null;
+  order.analysisState = "idle";
+  order.pendingAnalysisSignature = null;
+  order.pendingAnalysisRequestId = null;
+}
+
 function saveActiveOrderDraft() {
   const order = getActiveOrder();
   if (!order) {
@@ -1849,6 +1875,95 @@ function saveActiveOrderDraft() {
     order.analysisBadge = null;
   }
   schedulePersistQueueState();
+}
+
+function canCopyLayoutControls(order) {
+  return Boolean(order);
+}
+
+function canPasteLayoutControls(order) {
+  return Boolean(
+    order
+    && copiedLayoutControlsSnapshot
+    && copiedLayoutControlsSnapshot.sourceOrderId !== order.id,
+  );
+}
+
+function buildLayoutControlsPasteAlert({
+  changed,
+  sourceLabel,
+  targetLabel,
+  sourceLineCount,
+  targetLineCount,
+  appliedLineCount,
+}) {
+  const baseMessage = changed
+    ? `Pasted layout controls from ${sourceLabel} onto ${targetLabel}.`
+    : `Layout controls already match on ${targetLabel}.`;
+
+  if (sourceLineCount > targetLineCount) {
+    return `${baseMessage} Applied ${appliedLineCount} of ${sourceLineCount} source lines; extra source lines were not pasted.`;
+  }
+
+  return baseMessage;
+}
+
+function copyActiveLayoutControls() {
+  const order = getActiveOrder();
+  if (!canCopyLayoutControls(order)) {
+    return;
+  }
+
+  order.text = textInput.value;
+  order.settings = normalizeSettings(getCurrentSettings());
+  copiedLayoutControlsSnapshot = buildLayoutControlsSnapshot({
+    id: order.id,
+    label: buildQueueOrderNumber(order),
+    settings: order.settings,
+  });
+  updateWorkflowAlert(`Copied layout controls from ${buildQueueOrderNumber(order)}.`, "success");
+  renderOrderList();
+}
+
+function pasteLayoutControlsIntoActiveOrder() {
+  const order = getActiveOrder();
+  if (!canPasteLayoutControls(order)) {
+    return;
+  }
+
+  const currentSettings = normalizeSettings(getCurrentSettings());
+  const { settings: nextSettings, appliedLineCount } = applyLayoutControlsSnapshot(currentSettings, copiedLayoutControlsSnapshot);
+  const sourceLabel = copiedLayoutControlsSnapshot.sourceOrderLabel || "the copied design";
+  const sourceLineCount = Array.isArray(copiedLayoutControlsSnapshot?.settings?.lines)
+    ? copiedLayoutControlsSnapshot.settings.lines.length
+    : 0;
+  const targetLineCount = currentSettings.lines.length;
+  const changed = buildSettingsSignature(nextSettings) !== buildSettingsSignature(currentSettings);
+  const alertMessage = buildLayoutControlsPasteAlert({
+    changed,
+    sourceLabel,
+    targetLabel: buildQueueOrderNumber(order),
+    sourceLineCount,
+    targetLineCount,
+    appliedLineCount,
+  });
+
+  if (order.source) {
+    order.source.manualPresetOverride = true;
+  }
+
+  if (changed) {
+    clearOrderCompletionState(order, nextSettings);
+  } else {
+    order.text = currentSettings.text;
+    order.settings = nextSettings;
+  }
+
+  applySettings(order.settings);
+  persistQueueState();
+  renderOrderList();
+  render();
+  updateWorkflowAlert(alertMessage, "success");
 }
 
 function updateActiveOrderFromControls() {
@@ -2164,6 +2279,8 @@ function renderOrderList() {
   updateCaptureButtonState(activeOrder);
   downloadButton.disabled = !activeOrder || !isOrderReadyForExport(activeOrder);
   copyButton.disabled = !activeOrder || !isOrderReadyForExport(activeOrder) || !canCopySvgToClipboard();
+  copyLayoutControlsButton.disabled = !canCopyLayoutControls(activeOrder);
+  pasteLayoutControlsButton.disabled = !canPasteLayoutControls(activeOrder);
 }
 
 function selectOrder(orderId) {
@@ -3782,6 +3899,8 @@ completeNextButton.addEventListener("click", () => {
 });
 downloadButton.addEventListener("click", downloadSvg);
 copyButton.addEventListener("click", copyCurrentSvg);
+copyLayoutControlsButton.addEventListener("click", copyActiveLayoutControls);
+pasteLayoutControlsButton.addEventListener("click", pasteLayoutControlsIntoActiveOrder);
 previewPanel.addEventListener("mousedown", startPreviewMiddlePan);
 previewPanel.addEventListener("auxclick", (event) => {
   if (event.button === 1) {
