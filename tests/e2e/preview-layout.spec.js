@@ -471,6 +471,20 @@ test("uses the refined desktop B1 workspace proportions", async ({ page }) => {
   expect(layout.hasQueueMenu).toBe(true);
 });
 
+test("grows the preview area when the browser viewport gets taller", async ({ page }) => {
+  const measurePreviewPanelHeight = async () => {
+    return page.locator(".preview-panel").evaluate((element) => element.getBoundingClientRect().height);
+  };
+
+  await page.setViewportSize({ width: 1500, height: 1000 });
+  const shorterHeight = await measurePreviewPanelHeight();
+
+  await page.setViewportSize({ width: 1500, height: 1400 });
+  const tallerHeight = await measurePreviewPanelHeight();
+
+  expect(tallerHeight).toBeGreaterThan(shorterHeight + 120);
+});
+
 test("keeps additional line control groups reachable in the right-side inspector", async ({ page }) => {
   await page.setViewportSize({ width: 1920, height: 1080 });
   await page.locator("#textInput").fill("DPT\nRN\nBSN");
