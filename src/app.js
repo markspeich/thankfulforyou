@@ -70,7 +70,7 @@ const PREVIEW_INNER_GUIDE_INSET_X_MM = (PREVIEW_BOX_WIDTH_MM - PREVIEW_INNER_GUI
 const PREVIEW_INNER_GUIDE_INSET_Y_MM = (PREVIEW_BOX_HEIGHT_MM - PREVIEW_INNER_GUIDE_HEIGHT_MM) / 2;
 const DEFAULT_ZOOM = 3;
 const DEFAULT_WELD_EXPORTED_DESIGN = true;
-const IMPORT_STATUS_AUTOHIDE_MS = Object.freeze({
+const WORKFLOW_ALERT_AUTOHIDE_MS = Object.freeze({
   pending: 3200,
   success: 3200,
   error: 4500,
@@ -89,7 +89,7 @@ const DEFAULT_LINE_SETTINGS = Object.freeze({
 const addOrderButton = document.querySelector("#addOrderButton");
 const importClipboardButton = document.querySelector("#importClipboardButton");
 const clearQueueButton = document.querySelector("#clearQueueButton");
-const importStatus = document.querySelector("#importStatus");
+const workflowAlert = document.querySelector("#importStatus");
 const queueSyncStatus = document.querySelector("#queueSyncStatus");
 const queueSyncStatusLabel = document.querySelector("#queueSyncStatusLabel");
 const queueSyncStatusDetail = document.querySelector("#queueSyncStatusDetail");
@@ -142,8 +142,8 @@ const editorActionLabelByButton = new Map(
     .filter(Boolean)
     .map((button) => [button, button.querySelector(".editor-action-label")]),
 );
-let importStatusHideTimer = null;
-let importStatusToken = 0;
+let workflowAlertHideTimer = null;
+let workflowAlertToken = 0;
 
 const canvas = document.createElement("canvas");
 const ctx = canvas.getContext("2d");
@@ -916,11 +916,11 @@ async function saveQueueSnapshotToRemote(options = {}) {
     }
 
     if (typeof successMessage === "string" && successMessage.trim()) {
-      updateImportStatus(successMessage.trim(), "success");
+      updateWorkflowAlert(successMessage.trim(), "success");
     }
     updateQueueSyncStatus("saved-remote", { count: snapshot.orders.length });
   } catch (error) {
-    updateImportStatus(
+    updateWorkflowAlert(
       error instanceof Error ? error.message : "Unable to save the current batch remotely.",
       "error",
     );
@@ -935,7 +935,7 @@ async function restoreInitialQueueState() {
     try {
       remoteSnapshot = await fetchRemoteQueueSnapshot();
     } catch (error) {
-      updateImportStatus(
+      updateWorkflowAlert(
         error instanceof Error ? error.message : "Unable to load the saved remote batch.",
         "error",
       );
@@ -1184,19 +1184,19 @@ function parseImportedItems(payloadText) {
     .filter(Boolean);
 }
 
-function updateImportStatus(message, state = "pending", options = {}) {
+function updateWorkflowAlert(message, state = "pending", options = {}) {
   const hasMessage = typeof message === "string" && message.trim().length > 0;
 
-  if (importStatusHideTimer) {
-    window.clearTimeout(importStatusHideTimer);
-    importStatusHideTimer = null;
+  if (workflowAlertHideTimer) {
+    window.clearTimeout(workflowAlertHideTimer);
+    workflowAlertHideTimer = null;
   }
 
-  importStatusToken += 1;
-  const currentToken = importStatusToken;
-  importStatus.hidden = !hasMessage;
-  importStatus.textContent = hasMessage ? message : "";
-  importStatus.dataset.state = state;
+  workflowAlertToken += 1;
+  const currentToken = workflowAlertToken;
+  workflowAlert.hidden = !hasMessage;
+  workflowAlert.textContent = hasMessage ? message : "";
+  workflowAlert.dataset.state = state;
 
   if (!hasMessage) {
     return;
@@ -1204,18 +1204,18 @@ function updateImportStatus(message, state = "pending", options = {}) {
 
   const autoHideMs = typeof options.autoHideMs === "number"
     ? options.autoHideMs
-    : IMPORT_STATUS_AUTOHIDE_MS[state] ?? IMPORT_STATUS_AUTOHIDE_MS.pending;
+    : WORKFLOW_ALERT_AUTOHIDE_MS[state] ?? WORKFLOW_ALERT_AUTOHIDE_MS.pending;
 
   if (autoHideMs <= 0) {
     return;
   }
 
-  importStatusHideTimer = window.setTimeout(() => {
-    if (currentToken !== importStatusToken) {
+  workflowAlertHideTimer = window.setTimeout(() => {
+    if (currentToken !== workflowAlertToken) {
       return;
     }
 
-    updateImportStatus("", state, { autoHideMs: 0 });
+    updateWorkflowAlert("", state, { autoHideMs: 0 });
   }, autoHideMs);
 }
 
@@ -2253,7 +2253,7 @@ function deleteOrder(orderId) {
     activeOrderId = null;
     orderSequence = 1;
     clearPersistedQueueState();
-    updateImportStatus("Queue cleared.", "pending");
+    updateWorkflowAlert("Queue cleared.", "pending");
   } else {
     persistQueueState();
   }
@@ -2281,10 +2281,10 @@ async function clearAllOrders() {
   resetEditorToEmptyState();
   try {
     await clearRemoteQueueSnapshot({ quiet: true });
-    updateImportStatus("Batch cleared locally and remotely.", "pending");
+    updateWorkflowAlert("Batch cleared locally and remotely.", "pending");
     updateQueueSyncStatus("empty");
   } catch (error) {
-    updateImportStatus(
+    updateWorkflowAlert(
       error instanceof Error
         ? `Batch cleared locally, but remote clear failed: ${error.message}`
         : "Batch cleared locally, but the saved remote batch could not be cleared.",
@@ -2297,7 +2297,7 @@ async function clearAllOrders() {
 
 async function importFromClipboard() {
   if (!navigator.clipboard?.readText) {
-    updateImportStatus("Clipboard import is not available in this browser context.", "error");
+    updateWorkflowAlert("Clipboard import is not available in this browser context.", "error");
     return;
   }
 
@@ -2350,17 +2350,17 @@ async function importFromClipboard() {
     }
 
     if (createdItems.length && skippedCount) {
-      updateImportStatus(`Imported ${createdItems.length} new Etsy design${createdItems.length === 1 ? "" : "s"} and skipped ${skippedCount} already in the queue.`, "success");
+      updateWorkflowAlert(`Imported ${createdItems.length} new Etsy design${createdItems.length === 1 ? "" : "s"} and skipped ${skippedCount} already in the queue.`, "success");
     } else if (createdItems.length) {
-      updateImportStatus(`Imported ${createdItems.length} Etsy design${createdItems.length === 1 ? "" : "s"} from the clipboard.`, "success");
+      updateWorkflowAlert(`Imported ${createdItems.length} Etsy design${createdItems.length === 1 ? "" : "s"} from the clipboard.`, "success");
     } else if (skippedCount) {
-      updateImportStatus(`Skipped ${skippedCount} Etsy design${skippedCount === 1 ? "" : "s"} already in the queue. No new designs were added.`, "success");
+      updateWorkflowAlert(`Skipped ${skippedCount} Etsy design${skippedCount === 1 ? "" : "s"} already in the queue. No new designs were added.`, "success");
     } else {
-      updateImportStatus("Clipboard data did not include any importable Etsy designs.", "error");
+      updateWorkflowAlert("Clipboard data did not include any importable Etsy designs.", "error");
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : "Clipboard import failed.";
-    updateImportStatus(message, "error");
+    updateWorkflowAlert(message, "error");
   } finally {
     importClipboardButton.disabled = false;
     setQueueActionLabel(importClipboardButton, "Import Clipboard");
@@ -3461,7 +3461,7 @@ async function exportAllOrders() {
 
   const unsavedOrders = exportableOrders.filter((order) => !isOrderReadyForExport(order));
   if (unsavedOrders.length) {
-    updateImportStatus(
+    updateWorkflowAlert(
       `Complete ${unsavedOrders.length} design${unsavedOrders.length === 1 ? "" : "s"} before batch export. Face analysis now runs only on Complete.`,
       "error",
     );
@@ -3513,7 +3513,7 @@ async function copyAllOrders() {
 
   const unsavedOrders = exportableOrders.filter((order) => !isOrderReadyForExport(order));
   if (unsavedOrders.length) {
-    updateImportStatus(
+    updateWorkflowAlert(
       `Complete ${unsavedOrders.length} design${unsavedOrders.length === 1 ? "" : "s"} before batch copy. Face analysis now runs only on Complete.`,
       "error",
     );
@@ -3812,8 +3812,8 @@ await loadPresetRegistry();
 renderPresetOptions();
 updateBackingOutput();
 const restoredQueue = await restoreInitialQueueState();
-if ((!restoredQueue.source || restoredQueue.count === 0) && importStatus.dataset.state !== "error") {
-  updateImportStatus("", "pending");
+if ((!restoredQueue.source || restoredQueue.count === 0) && workflowAlert.dataset.state !== "error") {
+  updateWorkflowAlert("", "pending");
 }
 const defaultPresetId = getDefaultPresetId();
 const defaultPresetBaseSettings = getPresetBaseSettings(defaultPresetId);

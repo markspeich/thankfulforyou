@@ -261,9 +261,9 @@ select {
 }
 
 .editor-actions {
-  display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: minmax(112px, auto);
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   align-items: center;
   gap: 8px;
 }
@@ -1291,7 +1291,6 @@ button:disabled {
     width: 100%;
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    grid-auto-flow: row;
   }
 
   .line-control-grid {

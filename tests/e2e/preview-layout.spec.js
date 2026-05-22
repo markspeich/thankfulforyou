@@ -932,6 +932,16 @@ test("requires re-complete when lock text height changes a scaled design", async
   await page.unrouteAll({ behavior: "ignoreErrors" });
 });
 
+test("shows copy and paste layout control actions in the selected-order header", async ({ page }) => {
+  const copyLayoutControlsButton = page.getByRole("button", { name: "Copy Layout Controls" });
+  const pasteLayoutControlsButton = page.getByRole("button", { name: "Paste Layout Controls" });
+
+  await expect(copyLayoutControlsButton).toBeVisible();
+  await expect(pasteLayoutControlsButton).toBeVisible();
+  await expect(copyLayoutControlsButton).toBeDisabled();
+  await expect(pasteLayoutControlsButton).toBeDisabled();
+});
+
 test("does not restore a stale completed analysis badge after geometry changes during analysis", async ({ page }) => {
   await page.route("**/api/layout-analyze", async (route) => {
     await new Promise((resolve) => setTimeout(resolve, 1000));
