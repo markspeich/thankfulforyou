@@ -56,6 +56,20 @@ function buildMockAnalysisResponse(overrides = {}) {
   };
 }
 
+async function expectWorkflowAlertMessage(page, ...messageParts) {
+  const alert = page.locator("#importStatus");
+  await expect(alert).toBeVisible();
+  for (const messagePart of messageParts) {
+    await expect(alert).toContainText(messagePart);
+  }
+}
+
+async function expectWorkflowAlertSuccess(page, ...messageParts) {
+  const alert = page.locator("#importStatus");
+  await expectWorkflowAlertMessage(page, ...messageParts);
+  await expect(alert).toHaveAttribute("data-state", "success");
+}
+
 async function measureVisibleTextBounds(page) {
   return page.evaluate(async () => {
     const guide = document.querySelector("#preview .preview-guide-box");
@@ -965,7 +979,7 @@ test("copies layout controls onto another design without copying text", async ({
 
   await expect(copyLayoutControlsButton).toBeEnabled();
   await copyLayoutControlsButton.click();
-  await expect(page.locator("#importStatus")).toContainText("Copied layout controls from Design 1.");
+  await expectWorkflowAlertSuccess(page, "Copied layout controls from Design 1.");
   await expect(pasteLayoutControlsButton).toBeDisabled();
 
   await clickQueueAction(page, "Add Design");
@@ -980,8 +994,9 @@ test("copies layout controls onto another design without copying text", async ({
   await expect(page.getByRole("button", { name: "Export This Design" })).toBeEnabled();
 
   await page.locator("#orderList .order-row").filter({ hasText: "Design 1" }).locator(".order-item").click();
+  await expect(pasteLayoutControlsButton).toBeDisabled();
   await copyLayoutControlsButton.click();
-  await expect(page.locator("#importStatus")).toContainText("Copied layout controls from Design 1.");
+  await expectWorkflowAlertSuccess(page, "Copied layout controls from Design 1.");
 
   await targetRow.locator(".order-item").click();
   await expect(page.locator("#activeOrderName")).toHaveText("Design 2");
@@ -989,7 +1004,7 @@ test("copies layout controls onto another design without copying text", async ({
 
   await pasteLayoutControlsButton.click();
 
-  await expect(page.locator("#importStatus")).toContainText("Pasted layout controls from Design 1 onto Design 2.");
+  await expectWorkflowAlertSuccess(page, "Pasted layout controls from Design 1 onto Design 2.");
   await expect(page.locator("#textInput")).toHaveValue("Taylor\nDNP\nFNP");
   await expect(page.locator("#presetInput")).toHaveValue("skywalk-candlepin");
   await expect(page.locator("#backingInput")).toHaveValue("3.4");
@@ -1057,7 +1072,7 @@ test("preserves completed export-ready state when a pasted layout is unchanged",
 
   await pasteLayoutControlsButton.click();
 
-  await expect(page.locator("#importStatus")).toContainText("Layout controls already match on Design 2.");
+  await expectWorkflowAlertSuccess(page, "Layout controls already match on Design 2.");
   await expect(targetRow).toContainText("Complete");
   await expect(targetRow.locator(".order-analysis-indicator.ok, .order-analysis-indicator.warning")).toHaveCount(1);
   await expect(completeButton(page)).toBeDisabled();
@@ -1085,8 +1100,11 @@ test("warns when a pasted layout cannot include extra source lines", async ({ pa
 
   await pasteLayoutControlsButton.click();
 
-  await expect(page.locator("#importStatus")).toContainText("Pasted layout controls from Design 1 onto Design 2.");
-  await expect(page.locator("#importStatus")).toContainText("Applied 2 of 3 source lines");
+  await expectWorkflowAlertMessage(
+    page,
+    "Pasted layout controls from Design 1 onto Design 2.",
+    "Applied 2 of 3 source lines",
+  );
   await expect(page.locator("#textInput")).toHaveValue("Savannah\nRN");
   await expect(page.locator("#presetInput")).toHaveValue("skywalk-somekind");
   await expect(page.locator('.line-control-card[data-line-index="0"] [data-setting="fontId"]')).toHaveValue("skywalk");
