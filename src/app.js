@@ -70,6 +70,11 @@ const PREVIEW_INNER_GUIDE_INSET_X_MM = (PREVIEW_BOX_WIDTH_MM - PREVIEW_INNER_GUI
 const PREVIEW_INNER_GUIDE_INSET_Y_MM = (PREVIEW_BOX_HEIGHT_MM - PREVIEW_INNER_GUIDE_HEIGHT_MM) / 2;
 const DEFAULT_ZOOM = 3;
 const DEFAULT_WELD_EXPORTED_DESIGN = true;
+const IMPORT_STATUS_AUTOHIDE_MS = Object.freeze({
+  pending: 3200,
+  success: 3200,
+  error: 4500,
+});
 const DEFAULT_LINE_SETTINGS = Object.freeze({
   fontId: "candlepin",
   bridgeMm: 0.5,
@@ -137,6 +142,8 @@ const editorActionLabelByButton = new Map(
     .filter(Boolean)
     .map((button) => [button, button.querySelector(".editor-action-label")]),
 );
+let importStatusHideTimer = null;
+let importStatusToken = 0;
 
 const canvas = document.createElement("canvas");
 const ctx = canvas.getContext("2d");
@@ -1177,11 +1184,39 @@ function parseImportedItems(payloadText) {
     .filter(Boolean);
 }
 
-function updateImportStatus(message, state = "pending") {
+function updateImportStatus(message, state = "pending", options = {}) {
   const hasMessage = typeof message === "string" && message.trim().length > 0;
+
+  if (importStatusHideTimer) {
+    window.clearTimeout(importStatusHideTimer);
+    importStatusHideTimer = null;
+  }
+
+  importStatusToken += 1;
+  const currentToken = importStatusToken;
   importStatus.hidden = !hasMessage;
   importStatus.textContent = hasMessage ? message : "";
   importStatus.dataset.state = state;
+
+  if (!hasMessage) {
+    return;
+  }
+
+  const autoHideMs = typeof options.autoHideMs === "number"
+    ? options.autoHideMs
+    : IMPORT_STATUS_AUTOHIDE_MS[state] ?? IMPORT_STATUS_AUTOHIDE_MS.pending;
+
+  if (autoHideMs <= 0) {
+    return;
+  }
+
+  importStatusHideTimer = window.setTimeout(() => {
+    if (currentToken !== importStatusToken) {
+      return;
+    }
+
+    updateImportStatus("", state, { autoHideMs: 0 });
+  }, autoHideMs);
 }
 
 function clamp(value, min, max) {

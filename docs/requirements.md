@@ -310,6 +310,7 @@ The website should be a practical production tool rather than a marketing site. 
 - On desktop, the left queue should use roughly the leftmost quarter of the screen instead of the previous narrow column, so queue rows can show more order context without taking over the editor workspace.
 - The left queue should keep only `Complete` and `In Progress` summary counters visible in the main panel; `Not Started` does not need a visible counter in the desktop layout.
 - Queue batch actions should move behind a compact queue-tools affordance beside the `Design Queue` title instead of occupying a permanent full-width button block above the list.
+- After `Import Clipboard` runs, its status message should appear as a brief main-screen alert near the bottom center of the viewport instead of only inside the queue-tools popup.
 - Under the selected-order header action row on desktop, the content area should split into two main columns.
 - The left editor column should contain the imported listing details, imported color and quantity, the `Design Text` field, and the preview with connectedness status.
 - In the selected-order editor, the `Design Text` title and textarea should use slightly larger type than the surrounding compact controls so entered personalization is easier to read while editing.

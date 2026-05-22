@@ -1362,7 +1362,25 @@ test("skips already imported Etsy line items when importing another batch", asyn
   await clickQueueAction(page, "Import Clipboard");
 
   await expect(page.locator("#orderCountOutput")).toHaveText("3");
+  await expect(page.locator(".queue-tools-menu")).not.toHaveAttribute("open", "");
+  await expect(page.locator("#importStatus")).toBeVisible();
   await expect(page.locator("#importStatus")).toContainText("Imported 2 Etsy designs from the clipboard.");
+  await expect.poll(async () => {
+    return page.locator("#importStatus").evaluate((node) => {
+      const rect = node.getBoundingClientRect();
+      const style = window.getComputedStyle(node);
+      return {
+        position: style.position,
+        bottomGap: Math.round(window.innerHeight - rect.bottom),
+        centerOffset: Math.round(Math.abs(window.innerWidth / 2 - (rect.left + rect.width / 2))),
+      };
+    });
+  }).toEqual({
+    position: "fixed",
+    bottomGap: 24,
+    centerOffset: 0,
+  });
+  await expect(page.locator("#importStatus")).toBeHidden({ timeout: 5000 });
 
   await page.evaluate((payload) => {
     Object.defineProperty(navigator, "clipboard", {
@@ -1376,12 +1394,15 @@ test("skips already imported Etsy line items when importing another batch", asyn
   await clickQueueAction(page, "Import Clipboard");
 
   await expect(page.locator("#orderCountOutput")).toHaveText("4");
+  await expect(page.locator(".queue-tools-menu")).not.toHaveAttribute("open", "");
+  await expect(page.locator("#importStatus")).toBeVisible();
   await expect(page.locator("#importStatus")).toContainText("Imported 1 new Etsy design and skipped 1 already in the queue.");
   await expect(page.locator("#orderList .order-row")).toContainText([
     "#4057600528",
     "#4057629148",
     "#4062879351",
   ]);
+  await expect(page.locator("#importStatus")).toBeHidden({ timeout: 5000 });
 });
 
 test("shows labeled buyer, listing, and emphasized personalization lines in queue rows", async ({ page }) => {
