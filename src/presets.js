@@ -31,6 +31,57 @@ const FALLBACK_PRESET_DEFINITIONS = [
   },
   {
     schemaVersion: 1,
+    id: "candlepin-skywalk",
+    name: "Candlepin, Skywalk",
+    globalDefaults: {
+      backingMm: 2.2,
+      weldExportedDesign: true,
+    },
+    lineDefaults: {
+      fontId: "candlepin",
+      bridgeMm: 0.5,
+      lineBridgeMm: 0.5,
+      offsetXMm: 0,
+      fontSizeMm: 34,
+      horizontalScale: 1,
+      verticalScale: 1,
+      lockTextHeight: false,
+    },
+    lineRules: [
+      {
+        match: {
+          kind: "first",
+        },
+        settings: {
+          fontId: "candlepin",
+        },
+      },
+      {
+        match: {
+          kind: "remaining",
+        },
+        settings: {
+          fontId: "skywalk",
+        },
+      },
+    ],
+    listingAssignments: [
+      {
+        listingId: "4439916732",
+        name: "Candlepin + Skywalk listing with taller first line",
+        lineOverrides: [
+          {
+            lineIndex: 0,
+            settings: {
+              fontSizeMm: 44,
+            },
+          },
+        ],
+      },
+    ],
+  },
+  {
+    schemaVersion: 1,
     id: "skywalk-somekind",
     name: "Skywalk, Somekind",
     globalDefaults: {

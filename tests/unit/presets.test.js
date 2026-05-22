@@ -29,6 +29,7 @@ describe("presets", () => {
     expect(getDefaultPresetId()).toBe("all-candlepin");
     expect(getPresetOptions()).toEqual([
       { id: "all-candlepin", label: "All Candlepin" },
+      { id: "candlepin-skywalk", label: "Candlepin, Skywalk" },
       { id: "skywalk-somekind", label: "Skywalk, Somekind" },
       { id: "skywalk-candlepin", label: "Skywalk, Candlepin" },
     ]);
@@ -64,6 +65,17 @@ describe("presets", () => {
       "skywalk",
       "candlepin",
       "candlepin",
+    ]);
+  });
+
+  it("maps the first line to Candlepin and remaining lines to Skywalk", () => {
+    const lines = buildPresetLines("candlepin-skywalk", 4, createDefaultLineSettings);
+
+    expect(lines.map((line) => line.fontId)).toEqual([
+      "candlepin",
+      "skywalk",
+      "skywalk",
+      "skywalk",
     ]);
   });
 
@@ -205,6 +217,33 @@ describe("presets", () => {
     });
   });
 
+  it("applies the listing-specific line 1 height override for listing 4439916732", () => {
+    const lines = buildPresetLines("candlepin-skywalk", 4, createDefaultLineSettings, {
+      listingId: "4439916732",
+    });
+
+    expect(lines[0]).toEqual({
+      fontId: "candlepin",
+      bridgeMm: 0.5,
+      lineBridgeMm: 0.5,
+      offsetXMm: 0,
+      fontSizeMm: 44,
+      horizontalScale: 1,
+      verticalScale: 1,
+      lockTextHeight: false,
+    });
+    expect(lines[1]).toEqual({
+      fontId: "skywalk",
+      bridgeMm: 0.5,
+      lineBridgeMm: 0.5,
+      offsetXMm: 0,
+      fontSizeMm: 34,
+      horizontalScale: 1,
+      verticalScale: 1,
+      lockTextHeight: false,
+    });
+  });
+
   it("preserves lockTextHeight overrides coming from preset data", () => {
     setPresetRegistryForTests(
       { defaultPresetId: "custom-lock" },
@@ -278,6 +317,7 @@ describe("presets", () => {
 
   it("maps listing ids to preset ids from preset data", () => {
     expect(getPresetIdForListingId("1884223710")).toBe("skywalk-somekind");
+    expect(getPresetIdForListingId("4439916732")).toBe("candlepin-skywalk");
     expect(getPresetIdForListingId("4465975709")).toBe("skywalk-candlepin");
     expect(getPresetIdForListingId("unknown")).toBe("all-candlepin");
   });

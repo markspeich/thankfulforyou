@@ -63,8 +63,9 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Allow text to be arranged in one or more lines.
 - Treat the number of editable text lines as fully dynamic and derive it directly from the number of lines entered by the user.
 - Add a `Presets` dropdown directly below the `Order Text` field.
-- The `Presets` dropdown must offer exactly these production presets: `All Candlepin`, `Skywalk, Somekind`, and `Skywalk, Candlepin`.
+- The `Presets` dropdown must offer these production presets: `All Candlepin`, `Candlepin, Skywalk`, `Skywalk, Somekind`, and `Skywalk, Candlepin`.
 - The `All Candlepin` preset must set every text line to the Candlepin font.
+- The `Candlepin, Skywalk` preset must set the first text line to Candlepin and every subsequent line to Skywalk.
 - The `Skywalk, Somekind` preset must set the first text line to Skywalk and every subsequent line to Somekind.
 - The `Skywalk, Somekind` preset must set the second text line text height to 23 mm.
 - The `Skywalk, Candlepin` preset must set the first text line to Skywalk and every subsequent line to Candlepin.
@@ -204,6 +205,8 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - The app should maintain a configurable mapping from Etsy listing ID to production preset name.
 - The current preset mapping must include Etsy listing ID `1884223710` to `Skywalk, Somekind`.
 - Etsy listing ID `1884223710` must also apply a listing-specific per-line default of `21 mm` text height on line 2 while keeping the rest of the `Skywalk, Somekind` preset defaults unchanged.
+- The current preset mapping must include Etsy listing ID `4439916732` to `Candlepin, Skywalk`.
+- Etsy listing ID `4439916732` must also apply a listing-specific per-line default of `44 mm` text height on line 1 while keeping the rest of the `Candlepin, Skywalk` preset defaults unchanged.
 - The current preset mapping must include Etsy listing ID `4465975709` to `Skywalk, Candlepin`.
 - Etsy listing ID `4465975709` must also apply a listing-specific per-line default of `21 mm` text height on line 2 while keeping the rest of the `Skywalk, Candlepin` preset defaults unchanged.
 - Imported Etsy data should create one queue row per personalized Etsy line item rather than one row per Etsy order.

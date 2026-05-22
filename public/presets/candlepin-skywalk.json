@@ -1,0 +1,53 @@
+{
+  "$schema": "../../docs/schemas/preset.schema.json",
+  "schemaVersion": 1,
+  "id": "candlepin-skywalk",
+  "name": "Candlepin, Skywalk",
+  "description": "Use Candlepin on the first line and Skywalk on the remaining lines.",
+  "globalDefaults": {
+    "backingMm": 2.2,
+    "weldExportedDesign": true
+  },
+  "lineDefaults": {
+    "fontId": "candlepin",
+    "bridgeMm": 0.5,
+    "lineBridgeMm": 0.5,
+    "offsetXMm": 0,
+    "fontSizeMm": 34,
+    "horizontalScale": 1,
+    "verticalScale": 1,
+    "lockTextHeight": false
+  },
+  "lineRules": [
+    {
+      "match": {
+        "kind": "first"
+      },
+      "settings": {
+        "fontId": "candlepin"
+      }
+    },
+    {
+      "match": {
+        "kind": "remaining"
+      },
+      "settings": {
+        "fontId": "skywalk"
+      }
+    }
+  ],
+  "listingAssignments": [
+    {
+      "listingId": "4439916732",
+      "name": "Candlepin + Skywalk listing with taller first line",
+      "lineOverrides": [
+        {
+          "lineIndex": 0,
+          "settings": {
+            "fontSizeMm": 44
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -7,6 +7,10 @@
       "path": "public/presets/all-candlepin.json"
     },
     {
+      "id": "candlepin-skywalk",
+      "path": "public/presets/candlepin-skywalk.json"
+    },
+    {
       "id": "skywalk-somekind",
       "path": "public/presets/skywalk-somekind.json"
     },
