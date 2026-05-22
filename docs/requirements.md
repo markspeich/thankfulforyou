@@ -180,6 +180,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - The active order editor should also include a button near `Export This Design` for copying the current design's generated SVG to the clipboard.
 - The selected-order editor should eventually support a `Save As Preset` action for creating a reusable preset definition from the current control state.
 - A future `Save As Preset` workflow should serialize reusable preset settings, including preset name, backing border, weld toggle, per-line font choices, letter bridge values, line bridge values where applicable, horizontal offsets, and text-height defaults.
+- A future preset definition should also include the target bounding box size so presets can carry the intended overall design footprint along with the rest of the reusable layout defaults.
 - A future `Save As Preset` workflow should save preset data in the same schema-driven JSON format used by runtime presets.
 - A future `Save As Preset` workflow should not treat the current order text itself as part of the reusable preset definition.
 - The left-side order navigation should include a button above the order list for exporting all queued designs that have text entered.
