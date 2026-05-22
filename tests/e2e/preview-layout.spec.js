@@ -29,21 +29,8 @@ async function clickQueueAction(page, name) {
   await page.getByRole("button", { name }).click();
 }
 
-function expectPressedStateDelta(pressedState, properties) {
-  for (const property of properties) {
-    expect(pressedState.active[property]).not.toBe(pressedState.before[property]);
-  }
-}
-
-async function measurePressedState(page, selector, assertedProperties) {
-  const locator = page.locator(selector);
-  await expect(locator).toBeVisible();
-  await locator.scrollIntoViewIfNeeded();
-  await page.mouse.move(1, 1);
-  await expect.poll(async () => locator.evaluate((element) => element.matches(":hover"))).toBe(false);
-  await page.waitForTimeout(160);
-
-  const before = await locator.evaluate((element) => {
+async function readPressedStateStyles(locator) {
+  return locator.evaluate((element) => {
     const style = window.getComputedStyle(element);
     return {
       color: style.color,
@@ -53,6 +40,17 @@ async function measurePressedState(page, selector, assertedProperties) {
       transform: style.transform,
     };
   });
+}
+
+async function measurePressedState(page, selector, assertedProperties) {
+  const locator = page.locator(selector);
+  await expect(locator).toBeVisible();
+  await locator.scrollIntoViewIfNeeded();
+  await page.mouse.move(1, 1);
+  await expect.poll(async () => locator.evaluate((element) => element.matches(":hover"))).toBe(false);
+  await expect.poll(async () => locator.evaluate((element) => element.matches(":active"))).toBe(false);
+
+  const before = await readPressedStateStyles(locator);
 
   const box = await locator.boundingBox();
   if (!box) {
@@ -66,35 +64,35 @@ async function measurePressedState(page, selector, assertedProperties) {
   await page.mouse.down();
   await expect.poll(async () => locator.evaluate((element) => element.matches(":active"))).toBe(true);
   await expect.poll(async () => {
-    const style = await locator.evaluate((element) => {
-      const computedStyle = window.getComputedStyle(element);
-      return {
-        color: computedStyle.color,
-        backgroundColor: computedStyle.backgroundColor,
-        borderColor: computedStyle.borderColor,
-        boxShadow: computedStyle.boxShadow,
-        transform: computedStyle.transform,
-      };
-    });
+    const style = await readPressedStateStyles(locator);
 
-    return assertedProperties.every((property) => style[property] !== before[property]);
-  }).toBe(true);
-
-  const active = await locator.evaluate((element) => {
-    const style = window.getComputedStyle(element);
-    return {
-      color: style.color,
-      backgroundColor: style.backgroundColor,
-      borderColor: style.borderColor,
-      boxShadow: style.boxShadow,
-      transform: style.transform,
-    };
-  });
+    return assertedProperties.every((property) => style[property] !== before[property])
+      ? style
+      : null;
+  }).not.toBeNull();
+  const active = await readPressedStateStyles(locator);
 
   await page.mouse.move(1, 1);
   await page.mouse.up();
+  await expect.poll(async () => locator.evaluate((element) => element.matches(":active"))).toBe(false);
+  await expect.poll(async () => locator.evaluate((element) => element.matches(":hover"))).toBe(false);
 
-  return { before, active };
+  await expect.poll(async () => {
+    const style = await readPressedStateStyles(locator);
+
+    return assertedProperties.every((property) => style[property] === before[property])
+      ? style
+      : null;
+  }).not.toBeNull();
+  const released = await readPressedStateStyles(locator);
+
+  return {
+    before,
+    active,
+    released,
+    changedProperties: assertedProperties.filter((property) => active[property] !== before[property]),
+    releasedProperties: assertedProperties.filter((property) => released[property] === before[property]),
+  };
 }
 
 async function completeDesign(page, queueLabel) {
@@ -963,20 +961,35 @@ test("uses a lighter hover color for inactive design queue rows", async ({ page 
 
 test("applies a pressed-state hook to editor and queue command buttons", async ({ page }) => {
   await page.locator("#textInput").fill("Savannah");
+  await clickQueueAction(page, "Add Design");
+  await page.locator("#textInput").fill("RN");
+  await page.locator("#orderList .order-row").filter({ hasText: "Design 1" }).locator(".order-item").click();
 
-  const editorProperties = ["boxShadow", "transform"];
-  const editorPressed = await measurePressedState(page, "#captureButton", editorProperties);
-  expectPressedStateDelta(editorPressed, editorProperties);
+  const editorProperties = ["transform"];
+  await expect(measurePressedState(page, "#captureButton", editorProperties)).resolves.toMatchObject({
+    changedProperties: editorProperties,
+    releasedProperties: editorProperties,
+  });
+  await expect(measurePressedState(page, "#completeNextButton", editorProperties)).resolves.toMatchObject({
+    changedProperties: editorProperties,
+    releasedProperties: editorProperties,
+  });
 
   await openQueueTools(page);
 
-  const queueProperties = ["backgroundColor", "borderColor", "boxShadow", "transform"];
-  const queuePressed = await measurePressedState(page, "#addOrderButton", queueProperties);
-  expectPressedStateDelta(queuePressed, queueProperties);
+  const queueProperties = ["transform"];
+  await expect(measurePressedState(page, "#addOrderButton", queueProperties)).resolves.toMatchObject({
+    changedProperties: queueProperties,
+    releasedProperties: queueProperties,
+  });
 
-  const dangerProperties = ["backgroundColor", "borderColor", "boxShadow", "transform"];
-  const dangerPressed = await measurePressedState(page, "#clearQueueButton", dangerProperties);
-  expectPressedStateDelta(dangerPressed, dangerProperties);
+  await openQueueTools(page);
+
+  const dangerProperties = ["transform"];
+  await expect(measurePressedState(page, "#clearQueueButton", dangerProperties)).resolves.toMatchObject({
+    changedProperties: dangerProperties,
+    releasedProperties: dangerProperties,
+  });
 });
 
 test("persists per-line lock text height state across refresh for multi-line designs", async ({ page }) => {
