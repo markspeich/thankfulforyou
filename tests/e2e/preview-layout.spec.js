@@ -138,7 +138,7 @@ async function measureVisibleTextBounds(page) {
   });
 }
 
-test.beforeEach(async ({ page }) => {
+test.beforeEach(async ({ page, request }) => {
   async function waitForStartup() {
     await expect.poll(async () => {
       const value = await page.locator("#importStatus").textContent();
@@ -148,6 +148,7 @@ test.beforeEach(async ({ page }) => {
     }).toBe(true);
   }
 
+  await request.delete("/api/queue-snapshot?workspaceKey=primary").catch(() => null);
   await page.goto("/");
   await waitForStartup();
   await page.evaluate(() => {
