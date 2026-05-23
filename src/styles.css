@@ -813,6 +813,20 @@ button:disabled {
   min-width: 0;
 }
 
+.editor-utility-button {
+  min-height: 34px;
+  padding: 0 11px;
+  border-radius: 9px;
+  gap: 7px;
+  font-size: 0.73rem;
+}
+
+.editor-utility-button .editor-action-icon,
+.editor-utility-button .editor-action-icon svg {
+  width: 15px;
+  height: 15px;
+}
+
 .order-stats {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -968,13 +982,23 @@ button:disabled {
 
 .line-controls-rail {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
   align-content: start;
   gap: 12px;
   height: 100%;
   min-height: 0;
   min-width: 0;
   overflow: hidden;
+}
+
+.layout-utility-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  grid-row: 1;
 }
 
 .line-controls {
@@ -988,6 +1012,7 @@ button:disabled {
   overflow-x: hidden;
   padding-right: 4px;
   overscroll-behavior: contain;
+  grid-row: 3;
 }
 
 .line-control-empty {
@@ -1010,6 +1035,10 @@ button:disabled {
   background: #fbfcfd;
   border: 1px solid var(--line);
   border-radius: 14px;
+}
+
+.global-controls-panel {
+  grid-row: 2;
 }
 
 .line-control-header {
@@ -1340,7 +1369,7 @@ button:disabled {
 
   .editor-main-column,
   .line-controls-rail {
-    grid-template-rows: auto;
+    grid-template-rows: auto auto auto;
   }
 
   .editor-actions {
