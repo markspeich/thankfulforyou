@@ -2,7 +2,7 @@
 
 ## Summary
 
-Add a layout-controls-only copy/paste workflow so operators can reuse one design's layout settings on another queued design without copying the order text or Etsy order metadata.
+Add a layout-only copy/paste workflow so operators can reuse one design's full layout settings on another queued design without copying the order text or Etsy order metadata.
 
 This is aimed at duplicate-order production work where several queue items share the same visual treatment but still need to preserve their own personalization text and order identity.
 
@@ -22,12 +22,14 @@ This is aimed at duplicate-order production work where several queue items share
 
 ## Approved Product Decisions
 
-- The workflow uses explicit `Copy Layout Controls` and `Paste Layout Controls` actions.
-- The source design is the currently selected design when `Copy Layout Controls` is clicked.
-- The target design is the currently selected design when `Paste Layout Controls` is clicked.
-- `Paste Layout Controls` is available only when a copied source exists and the target is not the same design.
+- The workflow uses explicit `Copy Layout` and `Paste Layout` actions.
+- The source design is the currently selected design when `Copy Layout` is clicked.
+- The target design is the currently selected design when `Paste Layout` is clicked.
+- `Paste Layout` is available only when a copied source exists and the target is not the same design.
 - When source and target have different line counts, settings apply only to matching line indexes and unmatched target lines remain unchanged.
 - Copy/paste feedback and similar future short workflow alerts should reuse the same floating bottom-center alert technique used by the import status toast.
+- The layout-copy utility actions should live above the card that contains the `Presets` dropdown in the right controls column, not in the selected-order header.
+- The layout-copy utility actions should be visually smaller than the primary order-action buttons so they read as local layout tools.
 
 ## Current Baseline
 
@@ -37,7 +39,7 @@ The app also already has a floating alert pattern via `updateImportStatus(...)` 
 
 ## Recommended Approach
 
-Store one in-memory copied-layout snapshot in the browser app state. That snapshot should hold only the normalized layout settings needed to reapply operator adjustments to another design. The selected-order header exposes `Copy Layout Controls` to populate that snapshot and `Paste Layout Controls` to apply it to another selected order.
+Store one in-memory copied-layout snapshot in the browser app state. That snapshot should hold only the normalized layout settings needed to reapply operator adjustments to another design. A compact utility row above the `Presets` card in the right controls column exposes `Copy Layout` to populate that snapshot and `Paste Layout` to apply it to another selected order.
 
 This approach is intentionally session-scoped and lightweight. It avoids queue-row button clutter, avoids introducing a file-backed preset concept for one-off duplicates, and keeps the interaction aligned with familiar copy/paste behavior.
 
@@ -45,16 +47,16 @@ This approach is intentionally session-scoped and lightweight. It avoids queue-r
 
 ### Copy
 
-When the operator clicks `Copy Layout Controls`:
+When the operator clicks `Copy Layout`:
 
 - Read the active order's normalized layout settings.
 - Save a copied-layout snapshot in app state.
 - Record enough source context for feedback, such as the source order id or displayed order number.
-- Show a floating success alert such as `Layout controls copied from Order 1042.`
+- Show a floating success alert such as `Copied layout from Order 1042.`
 
 ### Paste
 
-When the operator clicks `Paste Layout Controls` on another selected design:
+When the operator clicks `Paste Layout` on another selected design:
 
 - Verify a copied-layout snapshot exists.
 - Verify the target design is different from the copied source design.
@@ -108,7 +110,9 @@ This keeps paste behavior predictable and avoids silently changing lines the ope
 
 ### Action Placement
 
-Place `Copy Layout Controls` and `Paste Layout Controls` in the selected-order header action area, alongside the existing order-level actions. The copy action should be available whenever a selected design has layout settings. The paste action should be disabled when no copied snapshot exists or when the selected design is the copied source.
+Place `Copy Layout` and `Paste Layout` in a compact utility row above the card that contains the `Presets` dropdown in the right controls column. The copy action should be available whenever a selected design has layout settings. The paste action should be disabled when no copied snapshot exists or when the selected design is the copied source.
+
+This utility row should read as part of the layout-control workspace, not as part of the primary selected-order header actions. The buttons should therefore be visibly smaller and less dominant than `Save`, `Complete`, and export-related header actions.
 
 ### Alert Pattern
 

@@ -316,7 +316,7 @@ The website should be a practical production tool rather than a marketing site. 
 - Under the selected-order header action row on desktop, the content area should split into two main columns.
 - The left editor column should contain the imported listing details, imported color and quantity, the `Design Text` field, and the preview with connectedness status.
 - In the selected-order editor, the `Design Text` title and textarea should use slightly larger type than the surrounding compact controls so entered personalization is easier to read while editing.
-- The right editor column should contain the global controls for `Presets`, `Weld Exported Design`, global `Horizontal Stretch`, global `Vertical Stretch`, and `Backing Border`, followed by the per-line controls for `Line 1`, `Line 2`, and any additional lines.
+- The right editor column should begin with compact `Copy Layout` and `Paste Layout` utility buttons above the card that contains the `Presets` dropdown, followed by the global controls for `Presets`, `Weld Exported Design`, global `Horizontal Stretch`, global `Vertical Stretch`, and `Backing Border`, then the per-line controls for `Line 1`, `Line 2`, and any additional lines.
 - In the selected-order workspace, the preview should remain the dominant element in the left column, with connectedness status directly below the preview instead of in a separate full-width row above it.
 - The connectedness status card below the preview should show the same left-side face-analysis indicators used in the queue row: spinner while completed-layout analysis is running, checkmark for one connected face piece, and warning plus compact piece count for multiple disconnected face pieces.
 - In the selected-order workspace, the per-line controls should sit in a narrower right-side rail and should stack one line card per row instead of showing line cards side by side.
@@ -325,11 +325,12 @@ The website should be a practical production tool rather than a marketing site. 
 - The first text line should not show a `Line Bridge` control because there is no line above it to connect to.
 - The left-side order queue should not show browser-storage sync notifications such as `Saved in this browser`, `Restored from browser`, or `No saved batch`; only meaningful remote Neon sync statuses should appear there.
 - The selected-order header should hold the primary order actions in this order: `Save`, `Complete`, `Complete & Next`, `Copy This Design`, and `Export This Design`.
-- The selected-order header should also support `Copy Layout Controls` and `Paste Layout Controls` actions for reusing one design's layout settings on another queued design without reusing the order text itself.
-- `Copy Layout Controls` should capture only layout-related settings from the currently selected design.
-- `Paste Layout Controls` should apply the copied layout settings to the currently selected design when the selected design is different from the copied source design.
+- The selected-order header should not hold the layout-copy utility actions; those actions should live in the right controls column above the `Presets` card so they read as layout tools rather than primary order actions.
+- The layout-copy utility actions should be labeled `Copy Layout` and `Paste Layout`.
+- `Copy Layout` should capture only layout-related settings from the currently selected design.
+- `Paste Layout` should apply the copied layout settings to the currently selected design when the selected design is different from the copied source design.
 - Copying or pasting layout controls must not copy order text, quantity, buyer metadata, listing metadata, completion state, saved export data, or cached analysis results.
-- Pasting layout controls should copy preset selection, backing border, weld-export setting, global stretch settings, and per-line layout settings such as font choice, letter bridge, line bridge, offsets, text height, horizontal stretch, vertical stretch, and `Lock Text Height`.
+- Pasting layout controls should copy all global layout settings, including preset selection, weld-export setting, backing border, and global stretch settings, plus every existing line's per-line layout settings such as font choice, letter bridge, line bridge, offsets, text height, horizontal stretch, vertical stretch, and `Lock Text Height`.
 - When the copied source and target design have different text-line counts, pasted layout controls should apply line by line only for matching line indexes and should leave unmatched target lines unchanged.
 - After pasting layout controls, the target design should be treated as changed, any saved completed/export-ready state should be cleared for that design, and the operator should need to complete it again so fresh analysis and export data are produced.
 - The selected-order header action buttons should remain visibly smaller than the preview and top-card content so they do not dominate the editor visually on desktop.
