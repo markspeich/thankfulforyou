@@ -64,6 +64,21 @@ afterEach(async () => {
 });
 
 describe("preset persistence api", () => {
+  it("classifies malformed json request bodies as client errors", async () => {
+    const { root } = await createPresetWorkspace();
+    process.chdir(root);
+    const handler = await loadHandler();
+    const response = createResponseRecorder();
+
+    await handler({
+      method: "POST",
+      body: "{not-json",
+    }, response);
+
+    expect(response.statusCode).toBe(400);
+    expect(response.body).toEqual({ error: "Preset payload must be valid JSON." });
+  });
+
   it("rejects invalid preset ids before writing files", async () => {
     const { root, presetsDir } = await createPresetWorkspace();
     process.chdir(root);
@@ -240,6 +255,59 @@ describe("preset persistence api", () => {
       { id: "skywalk-rn-updated", path: "public/presets/skywalk-rn-updated.json" },
     ]);
     await expect(readFile(join(presetsDir, "skywalk-rn-updated.json"), "utf8")).resolves.toContain("\"Skywalk RN Updated\"");
+  });
+
+  it("updates the default preset id when renaming the current default preset", async () => {
+    const defaultPreset = {
+      schemaVersion: 1,
+      id: "skywalk-rn",
+      name: "Skywalk RN",
+      lineDefaults: { fontId: "skywalk" },
+      lineRules: [{ match: { kind: "all" }, settings: { fontId: "skywalk" } }],
+      listingAssignments: [],
+    };
+    const secondaryPreset = {
+      schemaVersion: 1,
+      id: "all-candlepin",
+      name: "All Candlepin",
+      lineDefaults: { fontId: "candlepin" },
+      lineRules: [{ match: { kind: "all" }, settings: { fontId: "candlepin" } }],
+      listingAssignments: [],
+    };
+    const { root, presetsDir } = await createPresetWorkspace({
+      schemaVersion: 1,
+      defaultPresetId: "skywalk-rn",
+      presets: [
+        { id: "all-candlepin", path: "public/presets/all-candlepin.json" },
+        { id: "skywalk-rn", path: "public/presets/skywalk-rn.json" },
+      ],
+    });
+    await writePresetFile(root, defaultPreset);
+    await writePresetFile(root, secondaryPreset);
+    process.chdir(root);
+    const handler = await loadHandler();
+    const response = createResponseRecorder();
+
+    await handler({
+      method: "PUT",
+      body: {
+        previousId: "skywalk-rn",
+        preset: {
+          ...defaultPreset,
+          id: "skywalk-rn-renamed",
+          name: "Skywalk RN Renamed",
+        },
+      },
+    }, response);
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body.manifest.defaultPresetId).toBe("skywalk-rn-renamed");
+    const manifest = JSON.parse(await readFile(join(presetsDir, "manifest.json"), "utf8"));
+    expect(manifest.defaultPresetId).toBe("skywalk-rn-renamed");
+    expect(manifest.presets).toEqual([
+      { id: "all-candlepin", path: "public/presets/all-candlepin.json" },
+      { id: "skywalk-rn-renamed", path: "public/presets/skywalk-rn-renamed.json" },
+    ]);
   });
 
   it("rejects put renames that would collide with another preset id", async () => {

@@ -17,7 +17,11 @@ function readJsonBody(req) {
   }
 
   if (typeof req.body === "string") {
-    return JSON.parse(req.body);
+    try {
+      return JSON.parse(req.body);
+    } catch {
+      throw new Error("Preset payload must be valid JSON.");
+    }
   }
 
   return req.body;
@@ -134,17 +138,27 @@ export default async function handler(req, res) {
       nextEntries.push({ id: preset.id, path: nextPath });
     }
 
-    await writeJson(resolveStoragePaths(root).manifestPath, {
+    const nextManifest = {
       ...manifest,
+      defaultPresetId: req.method === "PUT" && previousId === manifest.defaultPresetId
+        ? preset.id
+        : manifest.defaultPresetId,
       presets: nextEntries,
-    });
+    };
+
+    await writeJson(resolveStoragePaths(root).manifestPath, nextManifest);
 
     if (req.method === "PUT" && existingEntry) {
       await deleteOldPresetFile(root, existingEntry.path, nextPath);
     }
 
-    res.status(200).json({ preset, manifest: { ...manifest, presets: nextEntries } });
+    res.status(200).json({ preset, manifest: nextManifest });
   } catch (error) {
+    if (error instanceof Error && error.message === "Preset payload must be valid JSON.") {
+      res.status(400).json({ error: error.message });
+      return;
+    }
+
     res.status(500).json({
       error: error instanceof Error ? error.message : "Unable to save preset.",
     });
