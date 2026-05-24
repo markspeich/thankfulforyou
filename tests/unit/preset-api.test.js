@@ -29,6 +29,14 @@ async function loadHandler() {
   return module.default;
 }
 
+async function writePresetFile(root, preset) {
+  await writeFile(
+    join(root, "public", "presets", `${preset.id}.json`),
+    `${JSON.stringify(preset, null, 2)}\n`,
+    "utf8",
+  );
+}
+
 function createResponseRecorder() {
   return {
     statusCode: 200,
@@ -78,6 +86,32 @@ describe("preset persistence api", () => {
 
     expect(response.statusCode).toBe(400);
     expect(response.body).toEqual({ error: "Preset id must be a lowercase slug." });
+    const manifest = JSON.parse(await readFile(join(presetsDir, "manifest.json"), "utf8"));
+    expect(manifest.presets).toEqual([]);
+  });
+
+  it("rejects presets whose trimmed names are empty", async () => {
+    const { root, presetsDir } = await createPresetWorkspace();
+    process.chdir(root);
+    const handler = await loadHandler();
+    const response = createResponseRecorder();
+
+    await handler({
+      method: "POST",
+      body: {
+        preset: {
+          schemaVersion: 1,
+          id: "blank-name",
+          name: "   ",
+          lineDefaults: { fontId: "candlepin" },
+          lineRules: [{ match: { kind: "all" }, settings: { fontId: "candlepin" } }],
+          listingAssignments: [],
+        },
+      },
+    }, response);
+
+    expect(response.statusCode).toBe(400);
+    expect(response.body).toEqual({ error: "Preset name is required." });
     const manifest = JSON.parse(await readFile(join(presetsDir, "manifest.json"), "utf8"));
     expect(manifest.presets).toEqual([]);
   });
@@ -164,5 +198,131 @@ describe("preset persistence api", () => {
     ]);
     const savedPreset = JSON.parse(await readFile(join(presetsDir, "skywalk-rn.json"), "utf8"));
     expect(savedPreset).toEqual(preset);
+  });
+
+  it("renames an existing preset on put and updates the manifest entry", async () => {
+    const existingPreset = {
+      schemaVersion: 1,
+      id: "skywalk-rn",
+      name: "Skywalk RN",
+      lineDefaults: { fontId: "skywalk" },
+      lineRules: [{ match: { kind: "all" }, settings: { fontId: "skywalk" } }],
+      listingAssignments: [],
+    };
+    const { root, presetsDir } = await createPresetWorkspace({
+      schemaVersion: 1,
+      defaultPresetId: "skywalk-rn",
+      presets: [{ id: "skywalk-rn", path: "public/presets/skywalk-rn.json" }],
+    });
+    await writePresetFile(root, existingPreset);
+    process.chdir(root);
+    const handler = await loadHandler();
+    const response = createResponseRecorder();
+
+    const renamedPreset = {
+      ...existingPreset,
+      id: "skywalk-rn-updated",
+      name: "Skywalk RN Updated",
+    };
+
+    await handler({
+      method: "PUT",
+      body: {
+        previousId: "skywalk-rn",
+        preset: renamedPreset,
+      },
+    }, response);
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body.preset).toEqual(renamedPreset);
+    const manifest = JSON.parse(await readFile(join(presetsDir, "manifest.json"), "utf8"));
+    expect(manifest.presets).toEqual([
+      { id: "skywalk-rn-updated", path: "public/presets/skywalk-rn-updated.json" },
+    ]);
+    await expect(readFile(join(presetsDir, "skywalk-rn-updated.json"), "utf8")).resolves.toContain("\"Skywalk RN Updated\"");
+  });
+
+  it("rejects put renames that would collide with another preset id", async () => {
+    const { root } = await createPresetWorkspace({
+      schemaVersion: 1,
+      defaultPresetId: "skywalk-rn",
+      presets: [
+        { id: "skywalk-rn", path: "public/presets/skywalk-rn.json" },
+        { id: "all-candlepin", path: "public/presets/all-candlepin.json" },
+      ],
+    });
+    await writePresetFile(root, {
+      schemaVersion: 1,
+      id: "skywalk-rn",
+      name: "Skywalk RN",
+      lineDefaults: { fontId: "skywalk" },
+      lineRules: [{ match: { kind: "all" }, settings: { fontId: "skywalk" } }],
+      listingAssignments: [],
+    });
+    await writePresetFile(root, {
+      schemaVersion: 1,
+      id: "all-candlepin",
+      name: "All Candlepin",
+      lineDefaults: { fontId: "candlepin" },
+      lineRules: [{ match: { kind: "all" }, settings: { fontId: "candlepin" } }],
+      listingAssignments: [],
+    });
+    process.chdir(root);
+    const handler = await loadHandler();
+    const response = createResponseRecorder();
+
+    await handler({
+      method: "PUT",
+      body: {
+        previousId: "skywalk-rn",
+        preset: {
+          schemaVersion: 1,
+          id: "all-candlepin",
+          name: "Collision",
+          lineDefaults: { fontId: "skywalk" },
+          lineRules: [{ match: { kind: "all" }, settings: { fontId: "skywalk" } }],
+          listingAssignments: [],
+        },
+      },
+    }, response);
+
+    expect(response.statusCode).toBe(409);
+    expect(response.body).toEqual({ error: "Preset id already exists." });
+  });
+
+  it("removes the old preset file after a successful rename", async () => {
+    const existingPreset = {
+      schemaVersion: 1,
+      id: "skywalk-rn",
+      name: "Skywalk RN",
+      lineDefaults: { fontId: "skywalk" },
+      lineRules: [{ match: { kind: "all" }, settings: { fontId: "skywalk" } }],
+      listingAssignments: [],
+    };
+    const { root, presetsDir } = await createPresetWorkspace({
+      schemaVersion: 1,
+      defaultPresetId: "skywalk-rn",
+      presets: [{ id: "skywalk-rn", path: "public/presets/skywalk-rn.json" }],
+    });
+    await writePresetFile(root, existingPreset);
+    process.chdir(root);
+    const handler = await loadHandler();
+    const response = createResponseRecorder();
+
+    await handler({
+      method: "PUT",
+      body: {
+        previousId: "skywalk-rn",
+        preset: {
+          ...existingPreset,
+          id: "skywalk-rn-final",
+          name: "Skywalk RN Final",
+        },
+      },
+    }, response);
+
+    expect(response.statusCode).toBe(200);
+    await expect(readFile(join(presetsDir, "skywalk-rn.json"), "utf8")).rejects.toThrow();
+    await expect(readFile(join(presetsDir, "skywalk-rn-final.json"), "utf8")).resolves.toContain("\"Skywalk RN Final\"");
   });
 });

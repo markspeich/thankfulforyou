@@ -27,6 +27,17 @@ function isValidPresetId(value) {
   return typeof value === "string" && PRESET_ID_PATTERN.test(value);
 }
 
+function normalizePresetPayload(preset) {
+  if (!preset || typeof preset !== "object") {
+    return preset;
+  }
+
+  return {
+    ...preset,
+    name: typeof preset?.name === "string" ? preset.name.trim() : "",
+  };
+}
+
 function resolvePresetPath(root, presetId) {
   return {
     relativePath: `public/presets/${presetId}.json`,
@@ -69,7 +80,7 @@ export default async function handler(req, res) {
 
     const root = process.cwd();
     const payload = readJsonBody(req);
-    const preset = payload?.preset;
+    const preset = normalizePresetPayload(payload?.preset);
     const previousId = typeof payload?.previousId === "string" ? payload.previousId.trim() : null;
 
     if (!preset || typeof preset !== "object") {
@@ -79,6 +90,11 @@ export default async function handler(req, res) {
 
     if (!isValidPresetId(preset.id)) {
       res.status(400).json({ error: "Preset id must be a lowercase slug." });
+      return;
+    }
+
+    if (!preset.name) {
+      res.status(400).json({ error: "Preset name is required." });
       return;
     }
 

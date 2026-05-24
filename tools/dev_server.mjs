@@ -163,9 +163,17 @@ const server = createServer((request, response) => {
 
   if (requestUrl.pathname === "/api/presets" && (request.method === "POST" || request.method === "PUT")) {
     readRequestBody(request).then(async (body) => {
+      let payload = {};
+
+      try {
+        payload = body ? JSON.parse(body) : {};
+      } catch {
+        sendJson(response, 400, { error: "Preset payload must be valid JSON." });
+        return;
+      }
+
       try {
         const { default: handler } = await import("../api/presets.js");
-        const payload = body ? JSON.parse(body) : {};
         const req = { method: request.method, body: payload };
         const res = {
           status(code) {
