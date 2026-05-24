@@ -377,6 +377,11 @@ export function getDefaultPresetId() {
   return presetRegistry.defaultPresetId;
 }
 
+export function getPresetDefinitionForEditor(presetId) {
+  const definition = getPresetDefinition(presetId);
+  return definition ? structuredClone(definition) : null;
+}
+
 export function isValidPresetId(presetId) {
   return presetRegistry.presetById.has(presetId);
 }
@@ -450,4 +455,12 @@ export function buildPresetLines(presetId, lineCount, createLineSettings, option
 
 export function setPresetRegistryForTests(manifest = FALLBACK_MANIFEST, presetDefinitions = FALLBACK_PRESET_DEFINITIONS) {
   presetRegistry = createPresetRegistry(manifest, presetDefinitions);
+}
+
+export function replacePresetDefinitionForTests(definition) {
+  const normalized = normalizePresetDefinition(definition);
+  const definitions = [...presetRegistry.presetById.values()]
+    .filter((item) => item.id !== normalized.id)
+    .concat(normalized);
+  presetRegistry = createPresetRegistry({ defaultPresetId: presetRegistry.defaultPresetId }, definitions);
 }

@@ -3,9 +3,11 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   buildPresetLines,
   getDefaultPresetId,
+  getPresetDefinitionForEditor,
   getPresetGlobalDefaults,
   getPresetOptions,
   getPresetIdForListingId,
+  replacePresetDefinitionForTests,
   setPresetRegistryForTests,
 } from "../../src/presets.js";
 import { buildPresetIdFromName } from "../../src/preset-authoring.js";
@@ -311,6 +313,35 @@ describe("presets", () => {
 
     const lines = buildPresetLines("custom-width", 2, createDefaultLineSettings);
     expect(lines.map((line) => line.horizontalScale)).toEqual([1.25, 1]);
+  });
+
+  it("can expose a full preset definition for authoring and replace it in the registry", async () => {
+    setPresetRegistryForTests(
+      { defaultPresetId: "all-candlepin" },
+      [
+        {
+          schemaVersion: 1,
+          id: "all-candlepin",
+          name: "All Candlepin",
+          lineDefaults: { fontId: "candlepin" },
+          lineRules: [{ match: { kind: "all" }, settings: { fontId: "candlepin" } }],
+          listingAssignments: [],
+        },
+      ],
+    );
+
+    expect(getPresetDefinitionForEditor("all-candlepin")?.name).toBe("All Candlepin");
+
+    replacePresetDefinitionForTests({
+      schemaVersion: 1,
+      id: "all-candlepin",
+      name: "All Candlepin Updated",
+      lineDefaults: { fontId: "candlepin" },
+      lineRules: [{ match: { kind: "all" }, settings: { fontId: "candlepin" } }],
+      listingAssignments: [],
+    });
+
+    expect(getPresetDefinitionForEditor("all-candlepin")?.name).toBe("All Candlepin Updated");
   });
 
   it("returns preset-level global defaults", () => {

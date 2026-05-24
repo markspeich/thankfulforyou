@@ -161,6 +161,32 @@ const server = createServer((request, response) => {
     return;
   }
 
+  if (requestUrl.pathname === "/api/presets" && (request.method === "POST" || request.method === "PUT")) {
+    readRequestBody(request).then(async (body) => {
+      try {
+        const { default: handler } = await import("../api/presets.js");
+        const payload = body ? JSON.parse(body) : {};
+        const req = { method: request.method, body: payload };
+        const res = {
+          status(code) {
+            this.statusCode = code;
+            return this;
+          },
+          setHeader(name, value) {
+            response.setHeader(name, value);
+          },
+          json(payload) {
+            sendJson(response, this.statusCode || 200, payload);
+          },
+        };
+        await handler(req, res);
+      } catch (error) {
+        sendJson(response, 500, { error: error instanceof Error ? error.message : "Unable to save preset." });
+      }
+    });
+    return;
+  }
+
   const filePath = resolvePath(request.url || "/");
 
   if (!filePath || !existsSync(filePath)) {
