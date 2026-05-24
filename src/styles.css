@@ -82,6 +82,7 @@ select {
 }
 
 .queue-header {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -89,7 +90,7 @@ select {
 }
 
 .queue-tools-menu {
-  position: relative;
+  position: static;
 }
 
 .queue-tools-toggle {
@@ -127,7 +128,7 @@ select {
   z-index: 10;
   display: grid;
   gap: 14px;
-  width: min(344px, 82vw);
+  width: min(344px, 100%);
   padding: 14px;
   background: #fff;
   border: 1px solid var(--line);

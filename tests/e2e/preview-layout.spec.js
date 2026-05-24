@@ -552,6 +552,35 @@ test("uses the refined desktop B1 workspace proportions", async ({ page }) => {
   expect(layout.hasQueueMenu).toBe(true);
 });
 
+test("keeps the queue tools popover inside the queue panel near the tablet breakpoint", async ({ page }) => {
+  await page.setViewportSize({ width: 830, height: 900 });
+  await openQueueTools(page);
+
+  const popoverBounds = await page.evaluate(() => {
+    const popover = document.querySelector(".queue-tools-popover");
+    const queueHeader = document.querySelector(".queue-header");
+    const queuePanel = document.querySelector(".orders-panel");
+    const rect = (node) => {
+      const box = node.getBoundingClientRect();
+      return {
+        left: box.left,
+        right: box.right,
+        width: box.width,
+      };
+    };
+
+    return {
+      popover: rect(popover),
+      queueHeader: rect(queueHeader),
+      queuePanel: rect(queuePanel),
+    };
+  });
+
+  expect(popoverBounds.popover.left).toBeGreaterThanOrEqual(popoverBounds.queueHeader.left);
+  expect(popoverBounds.popover.right).toBeLessThanOrEqual(popoverBounds.queuePanel.right);
+  expect(popoverBounds.popover.width).toBeLessThanOrEqual(popoverBounds.queueHeader.width);
+});
+
 test("grows the preview area when the browser viewport gets taller", async ({ page }) => {
   const measurePreviewPanelHeight = async () => {
     return page.locator(".preview-panel").evaluate((element) => element.getBoundingClientRect().height);
