@@ -9,15 +9,6 @@ const LINE_SETTING_KEYS = [
   "lockTextHeight",
 ];
 
-function pickLineSettings(line, keys) {
-  return keys.reduce((result, key) => {
-    if (Object.hasOwn(line, key)) {
-      result[key] = line[key];
-    }
-    return result;
-  }, {});
-}
-
 function diffLineSettings(base, line) {
   return LINE_SETTING_KEYS.reduce((result, key) => {
     if (line[key] !== base[key]) {
@@ -78,18 +69,26 @@ export function inferPresetDefinitionFromSettings({ name, settings }) {
 }
 
 export function upsertListingAssignment({ preset, assignment }) {
-  const listingAssignments = Array.isArray(preset.listingAssignments)
-    ? preset.listingAssignments.filter((item) => item.listingId !== assignment.listingId)
+  const existingAssignments = Array.isArray(preset.listingAssignments)
+    ? preset.listingAssignments
     : [];
+  const existingAssignment = existingAssignments.find(
+    (item) => item.listingId === assignment.listingId,
+  );
+  const listingOverrides = Object.hasOwn(assignment, "lineOverrides")
+    ? assignment.lineOverrides
+    : existingAssignment?.lineOverrides || [];
 
   return {
     ...preset,
     listingAssignments: [
-      ...listingAssignments,
+      ...existingAssignments.filter((item) => item.listingId !== assignment.listingId),
       {
+        ...existingAssignment,
+        ...assignment,
         listingId: assignment.listingId,
-        name: assignment.name || "",
-        lineOverrides: [],
+        name: assignment.name || existingAssignment?.name || "",
+        lineOverrides: listingOverrides,
       },
     ],
   };

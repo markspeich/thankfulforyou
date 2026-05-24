@@ -95,6 +95,40 @@ describe("preset authoring", () => {
     ]);
   });
 
+  it("keeps existing listing overrides when replacing an assignment without new overrides", () => {
+    const preset = upsertListingAssignment({
+      preset: {
+        id: "skywalk-rn",
+        name: "Skywalk RN",
+        lineDefaults: {},
+        lineRules: [{ match: { kind: "all" }, settings: {} }],
+        listingAssignments: [
+          {
+            listingId: "1884223710",
+            name: "PICU Badge Reel",
+            lineOverrides: [
+              { lineIndex: 1, settings: { fontSizeMm: 23 } },
+            ],
+          },
+        ],
+      },
+      assignment: {
+        listingId: "1884223710",
+        name: "PICU Badge Reel Updated",
+      },
+    });
+
+    expect(preset.listingAssignments).toEqual([
+      {
+        listingId: "1884223710",
+        name: "PICU Badge Reel Updated",
+        lineOverrides: [
+          { lineIndex: 1, settings: { fontSizeMm: 23 } },
+        ],
+      },
+    ]);
+  });
+
   it("removes one listing assignment without touching the rest", () => {
     const preset = removeListingAssignment({
       preset: {
