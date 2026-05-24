@@ -130,6 +130,44 @@ describe("preset authoring", () => {
     }
   });
 
+  it("does not infer a remaining rule when all later line diffs are unique", () => {
+    const preset = inferPresetDefinitionFromSettings({
+      name: "Skywalk Tech",
+      settings: {
+        ...makeSettings(),
+        lines: [
+          makeSettings().lines[0],
+          makeSettings().lines[1],
+          {
+            fontId: "candlepin",
+            bridgeMm: 0.5,
+            lineBridgeMm: 0.5,
+            offsetXMm: 0,
+            fontSizeMm: 21,
+            horizontalScale: 1,
+            verticalScale: 1,
+            lockTextHeight: false,
+          },
+        ],
+      },
+    });
+
+    expect(preset.lineRules).toEqual([
+      {
+        match: { kind: "first" },
+        settings: { fontId: "skywalk", fontSizeMm: 18, lockTextHeight: false },
+      },
+      {
+        match: { kind: "index", lineIndex: 1 },
+        settings: { fontId: "somekind", fontSizeMm: 23, lockTextHeight: true },
+      },
+      {
+        match: { kind: "index", lineIndex: 2 },
+        settings: { fontId: "candlepin", fontSizeMm: 21, lockTextHeight: false },
+      },
+    ]);
+  });
+
   it("builds stable kebab-case ids from operator-facing names", () => {
     expect(buildPresetIdFromName("Skywalk RN")).toBe("skywalk-rn");
   });

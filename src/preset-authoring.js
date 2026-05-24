@@ -18,11 +18,15 @@ function diffLineSettings(base, line) {
   }, {});
 }
 
-function getReusableLaterDiff(lineDiffs) {
+function getReusableLaterDiff(lineDiffs, lineCount) {
   const countsBySignature = new Map();
   let bestEntry = null;
 
   lineDiffs.slice(1).forEach((diff, index) => {
+    if (Object.keys(diff).length === 0) {
+      return;
+    }
+
     const signature = JSON.stringify(diff);
     const entry = countsBySignature.get(signature) || {
       diff,
@@ -41,6 +45,14 @@ function getReusableLaterDiff(lineDiffs) {
       bestEntry = entry;
     }
   });
+
+  if (lineCount === 2) {
+    return bestEntry?.diff || {};
+  }
+
+  if (!bestEntry || bestEntry.count < 2) {
+    return {};
+  }
 
   return bestEntry?.diff || {};
 }
@@ -63,7 +75,7 @@ export function inferPresetDefinitionFromSettings({ name, settings }) {
     return result;
   }, {});
   const lineDiffs = lines.map((line) => diffLineSettings(shared, line || {}));
-  const reusableLaterDiff = lines.length > 1 ? getReusableLaterDiff(lineDiffs) : {};
+  const reusableLaterDiff = lines.length > 1 ? getReusableLaterDiff(lineDiffs, lines.length) : {};
 
   const lineRules = [];
   const firstDiff = diffLineSettings(shared, lines[0] || {});
@@ -111,22 +123,26 @@ export function upsertListingAssignment({ preset, assignment }) {
   const existingAssignment = existingAssignments.find(
     (item) => item.listingId === assignment.listingId,
   );
+  const existingIndex = existingAssignments.findIndex(
+    (item) => item.listingId === assignment.listingId,
+  );
   const listingOverrides = Array.isArray(assignment.lineOverrides)
     ? assignment.lineOverrides
     : existingAssignment?.lineOverrides || [];
+  const nextAssignment = {
+    ...existingAssignment,
+    ...assignment,
+    listingId: assignment.listingId,
+    name: assignment.name || existingAssignment?.name || "",
+    lineOverrides: listingOverrides,
+  };
 
   return {
     ...preset,
-    listingAssignments: [
-      ...existingAssignments.filter((item) => item.listingId !== assignment.listingId),
-      {
-        ...existingAssignment,
-        ...assignment,
-        listingId: assignment.listingId,
-        name: assignment.name || existingAssignment?.name || "",
-        lineOverrides: listingOverrides,
-      },
-    ],
+    listingAssignments:
+      existingIndex === -1
+        ? [...existingAssignments, nextAssignment]
+        : existingAssignments.map((item, index) => (index === existingIndex ? nextAssignment : item)),
   };
 }
 
