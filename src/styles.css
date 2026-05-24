@@ -582,6 +582,10 @@ select {
   background: #fff;
 }
 
+.editor-panel.is-hidden {
+  display: none;
+}
+
 .editor-header {
   display: flex;
   align-items: center;

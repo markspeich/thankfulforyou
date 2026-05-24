@@ -2356,6 +2356,7 @@ function renderOrderList() {
   });
 
   const activeOrder = getActiveOrder();
+  editorPanel.classList.toggle("is-hidden", !activeOrder);
   renderListingReference(activeOrder);
   renderImportedColor(activeOrder);
   activeOrderName.textContent = activeOrder ? buildQueueOrderNumber(activeOrder) : "No design selected";
