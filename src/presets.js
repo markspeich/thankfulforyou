@@ -378,7 +378,7 @@ export function getDefaultPresetId() {
 }
 
 export function getPresetDefinitionForEditor(presetId) {
-  const definition = getPresetDefinition(presetId);
+  const definition = presetRegistry.presetById.get(presetId);
   return definition ? structuredClone(definition) : null;
 }
 

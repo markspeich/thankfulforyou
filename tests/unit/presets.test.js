@@ -344,6 +344,10 @@ describe("presets", () => {
     expect(getPresetDefinitionForEditor("all-candlepin")?.name).toBe("All Candlepin Updated");
   });
 
+  it("returns null for unknown preset ids in the editor accessor", () => {
+    expect(getPresetDefinitionForEditor("does-not-exist")).toBeNull();
+  });
+
   it("returns preset-level global defaults", () => {
     expect(getPresetGlobalDefaults("skywalk-somekind")).toEqual({
       backingMm: 2.2,
