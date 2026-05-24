@@ -864,6 +864,7 @@ button:disabled {
 }
 
 .editor-top-card {
+  margin-top: 4px;
   padding: 0;
 }
 
@@ -996,7 +997,7 @@ button:disabled {
   flex-wrap: wrap;
   gap: 8px;
   min-width: 0;
-  margin: 0;
+  margin: 4px 0 0;
   padding: 0;
   grid-row: 1;
 }
