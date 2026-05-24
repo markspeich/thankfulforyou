@@ -39,20 +39,21 @@
         <aside class="orders-panel" aria-label="Design navigation">
           <div class="queue-header">
             <h1>Design Queue</h1>
-            <details class="queue-tools-menu">
+            <div class="queue-header-actions">
+              <button id="addOrderButton" class="queue-primary-action" type="button" aria-label="Add Design">
+                <span class="queue-tool-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" focusable="false">
+                    <path d="M12 5v14M5 12h14" />
+                  </svg>
+                </span>
+                <span class="queue-tool-label">Add Design</span>
+              </button>
+              <details class="queue-tools-menu">
               <summary class="queue-tools-toggle" aria-label="Queue tools"></summary>
               <div class="queue-tools-popover">
                 <div class="queue-tools-actions" role="menu" aria-label="Queue actions">
-                  <div class="queue-tools-group" aria-label="Create queue items">
-                    <p class="queue-tools-heading">Create</p>
-                    <button id="addOrderButton" class="queue-tool-button" type="button">
-                      <span class="queue-tool-icon" aria-hidden="true">
-                        <svg viewBox="0 0 24 24" focusable="false">
-                          <path d="M12 5v14M5 12h14" />
-                        </svg>
-                      </span>
-                      <span class="queue-tool-label">Add Design</span>
-                    </button>
+                  <div class="queue-tools-group" aria-label="Import queue items">
+                    <p class="queue-tools-heading">Import</p>
                     <button
                       id="importClipboardButton"
                       class="queue-tool-button"
@@ -122,7 +123,8 @@
                   <span id="queueSyncStatusDetail"></span>
                 </div>
               </div>
-            </details>
+              </details>
+            </div>
           </div>
           <p id="importStatus" class="note queue-alert" role="status" aria-live="polite" hidden></p>
 
@@ -269,6 +271,27 @@
                     </span>
                     <span class="editor-action-label">Paste Layout</span>
                   </button>
+                  <button id="saveAsNewPresetButton" class="editor-action-button editor-utility-button" type="button" disabled>
+                    <span class="editor-action-icon" aria-hidden="true">
+                      <svg viewBox="0 0 24 24" focusable="false">
+                        <path d="M5 5h11l3 3v11a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5Z" />
+                        <path d="M9 5v6h6V5" />
+                        <path d="M9 16h6" />
+                      </svg>
+                    </span>
+                    <span class="editor-action-label">Save as New Preset</span>
+                  </button>
+                  <button id="assignPresetToListingButton" class="editor-action-button editor-utility-button" type="button" disabled>
+                    <span class="editor-action-icon" aria-hidden="true">
+                      <svg viewBox="0 0 24 24" focusable="false">
+                        <path d="M8 6h8" />
+                        <path d="M6 10h12" />
+                        <path d="M7 4h10a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z" />
+                        <path d="m10 14 2 2 4-4" />
+                      </svg>
+                    </span>
+                    <span class="editor-action-label">Assign Preset to Listing</span>
+                  </button>
                 </div>
 
                 <section class="global-controls-panel" aria-label="Global controls">
@@ -326,9 +349,29 @@
             </header>
             <div class="editor-body">
               <section class="preset-workspace-body">
-                <article class="preset-workspace-card">
+                <article class="preset-workspace-card preset-editor-card">
                   <p class="preset-workspace-title">Preset editor workspace</p>
-                  <p class="note">This scaffold reserves the production workspace for managing reusable preset definitions, assignments, and saved layout defaults.</p>
+                  <p class="note">Save reusable layout defaults from the order editor and update preset names before wiring listing-level assignments.</p>
+                  <div class="preset-editor-fields">
+                    <label class="field compact-field">
+                      <span>Preset library</span>
+                      <select id="presetEditorSelect"></select>
+                    </label>
+                    <label class="field compact-field">
+                      <span>Preset name</span>
+                      <input id="presetDraftName" type="text" autocomplete="off" placeholder="Skywalk RN">
+                    </label>
+                    <label class="field compact-field">
+                      <span>Preset id</span>
+                      <input id="presetDraftId" class="preset-readonly-input" type="text" readonly>
+                    </label>
+                  </div>
+                  <div class="preset-editor-actions">
+                    <button id="savePresetButton" class="editor-action-button" type="button">
+                      <span class="editor-action-label">Save Preset</span>
+                    </button>
+                  </div>
+                  <p id="presetEditorStatus" class="note" aria-live="polite">Choose a preset or start from an order layout.</p>
                 </article>
               </section>
             </div>

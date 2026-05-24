@@ -464,3 +464,9 @@ export function replacePresetDefinitionForTests(definition) {
     .concat(normalized);
   presetRegistry = createPresetRegistry({ defaultPresetId: presetRegistry.defaultPresetId }, definitions);
 }
+
+export {
+  buildPresetIdFromName,
+  inferPresetDefinitionFromSettings,
+  upsertListingAssignment,
+} from "./preset-authoring.js";

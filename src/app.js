@@ -16,14 +16,19 @@ import {
 } from "./layout-math.js";
 import {
   buildPresetLines,
+  buildPresetIdFromName,
   getDefaultPresetId,
+  getPresetDefinitionForEditor,
   getPresetGlobalDefaults,
   getPresetIdForListingId,
   getPresetOptions,
   hasPresetMappingForListingId,
+  inferPresetDefinitionFromSettings,
   isValidPresetId,
   loadPresetRegistry,
+  upsertListingAssignment,
 } from "./presets.js";
+import { savePresetDefinition } from "./preset-api.js";
 import { computeLineMaskMetrics } from "./text-metrics.js";
 import {
   buildSettingsSignature,
@@ -153,8 +158,15 @@ const downloadButton = document.querySelector("#downloadButton");
 const copyButton = document.querySelector("#copyButton");
 const copyLayoutControlsButton = document.querySelector("#copyLayoutPlacementButton");
 const pasteLayoutControlsButton = document.querySelector("#pasteLayoutPlacementButton");
+const saveAsNewPresetButton = document.querySelector("#saveAsNewPresetButton");
+const assignPresetToListingButton = document.querySelector("#assignPresetToListingButton");
 const captureButton = document.querySelector("#captureButton");
 const completeNextButton = document.querySelector("#completeNextButton");
+const presetEditorSelect = document.querySelector("#presetEditorSelect");
+const presetDraftNameInput = document.querySelector("#presetDraftName");
+const presetDraftIdInput = document.querySelector("#presetDraftId");
+const savePresetButton = document.querySelector("#savePresetButton");
+const presetEditorStatus = document.querySelector("#presetEditorStatus");
 const editorActionLabelByButton = new Map(
   [captureButton, completeNextButton, copyButton, copyLayoutControlsButton, pasteLayoutControlsButton, downloadButton]
     .filter(Boolean)
@@ -181,6 +193,7 @@ let suppressQueueSyncLocalNotice = false;
 let copiedLayoutControlsSnapshot = null;
 let activeWorkspace = "orders";
 let navCollapsed = false;
+let presetEditorDraft = null;
 
 const statusLabels = {
   "not-started": "Not started",
@@ -480,6 +493,233 @@ function renderPresetOptions() {
   presetInput.value = isValidPresetId(selectedPresetId)
     ? selectedPresetId
     : getDefaultPresetId();
+}
+
+function buildPresetDraftNameFromOrder(order) {
+  const summary = summarizeOrderText(order?.text || "");
+  return summary === "No text entered"
+    ? ""
+    : summary.replaceAll("/", " ").replace(/\s+/g, " ").trim();
+}
+
+function createPresetEditorDraft(preset, options = {}) {
+  const nextPreset = preset && typeof preset === "object"
+    ? structuredClone(preset)
+    : inferPresetDefinitionFromSettings({
+        name: "",
+        settings: {
+          backingMm: DEFAULT_BACKING_MM,
+          weldExportedDesign: DEFAULT_WELD_EXPORTED_DESIGN,
+          lines: [],
+        },
+      });
+  const previousId = Object.hasOwn(options, "previousId")
+    ? (typeof options.previousId === "string" && options.previousId.trim() ? options.previousId.trim() : null)
+    : (typeof nextPreset.id === "string" && nextPreset.id.trim() ? nextPreset.id.trim() : null);
+
+  return {
+    previousId,
+    preset: nextPreset,
+  };
+}
+
+function setPresetEditorStatus(message, state = "pending") {
+  if (!presetEditorStatus) {
+    return;
+  }
+
+  presetEditorStatus.textContent = message;
+  presetEditorStatus.dataset.state = state;
+}
+
+function renderPresetEditorOptions(selectedPresetId = "") {
+  if (!presetEditorSelect) {
+    return;
+  }
+
+  presetEditorSelect.replaceChildren();
+
+  const draftOption = document.createElement("option");
+  draftOption.value = "";
+  draftOption.textContent = "New preset draft";
+  presetEditorSelect.append(draftOption);
+
+  getPresetOptions().forEach((preset) => {
+    const option = document.createElement("option");
+    option.value = preset.id;
+    option.textContent = preset.label;
+    presetEditorSelect.append(option);
+  });
+
+  presetEditorSelect.value = selectedPresetId && isValidPresetId(selectedPresetId)
+    ? selectedPresetId
+    : "";
+}
+
+function renderPresetEditorDraft() {
+  if (!presetEditorDraft) {
+    presetEditorDraft = createPresetEditorDraft(
+      getPresetDefinitionForEditor(getDefaultPresetId()),
+      { previousId: getDefaultPresetId() },
+    );
+  }
+
+  const selectedPresetId = presetEditorDraft.previousId && isValidPresetId(presetEditorDraft.previousId)
+    ? presetEditorDraft.previousId
+    : "";
+
+  renderPresetEditorOptions(selectedPresetId);
+
+  const draftName = typeof presetEditorDraft.preset?.name === "string"
+    ? presetEditorDraft.preset.name
+    : "";
+  presetDraftNameInput.value = draftName;
+  presetDraftIdInput.value = buildPresetIdFromName(draftName);
+  savePresetButton.disabled = false;
+}
+
+function syncPresetEditorDraftFromInputs() {
+  if (!presetEditorDraft) {
+    return;
+  }
+
+  const name = presetDraftNameInput.value;
+  const id = buildPresetIdFromName(name);
+  presetEditorDraft = {
+    ...presetEditorDraft,
+    preset: {
+      ...presetEditorDraft.preset,
+      name,
+      id,
+    },
+  };
+  presetDraftIdInput.value = id;
+}
+
+function loadPresetEditorDraftFromRegistry(presetId) {
+  const preset = getPresetDefinitionForEditor(presetId);
+  if (!preset) {
+    setPresetEditorStatus("Choose a saved preset to edit.", "error");
+    return;
+  }
+
+  presetEditorDraft = createPresetEditorDraft(preset, { previousId: presetId });
+  renderPresetEditorDraft();
+  setPresetEditorStatus(`Editing ${preset.name}.`, "pending");
+}
+
+function openPresetEditorForNewPreset() {
+  const activeOrder = getActiveOrder();
+  if (!activeOrder) {
+    updateWorkflowAlert("Add or select a design before saving a preset.", "error");
+    return;
+  }
+
+  const draftName = buildPresetDraftNameFromOrder(activeOrder);
+  const preset = inferPresetDefinitionFromSettings({
+    name: draftName,
+    settings: getCurrentSettings(),
+  });
+
+  presetEditorDraft = createPresetEditorDraft({
+    ...preset,
+    id: buildPresetIdFromName(draftName),
+    name: draftName,
+  }, { previousId: null });
+  renderPresetEditorDraft();
+  setActiveWorkspace("presets");
+  setPresetEditorStatus("Preset draft ready from the current order settings.", "pending");
+}
+
+async function savePresetEditorDraft() {
+  if (!presetEditorDraft) {
+    return;
+  }
+
+  syncPresetEditorDraftFromInputs();
+  const preset = presetEditorDraft.preset;
+
+  if (!preset.name.trim()) {
+    setPresetEditorStatus("Preset name is required.", "error");
+    return;
+  }
+
+  if (!preset.id) {
+    setPresetEditorStatus("Preset id must include at least one letter or number.", "error");
+    return;
+  }
+
+  savePresetButton.disabled = true;
+  setPresetEditorStatus("Saving preset...", "pending");
+
+  try {
+    const payload = await savePresetDefinition({
+      preset,
+      previousId: presetEditorDraft.previousId,
+    });
+    await loadPresetRegistry();
+    renderPresetOptions();
+
+    const savedPresetId = payload?.preset?.id || preset.id;
+    presetEditorDraft = createPresetEditorDraft(
+      getPresetDefinitionForEditor(savedPresetId) || { ...preset, id: savedPresetId },
+      { previousId: savedPresetId },
+    );
+    renderPresetEditorDraft();
+    setPresetEditorStatus(`Saved ${presetEditorDraft.preset.name}.`, "success");
+  } catch (error) {
+    setPresetEditorStatus(error instanceof Error ? error.message : "Unable to save preset.", "error");
+    savePresetButton.disabled = false;
+  }
+}
+
+async function assignSelectedPresetToActiveListing() {
+  const activeOrder = getActiveOrder();
+  const listingId = activeOrder?.source?.listingId?.trim();
+  if (!activeOrder || !listingId) {
+    updateWorkflowAlert("Import an Etsy listing before assigning a preset.", "error");
+    return;
+  }
+
+  const selectedPresetId = presetInput.value;
+  const draftName = buildPresetDraftNameFromOrder(activeOrder) || `Listing ${listingId}`;
+  const basePreset = getPresetDefinitionForEditor(selectedPresetId)
+    || inferPresetDefinitionFromSettings({
+      name: draftName,
+      settings: getCurrentSettings(),
+    });
+  const normalizedPreset = {
+    ...basePreset,
+    id: basePreset.id || buildPresetIdFromName(basePreset.name || draftName),
+    name: (basePreset.name || draftName).trim(),
+  };
+  const assignedPreset = upsertListingAssignment({
+    preset: normalizedPreset,
+    assignment: {
+      listingId,
+      name: activeOrder.source?.listingTitle?.trim() || `Listing ${listingId}`,
+    },
+  });
+
+  try {
+    await savePresetDefinition({
+      preset: assignedPreset,
+      previousId: getPresetDefinitionForEditor(selectedPresetId) ? selectedPresetId : null,
+    });
+    await loadPresetRegistry();
+    renderPresetOptions();
+    if (presetEditorDraft?.previousId === selectedPresetId) {
+      presetEditorDraft = createPresetEditorDraft(assignedPreset, { previousId: assignedPreset.id });
+      renderPresetEditorDraft();
+    }
+    activeOrder.source.manualPresetOverride = false;
+    syncOrderPresetFromListing(activeOrder);
+    applySettings(activeOrder.settings);
+    render();
+    updateWorkflowAlert(`Assigned ${assignedPreset.name} to listing ${listingId}.`, "success");
+  } catch (error) {
+    updateWorkflowAlert(error instanceof Error ? error.message : "Unable to assign preset.", "error");
+  }
 }
 
 function buildManualDesignName(order) {
@@ -2366,6 +2606,8 @@ function renderOrderList() {
   copyButton.disabled = !activeOrder || !isOrderReadyForExport(activeOrder) || !canCopySvgToClipboard();
   copyLayoutControlsButton.disabled = !canCopyLayoutControls(activeOrder);
   pasteLayoutControlsButton.disabled = !canPasteLayoutControls(activeOrder);
+  saveAsNewPresetButton.disabled = !activeOrder;
+  assignPresetToListingButton.disabled = !activeOrder?.source?.listingId;
 }
 
 function setActiveWorkspace(workspace) {
@@ -3974,6 +4216,17 @@ orderWorkspaceButton.addEventListener("click", () => {
 presetWorkspaceButton.addEventListener("click", () => {
   setActiveWorkspace("presets");
 });
+presetEditorSelect?.addEventListener("change", () => {
+  if (!presetEditorSelect.value) {
+    return;
+  }
+
+  loadPresetEditorDraftFromRegistry(presetEditorSelect.value);
+});
+presetDraftNameInput?.addEventListener("input", syncPresetEditorDraftFromInputs);
+savePresetButton?.addEventListener("click", () => {
+  void savePresetEditorDraft();
+});
 navCollapseButton.addEventListener("click", () => {
   setNavCollapsed(!navCollapsed);
 });
@@ -3984,6 +4237,10 @@ clearQueueButton.addEventListener("click", clearAllOrders);
 showColorCountsButton?.addEventListener("click", openBatchColorCountsDialog);
 exportCompletedButton.addEventListener("click", exportAllOrders);
 copyCompletedButton.addEventListener("click", copyAllOrders);
+saveAsNewPresetButton?.addEventListener("click", openPresetEditorForNewPreset);
+assignPresetToListingButton?.addEventListener("click", () => {
+  void assignSelectedPresetToActiveListing();
+});
 [addOrderButton, importClipboardButton, clearQueueButton, showColorCountsButton, exportCompletedButton, copyCompletedButton]
   .filter(Boolean)
   .forEach((button) => {
@@ -4049,6 +4306,7 @@ setNavCollapsed(navCollapsed);
 await checkFonts();
 await loadPresetRegistry();
 renderPresetOptions();
+renderPresetEditorDraft();
 updateBackingOutput();
 const restoredQueue = await restoreInitialQueueState();
 if ((!restoredQueue.source || restoredQueue.count === 0) && workflowAlert.dataset.state !== "error") {

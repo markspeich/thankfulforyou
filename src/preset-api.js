@@ -1,9 +1,12 @@
 export async function savePresetDefinition({ preset, previousId = null }) {
-  const method = previousId ? "PUT" : "POST";
+  const normalizedPreviousId = typeof previousId === "string" && previousId.trim()
+    ? previousId.trim()
+    : null;
+  const method = normalizedPreviousId ? "PUT" : "POST";
   const response = await fetch("/api/presets", {
     method,
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ preset, previousId }),
+    body: JSON.stringify({ preset, previousId: normalizedPreviousId }),
   });
 
   if (!response.ok) {

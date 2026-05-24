@@ -248,6 +248,40 @@ select {
   gap: 12px;
 }
 
+.queue-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.queue-primary-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  color: #f7fbfd;
+  background: linear-gradient(180deg, #2f7589 0%, #245d70 100%);
+  border: 1px solid #1f5668;
+  border-radius: 999px;
+  box-shadow: 0 10px 20px rgba(36, 93, 112, 0.18);
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.queue-primary-action:hover:not(:disabled) {
+  background: linear-gradient(180deg, #367f95 0%, #286578 100%);
+  border-color: #1d5161;
+}
+
+.queue-primary-action:focus-visible {
+  outline: 2px solid var(--button-focus);
+  outline-offset: 2px;
+}
+
+.queue-primary-action .queue-tool-icon {
+  color: currentColor;
+}
+
 .queue-tools-menu {
   position: static;
 }
@@ -1612,7 +1646,7 @@ button:disabled {
 
 .preset-workspace-body {
   display: grid;
-  place-items: center;
+  align-content: start;
   padding: 24px;
 }
 
@@ -1625,6 +1659,25 @@ button:disabled {
   border: 1px solid #d7e4ea;
   border-radius: 18px;
   box-shadow: 0 16px 34px rgba(28, 32, 36, 0.08);
+}
+
+.preset-editor-card {
+  width: min(680px, 100%);
+}
+
+.preset-editor-fields {
+  display: grid;
+  gap: 14px;
+}
+
+.preset-editor-actions {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.preset-readonly-input {
+  color: #42525d;
+  background: #f4f8fa;
 }
 
 .preset-workspace-title {
