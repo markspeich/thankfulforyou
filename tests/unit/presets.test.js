@@ -8,6 +8,7 @@ import {
   getPresetIdForListingId,
   setPresetRegistryForTests,
 } from "../../src/presets.js";
+import { buildPresetIdFromName } from "../../src/preset-authoring.js";
 
 const createDefaultLineSettings = () => ({
   fontId: "candlepin",
@@ -33,6 +34,10 @@ describe("presets", () => {
       { id: "skywalk-somekind", label: "Skywalk, Somekind" },
       { id: "skywalk-candlepin", label: "Skywalk, Candlepin" },
     ]);
+  });
+
+  it("keeps preset authoring ids aligned with the operator-facing preset names", () => {
+    expect(buildPresetIdFromName("Skywalk, Somekind")).toBe("skywalk-somekind");
   });
 
   it("maps every line to Candlepin for the all-candlepin preset", () => {
