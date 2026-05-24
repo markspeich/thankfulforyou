@@ -64,6 +64,10 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Treat the number of editable text lines as fully dynamic and derive it directly from the number of lines entered by the user.
 - Add a `Presets` dropdown directly below the `Order Text` field.
 - The `Presets` dropdown must offer these production presets: `All Candlepin`, `Candlepin, Skywalk`, `Skywalk, Somekind`, and `Skywalk, Candlepin`.
+- The app should add a top-level left navigation bar with two items: `Order Items` and `Presets`.
+- The left navigation bar should be collapsible between an expanded icon-plus-label state and a collapsed icon-only state.
+- `Order Items` should open the existing production queue workspace with the design queue and selected-order editor.
+- `Presets` should open a dedicated preset editor workspace for viewing, editing, and creating presets.
 - The `All Candlepin` preset must set every text line to the Candlepin font.
 - The `Candlepin, Skywalk` preset must set the first text line to Candlepin and every subsequent line to Skywalk.
 - The `Skywalk, Somekind` preset must set the first text line to Skywalk and every subsequent line to Somekind.
@@ -73,6 +77,14 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Production preset definitions should move toward a schema-validated JSON source of truth instead of duplicating preset ids, labels, line rules, and listing-specific overrides across HTML and JavaScript.
 - A preset JSON definition should include the preset id, preset name, base line defaults, per-line rules, and any listing-specific overrides that belong to that preset.
 - Preset ids should remain stable once in use so saved queue data can continue resolving previously selected presets.
+- The app should allow editing an existing preset and saving changes back into that preset's JSON definition in place.
+- The app should allow creating a new preset from the current design-editor layout state.
+- The `Save as New Preset` flow should infer reusable preset structure instead of freezing a one-off order snapshot.
+- Shared values across every text line should become preset `lineDefaults`.
+- First-line-only differences should become a `first` line rule.
+- Shared differences across every line after the first should become a `remaining` line rule.
+- Remaining one-off line differences should become `index` line rules.
+- Preset creation and editing must not store order-specific text inside preset definitions.
 - Per-line preset and saved-order data must persist the `Lock Text Height` setting so reusable presets and restored queue items preserve which lines are protected from automatic fit resizing.
 - Allow font selection per line of text.
 - Allow horizontal-only stretching per line of text so operators can make a line wider without making it taller.
@@ -319,7 +331,9 @@ The website should be a practical production tool rather than a marketing site. 
 - Under the selected-order header action row on desktop, the content area should split into two main columns.
 - The left editor column should contain the imported listing details, imported color and quantity, the `Design Text` field, and the preview with connectedness status.
 - In the selected-order editor, the `Design Text` title and textarea should use slightly larger type than the surrounding compact controls so entered personalization is easier to read while editing.
-- The right editor column should begin with compact `Copy Layout` and `Paste Layout` utility buttons above the card that contains the `Presets` dropdown, followed by the global controls for `Presets`, `Weld Exported Design`, global `Horizontal Stretch`, global `Vertical Stretch`, and `Backing Border`, then the per-line controls for `Line 1`, `Line 2`, and any additional lines.
+- The right editor column should begin with compact `Copy Layout` and `Paste Layout` utility buttons, and a `Save as New Preset` action above the card that contains the `Presets` dropdown, followed by the global controls for `Presets`, `Weld Exported Design`, global `Horizontal Stretch`, global `Vertical Stretch`, and `Backing Border`, then the per-line controls for `Line 1`, `Line 2`, and any additional lines.
+- The selected-order editor should also provide an `Assign Preset to Listing` action when the active order has an imported Etsy listing id.
+- The `Assign Preset to Listing` action should assign the currently selected preset to that listing id by updating the preset's listing assignments.
 - In the selected-order workspace, the preview should remain the dominant element in the left column, with connectedness status directly below the preview instead of in a separate full-width row above it.
 - The connectedness status card below the preview should show the same left-side face-analysis indicators used in the queue row: spinner while completed-layout analysis is running, checkmark for one connected face piece, and warning plus compact piece count for multiple disconnected face pieces.
 - In the selected-order workspace, the per-line controls should sit in a narrower right-side rail and should stack one line card per row instead of showing line cards side by side.
@@ -336,6 +350,12 @@ The website should be a practical production tool rather than a marketing site. 
 - Pasting layout controls should copy all global layout settings, including preset selection, weld-export setting, backing border, and global stretch settings, plus every existing line's per-line layout settings such as font choice, letter bridge, line bridge, offsets, text height, horizontal stretch, vertical stretch, and `Lock Text Height`.
 - When the copied source and target design have different text-line counts, pasted layout controls should apply line by line only for matching line indexes and should leave unmatched target lines unchanged.
 - After pasting layout controls, the target design should be treated as changed, any saved completed/export-ready state should be cleared for that design, and the operator should need to complete it again so fresh analysis and export data are produced.
+- The preset editor should use the same practical visual language as the existing global and per-line layout controls rather than exposing raw JSON by default.
+- The preset editor should allow selecting an existing preset, editing its metadata and reusable layout defaults, and saving those changes back to the preset definition.
+- The preset editor should provide a `New Preset` action that starts from a blank or inferred preset draft and can be saved as a new schema-valid preset file and manifest entry.
+- The preset editor should represent reusable line settings through operator-friendly sections for `Line Defaults`, `First Line`, `Remaining Lines`, and any exact-index line overrides that exist for that preset.
+- The preset editor should show the Etsy listings currently assigned to the selected preset.
+- The preset editor should allow unassigning individual listing ids from the selected preset.
 - The selected-order header action buttons should remain visibly smaller than the preview and top-card content so they do not dominate the editor visually on desktop.
 - The app favicon should use bold enlarged white `TFU` lettering with a red outline around the letters themselves, prioritizing legibility in a browser tab at favicon size over decorative detail.
 - Command buttons should use one shared enabled color, one shared disabled color, and one shared enabled-hover color across queue tools, editor actions, export/copy/save/complete actions, and destructive actions. Non-command row-selection buttons may remain visually neutral.
