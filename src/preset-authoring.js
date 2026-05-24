@@ -18,6 +18,33 @@ function diffLineSettings(base, line) {
   }, {});
 }
 
+function getReusableLaterDiff(lineDiffs) {
+  const countsBySignature = new Map();
+  let bestEntry = null;
+
+  lineDiffs.slice(1).forEach((diff, index) => {
+    const signature = JSON.stringify(diff);
+    const entry = countsBySignature.get(signature) || {
+      diff,
+      count: 0,
+      firstIndex: index + 1,
+    };
+
+    entry.count += 1;
+    countsBySignature.set(signature, entry);
+
+    if (
+      !bestEntry ||
+      entry.count > bestEntry.count ||
+      (entry.count === bestEntry.count && entry.firstIndex < bestEntry.firstIndex)
+    ) {
+      bestEntry = entry;
+    }
+  });
+
+  return bestEntry?.diff || {};
+}
+
 export function buildPresetIdFromName(name) {
   return String(name ?? "")
     .toLowerCase()
@@ -35,6 +62,8 @@ export function inferPresetDefinitionFromSettings({ name, settings }) {
     }
     return result;
   }, {});
+  const lineDiffs = lines.map((line) => diffLineSettings(shared, line || {}));
+  const reusableLaterDiff = lines.length > 1 ? getReusableLaterDiff(lineDiffs) : {};
 
   const lineRules = [];
   const firstDiff = diffLineSettings(shared, lines[0] || {});
@@ -42,9 +71,16 @@ export function inferPresetDefinitionFromSettings({ name, settings }) {
     lineRules.push({ match: { kind: "first" }, settings: firstDiff });
   }
 
+  if (Object.keys(reusableLaterDiff).length > 0) {
+    lineRules.push({ match: { kind: "remaining" }, settings: reusableLaterDiff });
+  }
+
   lines.slice(1).forEach((line, index) => {
-    const nextDiff = diffLineSettings(shared, line);
-    if (Object.keys(nextDiff).length > 0) {
+    const nextDiff = lineDiffs[index + 1] || {};
+    if (
+      Object.keys(nextDiff).length > 0 &&
+      JSON.stringify(nextDiff) !== JSON.stringify(reusableLaterDiff)
+    ) {
       lineRules.push({
         match: { kind: "index", lineIndex: index + 1 },
         settings: nextDiff,
@@ -75,7 +111,7 @@ export function upsertListingAssignment({ preset, assignment }) {
   const existingAssignment = existingAssignments.find(
     (item) => item.listingId === assignment.listingId,
   );
-  const listingOverrides = Object.hasOwn(assignment, "lineOverrides")
+  const listingOverrides = Array.isArray(assignment.lineOverrides)
     ? assignment.lineOverrides
     : existingAssignment?.lineOverrides || [];
 

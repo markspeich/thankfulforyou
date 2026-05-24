@@ -6,6 +6,10 @@ import {
   upsertListingAssignment,
   removeListingAssignment,
 } from "../../src/preset-authoring.js";
+import {
+  buildPresetLines,
+  setPresetRegistryForTests,
+} from "../../src/presets.js";
 
 const makeSettings = () => ({
   text: "Morgan\nRN",
@@ -36,8 +40,19 @@ const makeSettings = () => ({
   ],
 });
 
+const createDefaultLineSettings = () => ({
+  fontId: "candlepin",
+  bridgeMm: 0.5,
+  lineBridgeMm: 0.5,
+  offsetXMm: 0,
+  fontSizeMm: 34,
+  horizontalScale: 1,
+  verticalScale: 1,
+  lockTextHeight: false,
+});
+
 describe("preset authoring", () => {
-  it("infers shared line defaults plus first and index rules from editor settings", () => {
+  it("infers shared line defaults plus first and remaining rules from editor settings", () => {
     const preset = inferPresetDefinitionFromSettings({
       name: "Skywalk RN",
       settings: makeSettings(),
@@ -61,10 +76,58 @@ describe("preset authoring", () => {
         settings: { fontId: "skywalk", fontSizeMm: 18, lockTextHeight: false },
       },
       {
-        match: { kind: "index", lineIndex: 1 },
+        match: { kind: "remaining" },
         settings: { fontId: "somekind", fontSizeMm: 23, lockTextHeight: true },
       },
     ]);
+  });
+
+  it("round-trips inferred reusable rules through the preset builder for a third line", () => {
+    const preset = inferPresetDefinitionFromSettings({
+      name: "Skywalk RN",
+      settings: makeSettings(),
+    });
+
+    setPresetRegistryForTests({ defaultPresetId: preset.id }, [preset]);
+
+    try {
+      const lines = buildPresetLines(preset.id, 3, createDefaultLineSettings);
+
+      expect(lines).toEqual([
+        {
+          fontId: "skywalk",
+          bridgeMm: 0.5,
+          lineBridgeMm: 0.5,
+          offsetXMm: 0,
+          fontSizeMm: 18,
+          horizontalScale: 1,
+          verticalScale: 1,
+          lockTextHeight: false,
+        },
+        {
+          fontId: "somekind",
+          bridgeMm: 0.5,
+          lineBridgeMm: 0.5,
+          offsetXMm: 0,
+          fontSizeMm: 23,
+          horizontalScale: 1,
+          verticalScale: 1,
+          lockTextHeight: true,
+        },
+        {
+          fontId: "somekind",
+          bridgeMm: 0.5,
+          lineBridgeMm: 0.5,
+          offsetXMm: 0,
+          fontSizeMm: 23,
+          horizontalScale: 1,
+          verticalScale: 1,
+          lockTextHeight: true,
+        },
+      ]);
+    } finally {
+      setPresetRegistryForTests();
+    }
   });
 
   it("builds stable kebab-case ids from operator-facing names", () => {
@@ -91,6 +154,56 @@ describe("preset authoring", () => {
         listingId: "1884223710",
         name: "PICU Badge Reel",
         lineOverrides: [],
+      },
+    ]);
+  });
+
+  it("preserves existing listing overrides when replacement passes undefined or null lineOverrides", () => {
+    const preset = {
+      id: "skywalk-rn",
+      name: "Skywalk RN",
+      lineDefaults: {},
+      lineRules: [{ match: { kind: "all" }, settings: {} }],
+      listingAssignments: [
+        {
+          listingId: "1884223710",
+          name: "PICU Badge Reel",
+          lineOverrides: [{ lineIndex: 1, settings: { fontSizeMm: 23 } }],
+        },
+      ],
+    };
+
+    expect(
+      upsertListingAssignment({
+        preset,
+        assignment: {
+          listingId: "1884223710",
+          name: "PICU Badge Reel Updated",
+          lineOverrides: undefined,
+        },
+      }).listingAssignments,
+    ).toEqual([
+      {
+        listingId: "1884223710",
+        name: "PICU Badge Reel Updated",
+        lineOverrides: [{ lineIndex: 1, settings: { fontSizeMm: 23 } }],
+      },
+    ]);
+
+    expect(
+      upsertListingAssignment({
+        preset,
+        assignment: {
+          listingId: "1884223710",
+          name: "PICU Badge Reel Updated",
+          lineOverrides: null,
+        },
+      }).listingAssignments,
+    ).toEqual([
+      {
+        listingId: "1884223710",
+        name: "PICU Badge Reel Updated",
+        lineOverrides: [{ lineIndex: 1, settings: { fontSizeMm: 23 } }],
       },
     ]);
   });
