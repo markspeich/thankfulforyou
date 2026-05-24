@@ -2279,6 +2279,9 @@ test("keeps Complete disabled when reselecting a design whose analysis is still 
   await expect(page.locator("#activeOrderName")).toHaveText("Design 1");
   await expect(page.locator("#captureButton")).toBeDisabled();
   await expect(page.locator("#captureButton")).toHaveText("Complete");
+  await expect
+    .poll(() => page.locator("#captureButton").evaluate((element) => window.getComputedStyle(element).cursor))
+    .toBe("not-allowed");
   await expect(firstRow.locator(".order-analysis-indicator.ok")).toBeVisible({ timeout: 20000 });
   await expect(page.locator("#captureButton")).toBeDisabled();
   await expect(page.locator("#captureButton")).toHaveText("Complete");

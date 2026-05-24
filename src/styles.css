@@ -871,7 +871,7 @@ button:hover:not(:disabled):not(.order-item):not(.queue-tool-button) {
 button:disabled {
   color: var(--button-text);
   background: var(--button-disabled);
-  cursor: wait;
+  cursor: not-allowed;
 }
 
 .editor-action-button {
