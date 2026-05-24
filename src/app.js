@@ -90,6 +90,12 @@ const DEFAULT_LINE_SETTINGS = Object.freeze({
   lockTextHeight: false,
 });
 
+const appShell = document.querySelector(".app-shell");
+const ordersWorkspace = document.querySelector("#ordersWorkspace");
+const presetsWorkspace = document.querySelector("#presetsWorkspace");
+const orderWorkspaceButton = document.querySelector("#orderWorkspaceButton");
+const presetWorkspaceButton = document.querySelector("#presetWorkspaceButton");
+const navCollapseButton = document.querySelector("#navCollapseButton");
 const addOrderButton = document.querySelector("#addOrderButton");
 const importClipboardButton = document.querySelector("#importClipboardButton");
 const clearQueueButton = document.querySelector("#clearQueueButton");
@@ -173,6 +179,8 @@ let orderListRenderFrameId = null;
 let deferredPreviewRenderToken = 0;
 let suppressQueueSyncLocalNotice = false;
 let copiedLayoutControlsSnapshot = null;
+let activeWorkspace = "orders";
+let navCollapsed = false;
 
 const statusLabels = {
   "not-started": "Not started",
@@ -2348,7 +2356,6 @@ function renderOrderList() {
   });
 
   const activeOrder = getActiveOrder();
-  editorPanel.classList.toggle("is-hidden", !activeOrder);
   renderListingReference(activeOrder);
   renderImportedColor(activeOrder);
   activeOrderName.textContent = activeOrder ? buildQueueOrderNumber(activeOrder) : "No design selected";
@@ -2358,6 +2365,23 @@ function renderOrderList() {
   copyButton.disabled = !activeOrder || !isOrderReadyForExport(activeOrder) || !canCopySvgToClipboard();
   copyLayoutControlsButton.disabled = !canCopyLayoutControls(activeOrder);
   pasteLayoutControlsButton.disabled = !canPasteLayoutControls(activeOrder);
+}
+
+function setActiveWorkspace(workspace) {
+  activeWorkspace = workspace === "presets" ? "presets" : "orders";
+  appShell.dataset.workspace = activeWorkspace;
+  ordersWorkspace.hidden = activeWorkspace !== "orders";
+  presetsWorkspace.hidden = activeWorkspace !== "presets";
+  orderWorkspaceButton.classList.toggle("is-active", activeWorkspace === "orders");
+  presetWorkspaceButton.classList.toggle("is-active", activeWorkspace === "presets");
+  orderWorkspaceButton.setAttribute("aria-pressed", String(activeWorkspace === "orders"));
+  presetWorkspaceButton.setAttribute("aria-pressed", String(activeWorkspace === "presets"));
+}
+
+function setNavCollapsed(nextCollapsed) {
+  navCollapsed = Boolean(nextCollapsed);
+  appShell.dataset.navCollapsed = String(navCollapsed);
+  navCollapseButton.setAttribute("aria-label", navCollapsed ? "Expand navigation" : "Collapse navigation");
 }
 
 function selectOrder(orderId) {
@@ -3943,6 +3967,15 @@ weldExportedDesignInput.addEventListener("input", () => {
   render();
   updateActiveOrderFromControls();
 });
+orderWorkspaceButton.addEventListener("click", () => {
+  setActiveWorkspace("orders");
+});
+presetWorkspaceButton.addEventListener("click", () => {
+  setActiveWorkspace("presets");
+});
+navCollapseButton.addEventListener("click", () => {
+  setNavCollapsed(!navCollapsed);
+});
 
 addOrderButton.addEventListener("click", addOrder);
 importClipboardButton.addEventListener("click", importFromClipboard);
@@ -4010,6 +4043,8 @@ window.addEventListener("mouseup", (event) => {
 window.addEventListener("blur", endPreviewMiddlePan);
 window.addEventListener("pagehide", flushPersistQueueState);
 
+setActiveWorkspace(activeWorkspace);
+setNavCollapsed(navCollapsed);
 await checkFonts();
 await loadPresetRegistry();
 renderPresetOptions();

@@ -8,8 +8,34 @@
     <link rel="stylesheet" href="src/styles.css">
   </head>
   <body>
-    <main class="app-shell">
-      <section class="production-workspace">
+    <main class="app-shell" data-workspace="orders" data-nav-collapsed="false">
+      <aside class="workspace-nav" aria-label="Workspace navigation">
+        <button id="navCollapseButton" class="workspace-nav-toggle" type="button" aria-label="Collapse navigation">
+          <span class="workspace-nav-toggle-icon" aria-hidden="true"></span>
+        </button>
+        <button
+          id="orderWorkspaceButton"
+          class="workspace-nav-item is-active"
+          type="button"
+          aria-label="Order Items"
+        >
+          <span class="workspace-nav-icon workspace-nav-icon-orders" aria-hidden="true"></span>
+          <span class="workspace-nav-label">Order Items</span>
+        </button>
+        <button
+          id="presetWorkspaceButton"
+          class="workspace-nav-item"
+          type="button"
+          aria-label="Presets"
+        >
+          <span class="workspace-nav-icon workspace-nav-icon-presets" aria-hidden="true"></span>
+          <span class="workspace-nav-label">Presets</span>
+        </button>
+      </aside>
+
+      <section class="workspace-stage">
+        <section id="ordersWorkspace" class="workspace-view is-active" aria-label="Order items workspace">
+          <section class="production-workspace">
         <aside class="orders-panel" aria-label="Design navigation">
           <div class="queue-header">
             <h1>Design Queue</h1>
@@ -124,7 +150,7 @@
           </section>
         </aside>
 
-        <section class="editor-panel is-hidden" aria-label="Selected design editor">
+        <section class="editor-panel" aria-label="Selected design editor">
           <header class="editor-header">
             <div>
               <h2 id="activeOrderName">No design selected</h2>
@@ -285,6 +311,28 @@
               </aside>
             </section>
           </div>
+        </section>
+          </section>
+        </section>
+
+        <section id="presetsWorkspace" class="workspace-view" aria-label="Preset editor workspace" hidden>
+          <section class="preset-workspace">
+            <header class="editor-header">
+              <div>
+                <p class="eyebrow">Preset Library</p>
+                <h2>Presets</h2>
+                <p class="editor-meta">Preset authoring tools will land here next while the order editor remains available under Order Items.</p>
+              </div>
+            </header>
+            <div class="editor-body">
+              <section class="preset-workspace-body">
+                <article class="preset-workspace-card">
+                  <p class="preset-workspace-title">Preset editor workspace</p>
+                  <p class="note">This scaffold reserves the production workspace for managing reusable preset definitions, assignments, and saved layout defaults.</p>
+                </article>
+              </section>
+            </div>
+          </section>
         </section>
       </section>
     </main>
