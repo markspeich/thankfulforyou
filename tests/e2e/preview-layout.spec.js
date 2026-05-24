@@ -218,7 +218,7 @@ async function measureVisibleTextBounds(page) {
   });
 }
 
-test.beforeEach(async ({ page }) => {
+test.beforeEach(async ({ page, request }) => {
   async function waitForStartup() {
     await expect.poll(async () => {
       const value = await page.locator("#importStatus").textContent();
@@ -228,6 +228,7 @@ test.beforeEach(async ({ page }) => {
     }).toBe(true);
   }
 
+  await request.delete("/api/queue-snapshot?workspaceKey=primary").catch(() => null);
   await page.goto("/");
   await waitForStartup();
   await page.evaluate(() => {
@@ -549,6 +550,20 @@ test("uses the refined desktop B1 workspace proportions", async ({ page }) => {
   expect(layout.previewPanel.height).toBeGreaterThan(420);
   expect(layout.visibleStatCount).toBe(2);
   expect(layout.hasQueueMenu).toBe(true);
+});
+
+test("grows the preview area when the browser viewport gets taller", async ({ page }) => {
+  const measurePreviewPanelHeight = async () => {
+    return page.locator(".preview-panel").evaluate((element) => element.getBoundingClientRect().height);
+  };
+
+  await page.setViewportSize({ width: 1500, height: 1000 });
+  const shorterHeight = await measurePreviewPanelHeight();
+
+  await page.setViewportSize({ width: 1500, height: 1400 });
+  const tallerHeight = await measurePreviewPanelHeight();
+
+  expect(tallerHeight).toBeGreaterThan(shorterHeight + 120);
 });
 
 test("keeps additional line control groups reachable in the right-side inspector", async ({ page }) => {
@@ -1885,6 +1900,66 @@ test("shows imported Etsy color and quantity below design text and highlights wh
   await expect(page.locator("#importedColorValue")).toHaveText("Red");
   await expect(page.locator("#importedQuantityField")).toBeVisible();
   await expect(page.locator("#importedQuantityValue")).toHaveText("1");
+});
+
+test("shows batch color counts from the queue tools menu", async ({ page }) => {
+  const payload = JSON.stringify({
+    items: [
+      {
+        orderNumber: "4057600528",
+        listingId: "1884223710",
+        transactionId: "5078093505",
+        buyerName: "Marilyn Lopez",
+        colorName: "White Glitter",
+        quantity: "2",
+        personalization: "Yohanna APN",
+      },
+      {
+        orderNumber: "4057629148",
+        listingId: "1884223710",
+        transactionId: "5078133859",
+        buyerName: "Mallory Braun",
+        colorName: "Red",
+        quantity: "1",
+        personalization: "Mallory R.T.(R)",
+      },
+      {
+        orderNumber: "4057630001",
+        listingId: "1884223710",
+        transactionId: "5078133999",
+        buyerName: "Casey Rogers",
+        colorName: "Red",
+        quantity: "3",
+        personalization: "Casey RN",
+      },
+    ],
+  });
+
+  await page.evaluate((clipboardPayload) => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        readText: async () => clipboardPayload,
+      },
+    });
+  }, payload);
+
+  await clickQueueAction(page, "Import Clipboard");
+  await clickQueueAction(page, "View Color Counts");
+
+  const dialog = page.locator("#colorCountsDialog");
+  const rows = dialog.locator("tbody tr");
+
+  await expect(dialog).toBeVisible();
+  await expect(page.locator(".queue-tools-menu")).not.toHaveAttribute("open", "");
+  await expect(rows).toHaveCount(2);
+  await expect(rows.nth(0).locator("td").nth(0)).toHaveText("Red");
+  await expect(rows.nth(0).locator("td").nth(1)).toHaveText("4");
+  await expect(rows.nth(1).locator("td").nth(0)).toHaveText("White Glitter");
+  await expect(rows.nth(1).locator("td").nth(1)).toHaveText("2");
+
+  await page.getByRole("button", { name: "Close color counts" }).click();
+  await expect(dialog).not.toBeVisible();
 });
 
 test("includes imported color and quantity in the export payload", async ({ page }) => {

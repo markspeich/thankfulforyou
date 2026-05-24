@@ -45,6 +45,17 @@
 
                   <div class="queue-tools-group" aria-label="Batch output actions">
                     <p class="queue-tools-heading">Batch Output</p>
+                    <button id="showColorCountsButton" class="queue-tool-button" type="button">
+                      <span class="queue-tool-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" focusable="false">
+                          <path d="M5 6.5h14" />
+                          <path d="M5 12h14" />
+                          <path d="M5 17.5h14" />
+                          <path d="M17 4v16" />
+                        </svg>
+                      </span>
+                      <span class="queue-tool-label">View Color Counts</span>
+                    </button>
                     <button id="copyCompletedButton" class="queue-tool-button" type="button">
                       <span class="queue-tool-icon" aria-hidden="true">
                         <svg viewBox="0 0 24 24" focusable="false">
@@ -277,6 +288,41 @@
         </section>
       </section>
     </main>
+
+    <dialog id="colorCountsDialog" class="queue-summary-dialog" aria-labelledby="colorCountsTitle">
+      <div class="queue-summary-card">
+        <header class="queue-summary-header">
+          <div>
+            <p class="queue-summary-eyebrow">Batch Output</p>
+            <h2 id="colorCountsTitle">Queued Color Counts</h2>
+            <p id="colorCountsDescription" class="queue-summary-description">
+              Counts use imported quantity when available and fall back to one per queued design.
+            </p>
+          </div>
+          <button id="closeColorCountsButton" class="queue-summary-close" type="button" aria-label="Close color counts">
+            <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+              <path d="M6 6l12 12M18 6 6 18" />
+            </svg>
+          </button>
+        </header>
+        <div class="queue-summary-content">
+          <p id="colorCountsEmptyState" class="queue-summary-empty" hidden>
+            No imported colors are available in the current queue.
+          </p>
+          <div class="queue-summary-table-wrap" id="colorCountsTableWrap">
+            <table class="queue-summary-table">
+              <thead>
+                <tr>
+                  <th scope="col">Color</th>
+                  <th scope="col">Count</th>
+                </tr>
+              </thead>
+              <tbody id="colorCountsTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </dialog>
 
     <script src="src/app.js" type="module"></script>
   </body>

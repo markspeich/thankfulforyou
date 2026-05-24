@@ -179,7 +179,9 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - The active order editor should include a button for exporting the selected design as an SVG.
 - The active order editor should also include a button near `Export This Design` for copying the current design's generated SVG to the clipboard.
 - The selected-order editor should eventually support a `Save As Preset` action for creating a reusable preset definition from the current control state.
+- A future preset-management workflow should include a dedicated preset editing page for reviewing, updating, and organizing saved presets outside the active order editor.
 - A future `Save As Preset` workflow should serialize reusable preset settings, including preset name, backing border, weld toggle, per-line font choices, letter bridge values, line bridge values where applicable, horizontal offsets, and text-height defaults.
+- A future preset definition should also include the target bounding box size so presets can carry the intended overall design footprint along with the rest of the reusable layout defaults.
 - A future `Save As Preset` workflow should save preset data in the same schema-driven JSON format used by runtime presets.
 - A future `Save As Preset` workflow should not treat the current order text itself as part of the reusable preset definition.
 - The left-side order navigation should include a button above the order list for exporting all queued designs that have text entered.
@@ -310,6 +312,7 @@ The website should be a practical production tool rather than a marketing site. 
 - On desktop, the left queue should use roughly the leftmost quarter of the screen instead of the previous narrow column, so queue rows can show more order context without taking over the editor workspace.
 - The left queue should keep only `Complete` and `In Progress` summary counters visible in the main panel; `Not Started` does not need a visible counter in the desktop layout.
 - Queue batch actions should move behind a compact queue-tools affordance beside the `Design Queue` title instead of occupying a permanent full-width button block above the list.
+- The queue-tools menu should include a `View Color Counts` action that opens an in-app popup summarizing the entire queued batch's imported colors in a table, using imported quantity when available and otherwise counting each queued design as one.
 - After `Import Clipboard` runs, its status message should appear as a brief main-screen alert near the bottom center of the viewport instead of only inside the queue-tools popup.
 - Layout-control copy and paste feedback should use that same bottom-center floating main-screen alert pattern instead of introducing a separate notification style.
 - Future lightweight workflow confirmations and warnings of this kind should reuse the same floating alert technique so queue actions, copy/paste actions, and similar operator feedback stay visually consistent.

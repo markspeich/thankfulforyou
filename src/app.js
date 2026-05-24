@@ -98,13 +98,19 @@ const queueSyncStatus = document.querySelector("#queueSyncStatus");
 const queueSyncStatusLabel = document.querySelector("#queueSyncStatusLabel");
 const queueSyncStatusDetail = document.querySelector("#queueSyncStatusDetail");
 const exportCompletedButton = document.querySelector("#exportCompletedButton");
+const showColorCountsButton = document.querySelector("#showColorCountsButton");
 const copyCompletedButton = document.querySelector("#copyCompletedButton");
 const queueToolsMenu = document.querySelector(".queue-tools-menu");
 const queueActionLabelByButton = new Map(
-  [addOrderButton, importClipboardButton, clearQueueButton, exportCompletedButton, copyCompletedButton]
+  [addOrderButton, importClipboardButton, clearQueueButton, showColorCountsButton, exportCompletedButton, copyCompletedButton]
     .filter(Boolean)
     .map((button) => [button, button.querySelector(".queue-tool-label")]),
 );
+const colorCountsDialog = document.querySelector("#colorCountsDialog");
+const closeColorCountsButton = document.querySelector("#closeColorCountsButton");
+const colorCountsTableBody = document.querySelector("#colorCountsTableBody");
+const colorCountsTableWrap = document.querySelector("#colorCountsTableWrap");
+const colorCountsEmptyState = document.querySelector("#colorCountsEmptyState");
 const orderSearchInput = document.querySelector("#orderSearchInput");
 const orderCountOutput = document.querySelector("#orderCountOutput");
 const completeCountOutput = document.querySelector("#completeCountOutput");
@@ -527,6 +533,80 @@ function buildQueuePersonalization(order) {
   return personalization && personalization !== "No text entered"
     ? personalization
     : "No personalization entered";
+}
+
+function parseColorCountQuantity(order) {
+  const quantityText = order?.source?.quantity?.trim() || "";
+  const quantity = Number.parseInt(quantityText, 10);
+  return Number.isFinite(quantity) && quantity > 0 ? quantity : 1;
+}
+
+function buildBatchColorCounts() {
+  const countsByColor = new Map();
+
+  orders.forEach((order) => {
+    const colorName = order?.source?.colorName?.trim() || "";
+    if (!colorName) {
+      return;
+    }
+
+    const nextCount = (countsByColor.get(colorName) || 0) + parseColorCountQuantity(order);
+    countsByColor.set(colorName, nextCount);
+  });
+
+  return [...countsByColor.entries()]
+    .map(([colorName, count]) => ({ colorName, count }))
+    .sort((left, right) => {
+      if (right.count !== left.count) {
+        return right.count - left.count;
+      }
+
+      return left.colorName.localeCompare(right.colorName);
+    });
+}
+
+function renderBatchColorCountsDialog() {
+  if (!colorCountsTableBody || !colorCountsTableWrap || !colorCountsEmptyState) {
+    return [];
+  }
+
+  const colorCounts = buildBatchColorCounts();
+  colorCountsTableBody.replaceChildren();
+
+  colorCounts.forEach(({ colorName, count }) => {
+    const row = document.createElement("tr");
+    const colorCell = document.createElement("td");
+    const countCell = document.createElement("td");
+
+    colorCell.textContent = colorName;
+    countCell.textContent = String(count);
+    countCell.className = "queue-summary-count";
+
+    row.append(colorCell, countCell);
+    colorCountsTableBody.append(row);
+  });
+
+  const hasCounts = colorCounts.length > 0;
+  colorCountsTableWrap.hidden = !hasCounts;
+  colorCountsEmptyState.hidden = hasCounts;
+  return colorCounts;
+}
+
+function openBatchColorCountsDialog() {
+  if (!(colorCountsDialog instanceof HTMLDialogElement)) {
+    return;
+  }
+
+  renderBatchColorCountsDialog();
+  colorCountsDialog.showModal();
+}
+
+function closeBatchColorCountsDialog() {
+  if (!(colorCountsDialog instanceof HTMLDialogElement) || !colorCountsDialog.open) {
+    return;
+  }
+
+  colorCountsDialog.close();
 }
 
 function normalizeStoredSource(source) {
@@ -2181,6 +2261,9 @@ function renderOrderList() {
     notStartedCountOutput.textContent = String(notStartedCount);
   }
   clearQueueButton.disabled = orders.length === 0;
+  if (showColorCountsButton) {
+    showColorCountsButton.disabled = orders.length === 0;
+  }
   exportCompletedButton.disabled = !allExportableOrdersReady;
   copyCompletedButton.disabled = !allExportableOrdersReady || !canCopySvgToClipboard();
   orderList.replaceChildren();
@@ -3864,15 +3947,22 @@ weldExportedDesignInput.addEventListener("input", () => {
 addOrderButton.addEventListener("click", addOrder);
 importClipboardButton.addEventListener("click", importFromClipboard);
 clearQueueButton.addEventListener("click", clearAllOrders);
+showColorCountsButton?.addEventListener("click", openBatchColorCountsDialog);
 exportCompletedButton.addEventListener("click", exportAllOrders);
 copyCompletedButton.addEventListener("click", copyAllOrders);
-[addOrderButton, importClipboardButton, clearQueueButton, exportCompletedButton, copyCompletedButton]
+[addOrderButton, importClipboardButton, clearQueueButton, showColorCountsButton, exportCompletedButton, copyCompletedButton]
   .filter(Boolean)
   .forEach((button) => {
     button.addEventListener("click", () => {
       queueToolsMenu?.removeAttribute("open");
     });
   });
+closeColorCountsButton?.addEventListener("click", closeBatchColorCountsDialog);
+colorCountsDialog?.addEventListener("click", (event) => {
+  if (event.target === colorCountsDialog) {
+    closeBatchColorCountsDialog();
+  }
+});
 document.addEventListener("pointerdown", (event) => {
   if (!queueToolsMenu?.hasAttribute("open")) {
     return;
