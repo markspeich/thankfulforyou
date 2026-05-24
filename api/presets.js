@@ -1,5 +1,5 @@
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 
 const PRESET_ID_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
@@ -67,7 +67,10 @@ async function deleteOldPresetFile(root, oldPath, nextPath) {
 
   const absoluteOldPath = resolve(root, oldPath);
   const presetsRoot = resolve(root, "public", "presets");
-  if (!absoluteOldPath.startsWith(presetsRoot)) {
+  const relativePath = relative(presetsRoot, absoluteOldPath);
+  const isInsidePresetsRoot = relativePath && !relativePath.startsWith("..") && !relativePath.includes(":");
+
+  if (!isInsidePresetsRoot) {
     return;
   }
 

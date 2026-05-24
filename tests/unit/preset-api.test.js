@@ -393,4 +393,44 @@ describe("preset persistence api", () => {
     await expect(readFile(join(presetsDir, "skywalk-rn.json"), "utf8")).rejects.toThrow();
     await expect(readFile(join(presetsDir, "skywalk-rn-final.json"), "utf8")).resolves.toContain("\"Skywalk RN Final\"");
   });
+
+  it("does not delete crafted manifest paths outside the presets directory during rename cleanup", async () => {
+    const existingPreset = {
+      schemaVersion: 1,
+      id: "skywalk-rn",
+      name: "Skywalk RN",
+      lineDefaults: { fontId: "skywalk" },
+      lineRules: [{ match: { kind: "all" }, settings: { fontId: "skywalk" } }],
+      listingAssignments: [],
+    };
+    const { root } = await createPresetWorkspace({
+      schemaVersion: 1,
+      defaultPresetId: "skywalk-rn",
+      presets: [{ id: "skywalk-rn", path: "public/presets/../presets-evil/secret.json" }],
+    });
+    await mkdir(join(root, "public", "presets-evil"), { recursive: true });
+    await writeFile(
+      join(root, "public", "presets-evil", "secret.json"),
+      "{\"keep\":true}\n",
+      "utf8",
+    );
+    process.chdir(root);
+    const handler = await loadHandler();
+    const response = createResponseRecorder();
+
+    await handler({
+      method: "PUT",
+      body: {
+        previousId: "skywalk-rn",
+        preset: {
+          ...existingPreset,
+          id: "skywalk-rn-safe",
+          name: "Skywalk RN Safe",
+        },
+      },
+    }, response);
+
+    expect(response.statusCode).toBe(200);
+    await expect(readFile(join(root, "public", "presets-evil", "secret.json"), "utf8")).resolves.toContain("\"keep\":true");
+  });
 });
