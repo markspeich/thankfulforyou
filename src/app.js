@@ -94,6 +94,16 @@ const DEFAULT_LINE_SETTINGS = Object.freeze({
   verticalScale: 1,
   lockTextHeight: false,
 });
+const PRESET_SYNC_LINE_SETTING_KEYS = Object.freeze([
+  "fontId",
+  "bridgeMm",
+  "lineBridgeMm",
+  "offsetXMm",
+  "fontSizeMm",
+  "horizontalScale",
+  "verticalScale",
+  "lockTextHeight",
+]);
 
 const appShell = document.querySelector(".app-shell");
 const ordersWorkspace = document.querySelector("#ordersWorkspace");
@@ -558,10 +568,7 @@ function renderPresetEditorOptions(selectedPresetId = "") {
 
 function renderPresetEditorDraft() {
   if (!presetEditorDraft) {
-    presetEditorDraft = createPresetEditorDraft(
-      getPresetDefinitionForEditor(getDefaultPresetId()),
-      { previousId: getDefaultPresetId() },
-    );
+    presetEditorDraft = createPresetEditorDraft(null, { previousId: null });
   }
 
   const selectedPresetId = presetEditorDraft.previousId && isValidPresetId(presetEditorDraft.previousId)
@@ -576,6 +583,58 @@ function renderPresetEditorDraft() {
   presetDraftNameInput.value = draftName;
   presetDraftIdInput.value = buildPresetIdFromName(draftName);
   savePresetButton.disabled = false;
+}
+
+function lineSettingsMatch(left = {}, right = {}) {
+  return PRESET_SYNC_LINE_SETTING_KEYS.every((key) => left[key] === right[key]);
+}
+
+function migrateOrderPresetReference(order, previousId, nextId) {
+  if (!order || !previousId || !nextId || previousId === nextId) {
+    return false;
+  }
+
+  const rawPresetId = typeof order.settings?.presetId === "string"
+    ? order.settings.presetId
+    : "";
+
+  if (rawPresetId !== previousId) {
+    return false;
+  }
+
+  order.settings = {
+    ...normalizeSettings({
+      ...order.settings,
+      presetId: previousId,
+    }),
+    presetId: nextId,
+  };
+  return true;
+}
+
+function migratePresetReferences(previousId, nextId) {
+  if (!previousId || !nextId || previousId === nextId) {
+    return false;
+  }
+
+  let activeOrderChanged = false;
+
+  orders.forEach((order) => {
+    if (migrateOrderPresetReference(order, previousId, nextId) && order.id === activeOrderId) {
+      activeOrderChanged = true;
+    }
+  });
+
+  if (activeOrderChanged) {
+    const activeOrder = getActiveOrder();
+    if (activeOrder) {
+      applySettings(activeOrder.settings);
+    }
+  } else if (presetInput.value === previousId) {
+    presetInput.value = nextId;
+  }
+
+  return activeOrderChanged;
 }
 
 function syncPresetEditorDraftFromInputs() {
@@ -636,6 +695,7 @@ async function savePresetEditorDraft() {
     return;
   }
 
+  const previousId = presetEditorDraft.previousId;
   syncPresetEditorDraftFromInputs();
   const preset = presetEditorDraft.preset;
 
@@ -655,17 +715,26 @@ async function savePresetEditorDraft() {
   try {
     const payload = await savePresetDefinition({
       preset,
-      previousId: presetEditorDraft.previousId,
+      previousId,
     });
+    const savedPresetId = payload?.preset?.id || preset.id;
+    const activeOrderChanged = migratePresetReferences(previousId, savedPresetId);
     await loadPresetRegistry();
     renderPresetOptions();
-
-    const savedPresetId = payload?.preset?.id || preset.id;
     presetEditorDraft = createPresetEditorDraft(
       getPresetDefinitionForEditor(savedPresetId) || { ...preset, id: savedPresetId },
       { previousId: savedPresetId },
     );
     renderPresetEditorDraft();
+    if (activeOrderChanged) {
+      const activeOrder = getActiveOrder();
+      if (activeOrder) {
+        applySettings(activeOrder.settings);
+      }
+    }
+    renderOrderList();
+    persistQueueState();
+    render();
     setPresetEditorStatus(`Saved ${presetEditorDraft.preset.name}.`, "success");
   } catch (error) {
     setPresetEditorStatus(error instanceof Error ? error.message : "Unable to save preset.", "error");
@@ -713,8 +782,12 @@ async function assignSelectedPresetToActiveListing() {
       renderPresetEditorDraft();
     }
     activeOrder.source.manualPresetOverride = false;
-    syncOrderPresetFromListing(activeOrder);
+    activeOrder.settings = buildPresetSynchronizedSettings(activeOrder.settings, assignedPreset.id, {
+      listingId,
+    });
     applySettings(activeOrder.settings);
+    renderOrderList();
+    persistQueueState();
     render();
     updateWorkflowAlert(`Assigned ${assignedPreset.name} to listing ${listingId}.`, "success");
   } catch (error) {
@@ -1413,18 +1486,27 @@ function shouldSyncOrderPreset(order, presetId) {
   }
 
   const normalized = normalizeSettings(order.settings);
-  const expectedLines = buildPresetLines(
-    presetId,
-    getRawTextLines(normalized.text).length,
-    createDefaultLineSettings,
-    { listingId: order.source?.listingId },
-  );
+  const expectedSettings = buildPresetSynchronizedSettings(order.settings, presetId, {
+    listingId: order.source?.listingId,
+  });
 
-  if (normalized.presetId !== presetId) {
+  if (normalized.presetId !== expectedSettings.presetId) {
     return true;
   }
 
-  return expectedLines.some((expectedLine, index) => normalized.lines[index]?.fontId !== expectedLine.fontId);
+  if (normalized.backingMm !== expectedSettings.backingMm) {
+    return true;
+  }
+
+  if (normalized.weldExportedDesign !== expectedSettings.weldExportedDesign) {
+    return true;
+  }
+
+  if (normalized.lines.length !== expectedSettings.lines.length) {
+    return true;
+  }
+
+  return expectedSettings.lines.some((expectedLine, index) => !lineSettingsMatch(normalized.lines[index], expectedLine));
 }
 
 function syncOrderPresetFromListing(order) {
