@@ -193,12 +193,6 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Allow saved orders to be reopened for adjustment without losing their previously saved settings.
 - The active order editor should include a button for exporting the selected design as an SVG.
 - The active order editor should also include a button near `Export This Design` for copying the current design's generated SVG to the clipboard.
-- The selected-order editor should eventually support a `Save As Preset` action for creating a reusable preset definition from the current control state.
-- A future preset-management workflow should include a dedicated preset editing page for reviewing, updating, and organizing saved presets outside the active order editor.
-- A future `Save As Preset` workflow should serialize reusable preset settings, including preset name, backing border, weld toggle, per-line font choices, letter bridge values, line bridge values where applicable, horizontal offsets, and text-height defaults.
-- A future preset definition should also include the target bounding box size so presets can carry the intended overall design footprint along with the rest of the reusable layout defaults.
-- A future `Save As Preset` workflow should save preset data in the same schema-driven JSON format used by runtime presets.
-- A future `Save As Preset` workflow should not treat the current order text itself as part of the reusable preset definition.
 - The left-side order navigation should include a button above the order list for exporting all queued designs that have text entered.
 - The left-side order navigation should also include a button near `Export All Designs` for copying the generated batch SVG for all queued designs with text to the clipboard.
 - Export and copy actions should use the most recently saved analyzed geometry for each design rather than running fresh analysis implicitly.
@@ -257,26 +251,21 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 
 ## Later-Phase Workflow Enhancements
 
-- Consider adding automatic bridge or spacing suggestions after enough production examples exist to validate them.
-- Consider more granular overlap controls than the current per-line settings if real jobs show consistent edge cases.
-- Consider broader import or export helpers beyond the current SVG-first LightBurn workflow once the first production flow is stable.
-- Consider a later internal-production Ruida direct-transfer workflow over USB after the SVG-based manufacturing flow is stable and validated.
-- Consider adding a preset-management workflow so operators can create or update preset JSON from the editor instead of editing files manually.
+Future-facing product ideas and optional later-phase workflow enhancements are tracked in [future-features.md](/C:/Users/Mark/.codex/worktrees/42f4/thankfulforyou/docs/future-features.md:1).
 
 ## Current Assumptions And Pending Decisions
 
 - The first production export target is SVG for LightBurn-oriented laser workflows.
 - The current shop connection to the OmTech Polar is USB, not Ethernet.
 - The first production font formats are OTF and TTF, matching the currently available Candlepin, Skywalk, and Somekind assets.
-- The current production workflow is manual-control-first. Automatic optimization may be added later, but operators must be able to adjust letter bridge, line bridge, per-line font, horizontal offset, text height, and backing border directly.
+- The current production workflow is manual-control-first. Operators must be able to adjust letter bridge, line bridge, per-line font, horizontal offset, text height, and backing border directly.
 - Operators will sometimes need to increase a line's apparent height without increasing its width. Treat that as a per-line geometry setting rather than a preview-only effect so preview, analysis, and SVG export stay aligned.
-- The current implementation target is global per-line controls rather than per-character-pair tuning. More granular overlap controls may be considered later if real production jobs require them.
+- The current implementation target is global and per-line controls rather than per-character-pair tuning.
 - Preset configuration should be maintainable by editing data files with a well-defined schema rather than updating multiple hardcoded branches.
 - Multi-line layouts should support intentional contact between lines, and for Candlepin layouts each lower line should slide upward until the visible outlines reach the configured line-bridge target.
 - The backing layer should be generated automatically as an offset silhouette in the production tool rather than remaining a preview-only approximation.
 - The 2.2 inch by 1.5 inch guide box defines the text fitting target, not the total finished backing size limit.
 - A production-safe minimum bridge width for 1/8 inch acrylic still needs explicit shop confirmation. Until confirmed otherwise, use 0.5 mm as the working default bridge target for Candlepin letter and line connections.
-- Direct communication with the Ruida controller may be possible in a later phase, but no clean public Ruida developer API should be assumed. Any direct machine workflow should be treated as a separate controller-integration effort built around Ruida-compatible job generation, USB transfer, and production validation.
 - If direct Ruida support is pursued, prefer USB as the first transport path for this shop because the machine is currently USB-connected and because the current production workflow does not need to depend on Ruida Ethernet/UDP behavior.
 - The initial hosted deployment target is Vercel.
 - The first production authentication step should use Vercel Deployment Protection so the hosted tool and its API routes stay private before any in-app user system is added.
@@ -298,7 +287,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Deployment configuration should explicitly define the production install, build, and runtime behavior instead of relying on local-only defaults.
 - Production should have a smoke-test flow that verifies font loading, queue persistence, save-triggered analysis, and SVG export in the hosted environment before operators rely on it for Etsy batches.
 - If the hosted app is only for internal production use, deployment protection or authentication should be enabled before processing real Etsy order data.
-- For the current internal production rollout, enable Vercel Deployment Protection on the linked Vercel project before processing real Etsy order data, and treat any later app-level login system as a separate follow-up phase.
+- For the current internal production rollout, enable Vercel Deployment Protection on the linked Vercel project before processing real Etsy order data.
 - Automated checks against a protected Vercel preview should use Vercel Protection Bypass for Automation so smoke tests can keep Deployment Protection enabled while still exercising the hosted UI and API routes.
 - Local development and browser automation should share one deterministic per-worktree port-resolution helper so multiple git worktrees can run in parallel without port collisions or hardcoded test URLs drifting from the local server.
 - In the current Windows Codex worktree environment, local server launch workflow should prefer a foreground or otherwise persistent terminal session over a detached hidden process, because detached launches may exit early and break browser connectivity.
