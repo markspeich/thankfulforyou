@@ -589,6 +589,26 @@ function lineSettingsMatch(left = {}, right = {}) {
   return PRESET_SYNC_LINE_SETTING_KEYS.every((key) => left[key] === right[key]);
 }
 
+function rewriteSignaturePresetId(signature, previousId, nextId) {
+  if (typeof signature !== "string" || !signature || !previousId || !nextId || previousId === nextId) {
+    return signature;
+  }
+
+  try {
+    const parsed = JSON.parse(signature);
+    if (!parsed || typeof parsed !== "object" || parsed.presetId !== previousId) {
+      return signature;
+    }
+
+    return JSON.stringify({
+      ...parsed,
+      presetId: nextId,
+    });
+  } catch {
+    return signature;
+  }
+}
+
 function migrateOrderPresetReference(order, previousId, nextId) {
   if (!order || !previousId || !nextId || previousId === nextId) {
     return false;
@@ -609,6 +629,15 @@ function migrateOrderPresetReference(order, previousId, nextId) {
     }),
     presetId: nextId,
   };
+  order.savedSettingsSignature = rewriteSignaturePresetId(order.savedSettingsSignature, previousId, nextId);
+  order.completedSettingsSignature = rewriteSignaturePresetId(order.completedSettingsSignature, previousId, nextId);
+  order.pendingAnalysisSignature = rewriteSignaturePresetId(order.pendingAnalysisSignature, previousId, nextId);
+  if (order.cachedBuild?.signature) {
+    order.cachedBuild.signature = rewriteSignaturePresetId(order.cachedBuild.signature, previousId, nextId);
+  }
+  if (order.previousCompletedBuild?.signature) {
+    order.previousCompletedBuild.signature = rewriteSignaturePresetId(order.previousCompletedBuild.signature, previousId, nextId);
+  }
   return true;
 }
 
