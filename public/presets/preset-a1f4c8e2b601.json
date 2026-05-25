@@ -1,7 +1,7 @@
 {
   "$schema": "../../docs/schemas/preset.schema.json",
   "schemaVersion": 1,
-  "id": "all-candlepin",
+  "id": "preset-a1f4c8e2b601",
   "name": "All Candlepin",
   "description": "Use Candlepin on every line.",
   "globalDefaults": {

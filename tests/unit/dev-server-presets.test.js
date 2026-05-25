@@ -41,13 +41,13 @@ function startDevServer(port) {
   });
 }
 
-function postMalformedPresetJson(port) {
+function putMalformedPresetSnapshotJson(port) {
   return new Promise((resolve, reject) => {
     const req = request({
-      method: "POST",
+      method: "PUT",
       host: "127.0.0.1",
       port,
-      path: "/api/presets",
+      path: "/api/preset-snapshot",
       headers: {
         "Content-Type": "application/json",
       },
@@ -80,13 +80,13 @@ afterEach(() => {
 });
 
 describe("dev server preset api wrapper", () => {
-  it("returns 400 for malformed preset json payloads", async () => {
+  it("returns 400 for malformed preset snapshot json payloads", async () => {
     const port = 4891;
     await startDevServer(port);
 
-    const response = await postMalformedPresetJson(port);
+    const response = await putMalformedPresetSnapshotJson(port);
 
     expect(response.statusCode).toBe(400);
-    expect(JSON.parse(response.body)).toEqual({ error: "Preset payload must be valid JSON." });
+    expect(JSON.parse(response.body)).toEqual({ error: "Preset snapshot payload must be valid JSON." });
   }, 15000);
 });

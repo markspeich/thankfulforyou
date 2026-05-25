@@ -14,7 +14,7 @@ describe("layout controls clipboard", () => {
       text: "Jamie\nRN",
       settings: {
         text: "Jamie\nRN",
-        presetId: "skywalk-somekind",
+        presetId: "preset-c3e8a1d7f520",
         backingMm: 3.2,
         weldExportedDesign: true,
         listingId: "listing-123",
@@ -43,7 +43,7 @@ describe("layout controls clipboard", () => {
       sourceOrderId: "order-17",
       sourceOrderLabel: "Order #17",
       settings: {
-        presetId: "skywalk-somekind",
+        presetId: "preset-c3e8a1d7f520",
         backingMm: 3.2,
         weldExportedDesign: true,
         lines: [
@@ -66,7 +66,7 @@ describe("layout controls clipboard", () => {
     const snapshot = buildLayoutControlsSnapshot({
       id: "order-18",
       settings: {
-        presetId: "all-candlepin",
+        presetId: "preset-a1f4c8e2b601",
         backingMm: 2.2,
         weldExportedDesign: false,
         lines: [],
@@ -77,7 +77,7 @@ describe("layout controls clipboard", () => {
       sourceOrderId: "order-18",
       sourceOrderLabel: null,
       settings: {
-        presetId: "all-candlepin",
+        presetId: "preset-a1f4c8e2b601",
         backingMm: 2.2,
         weldExportedDesign: false,
         lines: [],
@@ -90,7 +90,7 @@ describe("layout controls clipboard", () => {
       id: "order-19",
       label: "Malformed Source",
       settings: {
-        presetId: "skywalk-somekind",
+        presetId: "preset-c3e8a1d7f520",
         backingMm: 3.2,
         weldExportedDesign: true,
         lines: [
@@ -128,7 +128,7 @@ describe("layout controls clipboard", () => {
 
   it("applies copied controls line-by-line to matching indexes", () => {
     const targetSettings = {
-      presetId: "all-candlepin",
+      presetId: "preset-a1f4c8e2b601",
       backingMm: 2.2,
       weldExportedDesign: false,
       text: "Taylor\nMD",
@@ -161,7 +161,7 @@ describe("layout controls clipboard", () => {
       sourceOrderId: "order-1",
       sourceOrderLabel: "Source Order",
       settings: {
-        presetId: "skywalk-somekind",
+        presetId: "preset-c3e8a1d7f520",
         backingMm: 3,
         weldExportedDesign: true,
         lines: [
@@ -192,7 +192,7 @@ describe("layout controls clipboard", () => {
     expect(applyLayoutControlsSnapshot(targetSettings, snapshot)).toEqual({
       appliedLineCount: 2,
       settings: {
-        presetId: "skywalk-somekind",
+        presetId: "preset-c3e8a1d7f520",
         backingMm: 3,
         weldExportedDesign: true,
         text: "Taylor\nMD",
@@ -226,7 +226,7 @@ describe("layout controls clipboard", () => {
 
   it("preserves unmatched target lines when the snapshot has fewer copied lines", () => {
     const targetSettings = {
-      presetId: "all-candlepin",
+      presetId: "preset-a1f4c8e2b601",
       backingMm: 2.2,
       weldExportedDesign: false,
       lines: [
@@ -258,7 +258,7 @@ describe("layout controls clipboard", () => {
       sourceOrderId: "order-2",
       sourceOrderLabel: "Single Line",
       settings: {
-        presetId: "skywalk-somekind",
+        presetId: "preset-c3e8a1d7f520",
         backingMm: 3.4,
         weldExportedDesign: true,
         lines: [
@@ -279,7 +279,7 @@ describe("layout controls clipboard", () => {
     expect(applyLayoutControlsSnapshot(targetSettings, snapshot)).toEqual({
       appliedLineCount: 1,
       settings: {
-        presetId: "skywalk-somekind",
+        presetId: "preset-c3e8a1d7f520",
         backingMm: 3.4,
         weldExportedDesign: true,
         lines: [
@@ -312,7 +312,7 @@ describe("layout controls clipboard", () => {
 
   it("clones unmatched target lines instead of reusing the original objects", () => {
     const targetSettings = {
-      presetId: "all-candlepin",
+      presetId: "preset-a1f4c8e2b601",
       backingMm: 2.2,
       weldExportedDesign: false,
       lines: [
@@ -344,7 +344,7 @@ describe("layout controls clipboard", () => {
       sourceOrderId: "order-2",
       sourceOrderLabel: "Single Line",
       settings: {
-        presetId: "skywalk-somekind",
+        presetId: "preset-c3e8a1d7f520",
         backingMm: 3.4,
         weldExportedDesign: true,
         lines: [
@@ -371,7 +371,7 @@ describe("layout controls clipboard", () => {
 
   it("treats malformed source and target line entries as empty objects when applying a snapshot", () => {
     const result = applyLayoutControlsSnapshot({
-      presetId: "all-candlepin",
+      presetId: "preset-a1f4c8e2b601",
       backingMm: 2.2,
       weldExportedDesign: false,
       lines: [null, "bad-target"],
@@ -379,7 +379,7 @@ describe("layout controls clipboard", () => {
       sourceOrderId: "order-3",
       sourceOrderLabel: "Malformed Apply",
       settings: {
-        presetId: "skywalk-somekind",
+        presetId: "preset-c3e8a1d7f520",
         backingMm: 3.4,
         weldExportedDesign: true,
         lines: [null, { fontId: "somekind", fontSizeMm: 11 }],
@@ -389,7 +389,7 @@ describe("layout controls clipboard", () => {
     expect(result).toEqual({
       appliedLineCount: 2,
       settings: {
-        presetId: "skywalk-somekind",
+        presetId: "preset-c3e8a1d7f520",
         backingMm: 3.4,
         weldExportedDesign: true,
         lines: [

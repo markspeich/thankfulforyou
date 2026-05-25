@@ -11,10 +11,6 @@ const REPO_ROOT = path.resolve(TEST_DIR, "..", "..");
 const PRESETS_DIR = path.join(REPO_ROOT, "public", "presets");
 const PRESET_MANIFEST_PATH = path.join(PRESETS_DIR, "manifest.json");
 
-function slugify(name) {
-  return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
-}
-
 function buildPresetPath(presetId) {
   return `public/presets/${presetId}.json`;
 }
@@ -30,10 +26,12 @@ async function createPresetFixtureStore() {
   }
 
   return {
-    manifest: {
-      ...manifest,
-      presets: (manifest.presets || []).map((entry) => ({ ...entry })),
+    snapshot: {
+      version: 1,
+      defaultPresetId: manifest.defaultPresetId,
+      presets: Array.from(definitions.values()).map((preset) => JSON.parse(JSON.stringify(preset))),
     },
+    manifest,
     definitions,
   };
 }
@@ -74,88 +72,80 @@ async function installPresetRoutes(page) {
     });
   });
 
-  await page.route("**/api/presets", async (route) => {
+  await page.route("**/api/preset-snapshot**", async (route) => {
     const method = route.request().method();
-    const payload = route.request().postDataJSON() || {};
-    const preset = payload?.preset;
-    const previousId = typeof payload?.previousId === "string" && payload.previousId.trim()
-      ? payload.previousId.trim()
-      : null;
 
-    if (!preset || typeof preset !== "object") {
+    if (method === "GET") {
       await route.fulfill({
-        status: 400,
+        status: 200,
         contentType: "application/json; charset=utf-8",
-        body: JSON.stringify({ error: "Preset payload is required." }),
+        body: JSON.stringify({
+          workspaceKey: "primary",
+          snapshot: store.snapshot,
+        }),
       });
       return;
     }
 
-    const nextPreset = {
-      ...preset,
-      name: typeof preset.name === "string" ? preset.name.trim() : "",
-    };
-    const existingIndex = store.manifest.presets.findIndex((entry) => entry.id === (method === "PUT" ? (previousId || nextPreset.id) : nextPreset.id));
-    const conflictingIndex = store.manifest.presets.findIndex((entry) => entry.id === nextPreset.id);
+    if (method === "PUT") {
+      const payload = route.request().postDataJSON() || {};
+      const snapshot = payload?.snapshot;
 
-    if (method === "POST" && conflictingIndex >= 0) {
-      await route.fulfill({
-        status: 409,
-        contentType: "application/json; charset=utf-8",
-        body: JSON.stringify({ error: "Preset id already exists." }),
-      });
-      return;
-    }
-
-    if (method === "PUT" && existingIndex < 0) {
-      await route.fulfill({
-        status: 404,
-        contentType: "application/json; charset=utf-8",
-        body: JSON.stringify({ error: "Preset to update was not found." }),
-      });
-      return;
-    }
-
-    if (method === "PUT" && conflictingIndex >= 0 && conflictingIndex !== existingIndex) {
-      await route.fulfill({
-        status: 409,
-        contentType: "application/json; charset=utf-8",
-        body: JSON.stringify({ error: "Preset id already exists." }),
-      });
-      return;
-    }
-
-    const previousEntry = existingIndex >= 0 ? store.manifest.presets[existingIndex] : null;
-    if (existingIndex >= 0) {
-      store.manifest.presets[existingIndex] = {
-        id: nextPreset.id,
-        path: buildPresetPath(nextPreset.id),
-      };
-    } else {
-      store.manifest.presets.push({
-        id: nextPreset.id,
-        path: buildPresetPath(nextPreset.id),
-      });
-    }
-
-    if (method === "PUT" && previousEntry?.id && previousEntry.id !== nextPreset.id) {
-      store.definitions.delete(previousEntry.id);
-      if (store.manifest.defaultPresetId === previousEntry.id) {
-        store.manifest.defaultPresetId = nextPreset.id;
+      if (
+        !snapshot
+        || typeof snapshot !== "object"
+        || !Number.isInteger(snapshot.version)
+        || typeof snapshot.defaultPresetId !== "string"
+        || !Array.isArray(snapshot.presets)
+      ) {
+        await route.fulfill({
+          status: 400,
+          contentType: "application/json; charset=utf-8",
+          body: JSON.stringify({ error: "snapshot.version, snapshot.defaultPresetId, and snapshot.presets are required." }),
+        });
+        return;
       }
-    }
 
-    store.definitions.set(nextPreset.id, JSON.parse(JSON.stringify(nextPreset)));
+      store.snapshot = JSON.parse(JSON.stringify(snapshot));
+
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json; charset=utf-8",
+        body: JSON.stringify({
+          workspaceKey: "primary",
+          snapshot: store.snapshot,
+        }),
+      });
+      return;
+    }
 
     await route.fulfill({
-      status: 200,
+      status: 405,
       contentType: "application/json; charset=utf-8",
-      body: JSON.stringify({
-        preset: nextPreset,
-        manifest: store.manifest,
-      }),
+      body: JSON.stringify({ error: "Method not allowed." }),
     });
   });
+}
+
+async function installDelayedAnalysisRoute(page) {
+  const pendingRequests = [];
+
+  await page.route("**/api/layout-analyze", async (route) => {
+    await new Promise((resolve) => {
+      pendingRequests.push({
+        fulfill: async (overrides = {}) => {
+          await route.fulfill({
+            status: 200,
+            contentType: "application/json; charset=utf-8",
+            body: JSON.stringify(buildMockAnalysisResponse(overrides)),
+          });
+          resolve();
+        },
+      });
+    });
+  });
+
+  return pendingRequests;
 }
 
 async function openQueueTools(page) {
@@ -258,9 +248,7 @@ test("switches between order items and presets from the left nav", async ({ page
 test("can create a new preset from order settings and update an existing preset", async ({ page }) => {
   const nonce = Date.now();
   const createdPresetName = `Morgan RN ${nonce}`;
-  const createdPresetId = slugify(createdPresetName);
   const renamedPresetName = `Morgan RN Updated ${nonce}`;
-  const renamedPresetId = slugify(renamedPresetName);
   const listingId = `task4-listing-${nonce}`;
   const importPayload = JSON.stringify([
     {
@@ -295,13 +283,22 @@ test("can create a new preset from order settings and update an existing preset"
   const presetWorkspace = page.getByRole("region", { name: "Preset editor workspace" });
   await expect(presetWorkspace).toBeVisible();
   await expect(presetWorkspace).not.toContainText("tools will land here next");
+  await expect(page.locator("#presetBackingInput")).toBeVisible();
+  await expect(page.locator("#presetGlobalHorizontalScaleInput")).toBeVisible();
+  await expect(page.locator("#presetGlobalVerticalScaleInput")).toBeVisible();
+  await expect(page.locator('[data-preset-rule-key="lineDefaults"]')).toHaveCount(0);
+  await expect(page.locator('[data-preset-rule-key="first"] [data-setting="fontSizeMm"]')).toBeVisible();
   await page.locator("#presetDraftName").fill(createdPresetName);
   await page.getByRole("button", { name: "Save Preset" }).click();
 
+  let createdPresetId = "";
+  await expect.poll(async () => {
+    createdPresetId = await page.locator("#presetEditorSelect").inputValue();
+    return createdPresetId !== "";
+  }, { timeout: 10000 }).toBe(true);
   await expect(page.locator("#presetEditorStatus")).toContainText("Saved");
   await expect(page.locator("#presetEditorSelect")).toHaveValue(createdPresetId);
   await expect(page.locator("#presetEditorSelect")).toContainText(createdPresetName);
-  await expect(page.locator("#presetDraftId")).toHaveValue(createdPresetId);
 
   await page.getByRole("button", { name: "Order Items" }).click();
   await page.locator("#presetInput").selectOption(createdPresetId);
@@ -326,32 +323,29 @@ test("can create a new preset from order settings and update an existing preset"
   await page.getByRole("button", { name: "Presets" }).click();
   await page.locator("#presetEditorSelect").selectOption(createdPresetId);
   await expect(page.locator("#presetDraftName")).toHaveValue(createdPresetName);
+  await setRangeValue(page, "#presetBackingInput", 5.1);
+  await setRangeValue(page, '[data-preset-rule-key="first"] [data-setting="fontSizeMm"]', 21);
   await page.locator("#presetDraftName").fill(renamedPresetName);
   await page.getByRole("button", { name: "Save Preset" }).click();
 
   await expect(page.locator("#presetEditorStatus")).toContainText("Saved");
-  await expect(page.locator("#presetEditorSelect")).toHaveValue(renamedPresetId);
+  await expect(page.locator("#presetEditorSelect")).toHaveValue(createdPresetId);
   await expect(page.locator("#presetEditorSelect")).toContainText(renamedPresetName);
-  await expect(page.locator("#presetDraftId")).toHaveValue(renamedPresetId);
 
   await page.getByRole("button", { name: "Order Items" }).click();
-  await expect(page.locator("#presetInput")).toHaveValue(renamedPresetId);
-  await expect(page.locator('[data-line-index="0"] [data-setting="fontId"]')).toHaveValue("skywalk");
-  await expect(page.locator('[data-line-index="1"] [data-setting="fontId"]')).toHaveValue("somekind");
-  await expect(page.locator('[data-line-index="1"] [data-setting="fontSizeMm"]')).toHaveValue("23");
-  await expect(page.locator("#backingInput")).toHaveValue("4.4");
+  await expect(page.locator("#presetInput")).toHaveValue(createdPresetId);
   await expect(page.locator("#downloadButton")).toBeEnabled();
   await expect(page.locator("#orderList .order-row").filter({ hasText: "Design 1" })).toContainText("Complete");
 
   await page.locator("#orderList .order-row").filter({ hasText: "Design 2" }).click();
-  await expect(page.locator("#presetInput")).toHaveValue(renamedPresetId);
+  await expect(page.locator("#presetInput")).toHaveValue(createdPresetId);
 
   await setClipboardPayload(page, importPayload);
   await clickQueueAction(page, "Import Clipboard");
   await expect(page.locator("#importStatus")).toContainText("Imported 1 Etsy design from the clipboard.");
-  await expect(page.locator("#presetInput")).not.toHaveValue(renamedPresetId);
+  await expect(page.locator("#presetInput")).not.toHaveValue(createdPresetId);
 
-  await page.locator("#presetInput").selectOption(renamedPresetId);
+  await page.locator("#presetInput").selectOption(createdPresetId);
   await setRangeValue(page, "#backingInput", 1.0);
   await setRangeValue(page, '[data-line-index="1"] [data-setting="fontSizeMm"]', 40);
   await expect(page.locator("#backingInput")).toHaveValue("1");
@@ -359,9 +353,193 @@ test("can create a new preset from order settings and update an existing preset"
 
   await page.getByRole("button", { name: "Assign Preset to Listing" }).click();
   await expect(page.locator("#importStatus")).toContainText("Assigned");
-  await expect(page.locator("#presetInput")).toHaveValue(renamedPresetId);
+  await expect(page.locator("#presetInput")).toHaveValue(createdPresetId);
   await expect(page.locator('[data-line-index="0"] [data-setting="fontId"]')).toHaveValue("skywalk");
+  await expect(page.locator('[data-line-index="0"] [data-setting="fontSizeMm"]')).toHaveValue("21");
   await expect(page.locator('[data-line-index="1"] [data-setting="fontId"]')).toHaveValue("somekind");
   await expect(page.locator('[data-line-index="1"] [data-setting="fontSizeMm"]')).toHaveValue("23");
+  await expect(page.locator("#backingInput")).toHaveValue("5.1");
+});
+
+test("assigning a preset to a completed imported order clears stale batch-export readiness", async ({ page }) => {
+  const nonce = Date.now();
+  const createdPresetName = `Avery RN ${nonce}`;
+  const listingId = `assigned-listing-${nonce}`;
+  const importPayload = JSON.stringify([
+    {
+      orderNumber: `ASSIGN-${nonce}`,
+      listingId,
+      buyerName: "Avery Tester",
+      personalization: "Avery\nRN",
+      listingTitle: "Assigned Listing",
+      quantity: 1,
+    },
+  ]);
+
+  await installPresetRoutes(page);
+  await page.route("**/api/layout-analyze", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify(buildMockAnalysisResponse()),
+    });
+  });
+
+  await page.goto("/");
+
+  await page.getByRole("button", { name: "Add Design" }).click();
+  await page.locator("#textInput").fill("Avery\nRN");
+  await page.locator('[data-line-index="0"] [data-setting="fontId"]').selectOption("skywalk");
+  await page.locator('[data-line-index="1"] [data-setting="fontId"]').selectOption("somekind");
+  await setRangeValue(page, "#backingInput", 4.4);
+  await setRangeValue(page, '[data-line-index="1"] [data-setting="fontSizeMm"]', 23);
+
+  await page.getByRole("button", { name: "Save as New Preset" }).click();
+  await page.locator("#presetDraftName").fill(createdPresetName);
+  await page.getByRole("button", { name: "Save Preset" }).click();
+  let createdPresetId = "";
+  await expect.poll(async () => {
+    createdPresetId = await page.locator("#presetEditorSelect").inputValue();
+    return createdPresetId !== "";
+  }, { timeout: 10000 }).toBe(true);
+  await expect(page.locator("#presetEditorStatus")).toContainText("Saved");
+
+  await page.getByRole("button", { name: "Order Items" }).click();
+  await completeDesign(page, "Design 1");
+
+  await setClipboardPayload(page, importPayload);
+  await clickQueueAction(page, "Import Clipboard");
+  await expect(page.locator("#importStatus")).toContainText("Imported 1 Etsy design from the clipboard.");
+
+  await page.locator("#presetInput").selectOption(createdPresetId);
+  await setRangeValue(page, "#backingInput", 1.1);
+  await setRangeValue(page, '[data-line-index="1"] [data-setting="fontSizeMm"]', 40);
+  await expect(page.locator("#downloadButton")).toBeDisabled();
+
+  await page.locator("#captureButton").click();
+  await expect(page.locator("#downloadButton")).toBeEnabled();
+
+  await page.getByRole("button", { name: "Assign Preset to Listing" }).click();
+  await expect(page.locator("#importStatus")).toContainText("Assigned");
   await expect(page.locator("#backingInput")).toHaveValue("4.4");
+  await expect(page.locator('[data-line-index="1"] [data-setting="fontSizeMm"]')).toHaveValue("23");
+  await expect(page.locator("#downloadButton")).toBeDisabled();
+
+  await page.locator("#orderList .order-row").filter({ hasText: "Design 1" }).click();
+  await openQueueTools(page);
+  await expect(page.getByRole("button", { name: "Export All Designs" })).toBeDisabled();
+});
+
+test("renaming a preset while analysis is running still restores export readiness when analysis finishes", async ({ page }) => {
+  const nonce = Date.now();
+  const createdPresetName = `Jordan RN ${nonce}`;
+  const renamedPresetName = `Jordan RN Updated ${nonce}`;
+
+  await installPresetRoutes(page);
+  const pendingAnalyses = await installDelayedAnalysisRoute(page);
+
+  await page.goto("/");
+
+  await page.getByRole("button", { name: "Add Design" }).click();
+  await page.locator("#textInput").fill("Jordan\nRN");
+  await page.locator('[data-line-index="0"] [data-setting="fontId"]').selectOption("skywalk");
+  await page.locator('[data-line-index="1"] [data-setting="fontId"]').selectOption("somekind");
+  await setRangeValue(page, "#backingInput", 4.4);
+  await setRangeValue(page, '[data-line-index="1"] [data-setting="fontSizeMm"]', 23);
+
+  await page.getByRole("button", { name: "Save as New Preset" }).click();
+  await page.locator("#presetDraftName").fill(createdPresetName);
+  await page.getByRole("button", { name: "Save Preset" }).click();
+  let createdPresetId = "";
+  await expect.poll(async () => {
+    createdPresetId = await page.locator("#presetEditorSelect").inputValue();
+    return createdPresetId !== "";
+  }, { timeout: 10000 }).toBe(true);
+  await expect(page.locator("#presetEditorStatus")).toContainText("Saved");
+
+  await page.getByRole("button", { name: "Order Items" }).click();
+  await page.locator("#presetInput").selectOption(createdPresetId);
+  await page.locator("#captureButton").click();
+
+  await expect.poll(() => pendingAnalyses.length, { timeout: 10000 }).toBe(1);
+  await expect(page.locator("#connectionStatusLabel")).toContainText("Analyzing completed layout...");
+
+  await page.getByRole("button", { name: "Presets" }).click();
+  await page.locator("#presetEditorSelect").selectOption(createdPresetId);
+  await page.locator("#presetDraftName").fill(renamedPresetName);
+  await page.getByRole("button", { name: "Save Preset" }).click();
+  await expect(page.locator("#presetEditorStatus")).toContainText("Saved");
+  await expect(page.locator("#presetEditorSelect")).toHaveValue(createdPresetId);
+
+  const pendingAnalysis = pendingAnalyses.shift();
+  await pendingAnalysis.fulfill();
+
+  await page.getByRole("button", { name: "Order Items" }).click();
+  await expect(page.locator("#presetInput")).toHaveValue(createdPresetId);
+  await expect.poll(async () => page.locator("#downloadButton").isEnabled(), { timeout: 20000 }).toBe(true);
+  await expect(page.locator("#orderList .order-row").filter({ hasText: "Design 1" })).toContainText("Complete");
+});
+
+test("shows assigned listings for a preset and lets operators unassign them", async ({ page }) => {
+  const importPayload = JSON.stringify([
+    {
+      orderNumber: "UNASSIGN-1884223710",
+      listingId: "1884223710",
+      buyerName: "Preset Assignment Tester",
+      personalization: "Morgan\nRN",
+      listingTitle: "Skywalk + Somekind listing with shorter second line",
+      quantity: 1,
+    },
+  ]);
+  const freshImportPayload = JSON.stringify([
+    {
+      orderNumber: "UNASSIGN-1884223710-NEW",
+      listingId: "1884223710",
+      buyerName: "Preset Assignment Tester",
+      personalization: "Morgan\nRN",
+      listingTitle: "Skywalk + Somekind listing with shorter second line",
+      quantity: 1,
+    },
+  ]);
+
+  await installPresetRoutes(page);
+  await page.route("**/api/layout-analyze", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify(buildMockAnalysisResponse()),
+    });
+  });
+  await page.goto("/");
+
+  await setClipboardPayload(page, importPayload);
+  await clickQueueAction(page, "Import Clipboard");
+  await expect(page.locator("#importStatus")).toContainText("Imported 1 Etsy design from the clipboard.");
+  await expect(page.locator("#presetInput")).toHaveValue("preset-c3e8a1d7f520");
+
+  await page.locator("#captureButton").click();
+  await expect(page.locator("#downloadButton")).toBeEnabled();
+
+  await page.getByRole("button", { name: "Presets" }).click();
+  await page.locator("#presetEditorSelect").selectOption("preset-c3e8a1d7f520");
+  await expect(page.locator("#presetEditorStatus")).toContainText("Editing Skywalk, Somekind.");
+  await expect(page.locator("#presetAssignmentsEmptyState")).toBeHidden();
+
+  const assignmentRow = page.locator(".preset-assignment-row").filter({ hasText: "1884223710" });
+  await expect(assignmentRow).toContainText("Skywalk + Somekind listing with shorter second line");
+  await expect(assignmentRow).toContainText("Listing ID 1884223710");
+
+  await assignmentRow.getByRole("button", { name: "Unassign listing 1884223710" }).click();
+  await expect(page.locator("#presetEditorStatus")).toContainText("Unassigned listing 1884223710 from Skywalk, Somekind.");
+  await expect(page.locator(".preset-assignment-row")).toHaveCount(0);
+  await expect(page.locator("#presetAssignmentsEmptyState")).toContainText("No Etsy listings are currently assigned to this preset.");
+
+  await page.getByRole("button", { name: "Order Items" }).click();
+  await expect(page.locator("#presetInput")).not.toHaveValue("preset-c3e8a1d7f520");
+  await expect(page.locator("#downloadButton")).toBeDisabled();
+
+  await setClipboardPayload(page, freshImportPayload);
+  await clickQueueAction(page, "Import Clipboard");
+  await expect(page.locator("#importStatus")).toContainText("Imported 1 Etsy design from the clipboard.");
+  await expect(page.locator("#presetInput")).not.toHaveValue("preset-c3e8a1d7f520");
 });

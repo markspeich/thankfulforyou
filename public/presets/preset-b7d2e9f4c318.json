@@ -1,7 +1,7 @@
 {
   "$schema": "../../docs/schemas/preset.schema.json",
   "schemaVersion": 1,
-  "id": "candlepin-skywalk",
+  "id": "preset-b7d2e9f4c318",
   "name": "Candlepin, Skywalk",
   "description": "Use Candlepin on the first line and Skywalk on the remaining lines.",
   "globalDefaults": {

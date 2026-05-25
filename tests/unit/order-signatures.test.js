@@ -9,7 +9,7 @@ describe("order signatures", () => {
   it("includes lockTextHeight and horizontalScale in the current signature format", () => {
     const signature = buildSettingsSignature({
       text: "Mark\nRN",
-      presetId: "skywalk-somekind",
+      presetId: "preset-c3e8a1d7f520",
       backingMm: 3.1,
       weldExportedDesign: true,
       lines: [
@@ -40,7 +40,7 @@ describe("order signatures", () => {
   it("returns both current and legacy signatures for compatibility", () => {
     const candidates = getSettingsSignatureCandidates({
       text: "Mark",
-      presetId: "all-candlepin",
+      presetId: "preset-a1f4c8e2b601",
       backingMm: 3.1,
       weldExportedDesign: false,
       lines: [

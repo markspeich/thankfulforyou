@@ -445,7 +445,7 @@ test("avoids redundant preview image encodes during a settled slider render", as
 
 test("refines auto-fit against the rendered face ink bounds", async ({ page }) => {
   await page.locator("#textInput").fill("PT\nCyndie");
-  await page.locator("#presetInput").selectOption("skywalk-candlepin");
+  await page.locator("#presetInput").selectOption("preset-d9b4f2a6c731");
 
   const bounds = await measureVisibleTextBounds(page);
 
@@ -1139,7 +1139,7 @@ test("copies layout controls onto another design without copying text", async ({
   const pasteLayoutButton = page.getByRole("button", { name: "Paste Layout" });
 
   await page.locator("#textInput").fill("Savannah\nRN");
-  await page.locator("#presetInput").selectOption("skywalk-candlepin");
+  await page.locator("#presetInput").selectOption("preset-d9b4f2a6c731");
   await page.locator("#backingInput").fill("3.4");
   await page.locator("#weldExportedDesignInput").uncheck();
   await page.locator('.line-control-card[data-line-index="0"] [data-setting="horizontalScale"]').fill("1.27");
@@ -1154,7 +1154,7 @@ test("copies layout controls onto another design without copying text", async ({
 
   await clickQueueAction(page, "Add Design");
   await page.locator("#textInput").fill("Taylor\nDNP\nFNP");
-  await page.locator("#presetInput").selectOption("skywalk-somekind");
+  await page.locator("#presetInput").selectOption("preset-c3e8a1d7f520");
   await page.locator('.line-control-card[data-line-index="2"] [data-setting="fontSizeMm"]').fill("28");
   await page.locator('.line-control-card[data-line-index="2"] [data-setting="horizontalScale"]').fill("1.77");
 
@@ -1176,7 +1176,7 @@ test("copies layout controls onto another design without copying text", async ({
 
   await expectWorkflowAlertSuccess(page, "Pasted layout controls from Design 1 onto Design 2.");
   await expect(page.locator("#textInput")).toHaveValue("Taylor\nDNP\nFNP");
-  await expect(page.locator("#presetInput")).toHaveValue("skywalk-candlepin");
+  await expect(page.locator("#presetInput")).toHaveValue("preset-d9b4f2a6c731");
   await expect(page.locator("#backingInput")).toHaveValue("3.4");
   await expect(page.locator("#weldExportedDesignInput")).not.toBeChecked();
   await expect(page.locator('.line-control-card[data-line-index="0"] [data-setting="fontId"]')).toHaveValue("skywalk");
@@ -1211,7 +1211,7 @@ test("preserves completed export-ready state when a pasted layout is unchanged",
   const pasteLayoutButton = page.getByRole("button", { name: "Paste Layout" });
 
   await page.locator("#textInput").fill("Savannah\nRN");
-  await page.locator("#presetInput").selectOption("skywalk-candlepin");
+  await page.locator("#presetInput").selectOption("preset-d9b4f2a6c731");
   await page.locator("#backingInput").fill("3.4");
   await page.locator("#weldExportedDesignInput").uncheck();
   await page.locator('.line-control-card[data-line-index="0"] [data-setting="horizontalScale"]').fill("1.27");
@@ -1222,7 +1222,7 @@ test("preserves completed export-ready state when a pasted layout is unchanged",
 
   await clickQueueAction(page, "Add Design");
   await page.locator("#textInput").fill("Taylor\nDNP");
-  await page.locator("#presetInput").selectOption("skywalk-candlepin");
+  await page.locator("#presetInput").selectOption("preset-d9b4f2a6c731");
   await page.locator("#backingInput").fill("3.4");
   await page.locator("#weldExportedDesignInput").uncheck();
   await page.locator('.line-control-card[data-line-index="0"] [data-setting="horizontalScale"]').fill("1.27");
@@ -1264,7 +1264,7 @@ test("restores complete and export state when pasted controls return to a previo
   const pasteLayoutButton = page.getByRole("button", { name: "Paste Layout" });
 
   await page.locator("#textInput").fill("Savannah\nRN");
-  await page.locator("#presetInput").selectOption("skywalk-candlepin");
+  await page.locator("#presetInput").selectOption("preset-d9b4f2a6c731");
   await page.locator("#backingInput").fill("3.4");
   await page.locator("#weldExportedDesignInput").uncheck();
   await page.locator('.line-control-card[data-line-index="0"] [data-setting="horizontalScale"]').fill("1.27");
@@ -1275,7 +1275,7 @@ test("restores complete and export state when pasted controls return to a previo
 
   await clickQueueAction(page, "Add Design");
   await page.locator("#textInput").fill("Taylor\nDNP");
-  await page.locator("#presetInput").selectOption("skywalk-candlepin");
+  await page.locator("#presetInput").selectOption("preset-d9b4f2a6c731");
   await page.locator("#backingInput").fill("3.4");
   await page.locator("#weldExportedDesignInput").uncheck();
   await page.locator('.line-control-card[data-line-index="0"] [data-setting="horizontalScale"]').fill("1.27");
@@ -1315,14 +1315,14 @@ test("warns when a pasted layout cannot include extra source lines", async ({ pa
   const pasteLayoutButton = page.getByRole("button", { name: "Paste Layout" });
 
   await page.locator("#textInput").fill("Taylor\nDNP\nFNP");
-  await page.locator("#presetInput").selectOption("skywalk-somekind");
+  await page.locator("#presetInput").selectOption("preset-c3e8a1d7f520");
   await page.locator('.line-control-card[data-line-index="2"] [data-setting="fontSizeMm"]').fill("28");
   await page.locator('.line-control-card[data-line-index="2"] [data-setting="horizontalScale"]').fill("1.77");
   await copyLayoutButton.click();
 
   await clickQueueAction(page, "Add Design");
   await page.locator("#textInput").fill("Savannah\nRN");
-  await page.locator("#presetInput").selectOption("all-candlepin");
+  await page.locator("#presetInput").selectOption("preset-a1f4c8e2b601");
   await page.locator('.line-control-card[data-line-index="0"] [data-setting="horizontalScale"]').fill("1.05");
   await page.locator('.line-control-card[data-line-index="1"] [data-setting="fontSizeMm"]').fill("31");
   await expect(pasteLayoutButton).toBeEnabled();
@@ -1335,7 +1335,7 @@ test("warns when a pasted layout cannot include extra source lines", async ({ pa
     "Applied 2 of 3 source lines",
   );
   await expect(page.locator("#textInput")).toHaveValue("Savannah\nRN");
-  await expect(page.locator("#presetInput")).toHaveValue("skywalk-somekind");
+  await expect(page.locator("#presetInput")).toHaveValue("preset-c3e8a1d7f520");
   await expect(page.locator('.line-control-card[data-line-index="0"] [data-setting="fontId"]')).toHaveValue("skywalk");
   await expect(page.locator('.line-control-card[data-line-index="1"] [data-setting="fontId"]')).toHaveValue("somekind");
   await expect(completeButton(page)).toBeEnabled();

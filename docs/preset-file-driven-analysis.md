@@ -2,7 +2,7 @@
 
 ## What The Sample Covers
 
-The sample file in `docs/examples/preset.skywalk-somekind.sample.json` represents the current `Skywalk, Somekind` preset as data instead of code.
+The sample file in `docs/examples/preset.preset-c3e8a1d7f520.sample.json` represents the current `Skywalk, Somekind` preset as data instead of code.
 
 It captures the parts that are currently spread across `src/presets.js` and `src/app.js`:
 

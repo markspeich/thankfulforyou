@@ -1,22 +1,22 @@
 {
   "schemaVersion": 1,
-  "defaultPresetId": "all-candlepin",
+  "defaultPresetId": "preset-a1f4c8e2b601",
   "presets": [
     {
-      "id": "all-candlepin",
-      "path": "public/presets/all-candlepin.json"
+      "id": "preset-a1f4c8e2b601",
+      "path": "public/presets/preset-a1f4c8e2b601.json"
     },
     {
-      "id": "candlepin-skywalk",
-      "path": "public/presets/candlepin-skywalk.json"
+      "id": "preset-b7d2e9f4c318",
+      "path": "public/presets/preset-b7d2e9f4c318.json"
     },
     {
-      "id": "skywalk-somekind",
-      "path": "public/presets/skywalk-somekind.json"
+      "id": "preset-c3e8a1d7f520",
+      "path": "public/presets/preset-c3e8a1d7f520.json"
     },
     {
-      "id": "skywalk-candlepin",
-      "path": "public/presets/skywalk-candlepin.json"
+      "id": "preset-d9b4f2a6c731",
+      "path": "public/presets/preset-d9b4f2a6c731.json"
     }
   ]
 }

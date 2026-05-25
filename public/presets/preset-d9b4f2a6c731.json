@@ -1,9 +1,9 @@
 {
   "$schema": "../../docs/schemas/preset.schema.json",
   "schemaVersion": 1,
-  "id": "skywalk-somekind",
-  "name": "Skywalk, Somekind",
-  "description": "Use Skywalk on the first line and Somekind on the remaining lines.",
+  "id": "preset-d9b4f2a6c731",
+  "name": "Skywalk, Candlepin",
+  "description": "Use Skywalk on the first line and Candlepin on the remaining lines.",
   "globalDefaults": {
     "backingMm": 2.2,
     "weldExportedDesign": true
@@ -24,8 +24,7 @@
         "kind": "first"
       },
       "settings": {
-        "fontId": "skywalk",
-        "fontSizeMm": 18
+        "fontId": "skywalk"
       }
     },
     {
@@ -33,29 +32,19 @@
         "kind": "remaining"
       },
       "settings": {
-        "fontId": "somekind"
-      }
-    },
-    {
-      "match": {
-        "kind": "index",
-        "lineIndex": 1
-      },
-      "settings": {
-        "fontSizeMm": 23,
-        "lockTextHeight": true
+        "fontId": "candlepin"
       }
     }
   ],
   "listingAssignments": [
     {
-      "listingId": "1884223710",
-      "name": "Skywalk + Somekind listing with shorter second line",
+      "listingId": "4465975709",
+      "name": "Skywalk + Candlepin listing with shorter second line",
       "lineOverrides": [
         {
           "lineIndex": 1,
           "settings": {
-            "fontSizeMm": 23
+            "fontSizeMm": 21
           }
         }
       ]

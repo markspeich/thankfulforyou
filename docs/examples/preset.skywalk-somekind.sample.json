@@ -1,7 +1,7 @@
 {
   "$schema": "../schemas/preset.schema.json",
   "schemaVersion": 1,
-  "id": "skywalk-somekind",
+  "id": "preset-c3e8a1d7f520",
   "name": "Skywalk, Somekind",
   "description": "Use Skywalk on the first line and Somekind on the remaining lines.",
   "globalDefaults": {

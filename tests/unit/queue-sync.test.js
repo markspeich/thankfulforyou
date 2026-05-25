@@ -19,7 +19,7 @@ describe("queue sync helpers", () => {
           status: "in-progress",
           settings: {
             text: "Mark",
-            presetId: "all-candlepin",
+            presetId: "preset-a1f4c8e2b601",
             backingMm: 2.2,
             weldExportedDesign: true,
             lines: [],

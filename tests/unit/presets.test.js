@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   buildPresetLines,
@@ -6,8 +6,10 @@ import {
   getPresetDefinitionForEditor,
   getPresetGlobalDefaults,
   getPresetOptions,
+  getPresetSnapshot,
   getPresetIdForListingId,
   replacePresetDefinitionForTests,
+  savePresetDefinitionLocally,
   setPresetRegistryForTests,
 } from "../../src/presets.js";
 import { buildPresetIdFromName } from "../../src/preset-authoring.js";
@@ -28,22 +30,26 @@ describe("presets", () => {
     setPresetRegistryForTests();
   });
 
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it("exposes preset options from the active registry", () => {
-    expect(getDefaultPresetId()).toBe("all-candlepin");
+    expect(getDefaultPresetId()).toBe("preset-a1f4c8e2b601");
     expect(getPresetOptions()).toEqual([
-      { id: "all-candlepin", label: "All Candlepin" },
-      { id: "candlepin-skywalk", label: "Candlepin, Skywalk" },
-      { id: "skywalk-somekind", label: "Skywalk, Somekind" },
-      { id: "skywalk-candlepin", label: "Skywalk, Candlepin" },
+      { id: "preset-a1f4c8e2b601", label: "All Candlepin" },
+      { id: "preset-b7d2e9f4c318", label: "Candlepin, Skywalk" },
+      { id: "preset-c3e8a1d7f520", label: "Skywalk, Somekind" },
+      { id: "preset-d9b4f2a6c731", label: "Skywalk, Candlepin" },
     ]);
   });
 
-  it("keeps preset authoring ids aligned with the operator-facing preset names", () => {
+  it("keeps the authoring slug helper stable for name-based derivations", () => {
     expect(buildPresetIdFromName("Skywalk, Somekind")).toBe("skywalk-somekind");
   });
 
-  it("maps every line to Candlepin for the all-candlepin preset", () => {
-    const lines = buildPresetLines("all-candlepin", 4, createDefaultLineSettings);
+  it("maps every line to Candlepin for the preset-a1f4c8e2b601 preset", () => {
+    const lines = buildPresetLines("preset-a1f4c8e2b601", 4, createDefaultLineSettings);
 
     expect(lines.map((line) => line.fontId)).toEqual([
       "candlepin",
@@ -54,7 +60,7 @@ describe("presets", () => {
   });
 
   it("maps the first line to Skywalk and remaining lines to Somekind", () => {
-    const lines = buildPresetLines("skywalk-somekind", 5, createDefaultLineSettings);
+    const lines = buildPresetLines("preset-c3e8a1d7f520", 5, createDefaultLineSettings);
 
     expect(lines.map((line) => line.fontId)).toEqual([
       "skywalk",
@@ -66,7 +72,7 @@ describe("presets", () => {
   });
 
   it("maps the first line to Skywalk and remaining lines to Candlepin", () => {
-    const lines = buildPresetLines("skywalk-candlepin", 3, createDefaultLineSettings);
+    const lines = buildPresetLines("preset-d9b4f2a6c731", 3, createDefaultLineSettings);
 
     expect(lines.map((line) => line.fontId)).toEqual([
       "skywalk",
@@ -76,7 +82,7 @@ describe("presets", () => {
   });
 
   it("maps the first line to Candlepin and remaining lines to Skywalk", () => {
-    const lines = buildPresetLines("candlepin-skywalk", 4, createDefaultLineSettings);
+    const lines = buildPresetLines("preset-b7d2e9f4c318", 4, createDefaultLineSettings);
 
     expect(lines.map((line) => line.fontId)).toEqual([
       "candlepin",
@@ -87,7 +93,7 @@ describe("presets", () => {
   });
 
   it("resets every generated line to the preset defaults before assigning rule overrides", () => {
-    const lines = buildPresetLines("skywalk-somekind", 3, createDefaultLineSettings);
+    const lines = buildPresetLines("preset-c3e8a1d7f520", 3, createDefaultLineSettings);
 
     expect(lines).toEqual([
       {
@@ -124,7 +130,7 @@ describe("presets", () => {
   });
 
   it("includes lockTextHeight in generated line defaults", () => {
-    const lines = buildPresetLines("all-candlepin", 2, createDefaultLineSettings);
+    const lines = buildPresetLines("preset-a1f4c8e2b601", 2, createDefaultLineSettings);
 
     expect(lines).toEqual([
       {
@@ -151,7 +157,7 @@ describe("presets", () => {
   });
 
   it("applies the listing-specific line 2 height override for listing 1884223710", () => {
-    const lines = buildPresetLines("skywalk-somekind", 4, createDefaultLineSettings, {
+    const lines = buildPresetLines("preset-c3e8a1d7f520", 4, createDefaultLineSettings, {
       listingId: "1884223710",
     });
 
@@ -188,7 +194,7 @@ describe("presets", () => {
   });
 
   it("applies the listing-specific line 2 height override for listing 4465975709", () => {
-    const lines = buildPresetLines("skywalk-candlepin", 4, createDefaultLineSettings, {
+    const lines = buildPresetLines("preset-d9b4f2a6c731", 4, createDefaultLineSettings, {
       listingId: "4465975709",
     });
 
@@ -225,7 +231,7 @@ describe("presets", () => {
   });
 
   it("applies the listing-specific line 1 height override for listing 4439916732", () => {
-    const lines = buildPresetLines("candlepin-skywalk", 4, createDefaultLineSettings, {
+    const lines = buildPresetLines("preset-b7d2e9f4c318", 4, createDefaultLineSettings, {
       listingId: "4439916732",
     });
 
@@ -317,11 +323,11 @@ describe("presets", () => {
 
   it("can expose a full preset definition for authoring and replace it in the registry", async () => {
     setPresetRegistryForTests(
-      { defaultPresetId: "all-candlepin" },
+      { defaultPresetId: "preset-a1f4c8e2b601" },
       [
         {
           schemaVersion: 1,
-          id: "all-candlepin",
+          id: "preset-a1f4c8e2b601",
           name: "All Candlepin",
           lineDefaults: { fontId: "candlepin" },
           lineRules: [{ match: { kind: "all" }, settings: { fontId: "candlepin" } }],
@@ -330,18 +336,18 @@ describe("presets", () => {
       ],
     );
 
-    expect(getPresetDefinitionForEditor("all-candlepin")?.name).toBe("All Candlepin");
+    expect(getPresetDefinitionForEditor("preset-a1f4c8e2b601")?.name).toBe("All Candlepin");
 
     replacePresetDefinitionForTests({
       schemaVersion: 1,
-      id: "all-candlepin",
+      id: "preset-a1f4c8e2b601",
       name: "All Candlepin Updated",
       lineDefaults: { fontId: "candlepin" },
       lineRules: [{ match: { kind: "all" }, settings: { fontId: "candlepin" } }],
       listingAssignments: [],
     });
 
-    expect(getPresetDefinitionForEditor("all-candlepin")?.name).toBe("All Candlepin Updated");
+    expect(getPresetDefinitionForEditor("preset-a1f4c8e2b601")?.name).toBe("All Candlepin Updated");
   });
 
   it("returns null for unknown preset ids in the editor accessor", () => {
@@ -349,16 +355,45 @@ describe("presets", () => {
   });
 
   it("returns preset-level global defaults", () => {
-    expect(getPresetGlobalDefaults("skywalk-somekind")).toEqual({
+    expect(getPresetGlobalDefaults("preset-c3e8a1d7f520")).toEqual({
       backingMm: 2.2,
       weldExportedDesign: true,
     });
   });
 
   it("maps listing ids to preset ids from preset data", () => {
-    expect(getPresetIdForListingId("1884223710")).toBe("skywalk-somekind");
-    expect(getPresetIdForListingId("4439916732")).toBe("candlepin-skywalk");
-    expect(getPresetIdForListingId("4465975709")).toBe("skywalk-candlepin");
-    expect(getPresetIdForListingId("unknown")).toBe("all-candlepin");
+    expect(getPresetIdForListingId("1884223710")).toBe("preset-c3e8a1d7f520");
+    expect(getPresetIdForListingId("4439916732")).toBe("preset-b7d2e9f4c318");
+    expect(getPresetIdForListingId("4465975709")).toBe("preset-d9b4f2a6c731");
+    expect(getPresetIdForListingId("unknown")).toBe("preset-a1f4c8e2b601");
+  });
+
+  it("can save a preset definition locally and expose the full snapshot for remote sync", () => {
+    const localStorageMock = {
+      setItem: vi.fn(),
+    };
+    vi.stubGlobal("localStorage", localStorageMock);
+
+    const result = savePresetDefinitionLocally({
+      previousId: "preset-a1f4c8e2b601",
+      preset: {
+        schemaVersion: 1,
+        id: "preset-a1f4c8e2b601",
+        name: "All Candlepin Updated",
+        globalDefaults: {
+          backingMm: 3.4,
+          weldExportedDesign: false,
+        },
+        lineDefaults: {
+          fontId: "candlepin",
+        },
+        lineRules: [{ match: { kind: "all" }, settings: { fontId: "candlepin" } }],
+        listingAssignments: [],
+      },
+    });
+
+    expect(result.snapshot).toEqual(getPresetSnapshot());
+    expect(getPresetDefinitionForEditor("preset-a1f4c8e2b601")?.name).toBe("All Candlepin Updated");
+    expect(localStorageMock.setItem).toHaveBeenCalledTimes(1);
   });
 });

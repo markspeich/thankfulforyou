@@ -16,12 +16,12 @@ To add a new preset today:
 ## Files Involved
 
 - Schema: [docs/schemas/preset.schema.json](/C:/Users/Mark/CodexProjects/thankfulforyou/docs/schemas/preset.schema.json:1)
-- Sample: [docs/examples/preset.skywalk-somekind.sample.json](/C:/Users/Mark/CodexProjects/thankfulforyou/docs/examples/preset.skywalk-somekind.sample.json:1)
+- Sample: [docs/examples/preset.preset-c3e8a1d7f520.sample.json](/C:/Users/Mark/CodexProjects/thankfulforyou/docs/examples/preset.preset-c3e8a1d7f520.sample.json:1)
 - Runtime manifest: [public/presets/manifest.json](/C:/Users/Mark/CodexProjects/thankfulforyou/public/presets/manifest.json:1)
 - Current runtime presets:
-  [all-candlepin.json](/C:/Users/Mark/CodexProjects/thankfulforyou/public/presets/all-candlepin.json:1),
-  [skywalk-somekind.json](/C:/Users/Mark/CodexProjects/thankfulforyou/public/presets/skywalk-somekind.json:1),
-  [skywalk-candlepin.json](/C:/Users/Mark/CodexProjects/thankfulforyou/public/presets/skywalk-candlepin.json:1)
+  [preset-a1f4c8e2b601.json](/C:/Users/Mark/CodexProjects/thankfulforyou/public/presets/preset-a1f4c8e2b601.json:1),
+  [preset-c3e8a1d7f520.json](/C:/Users/Mark/CodexProjects/thankfulforyou/public/presets/preset-c3e8a1d7f520.json:1),
+  [preset-d9b4f2a6c731.json](/C:/Users/Mark/CodexProjects/thankfulforyou/public/presets/preset-d9b4f2a6c731.json:1)
 
 ## Preset File Shape
 
@@ -84,8 +84,8 @@ Start from the closest existing file in [public/presets](/C:/Users/Mark/CodexPro
 
 Good starting points:
 
-- `all-candlepin.json` for a single-font preset
-- `skywalk-somekind.json` for a multi-font preset with listing overrides
+- `preset-a1f4c8e2b601.json` for a single-font preset
+- `preset-c3e8a1d7f520.json` for a multi-font preset with listing overrides
 
 ### 2. Update The Preset Fields
 
@@ -123,7 +123,7 @@ Check all of the following in the browser:
 
 ## Recommended Conventions
 
-- Use lowercase kebab-case for `id`, such as `skywalk-somekind-wide`.
+- Use lowercase kebab-case for `id`, such as `preset-c3e8a1d7f520-wide`.
 - Treat `name` as the exact operator-facing label.
 - Put broad defaults in `lineDefaults`.
 - Use `lineRules` only for differences from the base defaults.

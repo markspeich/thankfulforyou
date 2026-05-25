@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { savePresetDefinition } from "../../src/preset-api.js";
+import { fetchRemotePresetSnapshot, savePresetSnapshot } from "../../src/preset-api.js";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -8,11 +8,16 @@ afterEach(() => {
 });
 
 describe("preset api client", () => {
-  it("uses post for new presets, put for updates, and surfaces server errors", async () => {
+  it("loads remote preset snapshots, saves them with put, and surfaces server errors", async () => {
+    const snapshot = {
+      version: 1,
+      defaultPresetId: "preset-a1f4c8e2b601",
+      presets: [{ id: "preset-a1f4c8e2b601", name: "All Candlepin" }],
+    };
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({
         ok: true,
-        json: async () => ({ ok: true }),
+        json: async () => ({ snapshot }),
       })
       .mockResolvedValueOnce({
         ok: true,
@@ -24,19 +29,12 @@ describe("preset api client", () => {
       });
     vi.stubGlobal("fetch", fetchMock);
 
-    await savePresetDefinition({
-      preset: { id: "new-preset", name: "New Preset" },
-    });
-    await savePresetDefinition({
-      preset: { id: "renamed-preset", name: "Renamed Preset" },
-      previousId: "old-preset",
-    });
+    await expect(fetchRemotePresetSnapshot()).resolves.toEqual(snapshot);
+    await savePresetSnapshot(snapshot);
 
-    await expect(savePresetDefinition({
-      preset: { id: "bad-preset", name: "Bad Preset" },
-    })).rejects.toThrow("Server said no.");
+    await expect(savePresetSnapshot(snapshot)).rejects.toThrow("Server said no.");
 
-    expect(fetchMock.mock.calls[0][1].method).toBe("POST");
+    expect(fetchMock.mock.calls[0][1].headers.Accept).toContain("application/json");
     expect(fetchMock.mock.calls[1][1].method).toBe("PUT");
   });
 });

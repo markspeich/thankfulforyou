@@ -1,7 +1,7 @@
 const FALLBACK_PRESET_DEFINITIONS = [
   {
     schemaVersion: 1,
-    id: "all-candlepin",
+    id: "preset-a1f4c8e2b601",
     name: "All Candlepin",
     globalDefaults: {
       backingMm: 2.2,
@@ -31,7 +31,7 @@ const FALLBACK_PRESET_DEFINITIONS = [
   },
   {
     schemaVersion: 1,
-    id: "candlepin-skywalk",
+    id: "preset-b7d2e9f4c318",
     name: "Candlepin, Skywalk",
     globalDefaults: {
       backingMm: 2.2,
@@ -82,7 +82,7 @@ const FALLBACK_PRESET_DEFINITIONS = [
   },
   {
     schemaVersion: 1,
-    id: "skywalk-somekind",
+    id: "preset-c3e8a1d7f520",
     name: "Skywalk, Somekind",
     globalDefaults: {
       backingMm: 2.2,
@@ -144,7 +144,7 @@ const FALLBACK_PRESET_DEFINITIONS = [
   },
   {
     schemaVersion: 1,
-    id: "skywalk-candlepin",
+    id: "preset-d9b4f2a6c731",
     name: "Skywalk, Candlepin",
     globalDefaults: {
       backingMm: 2.2,
@@ -196,10 +196,12 @@ const FALLBACK_PRESET_DEFINITIONS = [
 ];
 
 const FALLBACK_MANIFEST = {
-  defaultPresetId: "all-candlepin",
+  defaultPresetId: "preset-a1f4c8e2b601",
 };
 
 const PRESET_MANIFEST_URL = "public/presets/manifest.json";
+const PRESET_STORAGE_KEY = "thankfulforyou.presetSnapshot";
+const PRESET_SNAPSHOT_VERSION = 1;
 const ALLOWED_LINE_SETTINGS = [
   "fontId",
   "bridgeMm",
@@ -287,7 +289,7 @@ function createPresetRegistry(manifest = {}, presetDefinitions = []) {
   }));
   const defaultPresetId = presetById.has(manifest.defaultPresetId)
     ? manifest.defaultPresetId
-    : normalizedDefinitions[0]?.id || "all-candlepin";
+    : normalizedDefinitions[0]?.id || "preset-a1f4c8e2b601";
   const listingAssignmentMap = new Map();
 
   normalizedDefinitions.forEach((definition) => {
@@ -305,6 +307,32 @@ function createPresetRegistry(manifest = {}, presetDefinitions = []) {
     presetById,
     listingAssignmentMap,
   };
+}
+
+function buildPresetSnapshot(manifest = {}, presetDefinitions = []) {
+  const normalizedDefinitions = presetDefinitions
+    .map((definition) => normalizePresetDefinition(definition))
+    .filter((definition) => definition.id && definition.name);
+  const defaultPresetId = normalizedDefinitions.some((definition) => definition.id === manifest.defaultPresetId)
+    ? manifest.defaultPresetId
+    : normalizedDefinitions[0]?.id || "preset-a1f4c8e2b601";
+
+  return {
+    version: PRESET_SNAPSHOT_VERSION,
+    defaultPresetId,
+    presets: normalizedDefinitions,
+  };
+}
+
+function createPresetRegistryFromSnapshot(snapshot = null) {
+  if (!snapshot || snapshot.version !== PRESET_SNAPSHOT_VERSION || !Array.isArray(snapshot.presets)) {
+    return null;
+  }
+
+  return createPresetRegistry(
+    { defaultPresetId: snapshot.defaultPresetId },
+    snapshot.presets,
+  );
 }
 
 function getPresetDefinition(presetId) {
@@ -338,30 +366,90 @@ async function loadJson(url) {
   return response.json();
 }
 
-export async function loadPresetRegistry(manifestUrl = PRESET_MANIFEST_URL) {
+function readPersistedPresetSnapshot() {
+  if (typeof localStorage === "undefined") {
+    return null;
+  }
+
   try {
-    const manifest = await loadJson(manifestUrl);
-    const presetEntries = Array.isArray(manifest?.presets) ? manifest.presets : [];
-    const presetDefinitions = await Promise.all(
-      presetEntries.map(async (entry) => {
-        if (entry && typeof entry === "object" && typeof entry.path === "string") {
-          const definition = await loadJson(entry.path);
-          if (typeof entry.id === "string" && entry.id.trim() && definition.id !== entry.id) {
-            throw new Error(`Preset id mismatch for ${entry.path}`);
-          }
-          return definition;
+    const raw = localStorage.getItem(PRESET_STORAGE_KEY);
+    if (!raw) {
+      return null;
+    }
+
+    const parsed = JSON.parse(raw);
+    return parsed && parsed.version === PRESET_SNAPSHOT_VERSION && Array.isArray(parsed.presets)
+      ? parsed
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function persistPresetSnapshot(snapshot) {
+  if (typeof localStorage === "undefined") {
+    return;
+  }
+
+  try {
+    localStorage.setItem(PRESET_STORAGE_KEY, JSON.stringify(snapshot));
+  } catch {
+    // Ignore local storage failures and continue with the in-memory registry.
+  }
+}
+
+async function loadBundledPresetSnapshot(manifestUrl = PRESET_MANIFEST_URL) {
+  const manifest = await loadJson(manifestUrl);
+  const presetEntries = Array.isArray(manifest?.presets) ? manifest.presets : [];
+  const presetDefinitions = await Promise.all(
+    presetEntries.map(async (entry) => {
+      if (entry && typeof entry === "object" && typeof entry.path === "string") {
+        const definition = await loadJson(entry.path);
+        if (typeof entry.id === "string" && entry.id.trim() && definition.id !== entry.id) {
+          throw new Error(`Preset id mismatch for ${entry.path}`);
         }
+        return definition;
+      }
 
-        return entry;
-      }),
-    );
+      return entry;
+    }),
+  );
 
-    const nextRegistry = createPresetRegistry(manifest, presetDefinitions);
-    if (!nextRegistry.options.length) {
+  return buildPresetSnapshot(manifest, presetDefinitions);
+}
+
+export async function loadPresetRegistry(manifestUrl = PRESET_MANIFEST_URL) {
+  const persistedSnapshot = readPersistedPresetSnapshot();
+  const persistedRegistry = createPresetRegistryFromSnapshot(persistedSnapshot);
+
+  if (persistedRegistry?.options.length) {
+    presetRegistry = persistedRegistry;
+    return presetRegistry;
+  }
+
+  try {
+    const { fetchRemotePresetSnapshot } = await import("./preset-api.js");
+    const remoteSnapshot = await fetchRemotePresetSnapshot();
+    const remoteRegistry = createPresetRegistryFromSnapshot(remoteSnapshot);
+
+    if (remoteRegistry?.options.length) {
+      presetRegistry = remoteRegistry;
+      persistPresetSnapshot(remoteSnapshot);
+      return presetRegistry;
+    }
+  } catch (error) {
+    console.warn("Unable to load remote preset snapshot. Falling back to bundled presets.", error);
+  }
+
+  try {
+    const bundledSnapshot = await loadBundledPresetSnapshot(manifestUrl);
+    const bundledRegistry = createPresetRegistryFromSnapshot(bundledSnapshot);
+
+    if (!bundledRegistry?.options.length) {
       throw new Error("No preset definitions were loaded");
     }
 
-    presetRegistry = nextRegistry;
+    presetRegistry = bundledRegistry;
   } catch (error) {
     console.warn("Falling back to built-in preset registry.", error);
   }
@@ -465,8 +553,52 @@ export function replacePresetDefinitionForTests(definition) {
   presetRegistry = createPresetRegistry({ defaultPresetId: presetRegistry.defaultPresetId }, definitions);
 }
 
+export function getPresetSnapshot() {
+  return buildPresetSnapshot(
+    { defaultPresetId: presetRegistry.defaultPresetId },
+    [...presetRegistry.presetById.values()],
+  );
+}
+
+export function savePresetDefinitionLocally({ preset, previousId = null }) {
+  const normalizedPreset = normalizePresetDefinition(preset);
+  const lookupId = typeof previousId === "string" && previousId.trim()
+    ? previousId.trim()
+    : normalizedPreset.id;
+  const definitions = [...presetRegistry.presetById.values()];
+  const existingIndex = definitions.findIndex((definition) => definition.id === lookupId);
+
+  if (existingIndex >= 0) {
+    definitions[existingIndex] = normalizedPreset;
+  } else {
+    definitions.push(normalizedPreset);
+  }
+
+  const nextDefaultPresetId = presetRegistry.defaultPresetId === lookupId
+    ? normalizedPreset.id
+    : presetRegistry.defaultPresetId;
+  const snapshot = buildPresetSnapshot(
+    { defaultPresetId: nextDefaultPresetId },
+    definitions,
+  );
+  const nextRegistry = createPresetRegistryFromSnapshot(snapshot);
+
+  if (!nextRegistry?.options.length) {
+    throw new Error("No preset definitions were loaded");
+  }
+
+  presetRegistry = nextRegistry;
+  persistPresetSnapshot(snapshot);
+
+  return {
+    preset: normalizedPreset,
+    snapshot,
+  };
+}
+
 export {
   buildPresetIdFromName,
   inferPresetDefinitionFromSettings,
+  removeListingAssignment,
   upsertListingAssignment,
 } from "./preset-authoring.js";

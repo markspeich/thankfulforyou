@@ -15,7 +15,7 @@ async function createPresetWorkspace(manifest = null) {
     join(presetsDir, "manifest.json"),
     `${JSON.stringify(manifest || {
       schemaVersion: 1,
-      defaultPresetId: "all-candlepin",
+      defaultPresetId: "preset-a1f4c8e2b601",
       presets: [],
     }, null, 2)}\n`,
     "utf8",
@@ -134,10 +134,10 @@ describe("preset persistence api", () => {
   it("rejects post requests when the preset id already exists", async () => {
     const { root } = await createPresetWorkspace({
       schemaVersion: 1,
-      defaultPresetId: "all-candlepin",
-      presets: [{ id: "all-candlepin", path: "public/presets/all-candlepin.json" }],
+      defaultPresetId: "preset-a1f4c8e2b601",
+      presets: [{ id: "preset-a1f4c8e2b601", path: "public/presets/preset-a1f4c8e2b601.json" }],
     });
-    await writeFile(join(root, "public", "presets", "all-candlepin.json"), "{\n  \"id\": \"all-candlepin\"\n}\n", "utf8");
+    await writeFile(join(root, "public", "presets", "preset-a1f4c8e2b601.json"), "{\n  \"id\": \"preset-a1f4c8e2b601\"\n}\n", "utf8");
     process.chdir(root);
     const handler = await loadHandler();
     const response = createResponseRecorder();
@@ -147,7 +147,7 @@ describe("preset persistence api", () => {
       body: {
         preset: {
           schemaVersion: 1,
-          id: "all-candlepin",
+          id: "preset-a1f4c8e2b601",
           name: "All Candlepin",
           lineDefaults: { fontId: "candlepin" },
           lineRules: [{ match: { kind: "all" }, settings: { fontId: "candlepin" } }],
@@ -268,7 +268,7 @@ describe("preset persistence api", () => {
     };
     const secondaryPreset = {
       schemaVersion: 1,
-      id: "all-candlepin",
+      id: "preset-a1f4c8e2b601",
       name: "All Candlepin",
       lineDefaults: { fontId: "candlepin" },
       lineRules: [{ match: { kind: "all" }, settings: { fontId: "candlepin" } }],
@@ -278,7 +278,7 @@ describe("preset persistence api", () => {
       schemaVersion: 1,
       defaultPresetId: "skywalk-rn",
       presets: [
-        { id: "all-candlepin", path: "public/presets/all-candlepin.json" },
+        { id: "preset-a1f4c8e2b601", path: "public/presets/preset-a1f4c8e2b601.json" },
         { id: "skywalk-rn", path: "public/presets/skywalk-rn.json" },
       ],
     });
@@ -305,7 +305,7 @@ describe("preset persistence api", () => {
     const manifest = JSON.parse(await readFile(join(presetsDir, "manifest.json"), "utf8"));
     expect(manifest.defaultPresetId).toBe("skywalk-rn-renamed");
     expect(manifest.presets).toEqual([
-      { id: "all-candlepin", path: "public/presets/all-candlepin.json" },
+      { id: "preset-a1f4c8e2b601", path: "public/presets/preset-a1f4c8e2b601.json" },
       { id: "skywalk-rn-renamed", path: "public/presets/skywalk-rn-renamed.json" },
     ]);
   });
@@ -316,7 +316,7 @@ describe("preset persistence api", () => {
       defaultPresetId: "skywalk-rn",
       presets: [
         { id: "skywalk-rn", path: "public/presets/skywalk-rn.json" },
-        { id: "all-candlepin", path: "public/presets/all-candlepin.json" },
+        { id: "preset-a1f4c8e2b601", path: "public/presets/preset-a1f4c8e2b601.json" },
       ],
     });
     await writePresetFile(root, {
@@ -329,7 +329,7 @@ describe("preset persistence api", () => {
     });
     await writePresetFile(root, {
       schemaVersion: 1,
-      id: "all-candlepin",
+      id: "preset-a1f4c8e2b601",
       name: "All Candlepin",
       lineDefaults: { fontId: "candlepin" },
       lineRules: [{ match: { kind: "all" }, settings: { fontId: "candlepin" } }],
@@ -345,7 +345,7 @@ describe("preset persistence api", () => {
         previousId: "skywalk-rn",
         preset: {
           schemaVersion: 1,
-          id: "all-candlepin",
+          id: "preset-a1f4c8e2b601",
           name: "Collision",
           lineDefaults: { fontId: "skywalk" },
           lineRules: [{ match: { kind: "all" }, settings: { fontId: "skywalk" } }],

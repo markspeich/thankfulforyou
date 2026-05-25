@@ -1,4 +1,5 @@
 import { createReadStream, existsSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { extname, join, normalize } from "node:path";
 import { createServer } from "node:http";
@@ -23,6 +24,7 @@ const contentTypes = {
   ".ttf": "font/ttf",
 };
 const queueSnapshots = new Map();
+const presetSnapshots = new Map();
 
 function sendJson(response, statusCode, payload) {
   response.writeHead(statusCode, { "Content-Type": "application/json; charset=utf-8" });
@@ -76,6 +78,22 @@ function resolvePath(url) {
   return normalized;
 }
 
+async function loadBundledPresetSnapshot() {
+  const manifest = JSON.parse(await readFile(join(root, "public", "presets", "manifest.json"), "utf8"));
+  const presetDefinitions = await Promise.all(
+    (manifest.presets || []).map(async (entry) => {
+      const presetPath = join(root, entry.path);
+      return JSON.parse(await readFile(presetPath, "utf8"));
+    }),
+  );
+
+  return {
+    version: 1,
+    defaultPresetId: manifest.defaultPresetId,
+    presets: presetDefinitions,
+  };
+}
+
 const server = createServer((request, response) => {
   const requestUrl = new URL(request.url || "/", `http://localhost:${port}`);
 
@@ -120,6 +138,55 @@ const server = createServer((request, response) => {
         sendJson(response, 200, {
           workspaceKey: payload.workspaceKey,
           snapshot: payload.snapshot ?? null,
+        });
+      });
+      return;
+    }
+
+    sendJson(response, 405, { error: "Method not allowed." });
+    return;
+  }
+
+  if (requestUrl.pathname === "/api/preset-snapshot") {
+    const workspaceKey = requestUrl.searchParams.get("workspaceKey") || "primary";
+
+    if (request.method === "GET") {
+      const snapshot = presetSnapshots.get(workspaceKey);
+      if (!snapshot) {
+        sendJson(response, 404, { error: "Preset snapshot not found." });
+        return;
+      }
+
+      sendJson(response, 200, { workspaceKey, snapshot });
+      return;
+    }
+
+    if (request.method === "PUT") {
+      readRequestBody(request).then((body) => {
+        let payload = null;
+
+        try {
+          payload = JSON.parse(body);
+        } catch {
+          sendJson(response, 400, { error: "Preset snapshot payload must be valid JSON." });
+          return;
+        }
+
+        if (
+          !payload
+          || typeof payload !== "object"
+          || typeof payload.workspaceKey !== "string"
+          || !payload.snapshot
+          || typeof payload.snapshot !== "object"
+        ) {
+          sendJson(response, 400, { error: "Preset snapshot payload must include a workspaceKey and snapshot." });
+          return;
+        }
+
+        presetSnapshots.set(payload.workspaceKey, payload.snapshot);
+        sendJson(response, 200, {
+          workspaceKey: payload.workspaceKey,
+          snapshot: payload.snapshot,
         });
       });
       return;
@@ -209,6 +276,12 @@ const server = createServer((request, response) => {
   createReadStream(filePath).pipe(response);
 });
 
-server.listen(port, () => {
-  console.log(`Badge reel layout tool: http://localhost:${port}`);
+server.listen(port, async () => {
+  try {
+    presetSnapshots.set("primary", await loadBundledPresetSnapshot());
+    console.log(`Badge reel layout tool: http://localhost:${port}`);
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : error);
+    server.close();
+  }
 });
