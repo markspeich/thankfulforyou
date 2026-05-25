@@ -16,16 +16,17 @@ function slugify(name) {
 }
 
 async function withPresetLibraryBackup(run) {
-  const backupDir = await mkdtemp(path.join(tmpdir(), "thankfulforyou-preset-editor-"));
+  const backupRoot = await mkdtemp(path.join(tmpdir(), "thankfulforyou-preset-editor-"));
+  const backupPresetsDir = path.join(backupRoot, "presets");
 
-  await cp(PRESETS_DIR, backupDir, { recursive: true, force: true });
+  await cp(PRESETS_DIR, backupPresetsDir, { recursive: true, force: true });
 
   try {
     await run();
   } finally {
     await rm(PRESETS_DIR, { recursive: true, force: true });
-    await cp(backupDir, PRESETS_DIR, { recursive: true, force: true });
-    await rm(backupDir, { recursive: true, force: true });
+    await cp(backupPresetsDir, PRESETS_DIR, { recursive: true, force: true });
+    await rm(backupRoot, { recursive: true, force: true });
   }
 }
 
