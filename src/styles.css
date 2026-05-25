@@ -1665,6 +1665,34 @@ button:disabled {
   width: min(680px, 100%);
 }
 
+.preset-editor-helper {
+  display: grid;
+  gap: 8px;
+  padding: 14px 16px;
+  background: linear-gradient(180deg, rgba(244, 248, 250, 0.96) 0%, rgba(235, 242, 246, 0.96) 100%);
+  border: 1px solid #d8e3e8;
+  border-radius: 14px;
+}
+
+.preset-editor-helper-title {
+  margin: 0;
+  color: #21465e;
+  font-size: 0.84rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.preset-editor-helper-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding-left: 18px;
+  color: #42525d;
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+
 .preset-editor-fields {
   display: grid;
   gap: 14px;
