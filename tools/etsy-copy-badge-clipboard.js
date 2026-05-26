@@ -1,4 +1,5 @@
 const CLIPBOARD_PAYLOAD_SOURCE = "thankfulforyou-etsy-clipboard";
+const ITEM_LABEL_SEPARATOR = " · ";
 
 function getOrdersCollection() {
   return window.Etsy?.Context?.data?.initial_data?.orders?.orders_search?.orders || [];
@@ -39,18 +40,50 @@ function getTransactionQuantity(transaction) {
   return "1";
 }
 
-function buildClipboardItems() {
-  const orders = getOrdersCollection();
+function buildSkippedTransactionEntry(order, transaction, reason) {
+  return {
+    orderNumber: String(order?.order_id ?? ""),
+    buyerName: order?.fulfillment?.to_address?.name || "",
+    transactionId: String(transaction?.transaction_id ?? ""),
+    listingId: String(transaction?.listing_id ?? ""),
+    listingTitle: transaction?.product?.title || "",
+    reason,
+  };
+}
 
-  return orders.flatMap((order) => {
+function buildOrderItemLabel(orderId, buyerName, itemNumber) {
+  let label = `#${orderId}`;
+
+  if (buyerName) {
+    label += `${ITEM_LABEL_SEPARATOR}${buyerName}`;
+  }
+
+  if (itemNumber > 1) {
+    label += `${ITEM_LABEL_SEPARATOR}Item ${itemNumber}`;
+  }
+
+  return label;
+}
+
+function analyzeOrdersForClipboard() {
+  const orders = getOrdersCollection();
+  const items = [];
+  const skipped = [];
+
+  orders.forEach((order) => {
     const buyerName = order?.fulfillment?.to_address?.name || "";
     let itemNumber = 0;
 
-    return (order?.transactions || []).flatMap((transaction) => {
+    (order?.transactions || []).forEach((transaction) => {
       const personalizationEntries = getPersonalizationEntries(transaction);
-      return personalizationEntries.map((personalizationEntry) => {
+      if (!personalizationEntries.length) {
+        skipped.push(buildSkippedTransactionEntry(order, transaction, "Missing Personalization variation"));
+        return;
+      }
+
+      personalizationEntries.forEach((personalizationEntry) => {
         itemNumber += 1;
-        return {
+        items.push({
           orderNumber: String(order.order_id),
           listingId: String(transaction.listing_id),
           transactionId: String(transaction.transaction_id),
@@ -59,19 +92,29 @@ function buildClipboardItems() {
           quantity: getTransactionQuantity(transaction),
           listingTitle: transaction?.product?.title || "",
           listingImageUrl75x75: transaction?.product?.image_url_75x75 || "",
-          label: `#${order.order_id}${buyerName ? ` · ${buyerName}` : ""}${itemNumber > 1 ? ` · Item ${itemNumber}` : ""}`,
+          label: buildOrderItemLabel(order.order_id, buyerName, itemNumber),
           personalization: personalizationEntry.value,
-        };
+        });
       });
     });
   });
+
+  return {
+    items,
+    skipped,
+    totalOrders: orders.length,
+  };
+}
+
+function buildClipboardItems() {
+  return analyzeOrdersForClipboard().items;
 }
 
 async function copyBadgeQueuePayload() {
-  const items = buildClipboardItems();
+  const { items, skipped, totalOrders } = analyzeOrdersForClipboard();
 
   if (!items.length) {
-    console.warn("No personalized Etsy line items found on this page.");
+    console.warn("No personalized Etsy line items found on this page.", skipped);
     return;
   }
 
@@ -84,6 +127,15 @@ async function copyBadgeQueuePayload() {
 
   await navigator.clipboard.writeText(payload);
   console.info(`Copied ${items.length} Etsy design items to the clipboard.`);
+
+  if (skipped.length) {
+    console.warn(`Skipped ${skipped.length} Etsy order(s) while building the badge queue.`, skipped);
+    return;
+  }
+
+  if (totalOrders > items.length) {
+    console.warn(`Copied ${items.length} Etsy design items from ${totalOrders} order(s).`);
+  }
 }
 
 function ensureCopyButton() {
