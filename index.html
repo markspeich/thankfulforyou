@@ -347,7 +347,7 @@
                       <span>Backing Border</span>
                       <div class="range-row">
                         <input id="backingInput" type="range" min="0" max="10" step="0.1" value="2.2">
-                        <output id="backingOutput">2.200 mm</output>
+                        <output id="backingOutput">2.2 mm</output>
                       </div>
                     </label>
                   </section>
@@ -523,6 +523,28 @@
         </div>
       </div>
     </div>
+
+    <dialog id="presetAssignmentDialog" class="queue-summary-dialog" aria-labelledby="presetAssignmentTitle">
+      <div class="queue-summary-card queue-summary-card-success">
+        <header class="queue-summary-header">
+          <div class="queue-summary-success-copy">
+            <span class="queue-summary-success-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" focusable="false">
+                <circle cx="12" cy="12" r="9"></circle>
+                <path d="m8.5 12 2.3 2.3 4.7-4.8"></path>
+              </svg>
+            </span>
+            <h2 id="presetAssignmentTitle">Preset assigned</h2>
+            <p id="presetAssignmentDescription" class="queue-summary-description"></p>
+          </div>
+          <button id="closePresetAssignmentDialogButton" class="queue-summary-close" type="button" aria-label="Close assignment confirmation">
+            <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+              <path d="M6 6l12 12M18 6 6 18" />
+            </svg>
+          </button>
+        </header>
+      </div>
+    </dialog>
 
     <script src="src/app.js" type="module"></script>
   </body>

@@ -46,7 +46,6 @@ import {
   applyLayoutControlsSnapshot,
   buildLayoutControlsSnapshot,
 } from "./layout-controls-clipboard.js";
-import A11yDialog from "../node_modules/a11y-dialog/dist/a11y-dialog.esm.js";
 import { buildReloadedPresetSettings } from "./preset-selection.js";
 
 const FONT_OPTIONS = [
@@ -133,12 +132,16 @@ const queueActionLabelByButton = new Map(
 );
 const colorCountsDialog = document.querySelector("#colorCountsDialog");
 const closeColorCountsButton = document.querySelector("#closeColorCountsButton");
+const presetAssignmentDialog = document.querySelector("#presetAssignmentDialog");
+const presetAssignmentDescription = document.querySelector("#presetAssignmentDescription");
+const closePresetAssignmentDialogButton = document.querySelector("#closePresetAssignmentDialogButton");
 const colorCountsTableBody = document.querySelector("#colorCountsTableBody");
 const colorCountsTableWrap = document.querySelector("#colorCountsTableWrap");
 const colorCountsEmptyState = document.querySelector("#colorCountsEmptyState");
 const confirmationDialogElement = document.querySelector("#confirmationDialog");
 const confirmationDialogTitle = document.querySelector("#confirmationDialogTitle");
 const confirmationDialogDescription = document.querySelector("#confirmationDialogDescription");
+const confirmationDialogCloseButton = document.querySelector("#confirmationDialogCloseButton");
 const confirmationDialogCancelButton = document.querySelector("#confirmationDialogCancelButton");
 const confirmationDialogConfirmButton = document.querySelector("#confirmationDialogConfirmButton");
 const orderSearchInput = document.querySelector("#orderSearchInput");
@@ -210,7 +213,6 @@ const ctx = canvas.getContext("2d");
 const MASK_SCALE = 3;
 const MASK_PADDING_PX = 12;
 const measuredLineCache = new Map();
-const confirmationDialogController = confirmationDialogElement ? new A11yDialog(confirmationDialogElement) : null;
 let lastLayout = null;
 let zoom = DEFAULT_ZOOM;
 let previewMiddlePan = null;
@@ -226,6 +228,7 @@ let activeWorkspace = "orders";
 let navCollapsed = false;
 let presetEditorDraft = null;
 let activeConfirmationRequest = null;
+let confirmationDialogRestoreFocusTarget = null;
 
 const statusLabels = {
   "not-started": "Not started",
@@ -1286,6 +1289,10 @@ async function assignSelectedPresetToActiveListing() {
     render();
     try {
       await savePresetSnapshot(getPresetSnapshot());
+      showPresetAssignmentDialog({
+        presetName: assignedPreset.name,
+        listingId,
+      });
       updateWorkflowAlert(`Assigned ${assignedPreset.name} to listing ${listingId}.`, "success");
     } catch (error) {
       updateWorkflowAlert(
@@ -1435,6 +1442,30 @@ function closeBatchColorCountsDialog() {
   colorCountsDialog.close();
 }
 
+function showInlineConfirmationDialog() {
+  if (!confirmationDialogElement) {
+    return;
+  }
+
+  confirmationDialogRestoreFocusTarget = document.activeElement instanceof HTMLElement
+    ? document.activeElement
+    : null;
+  confirmationDialogElement.setAttribute("aria-hidden", "false");
+  confirmationDialogCancelButton?.focus();
+}
+
+function hideInlineConfirmationDialog({ restoreFocus = true } = {}) {
+  if (!confirmationDialogElement) {
+    return;
+  }
+
+  confirmationDialogElement.setAttribute("aria-hidden", "true");
+  if (restoreFocus && confirmationDialogRestoreFocusTarget instanceof HTMLElement) {
+    confirmationDialogRestoreFocusTarget.focus();
+  }
+  confirmationDialogRestoreFocusTarget = null;
+}
+
 function finishConfirmationDialog(result, { hide = true } = {}) {
   if (!activeConfirmationRequest) {
     return;
@@ -1445,7 +1476,7 @@ function finishConfirmationDialog(result, { hide = true } = {}) {
   confirmationDialogConfirmButton?.classList.remove("confirmation-dialog-confirm-danger");
 
   if (hide) {
-    confirmationDialogController?.hide();
+    hideInlineConfirmationDialog();
   }
 
   resolve(result);
@@ -1458,9 +1489,10 @@ function showConfirmationDialog({
   cancelLabel = "Cancel",
   isDanger = false,
 }) {
-  if (!confirmationDialogController
+  if (!confirmationDialogElement
     || !confirmationDialogTitle
     || !confirmationDialogDescription
+    || !confirmationDialogCloseButton
     || !confirmationDialogCancelButton
     || !confirmationDialogConfirmButton) {
     return Promise.resolve(window.confirm(description));
@@ -1478,8 +1510,28 @@ function showConfirmationDialog({
 
   return new Promise((resolve) => {
     activeConfirmationRequest = { resolve };
-    confirmationDialogController.show();
+    showInlineConfirmationDialog();
   });
+}
+
+function showPresetAssignmentDialog({ presetName, listingId }) {
+  if (!(presetAssignmentDialog instanceof HTMLDialogElement)) {
+    return;
+  }
+
+  if (presetAssignmentDescription) {
+    presetAssignmentDescription.textContent = `${presetName} linked to listing ${listingId}.`;
+  }
+
+  presetAssignmentDialog.showModal();
+}
+
+function closePresetAssignmentDialog() {
+  if (!(presetAssignmentDialog instanceof HTMLDialogElement) || !presetAssignmentDialog.open) {
+    return;
+  }
+
+  presetAssignmentDialog.close();
 }
 
 function normalizeStoredSource(source) {
@@ -5002,11 +5054,33 @@ colorCountsDialog?.addEventListener("click", (event) => {
 confirmationDialogCancelButton?.addEventListener("click", () => {
   finishConfirmationDialog(false);
 });
+confirmationDialogCloseButton?.addEventListener("click", () => {
+  finishConfirmationDialog(false);
+});
 confirmationDialogConfirmButton?.addEventListener("click", () => {
   finishConfirmationDialog(true);
 });
-confirmationDialogController?.on("hide", () => {
-  finishConfirmationDialog(false, { hide: false });
+confirmationDialogElement?.addEventListener("click", (event) => {
+  const target = event.target instanceof Element ? event.target.closest("[data-a11y-dialog-hide]") : null;
+  if (!target) {
+    return;
+  }
+
+  finishConfirmationDialog(false);
+});
+confirmationDialogElement?.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape") {
+    return;
+  }
+
+  event.preventDefault();
+  finishConfirmationDialog(false);
+});
+closePresetAssignmentDialogButton?.addEventListener("click", closePresetAssignmentDialog);
+presetAssignmentDialog?.addEventListener("click", (event) => {
+  if (event.target === presetAssignmentDialog) {
+    closePresetAssignmentDialog();
+  }
 });
 document.addEventListener("pointerdown", (event) => {
   if (!queueToolsMenu?.hasAttribute("open")) {
