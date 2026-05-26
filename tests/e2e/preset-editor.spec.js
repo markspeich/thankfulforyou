@@ -272,7 +272,7 @@ test("can create a new preset from order settings and update an existing preset"
 
   await page.goto("/");
 
-  await page.getByRole("button", { name: "Add Design" }).click();
+  await clickQueueAction(page, "Add Design");
   await page.locator("#textInput").fill("Morgan\nRN");
   await page.locator('[data-line-index="0"] [data-setting="fontId"]').selectOption("skywalk");
   await page.locator('[data-line-index="1"] [data-setting="fontId"]').selectOption("somekind");
@@ -311,7 +311,7 @@ test("can create a new preset from order settings and update an existing preset"
   await completeDesign(page, "Design 1");
   await expect(page.locator("#downloadButton")).toBeEnabled();
 
-  await page.getByRole("button", { name: "Add Design" }).click();
+  await clickQueueAction(page, "Add Design");
   await page.locator("#textInput").fill("Taylor\nRN");
   await page.locator("#presetInput").selectOption(createdPresetId);
   await expect(page.locator("#presetInput")).toHaveValue(createdPresetId);
@@ -341,7 +341,7 @@ test("can create a new preset from order settings and update an existing preset"
   await expect(page.locator("#presetInput")).toHaveValue(createdPresetId);
 
   await setClipboardPayload(page, importPayload);
-  await clickQueueAction(page, "Import Clipboard");
+  await page.locator("#importClipboardButton").click();
   await expect(page.locator("#importStatus")).toContainText("Imported 1 Etsy design from the clipboard.");
   await expect(page.locator("#presetInput")).not.toHaveValue(createdPresetId);
 
@@ -387,7 +387,7 @@ test("assigning a preset to a completed imported order clears stale batch-export
 
   await page.goto("/");
 
-  await page.getByRole("button", { name: "Add Design" }).click();
+  await clickQueueAction(page, "Add Design");
   await page.locator("#textInput").fill("Avery\nRN");
   await page.locator('[data-line-index="0"] [data-setting="fontId"]').selectOption("skywalk");
   await page.locator('[data-line-index="1"] [data-setting="fontId"]').selectOption("somekind");
@@ -408,7 +408,7 @@ test("assigning a preset to a completed imported order clears stale batch-export
   await completeDesign(page, "Design 1");
 
   await setClipboardPayload(page, importPayload);
-  await clickQueueAction(page, "Import Clipboard");
+  await page.locator("#importClipboardButton").click();
   await expect(page.locator("#importStatus")).toContainText("Imported 1 Etsy design from the clipboard.");
 
   await page.locator("#presetInput").selectOption(createdPresetId);
@@ -440,7 +440,7 @@ test("renaming a preset while analysis is running still restores export readines
 
   await page.goto("/");
 
-  await page.getByRole("button", { name: "Add Design" }).click();
+  await clickQueueAction(page, "Add Design");
   await page.locator("#textInput").fill("Jordan\nRN");
   await page.locator('[data-line-index="0"] [data-setting="fontId"]').selectOption("skywalk");
   await page.locator('[data-line-index="1"] [data-setting="fontId"]').selectOption("somekind");
@@ -513,7 +513,7 @@ test("shows assigned listings for a preset and lets operators unassign them", as
   await page.goto("/");
 
   await setClipboardPayload(page, importPayload);
-  await clickQueueAction(page, "Import Clipboard");
+  await page.locator("#importClipboardButton").click();
   await expect(page.locator("#importStatus")).toContainText("Imported 1 Etsy design from the clipboard.");
   await expect(page.locator("#presetInput")).toHaveValue("preset-c3e8a1d7f520");
 
@@ -539,7 +539,7 @@ test("shows assigned listings for a preset and lets operators unassign them", as
   await expect(page.locator("#downloadButton")).toBeDisabled();
 
   await setClipboardPayload(page, freshImportPayload);
-  await clickQueueAction(page, "Import Clipboard");
+  await page.locator("#importClipboardButton").click();
   await expect(page.locator("#importStatus")).toContainText("Imported 1 Etsy design from the clipboard.");
   await expect(page.locator("#presetInput")).not.toHaveValue("preset-c3e8a1d7f520");
 });

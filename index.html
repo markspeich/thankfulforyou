@@ -40,34 +40,42 @@
           <div class="queue-header">
             <h1>Design Queue</h1>
             <div class="queue-header-actions">
-              <button id="addOrderButton" class="queue-primary-action" type="button" aria-label="Add Design">
+              <button
+                id="importClipboardButton"
+                class="queue-primary-action"
+                type="button"
+                aria-label="Paste"
+                title="Paste Etsy clipboard data copied from the browser helper."
+              >
                 <span class="queue-tool-icon" aria-hidden="true">
                   <svg viewBox="0 0 24 24" focusable="false">
-                    <path d="M12 5v14M5 12h14" />
+                    <path d="M9 3.5h6a1.5 1.5 0 0 1 1.5 1.5v1H18a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2v-1.5" />
+                    <path d="M9 3.5h6a1.5 1.5 0 0 1 1.5 1.5v1h-9V5A1.5 1.5 0 0 1 9 3.5Z" />
+                    <path d="M4 12h8" />
+                    <path d="m8.5 8.5 3.5 3.5-3.5 3.5" />
                   </svg>
                 </span>
-                <span class="queue-tool-label">Add Design</span>
+                <span class="queue-tool-label">Paste</span>
               </button>
               <details class="queue-tools-menu">
               <summary class="queue-tools-toggle" aria-label="Queue tools"></summary>
               <div class="queue-tools-popover">
                 <div class="queue-tools-actions" role="menu" aria-label="Queue actions">
-                  <div class="queue-tools-group" aria-label="Import queue items">
-                    <p class="queue-tools-heading">Import</p>
-                    <button
-                      id="importClipboardButton"
-                      class="queue-tool-button"
-                      type="button"
-                      title="Import Etsy clipboard data copied from the browser helper."
-                    >
+                  <div class="queue-tools-group" aria-label="Design queue actions">
+                    <p class="queue-tools-heading">Queue</p>
+                    <button id="addOrderButton" class="queue-tool-button" type="button">
                       <span class="queue-tool-icon" aria-hidden="true">
                         <svg viewBox="0 0 24 24" focusable="false">
-                          <path d="M9 5h6M9 3h6a2 2 0 0 1 2 2v1h1a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h1V5a2 2 0 0 1 2-2Z" />
-                          <path d="M12 10v6M9.5 13.5 12 16l2.5-2.5" />
+                          <path d="M12 5v14M5 12h14" />
                         </svg>
                       </span>
-                      <span class="queue-tool-label">Import Clipboard</span>
+                      <span class="queue-tool-label">Add Design</span>
                     </button>
+                  </div>
+
+                  <div class="queue-tools-group" aria-label="Import queue items">
+                    <p class="queue-tools-heading">Import</p>
+                    <p class="queue-tools-note">Use the header button to paste Etsy clipboard data.</p>
                   </div>
 
                   <div class="queue-tools-group" aria-label="Batch output actions">
