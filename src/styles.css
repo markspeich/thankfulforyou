@@ -132,17 +132,22 @@ select {
 }
 
 .workspace-nav-toggle-icon::before {
-  inset: 1px 3px;
-  border-top: 2px solid currentColor;
+  top: 4px;
+  left: 5px;
+  width: 8px;
+  height: 8px;
+  border-left: 2px solid currentColor;
   border-bottom: 2px solid currentColor;
+  transform: rotate(45deg);
+  transform-origin: center;
 }
 
 .workspace-nav-toggle-icon::after {
-  left: 3px;
-  top: 2px;
-  bottom: 2px;
-  width: 2px;
-  background: currentColor;
+  display: none;
+}
+
+.app-shell[data-nav-collapsed="true"] .workspace-nav-toggle-icon::before {
+  transform: rotate(225deg);
 }
 
 .workspace-nav-icon-orders::before,
