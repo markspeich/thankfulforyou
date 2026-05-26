@@ -360,6 +360,13 @@ select {
   text-transform: uppercase;
 }
 
+.queue-tools-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
 .queue-tool-button {
   --button-current-text: var(--button-text);
   --button-current-text-hover: var(--button-current-text);

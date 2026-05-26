@@ -3403,7 +3403,7 @@ async function importFromClipboard() {
   }
 
   importClipboardButton.disabled = true;
-  setQueueActionLabel(importClipboardButton, "Importing...");
+  setQueueActionLabel(importClipboardButton, "Pasting...");
 
   try {
     const clipboardText = await navigator.clipboard.readText();
@@ -3464,7 +3464,7 @@ async function importFromClipboard() {
     updateWorkflowAlert(message, "error");
   } finally {
     importClipboardButton.disabled = false;
-    setQueueActionLabel(importClipboardButton, "Import Clipboard");
+    setQueueActionLabel(importClipboardButton, "Paste");
   }
 }
 

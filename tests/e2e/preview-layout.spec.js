@@ -1022,7 +1022,7 @@ test("applies a pressed-state hook to editor and queue command buttons", async (
   await openQueueTools(page);
 
   const queueProperties = ["transform"];
-  await expect(measurePressedState(page, "#addOrderButton", queueProperties)).resolves.toMatchObject({
+  await expect(measurePressedState(page, "#importClipboardButton", queueProperties)).resolves.toMatchObject({
     changedProperties: queueProperties,
     releasedProperties: queueProperties,
   });
@@ -1797,7 +1797,7 @@ test("skips already imported Etsy line items when importing another batch", asyn
     });
   }, firstPayload);
 
-  await clickQueueAction(page, "Import Clipboard");
+  await page.locator("#importClipboardButton").click();
 
   await expect(page.locator("#orderCountOutput")).toHaveText("3");
   await expect(page.locator(".queue-tools-menu")).not.toHaveAttribute("open", "");
@@ -1829,7 +1829,7 @@ test("skips already imported Etsy line items when importing another batch", asyn
     });
   }, secondPayload);
 
-  await clickQueueAction(page, "Import Clipboard");
+  await page.locator("#importClipboardButton").click();
 
   await expect(page.locator("#orderCountOutput")).toHaveText("4");
   await expect(page.locator(".queue-tools-menu")).not.toHaveAttribute("open", "");
@@ -1866,7 +1866,7 @@ test("shows labeled buyer, listing, and emphasized personalization lines in queu
     });
   }, payload);
 
-  await clickQueueAction(page, "Import Clipboard");
+  await page.locator("#importClipboardButton").click();
 
   const row = page.locator("#orderList .order-row").filter({ hasText: "#4057600528" });
   const buyerLine = row.locator(".order-item-recipient");
@@ -1934,7 +1934,7 @@ test("shows imported Etsy color and quantity below design text and highlights wh
     });
   }, payload);
 
-  await clickQueueAction(page, "Import Clipboard");
+  await page.locator("#importClipboardButton").click();
 
   await expect(page.locator("#importedColorField")).toBeVisible();
   await expect(page.locator("#importedColorValue")).toHaveText("White Glitter");
@@ -2000,7 +2000,7 @@ test("shows batch color counts from the queue tools menu", async ({ page }) => {
     });
   }, payload);
 
-  await clickQueueAction(page, "Import Clipboard");
+  await page.locator("#importClipboardButton").click();
   await clickQueueAction(page, "View Color Counts");
 
   const dialog = page.locator("#colorCountsDialog");
@@ -2059,7 +2059,7 @@ test("includes imported color and quantity in the export payload", async ({ page
     });
   });
 
-  await clickQueueAction(page, "Import Clipboard");
+  await page.locator("#importClipboardButton").click();
   await completeDesign(page, "#4057600528");
   await page.locator("#orderList .order-row").filter({ hasText: "#4057600528" }).locator(".order-item").click();
   await page.getByRole("button", { name: "Export This Design" }).click();
