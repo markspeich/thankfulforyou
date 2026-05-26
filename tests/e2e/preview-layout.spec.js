@@ -29,6 +29,15 @@ async function clickQueueAction(page, name) {
   await page.getByRole("button", { name }).click();
 }
 
+async function confirmQueueDialog(page, expectedTitle) {
+  const dialog = page.locator("#confirmationDialog");
+
+  await expect(dialog).toBeVisible();
+  await expect(dialog.locator("#confirmationDialogTitle")).toHaveText(expectedTitle);
+  await dialog.locator("#confirmationDialogConfirmButton").click();
+  await expect(dialog).not.toBeVisible();
+}
+
 async function readPressedStateStyles(locator) {
   return locator.evaluate((element) => {
     const style = window.getComputedStyle(element);
@@ -241,8 +250,8 @@ test.beforeEach(async ({ page, request }) => {
   const orderCount = page.locator("#orderCountOutput");
 
   if ((await orderCount.textContent()) !== "0") {
-    page.once("dialog", (dialog) => dialog.accept());
     await clickQueueAction(page, "Clear Batch");
+    await confirmQueueDialog(page, "Clear Batch?");
     await expect(orderCount).toHaveText("0");
   }
 
@@ -364,8 +373,8 @@ test("coalesces rapid slider input into a single deferred preview rebuild", asyn
 
   const orderCount = page.locator("#orderCountOutput");
   if ((await orderCount.textContent()) !== "0") {
-    page.once("dialog", (dialog) => dialog.accept());
     await clickQueueAction(page, "Clear Batch");
+    await confirmQueueDialog(page, "Clear Batch?");
     await expect(orderCount).toHaveText("0");
   }
 
@@ -417,8 +426,8 @@ test("avoids redundant preview image encodes during a settled slider render", as
 
   const orderCount = page.locator("#orderCountOutput");
   if ((await orderCount.textContent()) !== "0") {
-    page.once("dialog", (dialog) => dialog.accept());
     await clickQueueAction(page, "Clear Batch");
+    await confirmQueueDialog(page, "Clear Batch?");
     await expect(orderCount).toHaveText("0");
   }
 
@@ -941,8 +950,9 @@ test("restores the current batch after refresh and clears it when requested", as
   await expect(page.locator("#backingInput")).toHaveValue("4.2");
   await expect(page.locator("#weldExportedDesignInput")).not.toBeChecked();
 
-  page.once("dialog", (dialog) => dialog.accept());
   await clickQueueAction(page, "Clear Batch");
+  await expect(page.locator("#confirmationDialogDescription")).toContainText("delete all saved local designs");
+  await confirmQueueDialog(page, "Clear Batch?");
 
   await expect(page.locator("#orderCountOutput")).toHaveText("0");
   await expect(page.locator("#importStatus")).toContainText("Batch cleared");
@@ -1741,8 +1751,9 @@ test("deletes a single design from the queue", async ({ page }) => {
   await clickQueueAction(page, "Add Design");
   await expect(page.locator("#orderCountOutput")).toHaveText("2");
 
-  page.once("dialog", (dialog) => dialog.accept());
   await page.getByRole("button", { name: "Delete Design 1" }).click();
+  await expect(page.locator("#confirmationDialogDescription")).toContainText("Delete Design 1");
+  await confirmQueueDialog(page, "Delete Design?");
 
   await expect(page.locator("#orderCountOutput")).toHaveText("1");
   await expect(page.locator("#orderList .order-row")).toHaveCount(1);

@@ -360,6 +360,7 @@ The website should be a practical production tool rather than a marketing site. 
 - The pressed state should follow the same shared interaction language across queue tools, editor actions, export/copy/save/complete actions, and destructive actions rather than being tuned separately per button family.
 - The pressed-state feedback should stay practical and restrained for the production-workspace tone: a darker pressed color, slightly stronger border or inset feel, and a subtle downward movement are preferred over flashy animation.
 - Keyboard focus-visible styling should remain distinct from the pressed state so accessibility feedback is not weakened while adding pointer/touch feedback.
+- Destructive confirmations such as deleting one queued design or clearing the full batch should use a styled in-app confirmation dialog rather than browser-default confirm popups.
 
 The selected UI direction is the refined B1 Production Queue layout. Use `docs/mockups/layout-option-b-refined.html` as the primary visual reference for the current desktop implementation pass. The mockup intent is a left-side order queue with compact queue tools and a right-side two-column editor where the left column holds listing details, design text, and preview while the right column holds global controls plus stacked line controls. Sample renders should use a white raised text layer over a red backing silhouette.
 

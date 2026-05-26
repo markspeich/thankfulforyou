@@ -468,6 +468,151 @@ select {
   box-shadow: 0 24px 60px rgba(16, 28, 37, 0.18);
 }
 
+.confirmation-dialog[aria-hidden="true"] {
+  display: none;
+}
+
+.confirmation-dialog {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+}
+
+.confirmation-dialog-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(22, 27, 31, 0.42);
+  backdrop-filter: blur(2px);
+}
+
+.confirmation-dialog-card {
+  position: relative;
+  display: grid;
+  gap: 18px;
+  width: min(420px, calc(100vw - 32px));
+  padding: 20px;
+  background: #fcfdfd;
+  border: 1px solid #d7e4e9;
+  border-radius: 18px;
+  box-shadow: 0 24px 60px rgba(16, 28, 37, 0.18);
+}
+
+.confirmation-dialog-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.confirmation-dialog-header h2 {
+  margin: 2px 0 0;
+  font-size: 1.1rem;
+  color: var(--ink);
+}
+
+.confirmation-dialog-eyebrow {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.confirmation-dialog-description {
+  margin: 0;
+  color: #34454f;
+  font-size: 0.94rem;
+  line-height: 1.55;
+}
+
+.confirmation-dialog-close {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  color: #42525d;
+  background: #f4f8fa;
+  border: 1px solid #d5e0e6;
+  border-radius: 999px;
+}
+
+.confirmation-dialog-close svg {
+  width: 18px;
+  height: 18px;
+  stroke: currentColor;
+  stroke-width: 1.85;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  fill: none;
+}
+
+.confirmation-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.confirmation-dialog-button {
+  min-width: 124px;
+  padding: 11px 14px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  font-size: 0.88rem;
+  font-weight: 700;
+  transition: background-color 120ms ease, border-color 120ms ease, box-shadow 120ms ease, color 120ms ease, transform 120ms ease;
+}
+
+.confirmation-dialog-button:focus-visible {
+  outline: 2px solid var(--button-focus);
+  outline-offset: 2px;
+}
+
+.confirmation-dialog-button:active {
+  box-shadow: var(--button-shadow-active);
+  transform: translateY(var(--button-pressed-translate-y));
+}
+
+.confirmation-dialog-cancel {
+  color: #31414b;
+  background: #f4f8fa;
+  border-color: #d5e0e6;
+}
+
+.confirmation-dialog-cancel:hover {
+  background: #ebf2f6;
+  border-color: #c5d3db;
+}
+
+.confirmation-dialog-confirm {
+  color: var(--button-text);
+  background: var(--button-enabled);
+  border-color: var(--button-border);
+}
+
+.confirmation-dialog-confirm:hover {
+  background: var(--button-enabled-hover);
+  border-color: var(--button-border-hover);
+}
+
+.confirmation-dialog-confirm-danger {
+  color: #fff4f2;
+  background: #b9382b;
+  border-color: #8f261b;
+}
+
+.confirmation-dialog-confirm-danger:hover {
+  background: #a32f23;
+  border-color: #781e15;
+}
+
 .queue-summary-header {
   display: flex;
   align-items: flex-start;
@@ -1072,7 +1217,7 @@ button {
   font-weight: 700;
 }
 
-button:hover:not(:disabled):not(.order-item):not(.queue-tool-button) {
+button:hover:not(:disabled):not(.order-item):not(.queue-tool-button):not(.confirmation-dialog-button):not(.confirmation-dialog-close) {
   background: var(--button-enabled-hover);
 }
 

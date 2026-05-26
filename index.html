@@ -473,6 +473,46 @@
       </div>
     </dialog>
 
+    <div
+      id="confirmationDialog"
+      class="confirmation-dialog"
+      role="dialog"
+      aria-modal="true"
+      aria-hidden="true"
+      aria-labelledby="confirmationDialogTitle"
+      aria-describedby="confirmationDialogDescription"
+    >
+      <div class="confirmation-dialog-backdrop" data-a11y-dialog-hide></div>
+      <div class="confirmation-dialog-card" role="document">
+        <header class="confirmation-dialog-header">
+          <div>
+            <p class="confirmation-dialog-eyebrow">Confirm Action</p>
+            <h2 id="confirmationDialogTitle">Confirm</h2>
+          </div>
+          <button
+            id="confirmationDialogCloseButton"
+            class="confirmation-dialog-close"
+            type="button"
+            data-a11y-dialog-hide
+            aria-label="Close confirmation dialog"
+          >
+            <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+              <path d="M6 6l12 12M18 6 6 18" />
+            </svg>
+          </button>
+        </header>
+        <p id="confirmationDialogDescription" class="confirmation-dialog-description"></p>
+        <div class="confirmation-dialog-actions">
+          <button id="confirmationDialogCancelButton" class="confirmation-dialog-button confirmation-dialog-cancel" type="button">
+            Cancel
+          </button>
+          <button id="confirmationDialogConfirmButton" class="confirmation-dialog-button confirmation-dialog-confirm" type="button">
+            Confirm
+          </button>
+        </div>
+      </div>
+    </div>
+
     <script src="src/app.js" type="module"></script>
   </body>
 </html>

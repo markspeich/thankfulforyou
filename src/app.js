@@ -46,6 +46,7 @@ import {
   applyLayoutControlsSnapshot,
   buildLayoutControlsSnapshot,
 } from "./layout-controls-clipboard.js";
+import A11yDialog from "../node_modules/a11y-dialog/dist/a11y-dialog.esm.js";
 
 const FONT_OPTIONS = [
   {
@@ -134,6 +135,11 @@ const closeColorCountsButton = document.querySelector("#closeColorCountsButton")
 const colorCountsTableBody = document.querySelector("#colorCountsTableBody");
 const colorCountsTableWrap = document.querySelector("#colorCountsTableWrap");
 const colorCountsEmptyState = document.querySelector("#colorCountsEmptyState");
+const confirmationDialogElement = document.querySelector("#confirmationDialog");
+const confirmationDialogTitle = document.querySelector("#confirmationDialogTitle");
+const confirmationDialogDescription = document.querySelector("#confirmationDialogDescription");
+const confirmationDialogCancelButton = document.querySelector("#confirmationDialogCancelButton");
+const confirmationDialogConfirmButton = document.querySelector("#confirmationDialogConfirmButton");
 const orderSearchInput = document.querySelector("#orderSearchInput");
 const orderCountOutput = document.querySelector("#orderCountOutput");
 const completeCountOutput = document.querySelector("#completeCountOutput");
@@ -201,6 +207,7 @@ const ctx = canvas.getContext("2d");
 const MASK_SCALE = 3;
 const MASK_PADDING_PX = 12;
 const measuredLineCache = new Map();
+const confirmationDialogController = confirmationDialogElement ? new A11yDialog(confirmationDialogElement) : null;
 let lastLayout = null;
 let zoom = DEFAULT_ZOOM;
 let previewMiddlePan = null;
@@ -215,6 +222,7 @@ let copiedLayoutControlsSnapshot = null;
 let activeWorkspace = "orders";
 let navCollapsed = false;
 let presetEditorDraft = null;
+let activeConfirmationRequest = null;
 
 const statusLabels = {
   "not-started": "Not started",
@@ -1422,6 +1430,53 @@ function closeBatchColorCountsDialog() {
   }
 
   colorCountsDialog.close();
+}
+
+function finishConfirmationDialog(result, { hide = true } = {}) {
+  if (!activeConfirmationRequest) {
+    return;
+  }
+
+  const { resolve } = activeConfirmationRequest;
+  activeConfirmationRequest = null;
+  confirmationDialogConfirmButton?.classList.remove("confirmation-dialog-confirm-danger");
+
+  if (hide) {
+    confirmationDialogController?.hide();
+  }
+
+  resolve(result);
+}
+
+function showConfirmationDialog({
+  title,
+  description,
+  confirmLabel = "Confirm",
+  cancelLabel = "Cancel",
+  isDanger = false,
+}) {
+  if (!confirmationDialogController
+    || !confirmationDialogTitle
+    || !confirmationDialogDescription
+    || !confirmationDialogCancelButton
+    || !confirmationDialogConfirmButton) {
+    return Promise.resolve(window.confirm(description));
+  }
+
+  if (activeConfirmationRequest) {
+    finishConfirmationDialog(false);
+  }
+
+  confirmationDialogTitle.textContent = title;
+  confirmationDialogDescription.textContent = description;
+  confirmationDialogCancelButton.textContent = cancelLabel;
+  confirmationDialogConfirmButton.textContent = confirmLabel;
+  confirmationDialogConfirmButton.classList.toggle("confirmation-dialog-confirm-danger", isDanger);
+
+  return new Promise((resolve) => {
+    activeConfirmationRequest = { resolve };
+    confirmationDialogController.show();
+  });
 }
 
 function normalizeStoredSource(source) {
@@ -3228,7 +3283,7 @@ function renderOrderList() {
     deleteButton.setAttribute("aria-label", `Delete ${buildQueueOrderNumber(order)}`);
     deleteButton.addEventListener("click", (event) => {
       event.stopPropagation();
-      deleteOrder(order.id);
+      void deleteOrder(order.id);
     });
 
     row.append(item, deleteButton);
@@ -3320,7 +3375,7 @@ function resetEditorToEmptyState() {
   renderPreviewGuideOnly();
 }
 
-function deleteOrder(orderId) {
+async function deleteOrder(orderId) {
   const order = orders.find((candidate) => candidate.id === orderId);
   if (!order) {
     return;
@@ -3328,7 +3383,14 @@ function deleteOrder(orderId) {
 
   saveActiveOrderDraft();
 
-  if (!window.confirm(`Delete ${buildQueueOrderNumber(order)} from the current batch?`)) {
+  const confirmed = await showConfirmationDialog({
+    title: "Delete Design?",
+    description: `Delete ${buildQueueOrderNumber(order)} from the current batch?`,
+    confirmLabel: "Confirm",
+    cancelLabel: "Keep Design",
+    isDanger: true,
+  });
+  if (!confirmed) {
     return;
   }
 
@@ -3371,7 +3433,14 @@ async function clearAllOrders() {
     return;
   }
 
-  if (!window.confirm("Clear the current batch and delete all saved local designs?")) {
+  const confirmed = await showConfirmationDialog({
+    title: "Clear Batch?",
+    description: "Clear the current batch and delete all saved local designs?",
+    confirmLabel: "Confirm",
+    cancelLabel: "Keep Batch",
+    isDanger: true,
+  });
+  if (!confirmed) {
     return;
   }
 
@@ -4921,6 +4990,15 @@ colorCountsDialog?.addEventListener("click", (event) => {
   if (event.target === colorCountsDialog) {
     closeBatchColorCountsDialog();
   }
+});
+confirmationDialogCancelButton?.addEventListener("click", () => {
+  finishConfirmationDialog(false);
+});
+confirmationDialogConfirmButton?.addEventListener("click", () => {
+  finishConfirmationDialog(true);
+});
+confirmationDialogController?.on("hide", () => {
+  finishConfirmationDialog(false, { hide: false });
 });
 document.addEventListener("pointerdown", (event) => {
   if (!queueToolsMenu?.hasAttribute("open")) {
