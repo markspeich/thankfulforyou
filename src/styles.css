@@ -613,11 +613,22 @@ select {
   border-color: #781e15;
 }
 
+.queue-summary-card-success {
+  background: linear-gradient(180deg, #f4fff7 0%, #ecfbf0 100%);
+  border-color: #b9e2c5;
+  box-shadow: 0 24px 60px rgba(20, 84, 42, 0.16);
+}
+
 .queue-summary-header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
+}
+
+.queue-summary-success-copy {
+  display: grid;
+  gap: 6px;
 }
 
 .queue-summary-header h2 {
@@ -640,6 +651,41 @@ select {
   color: var(--muted);
   font-size: 0.88rem;
   line-height: 1.45;
+}
+
+.queue-summary-card-success .queue-summary-eyebrow {
+  color: #207245;
+}
+
+.queue-summary-card-success .queue-summary-header h2 {
+  color: #145231;
+}
+
+.queue-summary-card-success .queue-summary-description {
+  color: #2f6243;
+}
+
+.queue-summary-success-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  color: #198754;
+  background: #ffffff;
+  border: 1px solid #b8ddc4;
+  border-radius: 999px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+.queue-summary-success-icon svg {
+  width: 26px;
+  height: 26px;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  fill: none;
 }
 
 .queue-summary-close {

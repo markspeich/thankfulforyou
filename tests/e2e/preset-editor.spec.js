@@ -352,6 +352,14 @@ test("can create a new preset from order settings and update an existing preset"
   await expect(page.locator('[data-line-index="1"] [data-setting="fontSizeMm"]')).toHaveValue("40");
 
   await page.getByRole("button", { name: "Assign Preset to Listing" }).click();
+  const assignmentDialog = page.locator("#presetAssignmentDialog");
+  await expect(assignmentDialog).toBeVisible();
+  await expect(assignmentDialog.locator(".queue-summary-card")).toHaveClass(/queue-summary-card-success/);
+  await expect(assignmentDialog.locator(".queue-summary-success-icon")).toBeVisible();
+  await expect(assignmentDialog).toContainText(renamedPresetName);
+  await expect(assignmentDialog).toContainText(listingId);
+  await page.getByRole("button", { name: "Close assignment confirmation" }).click();
+  await expect(assignmentDialog).not.toBeVisible();
   await expect(page.locator("#importStatus")).toContainText("Assigned");
   await expect(page.locator("#presetInput")).toHaveValue(createdPresetId);
   await expect(page.locator('[data-line-index="0"] [data-setting="fontId"]')).toHaveValue("skywalk");
@@ -420,6 +428,9 @@ test("assigning a preset to a completed imported order clears stale batch-export
   await expect(page.locator("#downloadButton")).toBeEnabled();
 
   await page.getByRole("button", { name: "Assign Preset to Listing" }).click();
+  await expect(page.locator("#presetAssignmentDialog")).toBeVisible();
+  await page.getByRole("button", { name: "Close assignment confirmation" }).click();
+  await expect(page.locator("#presetAssignmentDialog")).not.toBeVisible();
   await expect(page.locator("#importStatus")).toContainText("Assigned");
   await expect(page.locator("#backingInput")).toHaveValue("4.4");
   await expect(page.locator('[data-line-index="1"] [data-setting="fontSizeMm"]')).toHaveValue("23");
