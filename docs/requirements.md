@@ -171,6 +171,8 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Browser UI verification should confirm both behavior and presentation, including control visibility, control state changes, preview updates, and basic usability of the modified flow.
 - Browser UI verification may be supported by automated browser tests, manual browser checks, or both, but some direct browser validation is required whenever UI changes are made.
 - If browser-based UI verification cannot be completed for a UI change, that limitation must be reported clearly along with the reason it could not be performed.
+- Local Playwright runs should default to the current checkout or worktree's own dev server URL rather than silently inheriting a preview deployment URL from `.env.local`.
+- Preview-targeted Playwright runs should be an explicit opt-in workflow so multiple local worktrees can run browser tests on the same machine without colliding or accidentally testing the wrong deployment.
 
 ## Current Production Workflow Requirements
 
