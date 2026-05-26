@@ -1479,7 +1479,7 @@ button:disabled {
   position: relative;
   z-index: 2;
   display: grid;
-  grid-template-rows: auto auto auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
   align-content: start;
   gap: 12px;
   height: 100%;
@@ -1509,7 +1509,14 @@ button:disabled {
   overflow-x: hidden;
   padding-right: 4px;
   overscroll-behavior: contain;
-  grid-row: 4;
+  grid-row: 3;
+}
+
+.line-controls-cards {
+  display: grid;
+  align-content: start;
+  grid-auto-rows: max-content;
+  gap: 12px;
 }
 
 .line-control-empty {
@@ -1536,10 +1543,6 @@ button:disabled {
 
 .global-controls-panel {
   grid-row: 2;
-}
-
-.line-controls-rail > .global-control-card {
-  grid-row: 3;
 }
 
 .line-control-header {

@@ -327,6 +327,7 @@ The website should be a practical production tool rather than a marketing site. 
 - The selected-order editor should split preset selection and global layout settings into two separate cards titled `Preset` and `Global Settings`.
 - The `Preset` card should contain the preset dropdown and the `Assign Preset to Listing` action.
 - The preset dropdown label in the `Preset` card should read `Preset Name`.
+- The `Preset` card should include a `Reload preset` button at the bottom that reapplies the currently selected preset and overwrites all current layout settings for the active design with that preset's current values.
 - The `Global Settings` card should contain `Weld Exported Design`, global `Horizontal Stretch`, global `Vertical Stretch`, and `Backing Border`, followed by the per-line controls for `Line 1`, `Line 2`, and any additional lines.
 - The selected-order editor should also provide an `Assign Preset to Listing` action when the active order has an imported Etsy listing id.
 - The `Assign Preset to Listing` action should assign the currently selected preset to that listing id by updating the preset's listing assignments.

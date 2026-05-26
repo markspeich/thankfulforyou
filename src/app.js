@@ -47,6 +47,7 @@ import {
   buildLayoutControlsSnapshot,
 } from "./layout-controls-clipboard.js";
 import A11yDialog from "../node_modules/a11y-dialog/dist/a11y-dialog.esm.js";
+import { buildReloadedPresetSettings } from "./preset-selection.js";
 
 const FONT_OPTIONS = [
   {
@@ -164,6 +165,7 @@ const globalHorizontalScaleOutput = document.querySelector("#globalHorizontalSca
 const globalVerticalScaleInput = document.querySelector("#globalVerticalScaleInput");
 const globalVerticalScaleOutput = document.querySelector("#globalVerticalScaleOutput");
 const lineControls = document.querySelector("#lineControls");
+const lineControlCards = document.querySelector("#lineControlCards");
 const backingInput = document.querySelector("#backingInput");
 const backingOutput = document.querySelector("#backingOutput");
 const preview = document.querySelector("#preview");
@@ -178,6 +180,7 @@ const copyLayoutControlsButton = document.querySelector("#copyLayoutPlacementBut
 const pasteLayoutControlsButton = document.querySelector("#pasteLayoutPlacementButton");
 const saveAsNewPresetButton = document.querySelector("#saveAsNewPresetButton");
 const assignPresetToListingButton = document.querySelector("#assignPresetToListingButton");
+const reloadPresetButton = document.querySelector("#reloadPresetButton");
 const captureButton = document.querySelector("#captureButton");
 const completeNextButton = document.querySelector("#completeNextButton");
 const presetEditorSelect = document.querySelector("#presetEditorSelect");
@@ -2002,16 +2005,15 @@ function createQueueItem({
 }
 
 function buildPresetSynchronizedSettings(settings, presetId, options = {}) {
-  const normalized = normalizeSettings(settings);
-  const rawLines = getRawTextLines(normalized.text);
-  const presetBaseSettings = getPresetBaseSettings(presetId);
-
-  return normalizeSettings({
-    ...normalized,
+  return buildReloadedPresetSettings({
+    settings,
     presetId,
-    backingMm: presetBaseSettings.backingMm,
-    weldExportedDesign: presetBaseSettings.weldExportedDesign,
-    lines: buildPresetLines(presetId, rawLines.length, createDefaultLineSettings, options),
+    listingId: options.listingId ?? null,
+    normalizeSettings,
+    getPresetBaseSettings,
+    buildPresetLines,
+    createDefaultLineSettings,
+    getRawTextLines,
   });
 }
 
@@ -2596,13 +2598,13 @@ function setEditorActionLabel(button, label) {
 function renderLineControls(settings = getCurrentSettings()) {
   const normalized = normalizeSettings(settings);
   const rawLines = getRawTextLines(normalized.text);
-  lineControls.replaceChildren();
+  lineControlCards.replaceChildren();
 
   if (!rawLines.length) {
     const empty = document.createElement("p");
     empty.className = "line-control-empty";
     empty.textContent = "Add text lines to generate one font and slider group per line.";
-    lineControls.append(empty);
+    lineControlCards.append(empty);
     return;
   }
 
@@ -2645,7 +2647,7 @@ function renderLineControls(settings = getCurrentSettings()) {
     grid.append(...fields);
 
     card.append(grid);
-    lineControls.append(card);
+    lineControlCards.append(card);
   });
 }
 
@@ -2723,7 +2725,7 @@ function getCurrentSettings() {
   const activeOrder = getActiveOrder();
   const listingId = activeOrder?.source?.listingId ?? null;
   const lines = rawLines.map((_, index) => {
-    const lineCard = lineControls.querySelector(`[data-line-index="${index}"]`);
+    const lineCard = lineControlCards.querySelector(`[data-line-index="${index}"]`);
     if (!lineCard) {
       return createPresetLineSettings(presetId, index, { listingId });
     }
@@ -2773,17 +2775,15 @@ function applySettings(settings) {
 function applyPresetSelection(presetId) {
   const currentSettings = getCurrentSettings();
   const activeOrder = getActiveOrder();
-  const rawLines = getRawTextLines(currentSettings.text);
-  const nextSettings = normalizeSettings({
-    ...currentSettings,
+  const nextSettings = buildReloadedPresetSettings({
+    settings: currentSettings,
     presetId,
-    ...getPresetBaseSettings(presetId),
-    lines: buildPresetLines(
-      presetId,
-      rawLines.length,
-      createDefaultLineSettings,
-      { listingId: activeOrder?.source?.listingId ?? null },
-    ),
+    listingId: activeOrder?.source?.listingId ?? null,
+    normalizeSettings,
+    getPresetBaseSettings,
+    buildPresetLines,
+    createDefaultLineSettings,
+    getRawTextLines,
   });
 
   applySettings(nextSettings);
@@ -3303,6 +3303,7 @@ function renderOrderList() {
   pasteLayoutControlsButton.disabled = !canPasteLayoutControls(activeOrder);
   saveAsNewPresetButton.disabled = !activeOrder;
   assignPresetToListingButton.disabled = !activeOrder?.source?.listingId;
+  reloadPresetButton.disabled = !activeOrder;
 }
 
 function setActiveWorkspace(workspace) {
@@ -4887,6 +4888,13 @@ function applyGlobalVerticalScale(value, options = {}) {
 
 textInput.addEventListener("input", handleTextInput);
 presetInput.addEventListener("change", () => {
+  const order = getActiveOrder();
+  if (order?.source) {
+    order.source.manualPresetOverride = true;
+  }
+  applyPresetSelection(presetInput.value);
+});
+reloadPresetButton?.addEventListener("click", () => {
   const order = getActiveOrder();
   if (order?.source) {
     order.source.manualPresetOverride = true;
