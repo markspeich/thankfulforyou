@@ -36,13 +36,42 @@ npm run test:unit
 npm run test:e2e
 ```
 
-The Playwright config uses the same shared local port helper as `npm start`, so browser tests target the matching per-worktree URL automatically unless `PLAYWRIGHT_BASE_URL` is set.
+`npm run test:e2e` now defaults to the current checkout's local dev server URL. It uses the same shared port helper as `npm start`, so each worktree targets its own local server automatically.
 
 Or run both:
 
 ```powershell
 npm test
 ```
+
+### Playwright Targeting
+
+Use these commands depending on what you want to verify:
+
+```powershell
+# Local current checkout or worktree
+npm run test:e2e
+
+# Protected Vercel preview, explicitly opt-in
+npm run test:e2e:preview
+```
+
+Targeting precedence is:
+
+1. `PLAYWRIGHT_BASE_URL` if you set it explicitly for a command.
+2. Otherwise the local worktree-aware dev URL.
+3. The preview URL from `.env.local` only when preview targeting is explicitly requested.
+
+This means normal local runs no longer get silently redirected to a preview deployment just because `.env.local` contains `PLAYWRIGHT_BASE_URL`.
+
+If you need a one-off override, set it only for that command:
+
+```powershell
+$env:PLAYWRIGHT_BASE_URL = "http://127.0.0.1:4801"
+npm run test:e2e
+```
+
+Avoid leaving a shared `PLAYWRIGHT_BASE_URL` set in your shell session when you are working across multiple worktrees.
 
 The production-oriented build expects these deployable font files in `public/fonts`:
 
@@ -95,12 +124,18 @@ Run this on the Vercel preview URL before promoting to production:
 
 The initial production authorization plan uses Vercel Deployment Protection rather than an in-app login system.
 
-To run Playwright against a protected Vercel preview, generate a Protection Bypass for Automation secret in the Vercel project and then run:
+To run Playwright against a protected Vercel preview, keep the preview URL and bypass secret in `.env.local`, generate a Protection Bypass for Automation secret in the Vercel project, and then run:
+
+```powershell
+npm run test:e2e:preview
+```
+
+For a one-off preview target that is different from `.env.local`:
 
 ```powershell
 $env:PLAYWRIGHT_BASE_URL = "https://your-preview-url.vercel.app"
 $env:VERCEL_AUTOMATION_BYPASS_SECRET = "your-bypass-secret"
-npm run test:e2e
+npm run test:e2e:preview
 ```
 
 The Playwright config automatically sends:
