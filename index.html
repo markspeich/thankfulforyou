@@ -281,6 +281,14 @@
                     </span>
                     <span class="editor-action-label">Save as New Preset</span>
                   </button>
+                </div>
+
+                <section class="global-controls-panel" aria-label="Preset selection controls">
+                  <div class="section-heading">Preset</div>
+                  <label class="field compact-field">
+                    <span>Preset Name</span>
+                    <select id="presetInput"></select>
+                  </label>
                   <button id="assignPresetToListingButton" class="editor-action-button editor-utility-button" type="button" disabled>
                     <span class="editor-action-icon" aria-hidden="true">
                       <svg viewBox="0 0 24 24" focusable="false">
@@ -292,14 +300,10 @@
                     </span>
                     <span class="editor-action-label">Assign Preset to Listing</span>
                   </button>
-                </div>
+                </section>
 
-                <section class="global-controls-panel" aria-label="Global controls">
-                  <label class="field compact-field">
-                    <span>Presets</span>
-                    <select id="presetInput"></select>
-                  </label>
-
+                <section class="global-control-card" aria-label="Global settings controls">
+                  <div class="section-heading">Global Settings</div>
                   <label class="check-field" for="weldExportedDesignInput">
                     <input id="weldExportedDesignInput" type="checkbox" checked>
                     <span>Weld Exported Design</span>

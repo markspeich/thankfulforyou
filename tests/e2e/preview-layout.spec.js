@@ -1089,11 +1089,18 @@ test("requires re-complete when lock text height changes a scaled design", async
   await page.unrouteAll({ behavior: "ignoreErrors" });
 });
 
-test("shows Copy Layout and Paste Layout above the Presets card", async ({ page }) => {
+test("shows layout utilities above separate Preset and Global Settings cards, with listing assignment inside Preset", async ({ page }) => {
   const copyLayoutButton = page.locator("#copyLayoutPlacementButton");
   const pasteLayoutButton = page.locator("#pasteLayoutPlacementButton");
-  const presetsCard = page.locator(".global-controls-panel");
+  const presetsCard = page.locator('[aria-label="Preset selection controls"]');
+  const globalSettingsCard = page.locator('[aria-label="Global settings controls"]');
+  const presetNameLabel = presetsCard.getByText("Preset Name", { exact: true });
   const presetsInput = page.locator("#presetInput");
+  const assignPresetToListingButton = page.locator("#assignPresetToListingButton");
+  const weldExportedDesignInput = page.locator("#weldExportedDesignInput");
+  const globalHorizontalStretch = page.locator("#globalHorizontalScaleInput");
+  const globalVerticalStretch = page.locator("#globalVerticalScaleInput");
+  const backingBorderInput = page.locator("#backingInput");
 
   await expect(copyLayoutButton).toBeVisible();
   await expect(pasteLayoutButton).toBeVisible();
@@ -1102,7 +1109,16 @@ test("shows Copy Layout and Paste Layout above the Presets card", async ({ page 
   await expect(copyLayoutButton).toBeEnabled();
   await expect(pasteLayoutButton).toBeDisabled();
   await expect(presetsCard).toBeVisible();
+  await expect(globalSettingsCard).toBeVisible();
+  await expect(presetsCard.getByText("Preset", { exact: true })).toBeVisible();
+  await expect(globalSettingsCard.getByText("Global Settings", { exact: true })).toBeVisible();
+  await expect(presetNameLabel).toBeVisible();
   await expect(presetsInput).toBeVisible();
+  await expect(assignPresetToListingButton).toBeVisible();
+  await expect(weldExportedDesignInput).toBeVisible();
+  await expect(globalHorizontalStretch).toBeVisible();
+  await expect(globalVerticalStretch).toBeVisible();
+  await expect(backingBorderInput).toBeVisible();
   await expect(page.locator("#copyLayoutControlsButton")).toHaveCount(0);
   await expect(page.locator("#pasteLayoutControlsButton")).toHaveCount(0);
 
@@ -1110,18 +1126,29 @@ test("shows Copy Layout and Paste Layout above the Presets card", async ({ page 
   const copyLayoutButtonBox = await copyLayoutButton.boundingBox();
   const pasteLayoutButtonBox = await pasteLayoutButton.boundingBox();
   const presetsCardBox = await presetsCard.boundingBox();
+  const globalSettingsCardBox = await globalSettingsCard.boundingBox();
   const presetsInputBox = await presetsInput.boundingBox();
+  const assignPresetToListingButtonBox = await assignPresetToListingButton.boundingBox();
+  const weldExportedDesignInputBox = await weldExportedDesignInput.boundingBox();
 
   expect(copyLayoutButtonBox).not.toBeNull();
   expect(pasteLayoutButtonBox).not.toBeNull();
   expect(completeButtonBox).not.toBeNull();
   expect(presetsCardBox).not.toBeNull();
+  expect(globalSettingsCardBox).not.toBeNull();
   expect(presetsInputBox).not.toBeNull();
+  expect(assignPresetToListingButtonBox).not.toBeNull();
+  expect(weldExportedDesignInputBox).not.toBeNull();
 
   expect(copyLayoutButtonBox.y).toBeLessThan(presetsCardBox.y);
-  expect(pasteLayoutButtonBox.y).toBeLessThan(presetsCardBox.y);
   expect(copyLayoutButtonBox.y).toBeLessThan(presetsInputBox.y);
+  expect(pasteLayoutButtonBox.y).toBeLessThan(presetsCardBox.y);
   expect(pasteLayoutButtonBox.y).toBeLessThan(presetsInputBox.y);
+  expect(presetsCardBox.y).toBeLessThan(globalSettingsCardBox.y);
+  expect(presetsInputBox.y).toBeLessThan(globalSettingsCardBox.y);
+  expect(assignPresetToListingButtonBox.y).toBeGreaterThan(presetsInputBox.y);
+  expect(assignPresetToListingButtonBox.y).toBeLessThan(globalSettingsCardBox.y);
+  expect(globalSettingsCardBox.y).toBeLessThan(weldExportedDesignInputBox.y);
   expect(copyLayoutButtonBox.height).toBeLessThan(completeButtonBox.height);
   expect(pasteLayoutButtonBox.height).toBeLessThan(completeButtonBox.height);
 });
