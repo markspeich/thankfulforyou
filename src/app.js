@@ -46,6 +46,7 @@ import {
   applyLayoutControlsSnapshot,
   buildLayoutControlsSnapshot,
 } from "./layout-controls-clipboard.js";
+import { buildReloadedPresetSettings } from "./preset-selection.js";
 
 const FONT_OPTIONS = [
   {
@@ -173,6 +174,7 @@ const copyLayoutControlsButton = document.querySelector("#copyLayoutPlacementBut
 const pasteLayoutControlsButton = document.querySelector("#pasteLayoutPlacementButton");
 const saveAsNewPresetButton = document.querySelector("#saveAsNewPresetButton");
 const assignPresetToListingButton = document.querySelector("#assignPresetToListingButton");
+const reloadPresetButton = document.querySelector("#reloadPresetButton");
 const captureButton = document.querySelector("#captureButton");
 const completeNextButton = document.querySelector("#completeNextButton");
 const presetEditorSelect = document.querySelector("#presetEditorSelect");
@@ -1948,16 +1950,15 @@ function createQueueItem({
 }
 
 function buildPresetSynchronizedSettings(settings, presetId, options = {}) {
-  const normalized = normalizeSettings(settings);
-  const rawLines = getRawTextLines(normalized.text);
-  const presetBaseSettings = getPresetBaseSettings(presetId);
-
-  return normalizeSettings({
-    ...normalized,
+  return buildReloadedPresetSettings({
+    settings,
     presetId,
-    backingMm: presetBaseSettings.backingMm,
-    weldExportedDesign: presetBaseSettings.weldExportedDesign,
-    lines: buildPresetLines(presetId, rawLines.length, createDefaultLineSettings, options),
+    listingId: options.listingId ?? null,
+    normalizeSettings,
+    getPresetBaseSettings,
+    buildPresetLines,
+    createDefaultLineSettings,
+    getRawTextLines,
   });
 }
 
@@ -2719,17 +2720,15 @@ function applySettings(settings) {
 function applyPresetSelection(presetId) {
   const currentSettings = getCurrentSettings();
   const activeOrder = getActiveOrder();
-  const rawLines = getRawTextLines(currentSettings.text);
-  const nextSettings = normalizeSettings({
-    ...currentSettings,
+  const nextSettings = buildReloadedPresetSettings({
+    settings: currentSettings,
     presetId,
-    ...getPresetBaseSettings(presetId),
-    lines: buildPresetLines(
-      presetId,
-      rawLines.length,
-      createDefaultLineSettings,
-      { listingId: activeOrder?.source?.listingId ?? null },
-    ),
+    listingId: activeOrder?.source?.listingId ?? null,
+    normalizeSettings,
+    getPresetBaseSettings,
+    buildPresetLines,
+    createDefaultLineSettings,
+    getRawTextLines,
   });
 
   applySettings(nextSettings);
@@ -3249,6 +3248,7 @@ function renderOrderList() {
   pasteLayoutControlsButton.disabled = !canPasteLayoutControls(activeOrder);
   saveAsNewPresetButton.disabled = !activeOrder;
   assignPresetToListingButton.disabled = !activeOrder?.source?.listingId;
+  reloadPresetButton.disabled = !activeOrder;
 }
 
 function setActiveWorkspace(workspace) {
@@ -4819,6 +4819,13 @@ function applyGlobalVerticalScale(value, options = {}) {
 
 textInput.addEventListener("input", handleTextInput);
 presetInput.addEventListener("change", () => {
+  const order = getActiveOrder();
+  if (order?.source) {
+    order.source.manualPresetOverride = true;
+  }
+  applyPresetSelection(presetInput.value);
+});
+reloadPresetButton?.addEventListener("click", () => {
   const order = getActiveOrder();
   if (order?.source) {
     order.source.manualPresetOverride = true;

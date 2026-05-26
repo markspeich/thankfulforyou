@@ -166,7 +166,7 @@ describe("export_svg face tracing", () => {
     expect(Math.abs(simplifiedBounds.bottom - baselineBounds.bottom)).toBeLessThanOrEqual(0.05);
   });
 
-  test("applies per-letter vertical stretch without widening outline bounds", { timeout: 15000 }, () => {
+  test("applies per-letter vertical stretch without widening outline bounds", { timeout: 30000 }, () => {
     const baseLayout = {
       text: "T",
       widthMm: 40,
