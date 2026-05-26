@@ -158,6 +158,7 @@ const globalHorizontalScaleOutput = document.querySelector("#globalHorizontalSca
 const globalVerticalScaleInput = document.querySelector("#globalVerticalScaleInput");
 const globalVerticalScaleOutput = document.querySelector("#globalVerticalScaleOutput");
 const lineControls = document.querySelector("#lineControls");
+const lineControlCards = document.querySelector("#lineControlCards");
 const backingInput = document.querySelector("#backingInput");
 const backingOutput = document.querySelector("#backingOutput");
 const preview = document.querySelector("#preview");
@@ -2541,13 +2542,13 @@ function setEditorActionLabel(button, label) {
 function renderLineControls(settings = getCurrentSettings()) {
   const normalized = normalizeSettings(settings);
   const rawLines = getRawTextLines(normalized.text);
-  lineControls.replaceChildren();
+  lineControlCards.replaceChildren();
 
   if (!rawLines.length) {
     const empty = document.createElement("p");
     empty.className = "line-control-empty";
     empty.textContent = "Add text lines to generate one font and slider group per line.";
-    lineControls.append(empty);
+    lineControlCards.append(empty);
     return;
   }
 
@@ -2590,7 +2591,7 @@ function renderLineControls(settings = getCurrentSettings()) {
     grid.append(...fields);
 
     card.append(grid);
-    lineControls.append(card);
+    lineControlCards.append(card);
   });
 }
 
@@ -2668,7 +2669,7 @@ function getCurrentSettings() {
   const activeOrder = getActiveOrder();
   const listingId = activeOrder?.source?.listingId ?? null;
   const lines = rawLines.map((_, index) => {
-    const lineCard = lineControls.querySelector(`[data-line-index="${index}"]`);
+    const lineCard = lineControlCards.querySelector(`[data-line-index="${index}"]`);
     if (!lineCard) {
       return createPresetLineSettings(presetId, index, { listingId });
     }

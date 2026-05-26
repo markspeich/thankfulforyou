@@ -302,39 +302,41 @@
                   </button>
                 </section>
 
-                <section class="global-control-card" aria-label="Global settings controls">
-                  <div class="section-heading">Global Settings</div>
-                  <label class="check-field" for="weldExportedDesignInput">
-                    <input id="weldExportedDesignInput" type="checkbox" checked>
-                    <span>Weld Exported Design</span>
-                  </label>
+                <div id="lineControls" class="line-controls">
+                  <section class="global-control-card" aria-label="Global settings controls">
+                    <div class="section-heading">Global Settings</div>
+                    <label class="check-field" for="weldExportedDesignInput">
+                      <input id="weldExportedDesignInput" type="checkbox" checked>
+                      <span>Weld Exported Design</span>
+                    </label>
 
-                  <label class="field compact-field">
-                    <span>Horizontal Stretch</span>
-                    <div class="range-row">
-                      <input id="globalHorizontalScaleInput" type="range" min="0.75" max="2" step="0.01" value="1">
-                      <output id="globalHorizontalScaleOutput">100%</output>
-                    </div>
-                  </label>
+                    <label class="field compact-field">
+                      <span>Horizontal Stretch</span>
+                      <div class="range-row">
+                        <input id="globalHorizontalScaleInput" type="range" min="0.75" max="2" step="0.01" value="1">
+                        <output id="globalHorizontalScaleOutput">100%</output>
+                      </div>
+                    </label>
 
-                  <label class="field compact-field">
-                    <span>Vertical Stretch</span>
-                    <div class="range-row">
-                      <input id="globalVerticalScaleInput" type="range" min="0.75" max="1.5" step="0.01" value="1">
-                      <output id="globalVerticalScaleOutput">100%</output>
-                    </div>
-                  </label>
+                    <label class="field compact-field">
+                      <span>Vertical Stretch</span>
+                      <div class="range-row">
+                        <input id="globalVerticalScaleInput" type="range" min="0.75" max="1.5" step="0.01" value="1">
+                        <output id="globalVerticalScaleOutput">100%</output>
+                      </div>
+                    </label>
 
-                  <label class="field compact-field">
-                    <span>Backing Border</span>
-                    <div class="range-row">
-                      <input id="backingInput" type="range" min="0" max="10" step="0.1" value="2.2">
-                      <output id="backingOutput">2.200 mm</output>
-                    </div>
-                  </label>
-                </section>
+                    <label class="field compact-field">
+                      <span>Backing Border</span>
+                      <div class="range-row">
+                        <input id="backingInput" type="range" min="0" max="10" step="0.1" value="2.2">
+                        <output id="backingOutput">2.200 mm</output>
+                      </div>
+                    </label>
+                  </section>
 
-                <div id="lineControls" class="line-controls"></div>
+                  <div id="lineControlCards" class="line-controls-cards"></div>
+                </div>
               </aside>
             </section>
           </div>
