@@ -21,17 +21,44 @@ class handler(BaseHTTPRequestHandler):
         try:
             length = int(self.headers.get("content-length", "0"))
             payload = json.loads(self.rfile.read(length).decode("utf-8") or "{}")
-            self._configure_asset_base_url()
-            self._send_svg(200, build_svg(payload))
+            previous_asset_env = self._configure_asset_request_context()
+            try:
+                self._send_svg(200, build_svg(payload))
+            finally:
+                self._restore_asset_request_context(previous_asset_env)
         except Exception as error:
             self._send_text(500, str(error))
 
-    def _configure_asset_base_url(self):
+    def _configure_asset_request_context(self):
+        env_keys = [
+            "THANKFULFORYOU_ASSET_BASE_URL",
+            "THANKFULFORYOU_ASSET_REQUEST_COOKIE",
+            "THANKFULFORYOU_ASSET_PROTECTION_BYPASS",
+        ]
+        previous = {key: os.environ.get(key) for key in env_keys}
         forwarded_proto = self.headers.get("x-forwarded-proto", "https").split(",")[0].strip()
         forwarded_host = self.headers.get("x-forwarded-host", "").split(",")[0].strip()
         host = forwarded_host or self.headers.get("host", "").strip()
         if host:
             os.environ["THANKFULFORYOU_ASSET_BASE_URL"] = f"{forwarded_proto or 'https'}://{host}"
+        cookie = self.headers.get("cookie", "").strip()
+        if cookie:
+            os.environ["THANKFULFORYOU_ASSET_REQUEST_COOKIE"] = cookie
+        else:
+            os.environ.pop("THANKFULFORYOU_ASSET_REQUEST_COOKIE", None)
+        protection_bypass = self.headers.get("x-vercel-protection-bypass", "").strip()
+        if protection_bypass:
+            os.environ["THANKFULFORYOU_ASSET_PROTECTION_BYPASS"] = protection_bypass
+        else:
+            os.environ.pop("THANKFULFORYOU_ASSET_PROTECTION_BYPASS", None)
+        return previous
+
+    def _restore_asset_request_context(self, previous):
+        for key, value in previous.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
 
     def _send_svg(self, status, body):
         self.send_response(status)
