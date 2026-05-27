@@ -253,6 +253,8 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Shared queue editing should support one person creating a queue and another person opening and continuing that same queue later.
 - The collaboration model should support multiple authorized users in the future, but the first version may use lightweight edit ownership, presence, or stale-write detection instead of full simultaneous freeform co-editing.
 - The UI should show enough shared-state context for operators to avoid accidental overwrites, including at minimum who last updated a design and when.
+- Remote pre-production testing should support a Vercel preview deployment paired with a non-production Supabase environment such as a Supabase preview branch or staging project.
+- The repository should keep Supabase schema changes in versioned migration files so preview branches and future production promotions can reproduce the shared queue backend reliably.
 - In the selected-order editor, show the imported Etsy color as a read-only label directly below the `Design Text` field whenever imported color metadata is available.
 - In the selected-order editor, show the imported Etsy quantity as a read-only label directly below the `Color` label whenever imported quantity metadata is available.
 - If the imported color name contains the word `White`, highlight that displayed color name in the editor.

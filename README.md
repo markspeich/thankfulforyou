@@ -145,6 +145,37 @@ Recommended Vercel project settings:
 - Output Directory: `dist`
 - Install Command: `npm install`
 
+For preview deployments that exercise shared queue auth and persistence safely, use a non-production Supabase environment when possible. The preferred long-term setup is:
+
+- a Git branch deployed to a Vercel Preview deployment
+- a matching Supabase preview branch or separate staging project
+- preview-only Vercel environment variables pointing at that non-production Supabase environment
+
+For shared queue preview deployments, configure these Vercel environment variables at minimum:
+
+- `SUPABASE_URL`
+- `SUPABASE_PUBLISHABLE_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY`
+
+The preview deployment uses `SUPABASE_URL` plus `SUPABASE_PUBLISHABLE_KEY` to generate `dist/app-config.js` during `npm run build`, and the server routes in `api/` use `SUPABASE_URL` plus `SUPABASE_SERVICE_ROLE_KEY` at runtime.
+
+## Supabase Branching Setup
+
+Supabase preview branches are the preferred way to test shared queue schema and auth changes remotely without pointing Vercel Preview at production data or production credentials.
+
+This repo should keep its Supabase schema in `supabase/migrations`. Supabase branching depends on migration history to reproduce the backend shape reliably across preview branches and merges.
+
+Recommended setup flow:
+
+1. Initialize the local Supabase project files once with `npx supabase init`.
+2. Link the repo to the hosted project with `npx supabase link --project-ref <project-ref>`.
+3. Pull the current remote production schema into versioned migrations with `npx supabase db pull <migration-name> --linked`.
+4. Commit the resulting `supabase/` files.
+5. Create or connect a Supabase preview branch for the Git branch you want to test.
+6. Point the Vercel Preview environment variables at that branch's `SUPABASE_URL`, publishable key, and service role key.
+
+If the repo has no migration history yet, create it before relying on Supabase preview branches for remote testing. Otherwise a new branch may not reproduce the current shared queue schema cleanly.
+
 The hosted preview, analysis, and export all use these same real font files so layout decisions and SVG output stay consistent between local and Vercel environments.
 
 ## Vercel Preview Smoke Test
