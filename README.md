@@ -59,6 +59,10 @@ The browser session bootstrap reads:
 - `window.__APP_CONFIG__.supabaseUrl`
 - `window.__APP_CONFIG__.supabaseAnonKey`
 
+Operators sign in through the app with invite-only email-and-password Supabase Auth accounts. The app does not expose self-service sign-up for shared queue access.
+
+If browser Supabase config is missing or the current shared queue session expires, the app shows a blocking sign-in or configuration state instead of falling back to local-only queue persistence.
+
 The server-side shared queue routes read:
 
 - `SUPABASE_URL`
@@ -84,6 +88,8 @@ Each shared design record should preserve audit and revision metadata so stale w
 - `updatedBy`
 
 For local verification of shared queue behavior, authenticate with a Supabase user that belongs to the target workspace before testing cross-browser restore, save conflicts, or recovery flows.
+
+The local `npm start` dev server now serves the browser auth module graph directly from `node_modules` for the unbundled app shell, so shared queue sign-in and authenticated queue requests can be exercised locally against a real Supabase project.
 
 The production-oriented build expects these deployable font files in `public/fonts`:
 

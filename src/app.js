@@ -52,6 +52,7 @@ import {
   saveSharedQueueSnapshot,
 } from "./shared-queue-api.js";
 import {
+  getAccessToken,
   getSignedInSession,
   signInWithPassword as signInOperatorWithPassword,
 } from "./auth-session.js";
@@ -337,6 +338,22 @@ function showSharedQueueSignIn(error = "") {
     error,
     allowSignIn: true,
   });
+}
+
+function isSharedQueueAuthenticationError(error) {
+  return Boolean(
+    error instanceof Error
+      && typeof error.message === "string"
+      && /authentication required/i.test(error.message),
+  );
+}
+
+function handleSharedQueueAuthenticationRequired(detail = "Shared queue session expired. Sign in again to continue.") {
+  sharedSessionContext = null;
+  sharedQueueAccessToken = null;
+  disableSharedQueueSync(detail);
+  showSharedQueueSignIn(detail);
+  renderSharedQueueBanner();
 }
 
 async function bootstrapSharedQueueAccess() {
@@ -2518,7 +2535,13 @@ async function saveQueueSnapshotToRemote(options = {}) {
       return;
     }
 
-    const savedSnapshot = await saveSharedQueueSnapshot(snapshot, { keepalive });
+    const accessToken = await getAccessToken();
+    if (!accessToken) {
+      throw new Error("Authentication required.");
+    }
+    sharedQueueAccessToken = accessToken;
+
+    const savedSnapshot = await saveSharedQueueSnapshot(snapshot, { keepalive, accessToken });
     if (savedSnapshot?.queue) {
       enableSharedQueueSync(savedSnapshot.queue);
     }
@@ -2570,6 +2593,14 @@ async function saveQueueSnapshotToRemote(options = {}) {
       return;
     }
 
+    if (isSharedQueueAuthenticationError(error)) {
+      const detail = "Shared queue session expired. Sign in again to continue saving this batch.";
+      handleSharedQueueAuthenticationRequired(detail);
+      persistQueueState({ skipRemoteSave: true });
+      updateWorkflowAlert(detail, "pending");
+      return;
+    }
+
     if (degradeOnFailure && !isConflictError) {
       disableSharedQueueSync(
         error instanceof Error && error.message
@@ -2608,6 +2639,16 @@ async function restoreInitialQueueState(accessToken) {
       setSharedQueueSyncState("disabled");
     }
   } catch (error) {
+    if (isSharedQueueAuthenticationError(error)) {
+      sharedSessionContext = null;
+      setSharedQueueContext(localSnapshot?.queue || null);
+      handleSharedQueueAuthenticationRequired("Shared queue session expired. Sign in again to reopen the shared queue.");
+      return {
+        source: null,
+        count: 0,
+      };
+    }
+
     sharedSessionContext = null;
     setSharedQueueContext(localSnapshot?.queue || null);
     disableSharedQueueSync(
@@ -2622,6 +2663,14 @@ async function restoreInitialQueueState(accessToken) {
     try {
       remoteSnapshot = await fetchSharedQueueSnapshot(sharedSession.queue.id, accessToken);
     } catch (error) {
+      if (isSharedQueueAuthenticationError(error)) {
+        handleSharedQueueAuthenticationRequired("Shared queue session expired. Sign in again to reopen the shared queue.");
+        return {
+          source: null,
+          count: 0,
+        };
+      }
+
       disableSharedQueueSync(
         error instanceof Error && error.message
           ? `Shared queue sync is unavailable. ${error.message}`

@@ -102,8 +102,57 @@ async function loadBundledPresetSnapshot() {
   };
 }
 
-const server = createServer((request, response) => {
+const server = createServer(async (request, response) => {
   const requestUrl = new URL(request.url || "/", `http://localhost:${port}`);
+
+  if (requestUrl.pathname === "/api/shared-session" || requestUrl.pathname === "/api/shared-queue") {
+    const bodyText = request.method === "PUT" ? await readRequestBody(request) : "";
+    let payload = undefined;
+
+    if (bodyText) {
+      try {
+        payload = JSON.parse(bodyText);
+      } catch {
+        sendJson(response, 400, { error: "Shared queue payload must be valid JSON." });
+        return;
+      }
+    }
+
+    try {
+      const modulePath = requestUrl.pathname === "/api/shared-session"
+        ? "../api/shared-session.js"
+        : "../api/shared-queue.js";
+      const { default: handler } = await import(modulePath);
+      const req = {
+        method: request.method,
+        headers: Object.fromEntries(
+          Object.entries(request.headers).map(([key, value]) => [key, Array.isArray(value) ? value[0] : value]),
+        ),
+        query: Object.fromEntries(requestUrl.searchParams.entries()),
+        body: payload,
+      };
+      const res = {
+        statusCode: 200,
+        status(code) {
+          this.statusCode = code;
+          return this;
+        },
+        setHeader(name, value) {
+          response.setHeader(name, value);
+        },
+        json(jsonPayload) {
+          sendJson(response, this.statusCode || 200, jsonPayload);
+        },
+      };
+
+      await handler(req, res);
+    } catch (error) {
+      sendJson(response, 500, {
+        error: error instanceof Error ? error.message : "Unable to process shared queue request.",
+      });
+    }
+    return;
+  }
 
   if (requestUrl.pathname === "/api/queue-snapshot") {
     const workspaceKey = requestUrl.searchParams.get("workspaceKey") || "primary";
