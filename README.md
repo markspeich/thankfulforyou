@@ -44,6 +44,47 @@ Or run both:
 npm test
 ```
 
+## Shared Queue Setup
+
+The shared queue rollout uses Supabase for authenticated workspace access and shared queue persistence.
+
+Set these environment variables for local and hosted environments:
+
+- `SUPABASE_URL`
+- `SUPABASE_ANON_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY`
+
+The browser session bootstrap reads:
+
+- `window.__APP_CONFIG__.supabaseUrl`
+- `window.__APP_CONFIG__.supabaseAnonKey`
+
+The server-side shared queue routes read:
+
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY`
+
+The shared queue implementation expects these Supabase resources:
+
+- `workspaces`
+- `workspace_memberships`
+- `design_queues`
+- an RPC or equivalent transactional save path named `save_design_queue_snapshot`
+
+The shared queue save path assumes the backend returns canonical queue snapshots with:
+
+- `queue`
+- `activeOrderId`
+- `orders`
+
+Each shared design record should preserve audit and revision metadata so stale writes can be detected:
+
+- `revision`
+- `updatedAt`
+- `updatedBy`
+
+For local verification of shared queue behavior, authenticate with a Supabase user that belongs to the target workspace before testing cross-browser restore, save conflicts, or recovery flows.
+
 The production-oriented build expects these deployable font files in `public/fonts`:
 
 - `Candlepin-Laser.otf`
