@@ -127,6 +127,21 @@ async function installPresetRoutes(page) {
   });
 }
 
+async function openPresetTools(page) {
+  const menu = page.locator(".preset-tools-menu");
+  if (await menu.evaluate((node) => node.hasAttribute("open"))) {
+    return;
+  }
+
+  await page.locator(".preset-tools-toggle").click();
+  await expect(menu).toHaveAttribute("open", "");
+}
+
+async function clickPresetAction(page, name) {
+  await openPresetTools(page);
+  await page.getByRole("button", { name }).click();
+}
+
 async function installDelayedAnalysisRoute(page) {
   const pendingRequests = [];
 
@@ -149,12 +164,12 @@ async function installDelayedAnalysisRoute(page) {
 }
 
 async function openQueueTools(page) {
-  const menu = page.locator(".queue-tools-menu");
+  const menu = page.locator(".queue-header .queue-tools-menu");
   if (await menu.evaluate((node) => node.hasAttribute("open"))) {
     return;
   }
 
-  await page.locator(".queue-tools-toggle").click();
+  await page.locator(".queue-header .queue-tools-toggle").click();
   await expect(menu).toHaveAttribute("open", "");
 }
 
@@ -249,6 +264,8 @@ test("can create a new preset from order settings and update an existing preset"
   const nonce = Date.now();
   const createdPresetName = `Morgan RN ${nonce}`;
   const renamedPresetName = `Morgan RN Updated ${nonce}`;
+  const overwrittenPresetBackingMm = 3.3;
+  const overwrittenSecondLineSizeMm = 27;
   const listingId = `task4-listing-${nonce}`;
   const importPayload = JSON.stringify([
     {
@@ -279,7 +296,7 @@ test("can create a new preset from order settings and update an existing preset"
   await setRangeValue(page, "#backingInput", 4.4);
   await setRangeValue(page, '[data-line-index="1"] [data-setting="fontSizeMm"]', 23);
 
-  await page.getByRole("button", { name: "Save as New Preset" }).click();
+  await clickPresetAction(page, "Save as New Preset");
   const presetWorkspace = page.getByRole("region", { name: "Preset editor workspace" });
   await expect(presetWorkspace).toBeVisible();
   await expect(presetWorkspace).not.toContainText("tools will land here next");
@@ -320,6 +337,15 @@ test("can create a new preset from order settings and update an existing preset"
   await expect(page.locator("#presetInput")).toHaveValue(createdPresetId);
   await expect(page.locator("#downloadButton")).toBeEnabled();
 
+  await page.locator("#orderList .order-row").filter({ hasText: "Design 2" }).click();
+  await setRangeValue(page, "#backingInput", overwrittenPresetBackingMm);
+  await setRangeValue(page, '[data-line-index="1"] [data-setting="fontSizeMm"]', overwrittenSecondLineSizeMm);
+  await clickPresetAction(page, "Overwrite");
+  await page.locator("#presetInput").selectOption("preset-a1f4c8e2b601");
+  await page.locator("#presetInput").selectOption(createdPresetId);
+  await expect(page.locator("#backingInput")).toHaveValue(String(overwrittenPresetBackingMm));
+  await expect(page.locator('[data-line-index="1"] [data-setting="fontSizeMm"]')).toHaveValue(String(overwrittenSecondLineSizeMm));
+
   await page.getByRole("button", { name: "Presets" }).click();
   await page.locator("#presetEditorSelect").selectOption(createdPresetId);
   await expect(page.locator("#presetDraftName")).toHaveValue(createdPresetName);
@@ -333,6 +359,7 @@ test("can create a new preset from order settings and update an existing preset"
   await expect(page.locator("#presetEditorSelect")).toContainText(renamedPresetName);
 
   await page.getByRole("button", { name: "Order Items" }).click();
+  await page.locator("#orderList .order-row").filter({ hasText: "Design 1" }).click();
   await expect(page.locator("#presetInput")).toHaveValue(createdPresetId);
   await expect(page.locator("#downloadButton")).toBeEnabled();
   await expect(page.locator("#orderList .order-row").filter({ hasText: "Design 1" })).toContainText("Complete");
@@ -351,7 +378,7 @@ test("can create a new preset from order settings and update an existing preset"
   await expect(page.locator("#backingInput")).toHaveValue("1");
   await expect(page.locator('[data-line-index="1"] [data-setting="fontSizeMm"]')).toHaveValue("40");
 
-  await page.getByRole("button", { name: "Assign Preset to Listing" }).click();
+  await clickPresetAction(page, "Assign Preset to Listing");
   const assignmentDialog = page.locator("#presetAssignmentDialog");
   await expect(assignmentDialog).toBeVisible();
   await expect(assignmentDialog.locator(".queue-summary-card")).toHaveClass(/queue-summary-card-success/);
@@ -365,7 +392,7 @@ test("can create a new preset from order settings and update an existing preset"
   await expect(page.locator('[data-line-index="0"] [data-setting="fontId"]')).toHaveValue("skywalk");
   await expect(page.locator('[data-line-index="0"] [data-setting="fontSizeMm"]')).toHaveValue("21");
   await expect(page.locator('[data-line-index="1"] [data-setting="fontId"]')).toHaveValue("somekind");
-  await expect(page.locator('[data-line-index="1"] [data-setting="fontSizeMm"]')).toHaveValue("23");
+  await expect(page.locator('[data-line-index="1"] [data-setting="fontSizeMm"]')).toHaveValue(String(overwrittenSecondLineSizeMm));
   await expect(page.locator("#backingInput")).toHaveValue("5.1");
 });
 
@@ -402,7 +429,7 @@ test("assigning a preset to a completed imported order clears stale batch-export
   await setRangeValue(page, "#backingInput", 4.4);
   await setRangeValue(page, '[data-line-index="1"] [data-setting="fontSizeMm"]', 23);
 
-  await page.getByRole("button", { name: "Save as New Preset" }).click();
+  await clickPresetAction(page, "Save as New Preset");
   await page.locator("#presetDraftName").fill(createdPresetName);
   await page.getByRole("button", { name: "Save Preset" }).click();
   let createdPresetId = "";
@@ -427,7 +454,7 @@ test("assigning a preset to a completed imported order clears stale batch-export
   await page.locator("#captureButton").click();
   await expect(page.locator("#downloadButton")).toBeEnabled();
 
-  await page.getByRole("button", { name: "Assign Preset to Listing" }).click();
+  await clickPresetAction(page, "Assign Preset to Listing");
   await expect(page.locator("#presetAssignmentDialog")).toBeVisible();
   await page.getByRole("button", { name: "Close assignment confirmation" }).click();
   await expect(page.locator("#presetAssignmentDialog")).not.toBeVisible();
@@ -458,7 +485,7 @@ test("renaming a preset while analysis is running still restores export readines
   await setRangeValue(page, "#backingInput", 4.4);
   await setRangeValue(page, '[data-line-index="1"] [data-setting="fontSizeMm"]', 23);
 
-  await page.getByRole("button", { name: "Save as New Preset" }).click();
+  await clickPresetAction(page, "Save as New Preset");
   await page.locator("#presetDraftName").fill(createdPresetName);
   await page.getByRole("button", { name: "Save Preset" }).click();
   let createdPresetId = "";
@@ -553,4 +580,63 @@ test("shows assigned listings for a preset and lets operators unassign them", as
   await page.locator("#importClipboardButton").click();
   await expect(page.locator("#importStatus")).toContainText("Imported 1 Etsy design from the clipboard.");
   await expect(page.locator("#presetInput")).not.toHaveValue("preset-c3e8a1d7f520");
+});
+
+test("deletes a saved preset only after confirmation and migrates active uses away from it", async ({ page }) => {
+  const nonce = Date.now();
+  const createdPresetName = `Delete Me ${nonce}`;
+
+  await installPresetRoutes(page);
+  await page.route("**/api/layout-analyze", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify(buildMockAnalysisResponse()),
+    });
+  });
+
+  await page.goto("/");
+
+  await clickQueueAction(page, "Add Design");
+  await page.locator("#textInput").fill("Morgan\nRN");
+  await page.locator('[data-line-index="0"] [data-setting="fontId"]').selectOption("skywalk");
+  await page.locator('[data-line-index="1"] [data-setting="fontId"]').selectOption("somekind");
+
+  await clickPresetAction(page, "Save as New Preset");
+  await page.locator("#presetDraftName").fill(createdPresetName);
+  await page.getByRole("button", { name: "Save Preset" }).click();
+
+  let createdPresetId = "";
+  await expect.poll(async () => {
+    createdPresetId = await page.locator("#presetEditorSelect").inputValue();
+    return createdPresetId !== "";
+  }, { timeout: 10000 }).toBe(true);
+  await expect(page.locator("#presetEditorStatus")).toContainText("Saved");
+
+  await page.getByRole("button", { name: "Order Items" }).click();
+  await page.locator("#presetInput").selectOption(createdPresetId);
+  await expect(page.locator("#presetInput")).toHaveValue(createdPresetId);
+
+  await page.getByRole("button", { name: "Presets" }).click();
+  await page.locator("#presetEditorSelect").selectOption(createdPresetId);
+
+  await page.getByRole("button", { name: "Delete Preset" }).click();
+  const dialog = page.locator("#confirmationDialog");
+  await expect(dialog).toBeVisible();
+  await expect(dialog.locator("#confirmationDialogTitle")).toHaveText("Delete Preset?");
+  await expect(dialog.locator("#confirmationDialogDescription")).toContainText(createdPresetName);
+  await dialog.locator("#confirmationDialogCancelButton").click();
+  await expect(dialog).not.toBeVisible();
+  await expect(page.locator("#presetEditorSelect")).toHaveValue(createdPresetId);
+
+  await page.getByRole("button", { name: "Delete Preset" }).click();
+  await expect(dialog).toBeVisible();
+  await dialog.locator("#confirmationDialogConfirmButton").click();
+  await expect(dialog).not.toBeVisible();
+  await expect(page.locator("#presetEditorStatus")).toContainText("Deleted");
+  await expect(page.locator(`#presetEditorSelect option[value="${createdPresetId}"]`)).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Order Items" }).click();
+  await expect(page.locator("#presetInput")).not.toHaveValue(createdPresetId);
+  await expect(page.locator(`#presetInput option[value="${createdPresetId}"]`)).toHaveCount(0);
 });

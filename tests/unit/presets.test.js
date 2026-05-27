@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   buildPresetLines,
+  deletePresetDefinitionLocally,
   getDefaultPresetId,
   getPresetDefinitionForEditor,
   getPresetGlobalDefaults,
@@ -395,5 +396,39 @@ describe("presets", () => {
     expect(result.snapshot).toEqual(getPresetSnapshot());
     expect(getPresetDefinitionForEditor("preset-a1f4c8e2b601")?.name).toBe("All Candlepin Updated");
     expect(localStorageMock.setItem).toHaveBeenCalledTimes(1);
+  });
+
+  it("can delete a preset definition locally and promote a surviving preset as the default when needed", () => {
+    const localStorageMock = {
+      setItem: vi.fn(),
+    };
+    vi.stubGlobal("localStorage", localStorageMock);
+
+    const result = deletePresetDefinitionLocally("preset-a1f4c8e2b601");
+
+    expect(result.deletedPresetId).toBe("preset-a1f4c8e2b601");
+    expect(getPresetDefinitionForEditor("preset-a1f4c8e2b601")).toBeNull();
+    expect(getDefaultPresetId()).toBe("preset-b7d2e9f4c318");
+    expect(getPresetOptions().map((preset) => preset.id)).not.toContain("preset-a1f4c8e2b601");
+    expect(result.snapshot).toEqual(getPresetSnapshot());
+    expect(localStorageMock.setItem).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects deleting the final remaining preset", () => {
+    setPresetRegistryForTests(
+      { defaultPresetId: "only-preset" },
+      [
+        {
+          schemaVersion: 1,
+          id: "only-preset",
+          name: "Only Preset",
+          lineDefaults: { fontId: "candlepin" },
+          lineRules: [{ match: { kind: "all" }, settings: { fontId: "candlepin" } }],
+          listingAssignments: [],
+        },
+      ],
+    );
+
+    expect(() => deletePresetDefinitionLocally("only-preset")).toThrow("At least one preset must remain available.");
   });
 });

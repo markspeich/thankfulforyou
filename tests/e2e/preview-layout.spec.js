@@ -27,7 +27,7 @@ function exportDesignButton(page) {
 }
 
 function queueToolsToggle(page) {
-  return page.locator(".queue-tools-toggle");
+  return page.locator(".queue-header .queue-tools-toggle");
 }
 
 function editorToolsToggle(page) {
@@ -35,7 +35,7 @@ function editorToolsToggle(page) {
 }
 
 async function openQueueTools(page) {
-  const menu = page.locator(".queue-tools-menu");
+  const menu = page.locator(".queue-header .queue-tools-menu");
   if (await menu.evaluate((node) => node.hasAttribute("open"))) {
     return;
   }
@@ -112,6 +112,25 @@ async function setDesignText(page, value) {
     input.dispatchEvent(new Event("input", { bubbles: true }));
     input.dispatchEvent(new Event("change", { bubbles: true }));
   }, value);
+}
+
+function presetToolsToggle(page) {
+  return page.locator(".preset-tools-toggle");
+}
+
+async function openPresetTools(page) {
+  const menu = page.locator(".preset-tools-menu");
+  if (await menu.evaluate((node) => node.hasAttribute("open"))) {
+    return;
+  }
+
+  await presetToolsToggle(page).click();
+  await expect(menu).toHaveAttribute("open", "");
+}
+
+async function clickPresetAction(page, name) {
+  await openPresetTools(page);
+  await page.getByRole("button", { name }).click();
 }
 
 async function confirmQueueDialog(page, expectedTitle) {
@@ -1059,6 +1078,28 @@ test("grows the preview area when the browser viewport gets taller", async ({ pa
   expect(tallerHeight).toBeGreaterThan(shorterHeight + 120);
 });
 
+test("keeps the preview panel large and the connection status compact", async ({ page }) => {
+  await page.setViewportSize({ width: 1500, height: 1000 });
+
+  const layout = await page.evaluate(() => {
+    const previewPanel = document.querySelector(".preview-panel");
+    const connectionStatus = document.querySelector("#connectionStatus");
+
+    if (!previewPanel || !connectionStatus) {
+      throw new Error("Expected preview panel and connection status to exist");
+    }
+
+    return {
+      previewHeight: previewPanel.getBoundingClientRect().height,
+      statusHeight: connectionStatus.getBoundingClientRect().height,
+    };
+  });
+
+  expect(layout.previewHeight).toBeGreaterThan(300);
+  expect(layout.statusHeight).toBeLessThan(180);
+  expect(layout.previewHeight).toBeGreaterThan(layout.statusHeight * 3);
+});
+
 test("keeps additional line control groups reachable in the right-side inspector", async ({ page }) => {
   await page.setViewportSize({ width: 1920, height: 1080 });
   await page.locator("#textInput").fill("DPT\nRN\nBSN");
@@ -1117,6 +1158,21 @@ test("keeps wheel zoom without rendering floating zoom controls", async ({ page 
   });
 
   expect(previewSizeAfter.height).toBeGreaterThan(previewSizeBefore.height);
+});
+
+test("supports zooming the preview up to the higher production ceiling", async ({ page }) => {
+  const previewPanel = page.locator(".preview-panel");
+  const preview = page.locator("#preview");
+  const previewWidthBefore = await preview.evaluate((element) => element.getBoundingClientRect().width);
+
+  await previewPanel.hover();
+  for (let step = 0; step < 20; step += 1) {
+    await page.mouse.wheel(0, -1000);
+  }
+
+  await expect.poll(async () => {
+    return preview.evaluate((element) => element.getBoundingClientRect().width);
+  }).toBeGreaterThan(previewWidthBefore * 4);
 });
 
 test("pans the preview with middle-click drag", async ({ page }) => {
@@ -1554,68 +1610,109 @@ test("requires re-complete when lock text height changes a scaled design", async
   await page.unrouteAll({ behavior: "ignoreErrors" });
 });
 
-test("shows layout utilities above separate Preset and Global Settings cards, with listing assignment inside Preset", async ({ page }) => {
-  const copyLayoutButton = page.locator("#copyLayoutPlacementButton");
-  const pasteLayoutButton = page.locator("#pasteLayoutPlacementButton");
+test("shows a preset overflow menu above Global Settings with layout and preset actions inside it", async ({ page }) => {
   const presetsCard = page.locator('[aria-label="Preset selection controls"]');
   const globalSettingsCard = page.locator('[aria-label="Global settings controls"]');
   const presetNameLabel = presetsCard.getByText("Preset Name", { exact: true });
   const presetsInput = page.locator("#presetInput");
+  const presetToolsMenu = page.locator(".preset-tools-menu");
+  const presetToolsToggle = page.locator(".preset-tools-toggle");
+  const copyLayoutButton = page.locator("#copyLayoutPlacementButton");
+  const pasteLayoutButton = page.locator("#pasteLayoutPlacementButton");
+  const saveAsNewPresetButton = page.locator("#saveAsNewPresetButton");
+  const overwritePresetButton = page.locator("#overwritePresetButton");
   const assignPresetToListingButton = page.locator("#assignPresetToListingButton");
+  const reloadPresetButton = page.locator("#reloadPresetButton");
   const weldExportedDesignInput = page.locator("#weldExportedDesignInput");
   const globalHorizontalStretch = page.locator("#globalHorizontalScaleInput");
   const globalVerticalStretch = page.locator("#globalVerticalScaleInput");
   const backingBorderInput = page.locator("#backingInput");
 
+  await expect(presetsCard).toBeVisible();
+  await expect(globalSettingsCard).toBeVisible();
+  await expect(presetsCard.locator(".section-heading > span")).toHaveText("Preset");
+  await expect(globalSettingsCard.getByText("Global Settings", { exact: true })).toBeVisible();
+  await expect(presetNameLabel).toBeVisible();
+  await expect(presetsInput).toBeVisible();
+  await expect(presetToolsMenu).toBeVisible();
+  await expect(presetToolsToggle).toBeVisible();
+  await expect(copyLayoutButton).toBeHidden();
+  await expect(pasteLayoutButton).toBeHidden();
+  await expect(saveAsNewPresetButton).toBeHidden();
+  await expect(overwritePresetButton).toBeHidden();
+  await expect(assignPresetToListingButton).toBeHidden();
+  await expect(reloadPresetButton).toBeHidden();
+
+  await openPresetTools(page);
   await expect(copyLayoutButton).toBeVisible();
   await expect(pasteLayoutButton).toBeVisible();
   await expect(copyLayoutButton).toHaveText("Copy Layout");
   await expect(pasteLayoutButton).toHaveText("Paste Layout");
   await expect(copyLayoutButton).toBeEnabled();
   await expect(pasteLayoutButton).toBeDisabled();
-  await expect(presetsCard).toBeVisible();
-  await expect(globalSettingsCard).toBeVisible();
-  await expect(presetsCard.getByText("Preset", { exact: true })).toBeVisible();
-  await expect(globalSettingsCard.getByText("Global Settings", { exact: true })).toBeVisible();
-  await expect(presetNameLabel).toBeVisible();
-  await expect(presetsInput).toBeVisible();
+
+  await expect(saveAsNewPresetButton).toBeVisible();
+  await expect(saveAsNewPresetButton).toHaveText("Save as New Preset");
+  await expect(overwritePresetButton).toBeVisible();
+  await expect(overwritePresetButton).toHaveText("Overwrite");
   await expect(assignPresetToListingButton).toBeVisible();
+  await expect(reloadPresetButton).toBeVisible();
   await expect(weldExportedDesignInput).toBeVisible();
   await expect(globalHorizontalStretch).toBeVisible();
   await expect(globalVerticalStretch).toBeVisible();
   await expect(backingBorderInput).toBeVisible();
-  await expect(page.locator("#copyLayoutControlsButton")).toHaveCount(0);
-  await expect(page.locator("#pasteLayoutControlsButton")).toHaveCount(0);
 
   const completeButtonBox = await completeButton(page).boundingBox();
+  const presetToolsToggleBox = await presetToolsToggle.boundingBox();
   const copyLayoutButtonBox = await copyLayoutButton.boundingBox();
   const pasteLayoutButtonBox = await pasteLayoutButton.boundingBox();
   const presetsCardBox = await presetsCard.boundingBox();
   const globalSettingsCardBox = await globalSettingsCard.boundingBox();
   const presetsInputBox = await presetsInput.boundingBox();
+  const saveAsNewPresetButtonBox = await saveAsNewPresetButton.boundingBox();
+  const overwritePresetButtonBox = await overwritePresetButton.boundingBox();
   const assignPresetToListingButtonBox = await assignPresetToListingButton.boundingBox();
   const weldExportedDesignInputBox = await weldExportedDesignInput.boundingBox();
 
   expect(copyLayoutButtonBox).not.toBeNull();
   expect(pasteLayoutButtonBox).not.toBeNull();
   expect(completeButtonBox).not.toBeNull();
+  expect(presetToolsToggleBox).not.toBeNull();
   expect(presetsCardBox).not.toBeNull();
   expect(globalSettingsCardBox).not.toBeNull();
   expect(presetsInputBox).not.toBeNull();
+  expect(saveAsNewPresetButtonBox).not.toBeNull();
+  expect(overwritePresetButtonBox).not.toBeNull();
   expect(assignPresetToListingButtonBox).not.toBeNull();
   expect(weldExportedDesignInputBox).not.toBeNull();
 
-  expect(copyLayoutButtonBox.y).toBeLessThan(presetsCardBox.y);
-  expect(copyLayoutButtonBox.y).toBeLessThan(presetsInputBox.y);
-  expect(pasteLayoutButtonBox.y).toBeLessThan(presetsCardBox.y);
-  expect(pasteLayoutButtonBox.y).toBeLessThan(presetsInputBox.y);
+  expect(presetToolsToggleBox.y).toBeGreaterThanOrEqual(presetsCardBox.y);
+  expect(presetToolsToggleBox.y).toBeLessThan(presetsInputBox.y);
+  expect(copyLayoutButtonBox.y).toBeGreaterThanOrEqual(presetToolsToggleBox.y);
+  expect(pasteLayoutButtonBox.y).toBeGreaterThanOrEqual(presetToolsToggleBox.y);
   expect(presetsCardBox.y).toBeLessThan(globalSettingsCardBox.y);
   expect(presetsInputBox.y).toBeLessThan(globalSettingsCardBox.y);
-  expect(assignPresetToListingButtonBox.y).toBeGreaterThan(presetsInputBox.y);
-  expect(assignPresetToListingButtonBox.y).toBeLessThan(globalSettingsCardBox.y);
+  expect(saveAsNewPresetButtonBox.x).toBeGreaterThanOrEqual(copyLayoutButtonBox.x);
+  expect(overwritePresetButtonBox.x).toBeGreaterThanOrEqual(copyLayoutButtonBox.x);
+  expect(assignPresetToListingButtonBox.x).toBeGreaterThanOrEqual(copyLayoutButtonBox.x);
   expect(globalSettingsCardBox.y).toBeLessThan(weldExportedDesignInputBox.y);
   expect(copyLayoutButtonBox.height).toBeLessThan(completeButtonBox.height);
   expect(pasteLayoutButtonBox.height).toBeLessThan(completeButtonBox.height);
+});
+
+test("closes queue and preset overflow menus when clicking outside them", async ({ page }) => {
+  const queueMenu = page.locator(".queue-header .queue-tools-menu");
+  const presetMenu = page.locator(".preset-tools-menu");
+
+  await openQueueTools(page);
+  await expect(queueMenu).toHaveAttribute("open", "");
+  await page.locator("#activeOrderName").click();
+  await expect(queueMenu).not.toHaveAttribute("open", "");
+
+  await openPresetTools(page);
+  await expect(presetMenu).toHaveAttribute("open", "");
+  await page.locator("#textInput").click();
+  await expect(presetMenu).not.toHaveAttribute("open", "");
 });
 
 test("copies layout controls onto another design without copying text", async ({ page }) => {
@@ -1627,8 +1724,8 @@ test("copies layout controls onto another design without copying text", async ({
     });
   });
 
-  const copyLayoutButton = page.getByRole("button", { name: "Copy Layout" });
-  const pasteLayoutButton = page.getByRole("button", { name: "Paste Layout" });
+  const copyLayoutButton = page.locator("#copyLayoutPlacementButton");
+  const pasteLayoutButton = page.locator("#pasteLayoutPlacementButton");
 
   await page.locator("#textInput").fill("Savannah\nRN");
   await page.locator("#presetInput").selectOption("preset-d9b4f2a6c731");
@@ -1639,9 +1736,11 @@ test("copies layout controls onto another design without copying text", async ({
   await page.locator('.line-control-card[data-line-index="1"] [data-setting="lineBridgeMm"]').fill("2.2");
   await page.locator('.line-control-card[data-line-index="1"] [data-setting="verticalScale"]').fill("1.18");
 
+  await openPresetTools(page);
   await expect(copyLayoutButton).toBeEnabled();
-  await copyLayoutButton.click();
+  await clickPresetAction(page, "Copy Layout");
   await expectWorkflowAlertSuccess(page, "Copied layout controls from Design 1.");
+  await openPresetTools(page);
   await expect(pasteLayoutButton).toBeDisabled();
 
   await clickQueueAction(page, "Add Design");
@@ -1656,15 +1755,17 @@ test("copies layout controls onto another design without copying text", async ({
   await expect(exportDesignButton(page)).toBeEnabled();
 
   await page.locator("#orderList .order-row").filter({ hasText: "Design 1" }).locator(".order-item").click();
+  await openPresetTools(page);
   await expect(pasteLayoutButton).toBeDisabled();
-  await copyLayoutButton.click();
+  await clickPresetAction(page, "Copy Layout");
   await expectWorkflowAlertSuccess(page, "Copied layout controls from Design 1.");
 
   await targetRow.locator(".order-item").click();
   await expect(page.locator("#activeOrderName")).toHaveText("Design 2");
+  await openPresetTools(page);
   await expect(pasteLayoutButton).toBeEnabled();
 
-  await pasteLayoutButton.click();
+  await clickPresetAction(page, "Paste Layout");
 
   await expectWorkflowAlertSuccess(page, "Pasted layout controls from Design 1 onto Design 2.");
   await expect(page.locator("#textInput")).toHaveValue("Taylor\nDNP\nFNP");
@@ -1699,8 +1800,8 @@ test("preserves completed export-ready state when a pasted layout is unchanged",
     });
   });
 
-  const copyLayoutButton = page.getByRole("button", { name: "Copy Layout" });
-  const pasteLayoutButton = page.getByRole("button", { name: "Paste Layout" });
+  const copyLayoutButton = page.locator("#copyLayoutPlacementButton");
+  const pasteLayoutButton = page.locator("#pasteLayoutPlacementButton");
 
   await page.locator("#textInput").fill("Savannah\nRN");
   await page.locator("#presetInput").selectOption("preset-d9b4f2a6c731");
@@ -1710,7 +1811,7 @@ test("preserves completed export-ready state when a pasted layout is unchanged",
   await page.locator('.line-control-card[data-line-index="0"] [data-setting="fontSizeMm"]').fill("40");
   await page.locator('.line-control-card[data-line-index="1"] [data-setting="lineBridgeMm"]').fill("2.2");
   await page.locator('.line-control-card[data-line-index="1"] [data-setting="verticalScale"]').fill("1.18");
-  await copyLayoutButton.click();
+  await clickPresetAction(page, "Copy Layout");
 
   await clickQueueAction(page, "Add Design");
   await page.locator("#textInput").fill("Taylor\nDNP");
@@ -1728,11 +1829,12 @@ test("preserves completed export-ready state when a pasted layout is unchanged",
   await expect(exportDesignButton(page)).toBeEnabled();
 
   await page.locator("#orderList .order-row").filter({ hasText: "Design 1" }).locator(".order-item").click();
-  await copyLayoutButton.click();
+  await clickPresetAction(page, "Copy Layout");
   await targetRow.locator(".order-item").click();
+  await openPresetTools(page);
   await expect(pasteLayoutButton).toBeEnabled();
 
-  await pasteLayoutButton.click();
+  await clickPresetAction(page, "Paste Layout");
 
   await expectWorkflowAlertSuccess(page, "Layout controls already match on Design 2.");
   await expect(targetRow).toContainText("Complete");
@@ -1752,8 +1854,8 @@ test("restores complete and export state when pasted controls return to a previo
     });
   });
 
-  const copyLayoutButton = page.getByRole("button", { name: "Copy Layout" });
-  const pasteLayoutButton = page.getByRole("button", { name: "Paste Layout" });
+  const copyLayoutButton = page.locator("#copyLayoutPlacementButton");
+  const pasteLayoutButton = page.locator("#pasteLayoutPlacementButton");
 
   await page.locator("#textInput").fill("Savannah\nRN");
   await page.locator("#presetInput").selectOption("preset-d9b4f2a6c731");
@@ -1763,7 +1865,7 @@ test("restores complete and export state when pasted controls return to a previo
   await page.locator('.line-control-card[data-line-index="0"] [data-setting="fontSizeMm"]').fill("40");
   await page.locator('.line-control-card[data-line-index="1"] [data-setting="lineBridgeMm"]').fill("2.2");
   await page.locator('.line-control-card[data-line-index="1"] [data-setting="verticalScale"]').fill("1.18");
-  await copyLayoutButton.click();
+  await clickPresetAction(page, "Copy Layout");
 
   await clickQueueAction(page, "Add Design");
   await page.locator("#textInput").fill("Taylor\nDNP");
@@ -1786,11 +1888,12 @@ test("restores complete and export state when pasted controls return to a previo
   await expect(exportDesignButton(page)).toBeDisabled();
 
   await page.locator("#orderList .order-row").filter({ hasText: "Design 1" }).locator(".order-item").click();
-  await copyLayoutButton.click();
+  await clickPresetAction(page, "Copy Layout");
   await targetRow.locator(".order-item").click();
+  await openPresetTools(page);
   await expect(pasteLayoutButton).toBeEnabled();
 
-  await pasteLayoutButton.click();
+  await clickPresetAction(page, "Paste Layout");
 
   await expectWorkflowAlertSuccess(page, "Pasted layout controls from Design 1 onto Design 2.");
   await expect(page.locator('.line-control-card[data-line-index="0"] [data-setting="horizontalScale"]')).toHaveValue("1.27");
@@ -1803,23 +1906,24 @@ test("restores complete and export state when pasted controls return to a previo
 });
 
 test("warns when a pasted layout cannot include extra source lines", async ({ page }) => {
-  const copyLayoutButton = page.getByRole("button", { name: "Copy Layout" });
-  const pasteLayoutButton = page.getByRole("button", { name: "Paste Layout" });
+  const copyLayoutButton = page.locator("#copyLayoutPlacementButton");
+  const pasteLayoutButton = page.locator("#pasteLayoutPlacementButton");
 
   await page.locator("#textInput").fill("Taylor\nDNP\nFNP");
   await page.locator("#presetInput").selectOption("preset-c3e8a1d7f520");
   await page.locator('.line-control-card[data-line-index="2"] [data-setting="fontSizeMm"]').fill("28");
   await page.locator('.line-control-card[data-line-index="2"] [data-setting="horizontalScale"]').fill("1.77");
-  await copyLayoutButton.click();
+  await clickPresetAction(page, "Copy Layout");
 
   await clickQueueAction(page, "Add Design");
   await page.locator("#textInput").fill("Savannah\nRN");
   await page.locator("#presetInput").selectOption("preset-a1f4c8e2b601");
   await page.locator('.line-control-card[data-line-index="0"] [data-setting="horizontalScale"]').fill("1.05");
   await page.locator('.line-control-card[data-line-index="1"] [data-setting="fontSizeMm"]').fill("31");
+  await openPresetTools(page);
   await expect(pasteLayoutButton).toBeEnabled();
 
-  await pasteLayoutButton.click();
+  await clickPresetAction(page, "Paste Layout");
 
   await expectWorkflowAlertMessage(
     page,
@@ -2266,7 +2370,7 @@ test("skips already imported Etsy line items when importing another batch", asyn
   await clickButtonBySelector(page, "#importClipboardButton");
 
   await expect(page.locator("#orderCountOutput")).toHaveText("3");
-  await expect(page.locator(".queue-tools-menu")).not.toHaveAttribute("open", "");
+  await expect(page.locator(".queue-header .queue-tools-menu")).not.toHaveAttribute("open", "");
   await expect(page.locator("#importStatus")).toBeVisible();
   await expect(page.locator("#importStatus")).toContainText("Imported 2 Etsy designs from the clipboard.");
   await expect.poll(async () => {
@@ -2298,7 +2402,7 @@ test("skips already imported Etsy line items when importing another batch", asyn
   await clickButtonBySelector(page, "#importClipboardButton");
 
   await expect(page.locator("#orderCountOutput")).toHaveText("4");
-  await expect(page.locator(".queue-tools-menu")).not.toHaveAttribute("open", "");
+  await expect(page.locator(".queue-header .queue-tools-menu")).not.toHaveAttribute("open", "");
   await expect(page.locator("#importStatus")).toBeVisible();
   await expect(page.locator("#importStatus")).toContainText("Imported 1 new Etsy design and skipped 1 already in the queue.");
   await expect(page.locator("#orderList .order-row")).toContainText([
@@ -2473,7 +2577,7 @@ test("shows batch color counts from the queue tools menu", async ({ page }) => {
   const rows = dialog.locator("tbody tr");
 
   await expect(dialog).toBeVisible();
-  await expect(page.locator(".queue-tools-menu")).not.toHaveAttribute("open", "");
+  await expect(page.locator(".queue-header .queue-tools-menu")).not.toHaveAttribute("open", "");
   await expect(rows).toHaveCount(2);
   await expect(rows.nth(0).locator("td").nth(0)).toHaveText("Red");
   await expect(rows.nth(0).locator("td").nth(1)).toHaveText("4");

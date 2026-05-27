@@ -16,6 +16,7 @@ import {
 } from "./layout-math.js";
 import {
   buildPresetLines,
+  deletePresetDefinitionLocally,
   getDefaultPresetId,
   getPresetDefinitionForEditor,
   getPresetGlobalDefaults,
@@ -150,6 +151,7 @@ const showColorCountsButton = document.querySelector("#showColorCountsButton");
 const copyCompletedButton = document.querySelector("#copyCompletedButton");
 const queueToolsMenu = document.querySelector(".queue-tools-menu");
 const editorToolsMenu = document.querySelector(".editor-tools-menu");
+const presetToolsMenu = document.querySelector(".preset-tools-menu");
 const queueActionLabelByButton = new Map(
   [addOrderButton, importClipboardButton, clearQueueButton, showColorCountsButton, exportCompletedButton, copyCompletedButton]
     .filter(Boolean)
@@ -212,6 +214,7 @@ const copyButton = document.querySelector("#copyButton");
 const copyLayoutControlsButton = document.querySelector("#copyLayoutPlacementButton");
 const pasteLayoutControlsButton = document.querySelector("#pasteLayoutPlacementButton");
 const saveAsNewPresetButton = document.querySelector("#saveAsNewPresetButton");
+const overwritePresetButton = document.querySelector("#overwritePresetButton");
 const assignPresetToListingButton = document.querySelector("#assignPresetToListingButton");
 const reloadPresetButton = document.querySelector("#reloadPresetButton");
 const captureButton = document.querySelector("#captureButton");
@@ -220,6 +223,7 @@ const completeNextButton = document.querySelector("#completeNextButton");
 const presetEditorSelect = document.querySelector("#presetEditorSelect");
 const presetDraftNameInput = document.querySelector("#presetDraftName");
 const savePresetButton = document.querySelector("#savePresetButton");
+const deletePresetButton = document.querySelector("#deletePresetButton");
 const presetWeldExportedDesignInput = document.querySelector("#presetWeldExportedDesignInput");
 const presetGlobalHorizontalScaleInput = document.querySelector("#presetGlobalHorizontalScaleInput");
 const presetGlobalHorizontalScaleOutput = document.querySelector("#presetGlobalHorizontalScaleOutput");
@@ -1235,6 +1239,11 @@ function renderPresetEditorDraft() {
   updatePresetBackingOutput();
   renderPresetEditorLineControls();
   savePresetButton.disabled = false;
+  if (deletePresetButton) {
+    deletePresetButton.disabled = !presetEditorDraft?.previousId
+      || !isValidPresetId(presetEditorDraft.previousId)
+      || getPresetOptions().length <= 1;
+  }
   renderPresetAssignmentList();
 }
 
@@ -1414,6 +1423,79 @@ function openPresetEditorForNewPreset() {
   setPresetEditorStatus("Preset draft ready from the current order settings.", "pending");
 }
 
+function buildOverwrittenPresetDefinition({ preset, settings }) {
+  const inferredPreset = inferPresetDefinitionFromSettings({
+    name: preset?.name || "",
+    settings,
+  });
+
+  return {
+    ...preset,
+    id: preset?.id || inferredPreset.id,
+    name: preset?.name || inferredPreset.name,
+    description: preset?.description || "",
+    globalDefaults: inferredPreset.globalDefaults,
+    lineDefaults: inferredPreset.lineDefaults,
+    lineRules: inferredPreset.lineRules,
+    listingAssignments: Array.isArray(preset?.listingAssignments)
+      ? structuredClone(preset.listingAssignments)
+      : [],
+  };
+}
+
+async function overwriteSelectedPresetFromActiveOrder() {
+  const activeOrder = getActiveOrder();
+  if (!activeOrder) {
+    updateWorkflowAlert("Add or select a design before overwriting a preset.", "error");
+    return;
+  }
+
+  const selectedPresetId = presetInput.value;
+  const existingPreset = getPresetDefinitionForEditor(selectedPresetId);
+  if (!existingPreset) {
+    updateWorkflowAlert("Choose a saved preset before overwriting it.", "error");
+    return;
+  }
+
+  if (overwritePresetButton) {
+    overwritePresetButton.disabled = true;
+  }
+  updateWorkflowAlert(`Overwriting ${existingPreset.name}...`, "pending", { autoHideMs: 0 });
+
+  const overwrittenPreset = buildOverwrittenPresetDefinition({
+    preset: existingPreset,
+    settings: getCurrentSettings(),
+  });
+
+  try {
+    savePresetDefinitionLocally({
+      preset: overwrittenPreset,
+      previousId: existingPreset.id,
+    });
+    renderPresetOptions();
+    presetInput.value = overwrittenPreset.id;
+    if (presetEditorDraft?.previousId === existingPreset.id) {
+      presetEditorDraft = createPresetEditorDraft(overwrittenPreset, { previousId: overwrittenPreset.id });
+      renderPresetEditorDraft();
+    }
+    persistQueueState();
+    render();
+    try {
+      await savePresetSnapshot(getPresetSnapshot());
+      updateWorkflowAlert(`Overwrote ${overwrittenPreset.name} with the current settings.`, "success");
+    } catch (error) {
+      updateWorkflowAlert(
+        error instanceof Error
+          ? `Overwrote ${overwrittenPreset.name} locally. Neon sync failed: ${error.message}`
+          : `Overwrote ${overwrittenPreset.name} locally, but Neon sync failed.`,
+        "error",
+      );
+    }
+  } catch (error) {
+    updateWorkflowAlert(error instanceof Error ? error.message : "Unable to overwrite preset.", "error");
+  }
+}
+
 async function persistPresetEditorDraft({ syncInputs = false, successMessage } = {}) {
   if (!presetEditorDraft) {
     return false;
@@ -1482,6 +1564,62 @@ async function persistPresetEditorDraft({ syncInputs = false, successMessage } =
 
 async function savePresetEditorDraft() {
   await persistPresetEditorDraft({ syncInputs: true });
+}
+
+async function deletePresetEditorDraft() {
+  const presetId = presetEditorDraft?.previousId;
+  if (!presetId || !isValidPresetId(presetId)) {
+    setPresetEditorStatus("Choose a saved preset to delete.", "error");
+    return;
+  }
+
+  const presetName = presetEditorDraft?.preset?.name?.trim() || "this preset";
+  const confirmed = await showConfirmationDialog({
+    title: "Delete Preset?",
+    description: `Delete ${presetName} from the preset library? Any designs using it in this workspace will switch to the current default preset.`,
+    confirmLabel: "Delete Preset",
+    cancelLabel: "Keep Preset",
+    isDanger: true,
+  });
+  if (!confirmed) {
+    return;
+  }
+
+  savePresetButton.disabled = true;
+  if (deletePresetButton) {
+    deletePresetButton.disabled = true;
+  }
+  setPresetEditorStatus(`Deleting ${presetName}...`, "pending");
+
+  try {
+    const result = deletePresetDefinitionLocally(presetId);
+    const replacementPresetId = result.snapshot.defaultPresetId;
+    migratePresetReferences(presetId, replacementPresetId);
+    renderPresetOptions();
+    const replacementPreset = getPresetDefinitionForEditor(replacementPresetId);
+    presetEditorDraft = createPresetEditorDraft(replacementPreset, { previousId: replacementPresetId });
+    renderPresetEditorDraft();
+    renderOrderList();
+    persistQueueState();
+    render();
+    try {
+      await savePresetSnapshot(result.snapshot);
+      setPresetEditorStatus(`Deleted ${presetName}.`, "success");
+    } catch (error) {
+      setPresetEditorStatus(
+        error instanceof Error
+          ? `Deleted locally. Neon sync failed: ${error.message}`
+          : "Deleted locally, but Neon sync failed.",
+        "error",
+      );
+    }
+  } catch (error) {
+    setPresetEditorStatus(error instanceof Error ? error.message : "Unable to delete preset.", "error");
+    savePresetButton.disabled = false;
+    if (deletePresetButton) {
+      deletePresetButton.disabled = false;
+    }
+  }
 }
 
 async function unassignListingFromPreset(listingId) {
@@ -3229,6 +3367,41 @@ function updateWorkflowAlert(message, state = "pending", options = {}) {
   }, autoHideMs);
 }
 
+function closeDetailsMenu(menu) {
+  if (!(menu instanceof HTMLDetailsElement)) {
+    return;
+  }
+
+  menu.removeAttribute("open");
+}
+
+function registerOutsideDismissableDetailsMenu(menu) {
+  if (!(menu instanceof HTMLDetailsElement)) {
+    return;
+  }
+
+  document.addEventListener("pointerdown", (event) => {
+    if (!menu.hasAttribute("open")) {
+      return;
+    }
+
+    const target = event.target;
+    if (target instanceof Node && menu.contains(target)) {
+      return;
+    }
+
+    closeDetailsMenu(menu);
+  });
+
+  menu.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") {
+      return;
+    }
+
+    closeDetailsMenu(menu);
+  });
+}
+
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
@@ -3272,7 +3445,7 @@ function restoreSelectionScrollState(state) {
 
 function updateZoom(nextZoom, anchor = null) {
   const previousZoom = zoom;
-  zoom = clamp(nextZoom, 0.4, 6);
+  zoom = clamp(nextZoom, 0.4, 14);
 
   if (lastLayout) {
     preview.style.setProperty("--preview-width", `${lastLayout.previewWidthMm * PX_PER_MM * zoom}px`);
@@ -4371,6 +4544,7 @@ function renderOrderList() {
   copyLayoutControlsButton.disabled = !canCopyLayoutControls(activeOrder);
   pasteLayoutControlsButton.disabled = !canPasteLayoutControls(activeOrder);
   saveAsNewPresetButton.disabled = !activeOrder;
+  overwritePresetButton.disabled = !activeOrder || !getPresetDefinitionForEditor(presetInput.value);
   assignPresetToListingButton.disabled = !activeOrder?.source?.listingId;
   reloadPresetButton.disabled = !activeOrder;
 }
@@ -6021,6 +6195,9 @@ presetDraftNameInput?.addEventListener("input", syncPresetEditorDraftFromInputs)
 savePresetButton?.addEventListener("click", () => {
   void savePresetEditorDraft();
 });
+deletePresetButton?.addEventListener("click", () => {
+  void deletePresetEditorDraft();
+});
 presetBackingInput?.addEventListener("input", () => {
   updatePresetBackingOutput();
 });
@@ -6055,6 +6232,9 @@ showColorCountsButton?.addEventListener("click", openBatchColorCountsDialog);
 exportCompletedButton.addEventListener("click", exportAllOrders);
 copyCompletedButton.addEventListener("click", copyAllOrders);
 saveAsNewPresetButton?.addEventListener("click", openPresetEditorForNewPreset);
+overwritePresetButton?.addEventListener("click", () => {
+  void overwriteSelectedPresetFromActiveOrder();
+});
 assignPresetToListingButton?.addEventListener("click", () => {
   void assignSelectedPresetToActiveListing();
 });
@@ -6072,6 +6252,15 @@ assignPresetToListingButton?.addEventListener("click", () => {
       editorToolsMenu?.removeAttribute("open");
     });
   });
+[copyLayoutControlsButton, pasteLayoutControlsButton, saveAsNewPresetButton, overwritePresetButton, assignPresetToListingButton, reloadPresetButton]
+  .filter(Boolean)
+  .forEach((button) => {
+    button.addEventListener("click", () => {
+      presetToolsMenu?.removeAttribute("open");
+    });
+  });
+registerOutsideDismissableDetailsMenu(queueToolsMenu);
+registerOutsideDismissableDetailsMenu(presetToolsMenu);
 closeColorCountsButton?.addEventListener("click", closeBatchColorCountsDialog);
 colorCountsDialog?.addEventListener("click", (event) => {
   if (event.target === colorCountsDialog) {

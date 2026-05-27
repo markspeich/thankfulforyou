@@ -1461,6 +1461,19 @@ button:disabled {
   outline-offset: 2px;
 }
 
+.editor-danger-button {
+  --button-current-text: #fff4f2;
+  --button-current-enabled: #b9382b;
+  --button-current-enabled-hover: #a32f23;
+  --button-current-enabled-active: #8b241a;
+  --button-current-disabled: #d4867c;
+  --button-current-border: #8f261b;
+  --button-current-border-hover: #781e15;
+  --button-current-border-active: #62170f;
+  --button-current-border-disabled: #c17369;
+  --button-current-shadow-active: inset 0 2px 0 rgba(96, 19, 13, 0.26);
+}
+
 .editor-action-icon {
   flex: 0 0 auto;
   display: inline-flex;
@@ -1660,23 +1673,13 @@ button:disabled {
   position: relative;
   z-index: 2;
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
   align-content: start;
   gap: 12px;
   height: 100%;
   min-height: 0;
   min-width: 0;
   overflow: hidden;
-}
-
-.layout-utility-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  min-width: 0;
-  margin: 4px 0 0;
-  padding: 0;
-  grid-row: 1;
 }
 
 .line-controls {
@@ -1690,7 +1693,7 @@ button:disabled {
   overflow-x: hidden;
   padding-right: 4px;
   overscroll-behavior: contain;
-  grid-row: 3;
+  grid-row: 2;
 }
 
 .line-controls-cards {
@@ -1723,7 +1726,22 @@ button:disabled {
 }
 
 .global-controls-panel {
-  grid-row: 2;
+  position: relative;
+  grid-row: 1;
+}
+
+.preset-tools-menu {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.preset-tools-toggle {
+  width: 34px;
+  height: 34px;
+}
+
+.preset-tools-popover {
+  width: min(304px, calc(100vw - 56px));
 }
 
 .line-control-header {
@@ -1895,29 +1913,12 @@ button:disabled {
 
 .preview-workspace {
   display: grid;
-  grid-template-rows: auto minmax(440px, 1fr) auto;
+  grid-template-rows: minmax(440px, 1fr) auto;
   height: 100%;
   align-self: stretch;
   min-height: 0;
   min-width: 0;
   gap: 8px;
-}
-
-.preview-header-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 12px 16px;
-  background: #fff;
-  border: 1px solid var(--line);
-  border-radius: 14px;
-}
-
-.preview-caption {
-  color: var(--muted);
-  font-size: 0.82rem;
-  font-weight: 600;
 }
 
 .preview-panel {
@@ -1948,13 +1949,6 @@ button:disabled {
   width: 0;
   height: 0;
   display: none;
-}
-
-.preview-title {
-  margin: 0;
-  color: #21465e;
-  font-size: 1rem;
-  font-weight: 700;
 }
 
 .preview-panel::before {
@@ -2065,6 +2059,8 @@ button:disabled {
 .preset-editor-actions {
   display: flex;
   justify-content: flex-start;
+  flex-wrap: wrap;
+  gap: 12px;
 }
 
 .preset-editor-controls {

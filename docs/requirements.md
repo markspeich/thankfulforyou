@@ -63,6 +63,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Allow text to be arranged in one or more lines.
 - Treat the number of editable text lines as fully dynamic and derive it directly from the number of lines entered by the user.
 - Add a `Presets` dropdown directly below the `Order Text` field.
+- The `Preset` control card in the selected-order editor must expose its secondary actions from an ellipses menu in the card header rather than showing them as always-visible buttons.
 - The `Presets` dropdown must offer these production presets: `All Candlepin`, `Candlepin, Skywalk`, `Skywalk, Somekind`, and `Skywalk, Candlepin`.
 - The app should add a top-level left navigation bar with two items: `Order Items` and `Presets`.
 - The left navigation bar should be collapsible between an expanded icon-plus-label state and a collapsed icon-only state.
@@ -171,6 +172,8 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Browser UI verification should confirm both behavior and presentation, including control visibility, control state changes, preview updates, and basic usability of the modified flow.
 - Browser UI verification may be supported by automated browser tests, manual browser checks, or both, but some direct browser validation is required whenever UI changes are made.
 - If browser-based UI verification cannot be completed for a UI change, that limitation must be reported clearly along with the reason it could not be performed.
+- Local Playwright runs should default to the current checkout or worktree's own dev server URL rather than silently inheriting a preview deployment URL from `.env.local`.
+- Preview-targeted Playwright runs should be an explicit opt-in workflow so multiple local worktrees can run browser tests on the same machine without colliding or accidentally testing the wrong deployment.
 
 ## Current Production Workflow Requirements
 
@@ -351,9 +354,9 @@ The website should be a practical production tool rather than a marketing site. 
 - Under the selected-order header action row on desktop, the content area should split into two main columns.
 - The left editor column should contain the imported listing details, imported color and quantity, the `Design Text` field, and the preview with connectedness status.
 - In the selected-order editor, the `Design Text` title and textarea should use slightly larger type than the surrounding compact controls so entered personalization is easier to read while editing.
-- The right editor column should begin with compact `Copy Layout` and `Paste Layout` utility buttons, and a `Save as New Preset` action above the preset-selection area.
+- The right editor column should begin with the `Preset` card, and `Copy Layout` plus `Paste Layout` should live in that card's ellipses menu rather than a separate utility row.
 - The selected-order editor should split preset selection and global layout settings into two separate cards titled `Preset` and `Global Settings`.
-- The `Preset` card should contain the preset dropdown and the `Assign Preset to Listing` action.
+- The `Preset` card should contain the preset dropdown, while its ellipses menu should contain `Copy Layout`, `Paste Layout`, `Save as New Preset`, `Overwrite`, `Assign Preset to Listing`, and `Reload preset`.
 - The preset dropdown label in the `Preset` card should read `Preset Name`.
 - The `Preset` card should include a `Reload preset` button at the bottom that reapplies the currently selected preset and overwrites all current layout settings for the active design with that preset's current values.
 - The `Global Settings` card should contain `Weld Exported Design`, global `Horizontal Stretch`, global `Vertical Stretch`, and `Backing Border`, followed by the per-line controls for `Line 1`, `Line 2`, and any additional lines.
@@ -385,6 +388,8 @@ The website should be a practical production tool rather than a marketing site. 
 - The preset editor should represent reusable line settings through operator-friendly sections for `Line Defaults`, `First Line`, `Remaining Lines`, and any exact-index line overrides that exist for that preset.
 - The preset editor should show the Etsy listings currently assigned to the selected preset.
 - The preset editor should allow unassigning individual listing ids from the selected preset.
+- The preset editor should allow deleting a saved preset from the `Presets` workspace.
+- Deleting a preset must require an explicit in-app confirmation dialog before the preset is removed.
 - The selected-order header action buttons should remain visibly smaller than the preview and top-card content so they do not dominate the editor visually on desktop.
 - The app favicon should use bold enlarged white `TFU` lettering with a red outline around the letters themselves, prioritizing legibility in a browser tab at favicon size over decorative detail.
 - Command buttons should use one shared enabled color, one shared disabled color, and one shared enabled-hover color across queue tools, editor actions, export/copy/save/complete actions, and destructive actions. Non-command row-selection buttons may remain visually neutral.
