@@ -51,6 +51,7 @@ The shared queue rollout uses Supabase for authenticated workspace access and sh
 Set these environment variables for local and hosted environments:
 
 - `SUPABASE_URL`
+- `SUPABASE_PUBLISHABLE_KEY` preferred for browser auth bootstrap
 - `SUPABASE_ANON_KEY`
 - `SUPABASE_SERVICE_ROLE_KEY`
 
@@ -58,6 +59,12 @@ The browser session bootstrap reads:
 
 - `window.__APP_CONFIG__.supabaseUrl`
 - `window.__APP_CONFIG__.supabaseAnonKey`
+
+The app now populates `window.__APP_CONFIG__` from `/app-config.js`.
+
+- `npm start` serves `/app-config.js` dynamically from environment variables
+- `npm run build` writes `dist/app-config.js` from the same environment variables
+- the browser key prefers `SUPABASE_PUBLISHABLE_KEY` and falls back to `SUPABASE_ANON_KEY`
 
 Operators sign in through the app with invite-only email-and-password Supabase Auth accounts. The app does not expose self-service sign-up for shared queue access.
 
@@ -75,6 +82,18 @@ The shared queue implementation expects these Supabase resources:
 - `design_queues`
 - an RPC or equivalent transactional save path named `save_design_queue_snapshot`
 
+The first backend bootstrap for this repo uses a minimal production shape:
+
+- relational `workspaces`, `workspace_memberships`, and `design_queues`
+- one seeded `Primary Workspace`
+- one seeded `Primary Queue`
+- canonical queue snapshots stored in `design_queues.queue_json` and `design_queues.orders_json`
+
+The seeded records currently use these identifiers:
+
+- workspace id: `11111111-1111-4111-8111-111111111111`
+- queue id: `22222222-2222-4222-8222-222222222222`
+
 The shared queue save path assumes the backend returns canonical queue snapshots with:
 
 - `queue`
@@ -86,6 +105,8 @@ Each shared design record should preserve audit and revision metadata so stale w
 - `revision`
 - `updatedAt`
 - `updatedBy`
+
+If the Supabase project has no auth users yet, create or invite an operator account first, then insert a `workspace_memberships` row for that user before testing the shared queue sign-in flow. A seeded workspace and queue alone are not enough to grant access.
 
 For local verification of shared queue behavior, authenticate with a Supabase user that belongs to the target workspace before testing cross-browser restore, save conflicts, or recovery flows.
 

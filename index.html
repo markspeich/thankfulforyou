@@ -199,23 +199,13 @@
               <p id="activeOrderMeta" class="editor-meta">Add or import a design to start editing.</p>
             </div>
             <div class="editor-actions">
-              <button id="saveQueueButton" class="editor-action-button" type="button">
-                <span class="editor-action-icon" aria-hidden="true">
-                  <svg viewBox="0 0 24 24" focusable="false">
-                    <path d="M6 4.5h9l3 3V19a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 6 19Z" />
-                    <path d="M9 4.5v5h6v-5" />
-                    <path d="M9 15.5h6" />
-                  </svg>
-                </span>
-                <span class="editor-action-label">Save</span>
-              </button>
               <button id="captureButton" class="editor-action-button" type="button">
                 <span class="editor-action-icon" aria-hidden="true">
                   <svg viewBox="0 0 24 24" focusable="false">
                     <path d="M6 12.5 10 16.5 18 8.5" />
                   </svg>
                 </span>
-                <span class="editor-action-label">Complete</span>
+                <span class="editor-action-label">Save</span>
               </button>
               <button id="completeNextButton" class="editor-action-button" type="button">
                 <span class="editor-action-icon" aria-hidden="true">
@@ -225,26 +215,42 @@
                     <path d="M18 8.5 11 15.5" />
                   </svg>
                 </span>
-                <span class="editor-action-label">Complete &amp; Next</span>
+                <span class="editor-action-label">Save &amp; Next</span>
               </button>
-              <button id="copyButton" class="editor-action-button" type="button">
+              <button id="cancelDesignButton" class="editor-action-button" type="button">
                 <span class="editor-action-icon" aria-hidden="true">
                   <svg viewBox="0 0 24 24" focusable="false">
-                    <rect x="9" y="9" width="10" height="10" rx="2" />
-                    <path d="M7 15H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v1" />
+                    <path d="M7 7 17 17" />
+                    <path d="M17 7 7 17" />
                   </svg>
                 </span>
-                <span class="editor-action-label">Copy This Design</span>
+                <span class="editor-action-label">Cancel</span>
               </button>
-              <button id="downloadButton" class="editor-action-button" type="button">
-                <span class="editor-action-icon" aria-hidden="true">
-                  <svg viewBox="0 0 24 24" focusable="false">
-                    <path d="M12 4v10M8.5 10.5 12 14l3.5-3.5" />
-                    <path d="M5 16v1a3 3 0 0 0 3 3h8a3 3 0 0 0 3-3v-1" />
-                  </svg>
-                </span>
-                <span class="editor-action-label">Export This Design</span>
-              </button>
+              <details class="editor-tools-menu">
+                <summary class="editor-tools-toggle" aria-label="Design tools"></summary>
+                <div class="editor-tools-popover">
+                  <div class="editor-tools-actions" role="menu" aria-label="Design actions">
+                    <button id="copyButton" class="queue-tool-button" type="button">
+                      <span class="queue-tool-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" focusable="false">
+                          <rect x="9" y="9" width="10" height="10" rx="2" />
+                          <path d="M7 15H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v1" />
+                        </svg>
+                      </span>
+                      <span class="queue-tool-label">Copy This Design</span>
+                    </button>
+                    <button id="downloadButton" class="queue-tool-button" type="button">
+                      <span class="queue-tool-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" focusable="false">
+                          <path d="M12 4v10M8.5 10.5 12 14l3.5-3.5" />
+                          <path d="M5 16v1a3 3 0 0 0 3 3h8a3 3 0 0 0 3-3v-1" />
+                        </svg>
+                      </span>
+                      <span class="queue-tool-label">Export This Design</span>
+                    </button>
+                  </div>
+                </div>
+              </details>
             </div>
           </header>
           <section id="sharedQueueBanner" class="shared-queue-banner status-card" aria-live="polite" hidden>
@@ -598,6 +604,7 @@
       </div>
     </dialog>
 
+    <script src="/app-config.js"></script>
     <script src="src/app.js" type="module"></script>
   </body>
 </html>

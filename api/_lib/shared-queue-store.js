@@ -9,6 +9,10 @@ function normalizeJsonValue(value) {
 }
 
 function normalizeSnapshotRow(row) {
+  if (Array.isArray(row)) {
+    return normalizeSnapshotRow(row[0] ?? null);
+  }
+
   if (!row) {
     return null;
   }

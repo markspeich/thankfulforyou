@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { extname, join, normalize } from "node:path";
 import { createServer } from "node:http";
+import { buildPublicAppConfigScript } from "./app_config.mjs";
 import { resolveDevPort } from "./dev_port.mjs";
 
 const port = resolveDevPort();
@@ -104,6 +105,12 @@ async function loadBundledPresetSnapshot() {
 
 const server = createServer(async (request, response) => {
   const requestUrl = new URL(request.url || "/", `http://localhost:${port}`);
+
+  if (requestUrl.pathname === "/app-config.js") {
+    response.writeHead(200, { "Content-Type": "text/javascript; charset=utf-8" });
+    response.end(buildPublicAppConfigScript());
+    return;
+  }
 
   if (requestUrl.pathname === "/api/shared-session" || requestUrl.pathname === "/api/shared-queue") {
     const bodyText = request.method === "PUT" ? await readRequestBody(request) : "";

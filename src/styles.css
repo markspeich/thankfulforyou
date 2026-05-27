@@ -360,11 +360,13 @@ select {
   color: currentColor;
 }
 
-.queue-tools-menu {
+.queue-tools-menu,
+.editor-tools-menu {
   position: static;
 }
 
-.queue-tools-toggle {
+.queue-tools-toggle,
+.editor-tools-toggle {
   position: relative;
   width: 42px;
   height: 42px;
@@ -375,11 +377,13 @@ select {
   border-radius: 999px;
 }
 
-.queue-tools-toggle::-webkit-details-marker {
+.queue-tools-toggle::-webkit-details-marker,
+.editor-tools-toggle::-webkit-details-marker {
   display: none;
 }
 
-.queue-tools-toggle::before {
+.queue-tools-toggle::before,
+.editor-tools-toggle::before {
   content: "";
   position: absolute;
   left: 50%;
@@ -392,7 +396,8 @@ select {
   box-shadow: -8px 0 0 var(--muted), 8px 0 0 var(--muted);
 }
 
-.queue-tools-popover {
+.queue-tools-popover,
+.editor-tools-popover {
   position: absolute;
   top: calc(100% + 10px);
   right: 0;
@@ -407,7 +412,8 @@ select {
   box-shadow: 0 12px 30px rgba(28, 32, 36, 0.12);
 }
 
-.queue-tools-actions {
+.queue-tools-actions,
+.editor-tools-actions {
   display: grid;
   gap: 14px;
 }
@@ -937,6 +943,10 @@ select {
   justify-content: flex-end;
   align-items: center;
   gap: 8px;
+}
+
+.editor-tools-menu {
+  position: relative;
 }
 
 .editor-body {
@@ -2230,7 +2240,7 @@ button:disabled {
   .editor-actions {
     width: 100%;
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
   .shared-queue-banner {

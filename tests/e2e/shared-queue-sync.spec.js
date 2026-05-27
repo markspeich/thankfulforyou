@@ -42,7 +42,7 @@ function installSupabaseSession(page) {
   });
 }
 
-test("shows a recovery banner when a newer shared revision already exists", async ({ page }) => {
+test("discarding a conflicted local draft reloads the shared queue without a follow-up recovery banner", async ({ page }) => {
   await installSupabaseSession(page);
   const remoteSnapshot = {
     queue: {
@@ -141,19 +141,221 @@ test("shows a recovery banner when a newer shared revision already exists", asyn
   await page.locator("#textInput").fill("Remote Shared Updated");
   await page.getByRole("button", { name: "Save", exact: true }).click();
 
-  await expect.poll(() => sharedQueueSavePayloads.length).toBe(1);
+  await expect.poll(() => sharedQueueSavePayloads.length).toBeGreaterThan(0);
   await expect(page.locator("#sharedQueueBanner")).toContainText("Another browser or user updated this design first.");
   await expect(page.locator("#sharedQueueBanner")).toContainText("Last updated by Avery");
 
-  await page.reload();
+  await page.getByRole("button", { name: "Reload Shared Queue", exact: true }).click();
+  await expect(page.locator("#textInput")).toHaveValue("Remote Shared");
+  await expect(page.locator("#sharedQueueBanner")).toContainText("Shared queue connected");
+  await expect(page.locator("#sharedQueueBanner")).not.toContainText("Local recovery draft available");
+  await expect(page.getByRole("button", { name: "Review Local Draft", exact: true })).toHaveCount(0);
+});
 
-  await expect(page.locator("#sharedQueueBanner")).toContainText("Local recovery draft available");
-  await page.reload();
-  await expect(page.locator("#sharedQueueBanner")).toContainText("Local recovery draft available");
-  await page.getByRole("button", { name: "Review Local Draft", exact: true }).click();
-  await expect(page.locator("#textInput")).toHaveValue("Remote Shared Updated");
-  await expect(page.locator("#sharedQueueBanner")).toContainText("Review this local draft");
-  await expect(page.locator("#sharedQueueBanner")).not.toContainText("Shared queue connected");
+test("shows conflict and recovery banners only on the affected design", async ({ page }) => {
+  await installSupabaseSession(page);
+  const remoteSnapshot = {
+    queue: {
+      id: "queue-1",
+      workspaceId: "workspace-1",
+      updatedAt: "2026-05-27T20:02:00.000Z",
+      updatedBy: {
+        email: "mspeich@gmail.com",
+      },
+    },
+    activeOrderId: "remote-order-1",
+    orders: [
+      {
+        id: "remote-order-1",
+        revision: 3,
+        updatedAt: "2026-05-27T20:02:00.000Z",
+        updatedBy: {
+          email: "mspeich@gmail.com",
+        },
+        text: "Conflict Design",
+        status: "in-progress",
+        settings: {
+          text: "Conflict Design",
+          presetId: "preset-oval",
+          backingMm: 2.2,
+          weldExportedDesign: true,
+          lines: [
+            {
+              fontId: "candlepin",
+              bridgeMm: 0.5,
+              lineBridgeMm: 0.5,
+              offsetXMm: 0,
+              fontSizeMm: 34,
+              horizontalScale: 1,
+              verticalScale: 1,
+              lockTextHeight: false,
+            },
+          ],
+        },
+      },
+      {
+        id: "remote-order-2",
+        revision: 2,
+        updatedAt: "2026-05-27T19:55:00.000Z",
+        updatedBy: {
+          email: "avery@example.com",
+        },
+        text: "Stable Design",
+        status: "in-progress",
+        settings: {
+          text: "Stable Design",
+          presetId: "preset-oval",
+          backingMm: 2.2,
+          weldExportedDesign: true,
+          lines: [
+            {
+              fontId: "candlepin",
+              bridgeMm: 0.5,
+              lineBridgeMm: 0.5,
+              offsetXMm: 0,
+              fontSizeMm: 34,
+              horizontalScale: 1,
+              verticalScale: 1,
+              lockTextHeight: false,
+            },
+          ],
+        },
+      },
+    ],
+  };
+
+  await page.route("**/api/shared-session", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify({
+        operator: { id: "user-1", email: "mark@example.com" },
+        workspace: { id: "workspace-1", name: "Thankful For You" },
+        queue: {
+          id: "queue-1",
+          workspaceId: "workspace-1",
+        },
+      }),
+    });
+  });
+  await page.route("**/api/shared-queue?queueId=queue-1", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify(remoteSnapshot),
+    });
+  });
+  await page.route("**/api/shared-queue", async (route) => {
+    if (route.request().method() !== "PUT") {
+      await route.fallback();
+      return;
+    }
+
+    await route.fulfill({
+      status: 409,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify({
+        error: "Revision conflict",
+        details: {
+          orderId: "remote-order-1",
+          revision: 4,
+          updatedAt: "2026-05-27T20:02:00.000Z",
+          updatedBy: {
+            email: "mspeich@gmail.com",
+          },
+        },
+      }),
+    });
+  });
+
+  await page.goto("/");
+  await page.locator("#textInput").fill("Conflict Design Updated");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+
+  await expect(page.locator("#sharedQueueBanner")).toContainText("Save conflict");
+
+  const stableRow = page.locator("#orderList .order-row").filter({ hasText: "Stable Design" });
+  await stableRow.locator(".order-item").click();
+  await expect(page.locator("#activeOrderName")).toHaveText("Design 2");
+  await expect(page.locator("#sharedQueueBanner")).toContainText("Shared queue connected");
+  await expect(page.locator("#sharedQueueBanner")).not.toContainText("Save conflict");
+  await expect(page.locator("#sharedQueueBanner")).not.toContainText("Local recovery draft available");
+
+  const conflictRow = page.locator("#orderList .order-row").filter({ hasText: "Conflict Design" });
+  await conflictRow.locator(".order-item").click();
+  await expect(page.locator("#activeOrderName")).toHaveText("Design 1");
+  await expect(page.locator("#sharedQueueBanner")).toContainText("Save conflict");
+});
+
+test("cancel restores the last saved shared design state", async ({ page }) => {
+  await installSupabaseSession(page);
+  const remoteSnapshot = {
+    queue: {
+      id: "queue-1",
+      workspaceId: "workspace-1",
+    },
+    activeOrderId: "remote-order-1",
+    orders: [
+      {
+        id: "remote-order-1",
+        revision: 3,
+        updatedAt: "2026-05-27T20:10:00.000Z",
+        updatedBy: {
+          email: "mspeich@gmail.com",
+        },
+        text: "Saved Shared",
+        status: "in-progress",
+        settings: {
+          text: "Saved Shared",
+          presetId: "preset-oval",
+          backingMm: 2.2,
+          weldExportedDesign: true,
+          lines: [
+            {
+              fontId: "candlepin",
+              bridgeMm: 0.5,
+              lineBridgeMm: 0.5,
+              offsetXMm: 0,
+              fontSizeMm: 34,
+              horizontalScale: 1,
+              verticalScale: 1,
+              lockTextHeight: false,
+            },
+          ],
+        },
+      },
+    ],
+  };
+  await page.route("**/api/shared-session", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify({
+        operator: { id: "user-1", email: "mark@example.com" },
+        workspace: { id: "workspace-1", name: "Thankful For You" },
+        queue: {
+          id: "queue-1",
+          workspaceId: "workspace-1",
+        },
+      }),
+    });
+  });
+  await page.route("**/api/shared-queue?queueId=queue-1", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify(remoteSnapshot),
+    });
+  });
+  await page.goto("/");
+  await expect(page.locator("#cancelDesignButton")).toBeDisabled();
+
+  await page.locator("#textInput").fill("Draft Change");
+  await expect(page.locator("#cancelDesignButton")).toBeEnabled();
+
+  await page.locator("#cancelDesignButton").click();
+  await expect(page.locator("#textInput")).toHaveValue("Saved Shared");
+  await expect(page.locator("#cancelDesignButton")).toBeDisabled();
 });
 
 test("does not re-autosave immediately after a successful manual save merges revision metadata", async ({ page }) => {

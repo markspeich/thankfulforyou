@@ -97,7 +97,7 @@ const DEFAULT_ZOOM = 3;
 const DEFAULT_WELD_EXPORTED_DESIGN = true;
 const WORKFLOW_ALERT_AUTOHIDE_MS = Object.freeze({
   pending: 3200,
-  success: 3200,
+  success: 6000,
   error: 4500,
 });
 const DEFAULT_LINE_SETTINGS = Object.freeze({
@@ -147,6 +147,7 @@ const exportCompletedButton = document.querySelector("#exportCompletedButton");
 const showColorCountsButton = document.querySelector("#showColorCountsButton");
 const copyCompletedButton = document.querySelector("#copyCompletedButton");
 const queueToolsMenu = document.querySelector(".queue-tools-menu");
+const editorToolsMenu = document.querySelector(".editor-tools-menu");
 const queueActionLabelByButton = new Map(
   [addOrderButton, importClipboardButton, clearQueueButton, showColorCountsButton, exportCompletedButton, copyCompletedButton]
     .filter(Boolean)
@@ -174,7 +175,6 @@ const notStartedCountOutput = document.querySelector("#notStartedCountOutput");
 const orderList = document.querySelector("#orderList");
 const activeOrderName = document.querySelector("#activeOrderName");
 const activeOrderMeta = document.querySelector("#activeOrderMeta");
-const saveQueueButton = document.querySelector("#saveQueueButton");
 const sharedQueueBanner = document.querySelector("#sharedQueueBanner");
 const sharedQueueBannerLabel = document.querySelector("#sharedQueueBannerLabel");
 const sharedQueueBannerDetail = document.querySelector("#sharedQueueBannerDetail");
@@ -213,6 +213,7 @@ const saveAsNewPresetButton = document.querySelector("#saveAsNewPresetButton");
 const assignPresetToListingButton = document.querySelector("#assignPresetToListingButton");
 const reloadPresetButton = document.querySelector("#reloadPresetButton");
 const captureButton = document.querySelector("#captureButton");
+const cancelDesignButton = document.querySelector("#cancelDesignButton");
 const completeNextButton = document.querySelector("#completeNextButton");
 const presetEditorSelect = document.querySelector("#presetEditorSelect");
 const presetDraftNameInput = document.querySelector("#presetDraftName");
@@ -229,7 +230,7 @@ const presetAssignmentsList = document.querySelector("#presetAssignmentsList");
 const presetAssignmentsEmptyState = document.querySelector("#presetAssignmentsEmptyState");
 const presetEditorStatus = document.querySelector("#presetEditorStatus");
 const editorActionLabelByButton = new Map(
-  [saveQueueButton, captureButton, completeNextButton, copyButton, copyLayoutControlsButton, pasteLayoutControlsButton, downloadButton]
+  [captureButton, cancelDesignButton, completeNextButton, copyButton, copyLayoutControlsButton, pasteLayoutControlsButton, downloadButton]
     .filter(Boolean)
     .map((button) => [button, button.querySelector(".editor-action-label")]),
 );
@@ -269,6 +270,7 @@ let sharedQueueSyncState = "disabled";
 let sharedQueueSyncDetail = "";
 let sharedQueueConflictState = null;
 let sharedQueueRecoveryState = null;
+let sharedQueueRecoveryOrderId = null;
 let sharedQueueRecoveryMarker = null;
 let sharedQueueAccessToken = null;
 
@@ -583,6 +585,43 @@ function normalizeStoredAnalysisBadge(analysisBadge) {
 
 function normalizeStoredSignature(signature) {
   return typeof signature === "string" && signature ? signature : null;
+}
+
+function normalizeStoredPublishedSnapshot(snapshot) {
+  if (!snapshot || typeof snapshot !== "object") {
+    return null;
+  }
+
+  const id = typeof snapshot.id === "string" ? snapshot.id.trim() : "";
+  if (!id) {
+    return null;
+  }
+
+  const text = typeof snapshot.text === "string"
+    ? snapshot.text
+    : typeof snapshot.settings?.text === "string"
+      ? snapshot.settings.text
+      : "";
+
+  return {
+    id,
+    revision: normalizeStoredRevision(snapshot.revision),
+    updatedAt: normalizeStoredUpdatedAt(snapshot.updatedAt),
+    updatedBy: normalizeStoredAuditActor(snapshot.updatedBy),
+    text,
+    status: isValidOrderStatus(snapshot.status) ? snapshot.status : "in-progress",
+    settings: normalizeSettings({
+      ...(snapshot.settings && typeof snapshot.settings === "object" ? snapshot.settings : {}),
+      text,
+    }),
+    source: normalizeStoredSource(snapshot.source),
+    cachedBuild: normalizeStoredCachedBuild(snapshot.cachedBuild),
+    previousCompletedBuild: normalizeStoredCachedBuild(snapshot.previousCompletedBuild),
+    savedSettingsSignature: normalizeStoredSignature(snapshot.savedSettingsSignature),
+    completedSettingsSignature: normalizeStoredSignature(snapshot.completedSettingsSignature),
+    analysisBadge: normalizeStoredAnalysisBadge(snapshot.analysisBadge),
+    pendingAnalysisSignature: normalizeStoredSignature(snapshot.pendingAnalysisSignature),
+  };
 }
 
 function toSignatureCandidates(signature) {
@@ -1558,6 +1597,31 @@ function getSharedQueueAuditSource(order = getActiveOrder()) {
   return null;
 }
 
+function resolveSharedQueueBannerOrderId() {
+  if (sharedQueueConflictState?.orderId) {
+    return sharedQueueConflictState.orderId;
+  }
+
+  if (sharedQueueRecoveryOrderId) {
+    return sharedQueueRecoveryOrderId;
+  }
+
+  if (sharedQueueRecoveryMarker?.conflictOrderId) {
+    return sharedQueueRecoveryMarker.conflictOrderId;
+  }
+
+  return null;
+}
+
+function isSharedQueueBannerRelevantToOrder(order = getActiveOrder()) {
+  const affectedOrderId = resolveSharedQueueBannerOrderId();
+  if (!affectedOrderId) {
+    return true;
+  }
+
+  return order?.id === affectedOrderId;
+}
+
 function buildActiveMeta(order) {
   if (!order) {
     return "Add or import a design to start editing.";
@@ -1972,7 +2036,7 @@ function hydrateStoredOrder(order, index) {
     completedSettingsSignature = null;
   }
 
-  return {
+  const normalizedOrder = {
     id: typeof order.id === "string" && order.id.trim() ? order.id : crypto.randomUUID(),
     revision: normalizeStoredRevision(order.revision),
     updatedAt: normalizeStoredUpdatedAt(order.updatedAt),
@@ -1991,6 +2055,28 @@ function hydrateStoredOrder(order, index) {
     pendingAnalysisSignature: null,
     pendingAnalysisRequestId: null,
   };
+
+  normalizedOrder.publishedSnapshot = normalizeStoredPublishedSnapshot(order.publishedSnapshot);
+  if (!normalizedOrder.publishedSnapshot && normalizedOrder.revision != null) {
+    normalizedOrder.publishedSnapshot = {
+      id: normalizedOrder.id,
+      revision: normalizedOrder.revision,
+      updatedAt: normalizedOrder.updatedAt,
+      updatedBy: normalizedOrder.updatedBy ? structuredClone(normalizedOrder.updatedBy) : null,
+      text: normalizedOrder.text,
+      status: normalizedOrder.status,
+      settings: normalizeSettings(normalizedOrder.settings),
+      source: normalizedOrder.source ? { ...normalizedOrder.source } : null,
+      cachedBuild: normalizedOrder.cachedBuild ? structuredClone(normalizedOrder.cachedBuild) : null,
+      previousCompletedBuild: normalizedOrder.previousCompletedBuild ? structuredClone(normalizedOrder.previousCompletedBuild) : null,
+      savedSettingsSignature: normalizedOrder.savedSettingsSignature,
+      completedSettingsSignature: normalizedOrder.completedSettingsSignature,
+      analysisBadge: normalizedOrder.analysisBadge ? structuredClone(normalizedOrder.analysisBadge) : null,
+      pendingAnalysisSignature: normalizedOrder.pendingAnalysisSignature,
+    };
+  }
+
+  return normalizedOrder;
 }
 
 function normalizeSharedQueueContext(queue) {
@@ -2016,8 +2102,9 @@ function setSharedQueueContext(queue) {
   sharedQueueContext = normalizeSharedQueueContext(queue);
 }
 
-function buildSerializedQueueOrders() {
-  return orders.map((order) => ({
+function buildSerializedQueueOrder(order, options = {}) {
+  const { includePublishedSnapshot = false } = options;
+  const serializedOrder = {
     id: order.id,
     revision: order.revision,
     updatedAt: order.updatedAt,
@@ -2032,7 +2119,19 @@ function buildSerializedQueueOrders() {
     completedSettingsSignature: order.completedSettingsSignature,
     analysisBadge: order.analysisBadge ? structuredClone(order.analysisBadge) : null,
     pendingAnalysisSignature: order.pendingAnalysisSignature,
-  }));
+  };
+
+  if (includePublishedSnapshot) {
+    serializedOrder.publishedSnapshot = order.publishedSnapshot
+      ? structuredClone(order.publishedSnapshot)
+      : null;
+  }
+
+  return serializedOrder;
+}
+
+function buildSerializedQueueOrders(options = {}) {
+  return orders.map((order) => buildSerializedQueueOrder(order, options));
 }
 
 function buildPersistedQueueState() {
@@ -2043,15 +2142,49 @@ function buildPersistedQueueState() {
     recoveryDraftMeta: sharedQueueRecoveryMarker ? structuredClone(sharedQueueRecoveryMarker) : null,
     recoveryDraftSnapshot: sharedQueueRecoveryDraft ? structuredClone(sharedQueueRecoveryDraft) : null,
     activeOrderId,
-    orders: buildSerializedQueueOrders(),
+    orders: buildSerializedQueueOrders({ includePublishedSnapshot: true }),
   };
 }
 
-function buildSharedQueueSnapshot() {
+function isOrderAwaitingPublishedSave(order) {
+  if (!order) {
+    return false;
+  }
+
+  return Boolean(
+    typeof order.pendingAnalysisSignature === "string"
+    && order.pendingAnalysisSignature
+    && order.pendingAnalysisSignature !== order.savedSettingsSignature,
+  );
+}
+
+function shouldUsePublishedSharedQueueOrder(order) {
+  if (!order?.publishedSnapshot) {
+    return false;
+  }
+
+  return hasUnsavedPublishedSnapshotChanges(order) || isOrderAwaitingPublishedSave(order);
+}
+
+function buildSharedQueueSnapshot(options = {}) {
+  const publishOrderIds = Array.isArray(options.publishOrderIds)
+    ? new Set(options.publishOrderIds.filter((value) => typeof value === "string" && value))
+    : null;
+
   return createSharedQueueSnapshot({
     queue: sharedQueueContext ? structuredClone(sharedQueueContext) : null,
     activeOrderId,
-    orders: buildSerializedQueueOrders(),
+    orders: orders.map((order) => {
+      if (publishOrderIds?.has(order.id)) {
+        return buildSerializedQueueOrder(order);
+      }
+
+      if (shouldUsePublishedSharedQueueOrder(order)) {
+        return structuredClone(order.publishedSnapshot);
+      }
+
+      return buildSerializedQueueOrder(order);
+    }),
   });
 }
 
@@ -2063,6 +2196,21 @@ function applySharedQueueAuditToOrder(order, auditSource) {
   order.revision = normalizeStoredRevision(auditSource.revision);
   order.updatedAt = normalizeStoredUpdatedAt(auditSource.updatedAt);
   order.updatedBy = normalizeStoredAuditActor(auditSource.updatedBy);
+}
+
+function mergeSharedQueuePublishedStateFromSnapshot(snapshot) {
+  if (!snapshot || !Array.isArray(snapshot.orders)) {
+    return;
+  }
+
+  for (const remoteOrder of snapshot.orders) {
+    const localOrder = orders.find((order) => order.id === remoteOrder?.id);
+    if (!localOrder) {
+      continue;
+    }
+
+    localOrder.publishedSnapshot = normalizeStoredPublishedSnapshot(remoteOrder);
+  }
 }
 
 function mergeSharedQueueAuditFromSnapshot(snapshot) {
@@ -2238,24 +2386,27 @@ function renderSharedQueueBanner(activeOrder = getActiveOrder()) {
     return;
   }
 
-  const auditSource = sharedQueueConflictState?.auditSource || getSharedQueueAuditSource(activeOrder);
+  const isOrderRelevant = isSharedQueueBannerRelevantToOrder(activeOrder);
+  const auditSource = isOrderRelevant && sharedQueueConflictState?.auditSource
+    ? sharedQueueConflictState.auditSource
+    : getSharedQueueAuditSource(activeOrder);
   const auditText = buildLastUpdatedText(auditSource);
   let tone = "pending";
   let label = "";
   let detail = "";
   let actionLabel = "";
 
-  if (sharedQueueConflictState) {
+  if (sharedQueueConflictState && isOrderRelevant) {
     tone = "warning";
     label = "Save conflict";
     detail = sharedQueueConflictState.detail;
     actionLabel = "Reload Shared Queue";
-  } else if (sharedQueueRecoveryState === "available" && sharedQueueRecoveryDraft) {
+  } else if (sharedQueueRecoveryState === "available" && sharedQueueRecoveryDraft && isOrderRelevant) {
     tone = "warning";
     label = "Local recovery draft available";
     detail = "A newer shared revision was loaded. Review your saved local draft if you still need those edits.";
     actionLabel = "Review Local Draft";
-  } else if (sharedQueueRecoveryState === "active") {
+  } else if (sharedQueueRecoveryState === "active" && isOrderRelevant) {
     tone = "warning";
     label = "Recovered local draft";
     detail = "Review this local draft, then click Save to retry it against the shared queue.";
@@ -2379,6 +2530,7 @@ function restoreSharedQueueRecoveryDraft() {
     return;
   }
 
+  sharedQueueRecoveryOrderId = sharedQueueRecoveryMarker?.conflictOrderId || activeOrderId || null;
   sharedQueueConflictState = null;
   sharedQueueRecoveryState = "active";
   sharedQueueRecoveryMarker = null;
@@ -2402,43 +2554,25 @@ function restoreSharedQueueRecoveryDraft() {
   scheduleDeferredPreviewRender();
 }
 
-async function saveCurrentQueueManually() {
-  const activeOrder = getActiveOrder();
-  if (!activeOrder || !saveQueueButton) {
-    return;
-  }
-
-  saveQueueButton.disabled = true;
-  saveQueueButton.setAttribute("aria-busy", "true");
-  setEditorActionLabel(saveQueueButton, "Saving...");
-
-  try {
-    saveActiveOrderDraft();
-    clearSharedQueueAutosaveTimeout();
-    sharedQueueAutosavePending = false;
-    flushLocalQueuePersistence();
-
-    if (!canAttemptSharedQueueSave()) {
-      updateWorkflowAlert("Saved in this browser. Shared queue sync is currently unavailable.", "pending");
-      return;
-    }
-
-    await saveQueueSnapshotToRemote({
-      persistActiveDraft: false,
-      successMessage: "Shared queue saved.",
-    });
-  } finally {
-    saveQueueButton.removeAttribute("aria-busy");
-    setEditorActionLabel(saveQueueButton, "Save");
-    saveQueueButton.disabled = !getActiveOrder();
-    renderSharedQueueBanner();
-  }
+function discardSharedQueueRecoveryDraft() {
+  sharedQueueConflictState = null;
+  sharedQueueRecoveryState = null;
+  sharedQueueRecoveryOrderId = null;
+  sharedQueueRecoveryMarker = null;
+  sharedQueueRecoveryDraft = null;
+  suppressQueueSyncLocalNotice = true;
+  persistQueueState({ skipRemoteSave: true });
+  suppressQueueSyncLocalNotice = false;
 }
 
 function reloadSharedQueueFromBanner() {
   if (sharedQueueRecoveryState === "available") {
     restoreSharedQueueRecoveryDraft();
     return;
+  }
+
+  if (sharedQueueConflictState || sharedQueueRecoveryDraft || sharedQueueRecoveryMarker) {
+    discardSharedQueueRecoveryDraft();
   }
 
   saveActiveOrderDraft();
@@ -2513,7 +2647,9 @@ function loadPersistedQueueState() {
 async function saveQueueSnapshotToRemote(options = {}) {
   const {
     persistActiveDraft = true,
+    publishOrderIds = undefined,
     successMessage = null,
+    successAlertAutoHideMs = undefined,
     keepalive = false,
     degradeOnFailure = true,
   } = options;
@@ -2524,7 +2660,7 @@ async function saveQueueSnapshotToRemote(options = {}) {
   }
 
   try {
-    snapshot = buildSharedQueueSnapshot();
+    snapshot = buildSharedQueueSnapshot({ publishOrderIds });
     const snapshotKey = buildSharedQueueSaveKey(snapshot);
 
     if (!canAttemptSharedQueueSave() || !snapshot.queue?.id || !snapshot.queue?.workspaceId) {
@@ -2545,9 +2681,11 @@ async function saveQueueSnapshotToRemote(options = {}) {
     if (savedSnapshot?.queue) {
       enableSharedQueueSync(savedSnapshot.queue);
     }
+    mergeSharedQueuePublishedStateFromSnapshot(savedSnapshot || snapshot);
     mergeSharedQueueAuditFromSnapshot(savedSnapshot);
     sharedQueueConflictState = null;
     sharedQueueRecoveryState = null;
+    sharedQueueRecoveryOrderId = null;
     sharedQueueRecoveryMarker = null;
     sharedQueueRecoveryDraft = null;
     lastSharedQueueSaveKey = buildSharedQueueSaveKey(buildSharedQueueSnapshot());
@@ -2563,7 +2701,9 @@ async function saveQueueSnapshotToRemote(options = {}) {
     }
 
     if (typeof successMessage === "string" && successMessage.trim()) {
-      updateWorkflowAlert(successMessage.trim(), "success");
+      updateWorkflowAlert(successMessage.trim(), "success", {
+        autoHideMs: successAlertAutoHideMs,
+      });
     }
     updateQueueSyncStatus("saved-remote", { count: (savedSnapshot || snapshot).orders.length });
   } catch (error) {
@@ -2585,6 +2725,7 @@ async function saveQueueSnapshotToRemote(options = {}) {
       sharedQueueRecoveryDraft = structuredClone(buildPersistedQueueState());
       sharedQueueRecoveryState = null;
       sharedQueueConflictState = {
+        orderId: typeof error.details?.orderId === "string" ? error.details.orderId : "",
         detail: "Another browser or user updated this design first. Reload the shared queue to compare the newer revision with your local draft.",
         auditSource: error.details && typeof error.details === "object" ? structuredClone(error.details) : null,
       };
@@ -2611,6 +2752,7 @@ async function saveQueueSnapshotToRemote(options = {}) {
     }
     sharedQueueConflictState = null;
     sharedQueueRecoveryState = null;
+    sharedQueueRecoveryOrderId = null;
     sharedQueueRecoveryMarker = null;
     renderSharedQueueBanner();
     updateWorkflowAlert(
@@ -2628,6 +2770,7 @@ async function restoreInitialQueueState(accessToken) {
   let sharedSyncUnavailable = false;
   sharedQueueConflictState = null;
   sharedQueueRecoveryState = null;
+  sharedQueueRecoveryOrderId = null;
 
   try {
     sharedSession = await fetchSharedSession(accessToken);
@@ -2693,6 +2836,7 @@ async function restoreInitialQueueState(accessToken) {
     : null;
   if (startupState.source === "remote" && sharedQueueRecoveryDraft) {
     sharedQueueRecoveryState = "available";
+    sharedQueueRecoveryOrderId = localRecoveryMarker?.conflictOrderId || null;
     sharedQueueRecoveryMarker = structuredClone(localRecoveryMarker);
   }
 
@@ -3707,6 +3851,55 @@ function saveActiveOrderDraft() {
   schedulePersistQueueState();
 }
 
+function restoreOrderFromPublishedSnapshot(order) {
+  const snapshot = normalizeStoredPublishedSnapshot(order?.publishedSnapshot);
+  if (!order || !snapshot) {
+    return false;
+  }
+
+  order.revision = snapshot.revision;
+  order.updatedAt = snapshot.updatedAt;
+  order.updatedBy = snapshot.updatedBy ? structuredClone(snapshot.updatedBy) : null;
+  order.text = snapshot.text;
+  order.status = snapshot.status;
+  order.settings = normalizeSettings(snapshot.settings);
+  order.source = snapshot.source ? { ...snapshot.source } : null;
+  order.cachedBuild = snapshot.cachedBuild ? structuredClone(snapshot.cachedBuild) : null;
+  order.previousCompletedBuild = snapshot.previousCompletedBuild ? structuredClone(snapshot.previousCompletedBuild) : null;
+  order.savedSettingsSignature = snapshot.savedSettingsSignature;
+  order.completedSettingsSignature = snapshot.completedSettingsSignature;
+  order.analysisBadge = snapshot.analysisBadge ? structuredClone(snapshot.analysisBadge) : null;
+  order.analysisState = "idle";
+  order.pendingAnalysisSignature = null;
+  order.pendingAnalysisRequestId = null;
+  order.capturedLayout = null;
+
+  const savedBuild = getSavedCachedBuild(order);
+  if (savedBuild) {
+    order.capturedLayout = {
+      ...cloneSerializableData(savedBuild.layout),
+      analysis: cloneSerializableData(savedBuild.analysis),
+    };
+  }
+
+  return true;
+}
+
+function cancelActiveOrderChanges() {
+  const order = getActiveOrder();
+  if (!restoreOrderFromPublishedSnapshot(order)) {
+    return;
+  }
+
+  applySettings(order.settings);
+  suppressQueueSyncLocalNotice = true;
+  persistQueueState({ skipRemoteSave: true });
+  suppressQueueSyncLocalNotice = false;
+  renderOrderList();
+  scheduleDeferredPreviewRender();
+  updateWorkflowAlert("Reverted to the last saved design.", "success");
+}
+
 function canCopyLayoutControls(order) {
   return Boolean(order);
 }
@@ -3889,6 +4082,19 @@ function hasUnsavedRenderChanges(order) {
   return !settingsSignatureMatches(getCurrentSettings(), getTrackedSettingsSignature(order));
 }
 
+function hasUnsavedPublishedSnapshotChanges(order) {
+  if (!order?.publishedSnapshot) {
+    return false;
+  }
+
+  return buildSettingsSignature(getCurrentSettings())
+    !== buildSettingsSignature(order.publishedSnapshot.settings);
+}
+
+function canCancelActiveOrder(order) {
+  return Boolean(order?.publishedSnapshot && hasUnsavedPublishedSnapshotChanges(order));
+}
+
 function hasSavedCompletedState(order) {
   return Boolean(
     order
@@ -3917,26 +4123,15 @@ function isOrderReadyForExport(order) {
   return true;
 }
 
-function updateSaveButtonState(activeOrder) {
-  if (!saveQueueButton) {
-    return;
-  }
-
-  if (saveQueueButton.getAttribute("aria-busy") === "true") {
-    return;
-  }
-
-  setEditorActionLabel(saveQueueButton, "Save");
-  saveQueueButton.disabled = !activeOrder;
-}
-
 function updateCaptureButtonState(activeOrder) {
-  setEditorActionLabel(captureButton, "Complete");
-  setEditorActionLabel(completeNextButton, "Complete & Next");
+  setEditorActionLabel(captureButton, "Save");
+  setEditorActionLabel(cancelDesignButton, "Cancel");
+  setEditorActionLabel(completeNextButton, "Save & Next");
 
   if (!activeOrder) {
     captureButton.disabled = true;
     captureButton.removeAttribute("aria-busy");
+    cancelDesignButton.disabled = true;
     completeNextButton.disabled = true;
     completeNextButton.removeAttribute("aria-busy");
     return;
@@ -3945,6 +4140,7 @@ function updateCaptureButtonState(activeOrder) {
   if (activeOrder.analysisState === "running") {
     captureButton.disabled = true;
     captureButton.removeAttribute("aria-busy");
+    cancelDesignButton.disabled = true;
     completeNextButton.disabled = true;
     completeNextButton.removeAttribute("aria-busy");
     return;
@@ -3954,6 +4150,7 @@ function updateCaptureButtonState(activeOrder) {
   completeNextButton.removeAttribute("aria-busy");
   const canComplete = canCompleteActiveOrder(activeOrder);
   const hasNextIncompleteOrder = canComplete && Boolean(getNextIncompleteOrder(activeOrder.id));
+  cancelDesignButton.disabled = !canCancelActiveOrder(activeOrder);
   captureButton.disabled = !canComplete;
   completeNextButton.disabled = !hasNextIncompleteOrder;
 }
@@ -4126,7 +4323,6 @@ function renderOrderList() {
   activeOrderName.textContent = activeOrder ? buildQueueOrderNumber(activeOrder) : "No design selected";
   activeOrderMeta.textContent = buildActiveMeta(activeOrder);
   renderSharedQueueBanner(activeOrder);
-  updateSaveButtonState(activeOrder);
   updateCaptureButtonState(activeOrder);
   downloadButton.disabled = !activeOrder || !isOrderReadyForExport(activeOrder);
   copyButton.disabled = !activeOrder || !isOrderReadyForExport(activeOrder) || !canCopySvgToClipboard();
@@ -4438,7 +4634,12 @@ async function captureActiveOrder({ advanceToNext = false } = {}) {
 
       await saveQueueSnapshotToRemote({
         persistActiveDraft: false,
-        successMessage: false,
+        publishOrderIds: [order.id],
+        successMessage: `Shared queue saved at ${new Date().toLocaleTimeString([], {
+          hour: "numeric",
+          minute: "2-digit",
+        })}.`,
+        successAlertAutoHideMs: 8000,
       });
     }
 
@@ -5312,8 +5513,8 @@ function render() {
   }
   updateConnectionStatus(
     "pending",
-    "Complete to analyze connectedness",
-    "Face analysis and cached export geometry run only when you click Complete.",
+    "Save to analyze connectedness",
+    "Face analysis and cached export geometry run only when you click Save.",
   );
 }
 
@@ -5334,8 +5535,8 @@ async function downloadSvg() {
     if (!cachedBuild) {
       updateConnectionStatus(
         "warning",
-        "Complete before exporting",
-        "Click Complete to run face analysis and cache the export-ready geometry for this design.",
+        "Save before exporting",
+        "Click Save to run face analysis and cache the export-ready geometry for this design.",
       );
       return;
     }
@@ -5377,8 +5578,8 @@ async function copyCurrentSvg() {
     if (!cachedBuild) {
       updateConnectionStatus(
         "warning",
-        "Complete before copying",
-        "Click Complete to run face analysis and cache the export-ready geometry for this design.",
+        "Save before copying",
+        "Click Save to run face analysis and cache the export-ready geometry for this design.",
       );
       return;
     }
@@ -5461,7 +5662,7 @@ async function exportAllOrders() {
   const unsavedOrders = exportableOrders.filter((order) => !isOrderReadyForExport(order));
   if (unsavedOrders.length) {
     updateWorkflowAlert(
-      `Complete ${unsavedOrders.length} design${unsavedOrders.length === 1 ? "" : "s"} before batch export. Face analysis now runs only on Complete.`,
+      `Save ${unsavedOrders.length} design${unsavedOrders.length === 1 ? "" : "s"} before batch export. Face analysis now runs only on Save.`,
       "error",
     );
     renderOrderList();
@@ -5513,7 +5714,7 @@ async function copyAllOrders() {
   const unsavedOrders = exportableOrders.filter((order) => !isOrderReadyForExport(order));
   if (unsavedOrders.length) {
     updateWorkflowAlert(
-      `Complete ${unsavedOrders.length} design${unsavedOrders.length === 1 ? "" : "s"} before batch copy. Face analysis now runs only on Complete.`,
+      `Save ${unsavedOrders.length} design${unsavedOrders.length === 1 ? "" : "s"} before batch copy. Face analysis now runs only on Save.`,
       "error",
     );
     renderOrderList();
@@ -5819,6 +6020,13 @@ assignPresetToListingButton?.addEventListener("click", () => {
       queueToolsMenu?.removeAttribute("open");
     });
   });
+[copyButton, downloadButton]
+  .filter(Boolean)
+  .forEach((button) => {
+    button.addEventListener("click", () => {
+      editorToolsMenu?.removeAttribute("open");
+    });
+  });
 closeColorCountsButton?.addEventListener("click", closeBatchColorCountsDialog);
 colorCountsDialog?.addEventListener("click", (event) => {
   if (event.target === colorCountsDialog) {
@@ -5858,24 +6066,29 @@ presetAssignmentDialog?.addEventListener("click", (event) => {
 });
 document.addEventListener("pointerdown", (event) => {
   if (!queueToolsMenu?.hasAttribute("open")) {
+    if (!editorToolsMenu?.hasAttribute("open")) {
+      return;
+    }
+  }
+
+  if (event.target instanceof Node && queueToolsMenu?.hasAttribute("open") && queueToolsMenu.contains(event.target)) {
     return;
   }
 
-  if (event.target instanceof Node && queueToolsMenu.contains(event.target)) {
+  if (event.target instanceof Node && editorToolsMenu?.hasAttribute("open") && editorToolsMenu.contains(event.target)) {
     return;
   }
 
-  queueToolsMenu.removeAttribute("open");
+  queueToolsMenu?.removeAttribute("open");
+  editorToolsMenu?.removeAttribute("open");
 });
 orderSearchInput.addEventListener("input", renderOrderList);
 captureButton.addEventListener("click", () => {
   captureActiveOrder();
 });
+cancelDesignButton?.addEventListener("click", cancelActiveOrderChanges);
 completeNextButton.addEventListener("click", () => {
   captureActiveOrder({ advanceToNext: true });
-});
-saveQueueButton?.addEventListener("click", () => {
-  void saveCurrentQueueManually();
 });
 downloadButton.addEventListener("click", downloadSvg);
 copyButton.addEventListener("click", copyCurrentSvg);

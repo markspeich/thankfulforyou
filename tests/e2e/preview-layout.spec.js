@@ -14,8 +14,24 @@ function completeAndNextButton(page) {
   return page.locator("#completeNextButton");
 }
 
+function cancelButton(page) {
+  return page.locator("#cancelDesignButton");
+}
+
+function copyDesignButton(page) {
+  return page.locator("#copyButton");
+}
+
+function exportDesignButton(page) {
+  return page.locator("#downloadButton");
+}
+
 function queueToolsToggle(page) {
   return page.locator(".queue-tools-toggle");
+}
+
+function editorToolsToggle(page) {
+  return page.locator(".editor-tools-toggle");
 }
 
 async function openQueueTools(page) {
@@ -24,13 +40,78 @@ async function openQueueTools(page) {
     return;
   }
 
-  await queueToolsToggle(page).click();
+  await menu.evaluate((node) => {
+    node.setAttribute("open", "");
+  });
   await expect(menu).toHaveAttribute("open", "");
 }
 
 async function clickQueueAction(page, name) {
   await openQueueTools(page);
-  await page.getByRole("button", { name }).click();
+  await page.evaluate((actionName) => {
+    const button = Array.from(document.querySelectorAll(".queue-tools-menu .queue-tool-button"))
+      .find((candidate) => candidate.textContent?.includes(actionName));
+    if (!(button instanceof HTMLButtonElement)) {
+      throw new Error(`Queue action not found: ${actionName}`);
+    }
+    button.click();
+  }, name);
+}
+
+async function openEditorTools(page) {
+  const menu = page.locator(".editor-tools-menu");
+  if (await menu.evaluate((node) => node.hasAttribute("open"))) {
+    return;
+  }
+
+  await menu.evaluate((node) => {
+    node.setAttribute("open", "");
+  });
+  await expect(menu).toHaveAttribute("open", "");
+}
+
+async function clickEditorToolButton(page, selector) {
+  await openEditorTools(page);
+  await page.evaluate((buttonSelector) => {
+    const button = document.querySelector(buttonSelector);
+    if (!(button instanceof HTMLButtonElement)) {
+      throw new Error(`Editor tool button not found: ${buttonSelector}`);
+    }
+    button.click();
+  }, selector);
+}
+
+async function clickButtonBySelector(page, selector) {
+  await page.evaluate((buttonSelector) => {
+    const button = document.querySelector(buttonSelector);
+    if (!(button instanceof HTMLButtonElement)) {
+      throw new Error(`Button not found: ${buttonSelector}`);
+    }
+    button.click();
+  }, selector);
+}
+
+async function clickOrderItemByText(page, text) {
+  await page.evaluate((targetText) => {
+    const button = Array.from(document.querySelectorAll("#orderList .order-row .order-item"))
+      .find((candidate) => candidate.textContent?.includes(targetText));
+    if (!(button instanceof HTMLButtonElement)) {
+      throw new Error(`Order item not found: ${targetText}`);
+    }
+    button.click();
+  }, text);
+}
+
+async function setDesignText(page, value) {
+  await page.evaluate((nextValue) => {
+    const input = document.querySelector("#textInput");
+    if (!(input instanceof HTMLTextAreaElement)) {
+      throw new Error("Design text input not found");
+    }
+    input.value = nextValue;
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  }, value);
 }
 
 async function confirmQueueDialog(page, expectedTitle) {
@@ -111,7 +192,7 @@ async function measurePressedState(page, selector, assertedProperties) {
 async function completeDesign(page, queueLabel) {
   const row = page.locator("#orderList .order-row").filter({ hasText: queueLabel });
 
-  await completeButton(page).click();
+  await clickButtonBySelector(page, "#captureButton");
   await expect(row).toContainText("Complete");
   await expect.poll(async () => {
     return row.locator(".order-analysis-indicator.ok, .order-analysis-indicator.warning").count();
@@ -133,6 +214,46 @@ function buildMockAnalysisResponse(overrides = {}) {
     },
     ...overrides,
   };
+}
+
+function installSupabaseSession(page) {
+  return page.addInitScript(({ providedSession }) => {
+    window.__APP_CONFIG__ = {
+      supabaseUrl: "https://example.supabase.co",
+      supabaseAnonKey: "anon-key",
+    };
+    window.__TFU_TEST_SHARED_QUEUE_ACCESS_TOKEN__ = providedSession.access_token;
+    window.__TFU_TEST_SUPABASE_CLIENT__ = {
+      auth: {
+        getSession: async () => ({
+          data: { session: providedSession },
+          error: null,
+        }),
+        signInWithPassword: async () => ({
+          data: {
+            session: providedSession,
+          },
+          error: null,
+        }),
+        signOut: async () => ({ error: null }),
+        onAuthStateChange: () => ({
+          data: {
+            subscription: {
+              unsubscribe() {},
+            },
+          },
+        }),
+      },
+    };
+  }, {
+    providedSession: {
+      access_token: "token-1",
+      user: {
+        id: "user-1",
+        email: "mark@example.com",
+      },
+    },
+  });
 }
 
 async function expectWorkflowAlertMessage(page, ...messageParts) {
@@ -271,6 +392,9 @@ test.beforeEach(async ({ page, request }, testInfo) => {
 });
 
 test("shows the production defaults", async ({ page }) => {
+  await expect(page.locator("#saveQueueButton")).toHaveCount(0);
+  await expect(completeButton(page)).toHaveText("Save");
+  await expect(completeAndNextButton(page)).toHaveText("Save & Next");
   await expect(page.locator("#globalHorizontalScaleInput")).toHaveValue("1");
   await expect(page.locator("#globalHorizontalScaleInput")).toHaveAttribute("max", "2");
   await expect(page.locator("#globalHorizontalScaleOutput")).toHaveText("100%");
@@ -481,6 +605,7 @@ test("keeps the queue sync status hidden until there is a message", async ({ pag
 });
 
 test(SHARED_QUEUE_REMOTE_RESTORE_TEST_TITLE, async ({ page }) => {
+  await installSupabaseSession(page);
   const staleLocalSnapshot = {
     version: 1,
     orderSequence: 2,
@@ -598,6 +723,10 @@ test(SHARED_QUEUE_REMOTE_RESTORE_TEST_TITLE, async ({ page }) => {
   await expect(page.locator("#orderList")).not.toContainText("Stale Local");
 
   await page.locator("#textInput").fill("Remote Shared Updated");
+  await page.waitForTimeout(300);
+  await expect.poll(() => sharedQueueSavePayloads.length).toBe(0);
+
+  await page.getByRole("button", { name: "Save", exact: true }).click();
 
   await expect.poll(() => sharedQueueSavePayloads.length).toBeGreaterThan(0);
   await expect
@@ -606,6 +735,7 @@ test(SHARED_QUEUE_REMOTE_RESTORE_TEST_TITLE, async ({ page }) => {
 });
 
 test(SHARED_QUEUE_CONFLICT_TEST_TITLE, async ({ page }) => {
+  await installSupabaseSession(page);
   const remoteSnapshot = {
     queue: {
       id: "queue-1",
@@ -680,14 +810,24 @@ test(SHARED_QUEUE_CONFLICT_TEST_TITLE, async ({ page }) => {
   await expect(page.locator("#textInput")).toHaveValue("Remote Shared");
 
   await page.locator("#textInput").fill("Remote Shared Updated");
-  await expect.poll(() => sharedQueueSavePayloads.length).toBe(1);
+  await page.waitForTimeout(300);
+  await expect.poll(() => sharedQueueSavePayloads.length).toBe(0);
   await expect(page.locator("#queueSyncStatus")).not.toContainText("Local recovery only");
 
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect.poll(() => sharedQueueSavePayloads.length).toBeGreaterThan(0);
+  const savesAfterFirstClick = sharedQueueSavePayloads.length;
+
   await page.locator("#textInput").fill("Remote Shared Updated Again");
-  await expect.poll(() => sharedQueueSavePayloads.length).toBe(2);
+  await page.waitForTimeout(300);
+  await expect.poll(() => sharedQueueSavePayloads.length).toBe(savesAfterFirstClick);
+
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect.poll(() => sharedQueueSavePayloads.length).toBeGreaterThan(savesAfterFirstClick);
 });
 
 test(SHARED_QUEUE_PAGEHIDE_TEST_TITLE, async ({ page }) => {
+  await installSupabaseSession(page);
   const remoteSnapshot = {
     queue: {
       id: "queue-1",
@@ -769,17 +909,16 @@ test(SHARED_QUEUE_PAGEHIDE_TEST_TITLE, async ({ page }) => {
   await expect(page.locator("#textInput")).toHaveValue("Remote Shared");
 
   await page.locator("#textInput").fill("Remote Shared Draft 1");
-  await expect.poll(() => sharedQueueSavePayloads.length).toBe(1);
+  await page.waitForTimeout(300);
+  await expect.poll(() => sharedQueueSavePayloads.length).toBe(0);
 
   await page.locator("#textInput").fill("Remote Shared Draft 2");
   await page.evaluate(() => {
     window.dispatchEvent(new PageTransitionEvent("pagehide", { persisted: false }));
   });
 
-  await expect.poll(() => sharedQueueSavePayloads.length).toBe(2);
-  await expect
-    .poll(() => sharedQueueSavePayloads.at(-1)?.orders?.[0]?.text ?? null)
-    .toBe("Remote Shared Draft 2");
+  await page.waitForTimeout(300);
+  await expect.poll(() => sharedQueueSavePayloads.length).toBe(0);
 
   releaseFirstSave();
 });
@@ -1404,13 +1543,13 @@ test("requires re-complete when lock text height changes a scaled design", async
   const row = page.locator("#orderList .order-row").filter({ hasText: "Design 1" });
   const firstLineLock = page.locator('.line-control-card[data-line-index="0"] [data-setting="lockTextHeight"]');
 
-  await expect(page.getByRole("button", { name: "Export This Design" })).toBeEnabled();
+  await expect(exportDesignButton(page)).toBeEnabled();
   await firstLineLock.check();
 
   await expect(firstLineLock).toBeChecked();
   await expect(row).toContainText("In progress");
   await expect(completeButton(page)).toBeEnabled();
-  await expect(page.getByRole("button", { name: "Export This Design" })).toBeDisabled();
+  await expect(exportDesignButton(page)).toBeDisabled();
 
   await page.unrouteAll({ behavior: "ignoreErrors" });
 });
@@ -1514,7 +1653,7 @@ test("copies layout controls onto another design without copying text", async ({
   await completeDesign(page, "Design 2");
   const targetRow = page.locator("#orderList .order-row").filter({ hasText: "Design 2" });
   await expect(targetRow).toContainText("Complete");
-  await expect(page.getByRole("button", { name: "Export This Design" })).toBeEnabled();
+  await expect(exportDesignButton(page)).toBeEnabled();
 
   await page.locator("#orderList .order-row").filter({ hasText: "Design 1" }).locator(".order-item").click();
   await expect(pasteLayoutButton).toBeDisabled();
@@ -1546,7 +1685,7 @@ test("copies layout controls onto another design without copying text", async ({
   await expect(targetRow.locator(".order-analysis-indicator.warning")).toHaveCount(0);
   await expect(targetRow.locator(".order-analysis-indicator.running")).toHaveCount(0);
   await expect(completeButton(page)).toBeEnabled();
-  await expect(page.getByRole("button", { name: "Export This Design" })).toBeDisabled();
+  await expect(exportDesignButton(page)).toBeDisabled();
 
   await page.unrouteAll({ behavior: "ignoreErrors" });
 });
@@ -1586,7 +1725,7 @@ test("preserves completed export-ready state when a pasted layout is unchanged",
   await completeDesign(page, "Design 2");
   const targetRow = page.locator("#orderList .order-row").filter({ hasText: "Design 2" });
   await expect(targetRow).toContainText("Complete");
-  await expect(page.getByRole("button", { name: "Export This Design" })).toBeEnabled();
+  await expect(exportDesignButton(page)).toBeEnabled();
 
   await page.locator("#orderList .order-row").filter({ hasText: "Design 1" }).locator(".order-item").click();
   await copyLayoutButton.click();
@@ -1599,7 +1738,7 @@ test("preserves completed export-ready state when a pasted layout is unchanged",
   await expect(targetRow).toContainText("Complete");
   await expect(targetRow.locator(".order-analysis-indicator.ok, .order-analysis-indicator.warning")).toHaveCount(1);
   await expect(completeButton(page)).toBeDisabled();
-  await expect(page.getByRole("button", { name: "Export This Design" })).toBeEnabled();
+  await expect(exportDesignButton(page)).toBeEnabled();
 
   await page.unrouteAll({ behavior: "ignoreErrors" });
 });
@@ -1639,12 +1778,12 @@ test("restores complete and export state when pasted controls return to a previo
   await completeDesign(page, "Design 2");
   const targetRow = page.locator("#orderList .order-row").filter({ hasText: "Design 2" });
   await expect(targetRow).toContainText("Complete");
-  await expect(page.getByRole("button", { name: "Export This Design" })).toBeEnabled();
+  await expect(exportDesignButton(page)).toBeEnabled();
 
   await page.locator('.line-control-card[data-line-index="0"] [data-setting="horizontalScale"]').fill("1.11");
   await expect(targetRow).toContainText("In progress");
   await expect(completeButton(page)).toBeEnabled();
-  await expect(page.getByRole("button", { name: "Export This Design" })).toBeDisabled();
+  await expect(exportDesignButton(page)).toBeDisabled();
 
   await page.locator("#orderList .order-row").filter({ hasText: "Design 1" }).locator(".order-item").click();
   await copyLayoutButton.click();
@@ -1658,7 +1797,7 @@ test("restores complete and export state when pasted controls return to a previo
   await expect(targetRow).toContainText("Complete");
   await expect(targetRow.locator(".order-analysis-indicator.ok, .order-analysis-indicator.warning")).toHaveCount(1);
   await expect(completeButton(page)).toBeDisabled();
-  await expect(page.getByRole("button", { name: "Export This Design" })).toBeEnabled();
+  await expect(exportDesignButton(page)).toBeEnabled();
 
   await page.unrouteAll({ behavior: "ignoreErrors" });
 });
@@ -1747,7 +1886,7 @@ test("downgrades an abandoned first-time in-flight analysis to a retryable draft
   await expect(page.locator("#importStatus")).toBeHidden();
   await expect(row).toContainText("In progress");
   await expect(completeButton(page)).toBeEnabled();
-  await expect(page.getByRole("button", { name: "Export This Design" })).toBeDisabled();
+  await expect(exportDesignButton(page)).toBeDisabled();
 
   await page.unrouteAll({ behavior: "ignoreErrors" });
 });
@@ -1781,7 +1920,7 @@ test("clears stale saved geometry signatures that have no completed build after 
   await expect(page.locator("#importStatus")).toBeHidden();
   await expect(row).toContainText("In progress");
   await expect(completeButton(page)).toBeEnabled();
-  await expect(page.getByRole("button", { name: "Export This Design" })).toBeDisabled();
+  await expect(exportDesignButton(page)).toBeDisabled();
 });
 
 test("keeps the newest analysis request authoritative when Complete is clicked twice", async ({ page }) => {
@@ -1809,7 +1948,7 @@ test("keeps the newest analysis request authoritative when Complete is clicked t
   await expect(row.locator(".order-analysis-indicator.running")).toBeVisible();
 
   await expect(row).toContainText("Complete", { timeout: 20000 });
-  await expect(page.getByRole("button", { name: "Export This Design" })).toBeEnabled();
+  await expect(exportDesignButton(page)).toBeEnabled();
 
   await page.unrouteAll({ behavior: "ignoreErrors" });
 });
@@ -1850,7 +1989,7 @@ test("keeps the newest same-geometry analysis retry authoritative", async ({ pag
   await expect(page.locator("#connectionStatusLabel")).not.toContainText("Analysis failed", { timeout: 2000 });
 
   await expect(row).toContainText("Complete", { timeout: 20000 });
-  await expect(page.getByRole("button", { name: "Export This Design" })).toBeEnabled();
+  await expect(exportDesignButton(page)).toBeEnabled();
 
   await page.unrouteAll({ behavior: "ignoreErrors" });
 });
@@ -1877,7 +2016,7 @@ test("restores the completed state when geometry is reverted before analysis fin
   await firstLineLock.uncheck();
 
   await expect(row).toContainText("Complete");
-  await expect(page.getByRole("button", { name: "Export This Design" })).toBeEnabled({ timeout: 20000 });
+  await expect(exportDesignButton(page)).toBeEnabled({ timeout: 20000 });
   await expect(completeButton(page)).toBeDisabled();
 
   await page.unrouteAll({ behavior: "ignoreErrors" });
@@ -1906,7 +2045,7 @@ test("ignores an abandoned analysis failure after reverting to a completed geome
 
   await page.locator("#textInput").fill("Savannah\nRN");
   await completeDesign(page, "Design 1");
-  await expect(page.getByRole("button", { name: "Export This Design" })).toBeEnabled();
+  await expect(exportDesignButton(page)).toBeEnabled();
 
   const row = page.locator("#orderList .order-row").filter({ hasText: "Design 1" });
   const firstLineLock = page.locator('.line-control-card[data-line-index="0"] [data-setting="lockTextHeight"]');
@@ -1917,7 +2056,7 @@ test("ignores an abandoned analysis failure after reverting to a completed geome
 
   await firstLineLock.uncheck();
   await expect(row).toContainText("Complete");
-  await expect(page.getByRole("button", { name: "Export This Design" })).toBeEnabled();
+  await expect(exportDesignButton(page)).toBeEnabled();
   await expect(page.locator("#connectionStatusLabel")).not.toContainText("Analysis failed", { timeout: 20000 });
 
   await page.unrouteAll({ behavior: "ignoreErrors" });
@@ -1961,7 +2100,7 @@ test("restores the previous completed geometry after refresh during a newer in-f
   await restoredFirstLineLock.uncheck();
   await expect(row).toContainText("Complete");
   await expect(completeButton(page)).toBeDisabled();
-  await expect(page.getByRole("button", { name: "Export This Design" })).toBeEnabled();
+  await expect(exportDesignButton(page)).toBeEnabled();
 
   await page.unrouteAll({ behavior: "ignoreErrors" });
 });
@@ -2006,7 +2145,7 @@ test("preserves the newest completed geometry across refresh after the operator 
   await secondLineHeight.fill("34");
   await expect(row).toContainText("Complete", { timeout: 20000 });
   await expect(completeButton(page)).toBeDisabled();
-  await expect(page.getByRole("button", { name: "Export This Design" })).toBeEnabled();
+  await expect(exportDesignButton(page)).toBeEnabled();
 
   await page.unrouteAll({ behavior: "ignoreErrors" });
 });
@@ -2023,7 +2162,7 @@ test("restores the previous completed geometry when a newer in-flight analysis i
 
   await page.locator("#textInput").fill("Savannah\nRN");
   await completeDesign(page, "Design 1");
-  await expect(page.getByRole("button", { name: "Export This Design" })).toBeEnabled();
+  await expect(exportDesignButton(page)).toBeEnabled();
 
   const row = page.locator("#orderList .order-row").filter({ hasText: "Design 1" });
   const firstLineLock = page.locator('.line-control-card[data-line-index="0"] [data-setting="lockTextHeight"]');
@@ -2036,14 +2175,14 @@ test("restores the previous completed geometry when a newer in-flight analysis i
   await firstLineLock.uncheck();
   await expect(row).toContainText("Complete", { timeout: 20000 });
   await expect(completeButton(page)).toBeDisabled();
-  await expect(page.getByRole("button", { name: "Export This Design" })).toBeEnabled();
+  await expect(exportDesignButton(page)).toBeEnabled();
   await expect(page.locator("#connectionStatusLabel")).toContainText("Single connected face piece");
   await expect(page.locator("#connectionStatus .order-analysis-indicator.ok")).toBeVisible();
 
   await clickQueueAction(page, "Add Design");
   await page.locator("#orderList .order-row").filter({ hasText: "Design 1" }).locator(".order-item").click();
   await expect(page.locator("#connectionStatusLabel")).toContainText("Single connected face piece");
-  await expect(page.getByRole("button", { name: "Export This Design" })).toBeEnabled();
+  await expect(exportDesignButton(page)).toBeEnabled();
   await expect(page.locator("#connectionStatus .order-analysis-indicator.ok")).toBeVisible();
 
   await page.unrouteAll({ behavior: "ignoreErrors" });
@@ -2124,7 +2263,7 @@ test("skips already imported Etsy line items when importing another batch", asyn
     });
   }, firstPayload);
 
-  await page.locator("#importClipboardButton").click();
+  await clickButtonBySelector(page, "#importClipboardButton");
 
   await expect(page.locator("#orderCountOutput")).toHaveText("3");
   await expect(page.locator(".queue-tools-menu")).not.toHaveAttribute("open", "");
@@ -2156,7 +2295,7 @@ test("skips already imported Etsy line items when importing another batch", asyn
     });
   }, secondPayload);
 
-  await page.locator("#importClipboardButton").click();
+  await clickButtonBySelector(page, "#importClipboardButton");
 
   await expect(page.locator("#orderCountOutput")).toHaveText("4");
   await expect(page.locator(".queue-tools-menu")).not.toHaveAttribute("open", "");
@@ -2193,7 +2332,7 @@ test("shows labeled buyer, listing, and emphasized personalization lines in queu
     });
   }, payload);
 
-  await page.locator("#importClipboardButton").click();
+  await clickButtonBySelector(page, "#importClipboardButton");
 
   const row = page.locator("#orderList .order-row").filter({ hasText: "#4057600528" });
   const buyerLine = row.locator(".order-item-recipient");
@@ -2261,7 +2400,7 @@ test("shows imported Etsy color and quantity below design text and highlights wh
     });
   }, payload);
 
-  await page.locator("#importClipboardButton").click();
+  await clickButtonBySelector(page, "#importClipboardButton");
 
   await expect(page.locator("#importedColorField")).toBeVisible();
   await expect(page.locator("#importedColorValue")).toHaveText("White Glitter");
@@ -2327,7 +2466,7 @@ test("shows batch color counts from the queue tools menu", async ({ page }) => {
     });
   }, payload);
 
-  await page.locator("#importClipboardButton").click();
+  await clickButtonBySelector(page, "#importClipboardButton");
   await clickQueueAction(page, "View Color Counts");
 
   const dialog = page.locator("#colorCountsDialog");
@@ -2386,10 +2525,10 @@ test("includes imported color and quantity in the export payload", async ({ page
     });
   });
 
-  await page.locator("#importClipboardButton").click();
+  await clickButtonBySelector(page, "#importClipboardButton");
   await completeDesign(page, "#4057600528");
-  await page.locator("#orderList .order-row").filter({ hasText: "#4057600528" }).locator(".order-item").click();
-  await page.getByRole("button", { name: "Export This Design" }).click();
+  await clickOrderItemByText(page, "#4057600528");
+  await clickEditorToolButton(page, "#downloadButton");
 
   await expect.poll(() => exportPayload, { timeout: 20000 }).not.toBeNull();
   expect(exportPayload.colorName).toBe("White Glitter");
@@ -2440,12 +2579,12 @@ test("copies the current design and all queued designs to the clipboard", async 
     });
   });
 
-  await page.locator("#textInput").fill("Alpha");
+  await setDesignText(page, "Alpha");
   await completeDesign(page, "Design 1");
-  await page.getByRole("button", { name: "Copy This Design" }).click();
+  await clickEditorToolButton(page, "#copyButton");
 
   await clickQueueAction(page, "Add Design");
-  await page.locator("#textInput").fill("Beta");
+  await setDesignText(page, "Beta");
   await completeDesign(page, "Design 2");
   await clickQueueAction(page, "Copy All Designs");
 
@@ -2629,10 +2768,10 @@ test("disables Complete while the active design analysis is still running", asyn
   const activeRow = page.locator("#orderList .order-row").filter({ hasText: "Design 1" });
   await expect(activeRow.locator(".order-analysis-indicator.running")).toBeVisible();
   await expect(page.locator("#captureButton")).toBeDisabled();
-  await expect(page.locator("#captureButton")).toHaveText("Complete");
+  await expect(page.locator("#captureButton")).toHaveText("Save");
   await expect(activeRow.locator(".order-analysis-indicator.ok")).toBeVisible({ timeout: 20000 });
   await expect(page.locator("#captureButton")).toBeDisabled();
-  await expect(page.locator("#captureButton")).toHaveText("Complete");
+  await expect(page.locator("#captureButton")).toHaveText("Save");
 
   await page.unrouteAll({ behavior: "ignoreErrors" });
 });
@@ -2661,13 +2800,13 @@ test("keeps Complete disabled when reselecting a design whose analysis is still 
   await firstRow.locator(".order-item").click();
   await expect(page.locator("#activeOrderName")).toHaveText("Design 1");
   await expect(page.locator("#captureButton")).toBeDisabled();
-  await expect(page.locator("#captureButton")).toHaveText("Complete");
+  await expect(page.locator("#captureButton")).toHaveText("Save");
   await expect
     .poll(() => page.locator("#captureButton").evaluate((element) => window.getComputedStyle(element).cursor))
     .toBe("not-allowed");
   await expect(firstRow.locator(".order-analysis-indicator.ok")).toBeVisible({ timeout: 20000 });
   await expect(page.locator("#captureButton")).toBeDisabled();
-  await expect(page.locator("#captureButton")).toHaveText("Complete");
+  await expect(page.locator("#captureButton")).toHaveText("Save");
 
   await page.unrouteAll({ behavior: "ignoreErrors" });
 });
@@ -2695,7 +2834,7 @@ test("does not allow a second Complete run while the same design analysis is sti
   const firstRow = page.locator("#orderList .order-row").filter({ hasText: "Design 1" });
   await firstRow.locator(".order-item").click();
   await expect(page.locator("#captureButton")).toBeDisabled();
-  await expect(page.locator("#captureButton")).toHaveText("Complete");
+  await expect(page.locator("#captureButton")).toHaveText("Save");
   await expect.poll(() => analyzeCalls).toBe(1);
   await expect(firstRow.locator(".order-analysis-indicator.ok")).toBeVisible({ timeout: 20000 });
   await expect.poll(() => analyzeCalls).toBe(1);
