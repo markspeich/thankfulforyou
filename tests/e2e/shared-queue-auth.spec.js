@@ -320,3 +320,52 @@ test("switches to the presets workspace from the left nav", async ({ page }) => 
   await expect(page.locator("#presetWorkspaceButton")).toHaveAttribute("aria-pressed", "true");
   await expect(page.locator("#presetsWorkspace")).toBeVisible();
 });
+
+test("shows a loading skeleton while the initial shared queue loads", async ({ page }) => {
+  await installSupabaseSession(page, {
+    access_token: "token-1",
+    user: {
+      id: "user-1",
+      email: "mark@example.com",
+    },
+  });
+
+  let releaseSharedSession;
+  const sharedSessionReady = new Promise((resolve) => {
+    releaseSharedSession = resolve;
+  });
+
+  await page.route("**/api/shared-session", async (route) => {
+    await sharedSessionReady;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify({
+        operator: { id: "user-1", email: "mark@example.com" },
+        workspace: { id: "workspace-1", name: "Thankful For You" },
+        queue: { id: "queue-1", workspaceId: "workspace-1" },
+      }),
+    });
+  });
+  await page.route("**/api/shared-queue?queueId=queue-1", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify({
+        queue: { id: "queue-1", workspaceId: "workspace-1" },
+        activeOrderId: "remote-order-1",
+        orders: [],
+      }),
+    });
+  });
+
+  await page.goto("/");
+
+  await expect(page.locator("#initialQueueLoading")).toBeVisible();
+  await expect(page.locator("#initialQueueLoading")).toContainText("Loading shared queue");
+  await expect(page.locator(".initial-queue-loading .order-skeleton-row")).toHaveCount(4);
+
+  releaseSharedSession();
+
+  await expect(page.locator("#initialQueueLoading")).toBeHidden();
+});

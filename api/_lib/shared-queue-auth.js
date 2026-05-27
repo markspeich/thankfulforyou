@@ -7,6 +7,16 @@ function createAuthError(statusCode, message) {
   });
 }
 
+function isSupabaseAuthNetworkError(error) {
+  if (!error) {
+    return false;
+  }
+
+  const name = typeof error.name === "string" ? error.name : "";
+  const message = typeof error.message === "string" ? error.message : "";
+  return name === "AuthRetryableFetchError" || /fetch failed|network|econn|eacces|etimedout/i.test(message);
+}
+
 export function readBearerToken(req) {
   const header = req?.headers?.authorization ?? req?.headers?.Authorization ?? "";
 
@@ -27,6 +37,10 @@ export async function resolveSharedQueueAuth(req) {
 
   const supabase = createSupabaseAdminClient();
   const { data: userData, error: userError } = await supabase.auth.getUser(accessToken);
+
+  if (isSupabaseAuthNetworkError(userError)) {
+    throw createAuthError(503, "Unable to reach Supabase auth from this dev server process.");
+  }
 
   if (userError || !userData?.user?.id) {
     throw createAuthError(401, "Authentication required.");

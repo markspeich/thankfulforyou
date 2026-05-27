@@ -5,9 +5,11 @@ import { extname, join, normalize } from "node:path";
 import { createServer } from "node:http";
 import { buildPublicAppConfigScript } from "./app_config.mjs";
 import { resolveDevPort } from "./dev_port.mjs";
+import { loadEnvFile } from "./env_file.mjs";
 
 const port = resolveDevPort();
 const root = process.cwd();
+loadEnvFile({ cwd: root });
 const pythonCommand = process.env.PYTHON || (process.platform === "win32" ? "py" : "python3");
 const pythonScriptArgs = process.env.PYTHON
   ? ["tools/export_svg.py"]
