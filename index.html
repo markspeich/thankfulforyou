@@ -4,11 +4,43 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Badge Reel Text Layout Tool</title>
+    <script type="importmap">
+      {
+        "imports": {
+          "tslib": "/node_modules/tslib/tslib.es6.mjs"
+        }
+      }
+    </script>
     <link rel="icon" type="image/svg+xml" href="/public/favicon.svg">
     <link rel="stylesheet" href="src/styles.css">
   </head>
   <body>
     <main class="app-shell" data-workspace="orders" data-nav-collapsed="false">
+      <section id="sharedQueueAuthGate" class="shared-auth-gate" hidden>
+        <div class="shared-auth-card">
+          <p class="shared-auth-eyebrow">Shared Queue Access</p>
+          <h1 id="sharedQueueAuthTitle">Sign in to shared queue</h1>
+          <p id="sharedQueueAuthMessage" class="shared-auth-message">
+            Use your invited operator account to continue.
+          </p>
+          <form id="sharedQueueSignInForm" class="shared-auth-form">
+            <label class="field compact-field">
+              <span>Email</span>
+              <input id="sharedQueueEmail" type="email" autocomplete="username" required>
+            </label>
+            <label class="field compact-field">
+              <span>Password</span>
+              <input id="sharedQueuePassword" type="password" autocomplete="current-password" required>
+            </label>
+            <div class="shared-auth-actions">
+              <button id="sharedQueueSignInButton" class="editor-action-button" type="submit">
+                <span class="editor-action-label">Sign In</span>
+              </button>
+            </div>
+          </form>
+          <p id="sharedQueueAuthError" class="shared-auth-error" role="alert" hidden></p>
+        </div>
+      </section>
       <aside class="workspace-nav" aria-label="Workspace navigation">
         <button id="navCollapseButton" class="workspace-nav-toggle" type="button" aria-label="Collapse navigation">
           <span class="workspace-nav-toggle-icon" aria-hidden="true"></span>
@@ -33,7 +65,7 @@
         </button>
       </aside>
 
-      <section class="workspace-stage">
+      <section id="workspaceStage" class="workspace-stage">
         <section id="ordersWorkspace" class="workspace-view is-active" aria-label="Order items workspace">
           <section class="production-workspace">
         <aside class="orders-panel" aria-label="Design navigation">

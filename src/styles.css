@@ -65,6 +65,72 @@ select {
   overflow: hidden;
 }
 
+.shared-auth-gate {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background:
+    radial-gradient(circle at top, rgba(68, 111, 139, 0.2), transparent 38%),
+    linear-gradient(180deg, rgba(22, 51, 65, 0.96) 0%, rgba(29, 58, 73, 0.98) 100%);
+}
+
+.shared-auth-gate[hidden] {
+  display: none;
+}
+
+.shared-auth-form[hidden] {
+  display: none;
+}
+
+.shared-auth-card {
+  width: min(460px, 100%);
+  padding: 28px;
+  background: rgba(252, 254, 255, 0.98);
+  border: 1px solid rgba(33, 73, 93, 0.16);
+  border-radius: 18px;
+  box-shadow: 0 24px 44px rgba(14, 33, 41, 0.24);
+}
+
+.shared-auth-eyebrow {
+  margin: 0 0 10px;
+  color: #2b6174;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.shared-auth-card h1 {
+  margin: 0;
+  font-size: 1.65rem;
+}
+
+.shared-auth-message {
+  margin: 10px 0 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.shared-auth-form {
+  display: grid;
+  gap: 14px;
+  margin-top: 22px;
+}
+
+.shared-auth-actions {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.shared-auth-error {
+  margin: 14px 0 0;
+  color: #a53a28;
+  font-weight: 600;
+}
+
 .app-shell[data-nav-collapsed="true"] {
   grid-template-columns: 84px minmax(0, 1fr);
 }

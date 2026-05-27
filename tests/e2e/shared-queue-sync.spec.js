@@ -2,7 +2,48 @@ import { expect, test } from "playwright/test";
 
 test.describe.configure({ mode: "serial" });
 
+function installSupabaseSession(page) {
+  return page.addInitScript(({ providedSession }) => {
+    window.__APP_CONFIG__ = {
+      supabaseUrl: "https://example.supabase.co",
+      supabaseAnonKey: "anon-key",
+    };
+    window.__TFU_TEST_SHARED_QUEUE_ACCESS_TOKEN__ = providedSession.access_token;
+    window.__TFU_TEST_SUPABASE_CLIENT__ = {
+      auth: {
+        getSession: async () => ({
+          data: { session: providedSession },
+          error: null,
+        }),
+        signInWithPassword: async () => ({
+          data: {
+            session: providedSession,
+          },
+          error: null,
+        }),
+        signOut: async () => ({ error: null }),
+        onAuthStateChange: () => ({
+          data: {
+            subscription: {
+              unsubscribe() {},
+            },
+          },
+        }),
+      },
+    };
+  }, {
+    providedSession: {
+      access_token: "token-1",
+      user: {
+        id: "user-1",
+        email: "mark@example.com",
+      },
+    },
+  });
+}
+
 test("shows a recovery banner when a newer shared revision already exists", async ({ page }) => {
+  await installSupabaseSession(page);
   const remoteSnapshot = {
     queue: {
       id: "queue-1",
@@ -116,6 +157,7 @@ test("shows a recovery banner when a newer shared revision already exists", asyn
 });
 
 test("does not re-autosave immediately after a successful manual save merges revision metadata", async ({ page }) => {
+  await installSupabaseSession(page);
   const remoteSnapshot = {
     queue: {
       id: "queue-1",
@@ -208,6 +250,7 @@ test("does not re-autosave immediately after a successful manual save merges rev
 });
 
 test("does not show recovery UI for ordinary mirrored local cache", async ({ page }) => {
+  await installSupabaseSession(page);
   const localSnapshot = {
     version: 1,
     orderSequence: 2,
@@ -323,6 +366,7 @@ test("does not show recovery UI for ordinary mirrored local cache", async ({ pag
 });
 
 test("does not show recovery UI for a stale recovery marker from another shared queue", async ({ page }) => {
+  await installSupabaseSession(page);
   const localSnapshot = {
     version: 1,
     orderSequence: 2,

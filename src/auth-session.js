@@ -1,6 +1,10 @@
-import { createClient } from "@supabase/supabase-js";
+import AuthClient from "../node_modules/@supabase/auth-js/dist/module/AuthClient.js";
 
 let browserSupabaseClient = null;
+
+function readBrowserSupabaseClientOverride() {
+  return globalThis.__TFU_TEST_SUPABASE_CLIENT__ ?? null;
+}
 
 function readBrowserSupabaseConfig() {
   const windowConfig = typeof window !== "undefined" ? window.__APP_CONFIG__ : null;
@@ -18,13 +22,31 @@ function readBrowserSupabaseConfig() {
 }
 
 export function getBrowserSupabaseClient() {
+  const override = readBrowserSupabaseClientOverride();
+  if (override) {
+    browserSupabaseClient = override;
+    return browserSupabaseClient;
+  }
+
   if (browserSupabaseClient) {
     return browserSupabaseClient;
   }
 
   const { url, anonKey } = readBrowserSupabaseConfig();
 
-  browserSupabaseClient = createClient(url, anonKey);
+  browserSupabaseClient = {
+    auth: new AuthClient({
+      url: `${url.replace(/\/$/, "")}/auth/v1`,
+      headers: {
+        apikey: anonKey,
+        Authorization: `Bearer ${anonKey}`,
+      },
+      storageKey: "thankfulforyou.supabase.auth",
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: false,
+    }),
+  };
   return browserSupabaseClient;
 }
 

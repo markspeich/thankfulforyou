@@ -1,14 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const createClientMock = vi.fn();
-
-vi.mock("@supabase/supabase-js", () => ({
-  createClient: createClientMock,
-}));
-
 beforeEach(() => {
   vi.resetModules();
-  createClientMock.mockReset();
 });
 
 afterEach(() => {
@@ -147,15 +140,15 @@ describe("auth session helpers", () => {
       data: { session },
       error: null,
     });
-    createClientMock.mockReturnValue({
-      auth: {
-        getSession: getSessionMock,
-      },
-    });
     vi.stubGlobal("window", {
       __APP_CONFIG__: {
         supabaseUrl: "https://example.supabase.co",
         supabaseAnonKey: "anon-key",
+      },
+    });
+    vi.stubGlobal("__TFU_TEST_SUPABASE_CLIENT__", {
+      auth: {
+        getSession: getSessionMock,
       },
     });
 
@@ -164,7 +157,6 @@ describe("auth session helpers", () => {
     const client = getBrowserSupabaseClient();
 
     expect(client.auth.getSession).toBe(getSessionMock);
-    expect(createClientMock).toHaveBeenCalledWith("https://example.supabase.co", "anon-key");
     await expect(getSignedInSession()).resolves.toEqual(session);
     expect(getSessionMock).toHaveBeenCalledTimes(1);
   });
@@ -177,7 +169,6 @@ describe("auth session helpers", () => {
     expect(() => getBrowserSupabaseClient()).toThrow(
       "Supabase browser config is missing. Set window.__APP_CONFIG__.supabaseUrl and window.__APP_CONFIG__.supabaseAnonKey before loading shared sessions.",
     );
-    expect(createClientMock).not.toHaveBeenCalled();
   });
 
   it("signs in with email and password through the browser supabase client", async () => {
@@ -189,16 +180,16 @@ describe("auth session helpers", () => {
       data: { session },
       error: null,
     });
-    createClientMock.mockReturnValue({
-      auth: {
-        signInWithPassword: signInWithPasswordMock,
-        getSession: vi.fn().mockResolvedValue({ data: { session: null }, error: null }),
-      },
-    });
     vi.stubGlobal("window", {
       __APP_CONFIG__: {
         supabaseUrl: "https://example.supabase.co",
         supabaseAnonKey: "anon-key",
+      },
+    });
+    vi.stubGlobal("__TFU_TEST_SUPABASE_CLIENT__", {
+      auth: {
+        signInWithPassword: signInWithPasswordMock,
+        getSession: vi.fn().mockResolvedValue({ data: { session: null }, error: null }),
       },
     });
 
@@ -221,15 +212,15 @@ describe("auth session helpers", () => {
       },
       error: null,
     });
-    createClientMock.mockReturnValue({
-      auth: {
-        getSession: getSessionMock,
-      },
-    });
     vi.stubGlobal("window", {
       __APP_CONFIG__: {
         supabaseUrl: "https://example.supabase.co",
         supabaseAnonKey: "anon-key",
+      },
+    });
+    vi.stubGlobal("__TFU_TEST_SUPABASE_CLIENT__", {
+      auth: {
+        getSession: getSessionMock,
       },
     });
 

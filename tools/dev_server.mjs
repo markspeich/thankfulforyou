@@ -19,6 +19,7 @@ const contentTypes = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
   ".json": "application/json; charset=utf-8",
+  ".mjs": "text/javascript; charset=utf-8",
   ".otf": "font/otf",
   ".svg": "image/svg+xml; charset=utf-8",
   ".ttf": "font/ttf",
@@ -73,6 +74,13 @@ function resolvePath(url) {
 
   if (!normalized.startsWith(root)) {
     return null;
+  }
+
+  if (!existsSync(normalized)) {
+    const withJsExtension = `${normalized}.js`;
+    if (existsSync(withJsExtension)) {
+      return withJsExtension;
+    }
   }
 
   return normalized;

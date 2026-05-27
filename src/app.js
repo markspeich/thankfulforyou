@@ -52,6 +52,10 @@ import {
   saveSharedQueueSnapshot,
 } from "./shared-queue-api.js";
 import {
+  getSignedInSession,
+  signInWithPassword as signInOperatorWithPassword,
+} from "./auth-session.js";
+import {
   chooseSharedQueueStartupState,
   createSharedQueueSnapshot,
 } from "./shared-queue-model.js";
@@ -117,6 +121,15 @@ const PRESET_SYNC_LINE_SETTING_KEYS = Object.freeze([
 ]);
 
 const appShell = document.querySelector(".app-shell");
+const workspaceStage = document.querySelector("#workspaceStage");
+const sharedQueueAuthGate = document.querySelector("#sharedQueueAuthGate");
+const sharedQueueAuthTitle = document.querySelector("#sharedQueueAuthTitle");
+const sharedQueueAuthMessage = document.querySelector("#sharedQueueAuthMessage");
+const sharedQueueSignInForm = document.querySelector("#sharedQueueSignInForm");
+const sharedQueueEmailInput = document.querySelector("#sharedQueueEmail");
+const sharedQueuePasswordInput = document.querySelector("#sharedQueuePassword");
+const sharedQueueSignInButton = document.querySelector("#sharedQueueSignInButton");
+const sharedQueueAuthError = document.querySelector("#sharedQueueAuthError");
 const ordersWorkspace = document.querySelector("#ordersWorkspace");
 const presetsWorkspace = document.querySelector("#presetsWorkspace");
 const orderWorkspaceButton = document.querySelector("#orderWorkspaceButton");
@@ -256,6 +269,143 @@ let sharedQueueSyncDetail = "";
 let sharedQueueConflictState = null;
 let sharedQueueRecoveryState = null;
 let sharedQueueRecoveryMarker = null;
+let sharedQueueAccessToken = null;
+
+function readSharedQueueAccessTokenOverride() {
+  return globalThis.__TFU_TEST_SHARED_QUEUE_ACCESS_TOKEN__ ?? null;
+}
+
+function setSharedQueueAuthError(message) {
+  if (!sharedQueueAuthError) {
+    return;
+  }
+
+  const normalized = typeof message === "string" ? message.trim() : "";
+  sharedQueueAuthError.textContent = normalized;
+  sharedQueueAuthError.hidden = !normalized;
+}
+
+function showSharedQueueAuthGate({ title, message, error = "", allowSignIn = true }) {
+  sharedQueueAccessToken = null;
+  if (sharedQueueAuthTitle) {
+    sharedQueueAuthTitle.textContent = title;
+  }
+  if (sharedQueueAuthMessage) {
+    sharedQueueAuthMessage.textContent = message;
+  }
+  if (sharedQueueSignInForm) {
+    sharedQueueSignInForm.hidden = !allowSignIn;
+  }
+  if (sharedQueueSignInButton) {
+    sharedQueueSignInButton.disabled = !allowSignIn;
+  }
+  if (workspaceStage) {
+    workspaceStage.hidden = true;
+  }
+  if (sharedQueueAuthGate) {
+    sharedQueueAuthGate.hidden = false;
+  }
+  setSharedQueueAuthError(error);
+}
+
+function hideSharedQueueAuthGate() {
+  if (sharedQueueAuthGate) {
+    sharedQueueAuthGate.hidden = true;
+  }
+  if (workspaceStage) {
+    workspaceStage.hidden = false;
+  }
+  setSharedQueueAuthError("");
+}
+
+function showSharedQueueConfigError(error) {
+  const detail = error instanceof Error && error.message
+    ? error.message
+    : "Shared queue configuration is missing.";
+  showSharedQueueAuthGate({
+    title: "Shared queue configuration is missing.",
+    message: "This app cannot load or save shared designs until Supabase browser settings are configured.",
+    error: detail,
+    allowSignIn: false,
+  });
+}
+
+function showSharedQueueSignIn(error = "") {
+  showSharedQueueAuthGate({
+    title: "Sign in to shared queue",
+    message: "Use your invited operator account to continue. Contact your admin if you still need access.",
+    error,
+    allowSignIn: true,
+  });
+}
+
+async function bootstrapSharedQueueAccess() {
+  await new Promise((resolve) => {
+    window.setTimeout(resolve, 0);
+  });
+
+  const accessTokenOverride = readSharedQueueAccessTokenOverride();
+  if (accessTokenOverride) {
+    sharedQueueAccessToken = accessTokenOverride;
+    hideSharedQueueAuthGate();
+    return sharedQueueAccessToken;
+  }
+
+  let session = null;
+
+  try {
+    session = await getSignedInSession();
+  } catch (error) {
+    showSharedQueueConfigError(error);
+    return null;
+  }
+
+  if (!session?.access_token) {
+    showSharedQueueSignIn();
+    return null;
+  }
+
+  sharedQueueAccessToken = session.access_token;
+  hideSharedQueueAuthGate();
+  return sharedQueueAccessToken;
+}
+
+async function handleSharedQueueSignInSubmit(event) {
+  event.preventDefault();
+
+  const email = typeof sharedQueueEmailInput?.value === "string" ? sharedQueueEmailInput.value.trim() : "";
+  const password = typeof sharedQueuePasswordInput?.value === "string" ? sharedQueuePasswordInput.value : "";
+
+  if (!email || !password) {
+    showSharedQueueSignIn("Enter your email and password to continue.");
+    return;
+  }
+
+  if (sharedQueueSignInButton) {
+    sharedQueueSignInButton.disabled = true;
+  }
+  setSharedQueueAuthError("");
+
+  try {
+    const session = await signInOperatorWithPassword(email, password);
+    sharedQueueAccessToken = session?.access_token ?? null;
+    if (!sharedQueueAccessToken) {
+      throw new Error("Sign-in succeeded, but no shared queue session is available yet.");
+    }
+    hideSharedQueueAuthGate();
+    window.location.reload();
+  } catch (error) {
+    showSharedQueueSignIn(
+      error instanceof Error && error.message
+        ? error.message
+        : "Unable to sign in to the shared queue.",
+    );
+  } finally {
+    if (sharedQueueSignInButton) {
+      sharedQueueSignInButton.disabled = false;
+    }
+  }
+}
 
 const statusLabels = {
   "not-started": "Not started",
@@ -2439,7 +2589,7 @@ async function saveQueueSnapshotToRemote(options = {}) {
   }
 }
 
-async function restoreInitialQueueState() {
+async function restoreInitialQueueState(accessToken) {
   const localSnapshot = readPersistedQueueState();
   const localRecoveryMarker = normalizeSharedQueueRecoveryMarker(localSnapshot?.recoveryDraftMeta);
   let sharedSession = null;
@@ -2449,7 +2599,7 @@ async function restoreInitialQueueState() {
   sharedQueueRecoveryState = null;
 
   try {
-    sharedSession = await fetchSharedSession();
+    sharedSession = await fetchSharedSession(accessToken);
     sharedSessionContext = sharedSession;
     if (sharedSession?.queue) {
       enableSharedQueueSync(sharedSession.queue);
@@ -2470,7 +2620,7 @@ async function restoreInitialQueueState() {
 
   if (sharedSession?.queue?.id) {
     try {
-      remoteSnapshot = await fetchSharedQueueSnapshot(sharedSession.queue.id);
+      remoteSnapshot = await fetchSharedQueueSnapshot(sharedSession.queue.id, accessToken);
     } catch (error) {
       disableSharedQueueSync(
         error instanceof Error && error.message
@@ -5683,6 +5833,9 @@ copyButton.addEventListener("click", copyCurrentSvg);
 copyLayoutControlsButton.addEventListener("click", copyActiveLayoutControls);
 pasteLayoutControlsButton.addEventListener("click", pasteLayoutControlsIntoActiveOrder);
 sharedQueueBannerReloadButton?.addEventListener("click", reloadSharedQueueFromBanner);
+sharedQueueSignInForm?.addEventListener("submit", (event) => {
+  void handleSharedQueueSignInSubmit(event);
+});
 previewPanel.addEventListener("mousedown", startPreviewMiddlePan);
 previewPanel.addEventListener("auxclick", (event) => {
   if (event.button === 1) {
@@ -5717,7 +5870,10 @@ await loadPresetRegistry();
 renderPresetOptions();
 renderPresetEditorDraft();
 updateBackingOutput();
-const restoredQueue = await restoreInitialQueueState();
+sharedQueueAccessToken = await bootstrapSharedQueueAccess();
+const restoredQueue = sharedQueueAccessToken
+  ? await restoreInitialQueueState(sharedQueueAccessToken)
+  : { source: null, count: 0 };
 if ((!restoredQueue.source || restoredQueue.count === 0) && workflowAlert.dataset.state !== "error") {
   updateWorkflowAlert("", "pending");
 }
