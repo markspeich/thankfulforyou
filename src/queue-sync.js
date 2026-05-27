@@ -1,3 +1,5 @@
+import { chooseSharedQueueStartupState } from "./shared-queue-model.js";
+
 export const REMOTE_QUEUE_WORKSPACE_KEY = "primary";
 
 export function buildRemoteQueuePayload(snapshot) {
@@ -11,24 +13,19 @@ export function chooseInitialQueueSnapshot({
   localSnapshot,
   remoteSnapshot,
 }) {
-  if (!isQueueSnapshotEmpty(localSnapshot)) {
+  const startupState = chooseSharedQueueStartupState({
+    remoteSnapshot,
+    localCache: localSnapshot,
+  });
+
+  if (startupState.source === "local-cache") {
     return {
+      ...startupState,
       source: "local",
-      snapshot: localSnapshot,
     };
   }
 
-  if (!isQueueSnapshotEmpty(remoteSnapshot)) {
-    return {
-      source: "remote",
-      snapshot: remoteSnapshot,
-    };
-  }
-
-  return {
-    source: null,
-    snapshot: null,
-  };
+  return startupState;
 }
 
 export function isQueueSnapshotEmpty(snapshot) {

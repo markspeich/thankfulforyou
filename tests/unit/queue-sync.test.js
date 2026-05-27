@@ -7,30 +7,21 @@ import {
 } from "../../src/queue-sync.js";
 
 describe("queue sync helpers", () => {
-  it("wraps the existing persisted queue snapshot without reshaping it", () => {
+  it("preserves the legacy remote payload contract and full snapshot shape", () => {
     const snapshot = {
       version: 1,
       orderSequence: 3,
+      queue: {
+        id: "queue-1",
+        workspaceId: "workspace-1",
+        updatedAt: "2026-05-26T21:00:00.000Z",
+      },
       activeOrderId: "order-2",
       orders: [
         {
           id: "order-1",
+          revision: 2,
           text: "Mark",
-          status: "in-progress",
-          settings: {
-            text: "Mark",
-            presetId: "preset-a1f4c8e2b601",
-            backingMm: 2.2,
-            weldExportedDesign: true,
-            lines: [],
-          },
-          source: null,
-          cachedBuild: null,
-          previousCompletedBuild: null,
-          savedSettingsSignature: null,
-          completedSettingsSignature: null,
-          analysisBadge: null,
-          pendingAnalysisSignature: null,
         },
       ],
     };
@@ -41,57 +32,66 @@ describe("queue sync helpers", () => {
     });
   });
 
-  it("prefers local browser state over remote state at startup", () => {
+  it("uses the remote startup snapshot while preserving local cache for recovery", () => {
     const localSnapshot = {
-      version: 1,
-      orderSequence: 2,
+      queue: {
+        id: "queue-1",
+        workspaceId: "workspace-1",
+        updatedAt: "2026-05-26T20:00:00.000Z",
+      },
       activeOrderId: "local-1",
-      orders: [{ id: "local-1" }],
+      orders: [{ id: "local-1", revision: 2 }],
     };
     const remoteSnapshot = {
-      version: 1,
-      orderSequence: 4,
+      queue: {
+        id: "queue-1",
+        workspaceId: "workspace-1",
+        updatedAt: "2026-05-26T21:00:00.000Z",
+      },
       activeOrderId: "remote-1",
-      orders: [{ id: "remote-1" }],
+      orders: [{ id: "remote-1", revision: 3 }],
     };
 
     expect(chooseInitialQueueSnapshot({
       localSnapshot,
       remoteSnapshot,
     })).toEqual({
-      source: "local",
-      snapshot: localSnapshot,
+      source: "remote",
+      snapshot: remoteSnapshot,
+      recoveryDraft: localSnapshot,
     });
   });
 
-  it("falls back to remote state when the browser has no saved queue", () => {
-    const remoteSnapshot = {
-      version: 1,
-      orderSequence: 4,
-      activeOrderId: "remote-1",
-      orders: [{ id: "remote-1" }],
+  it("maps local-cache startup back to local for legacy callers", () => {
+    const localSnapshot = {
+      queue: {
+        id: "queue-1",
+        workspaceId: "workspace-1",
+        updatedAt: "2026-05-26T20:00:00.000Z",
+      },
+      activeOrderId: "local-1",
+      orders: [{ id: "local-1", revision: 2 }],
     };
 
     expect(chooseInitialQueueSnapshot({
-      localSnapshot: null,
-      remoteSnapshot,
+      localSnapshot,
+      remoteSnapshot: null,
     })).toEqual({
-      source: "remote",
-      snapshot: remoteSnapshot,
+      source: "local",
+      snapshot: localSnapshot,
+      recoveryDraft: null,
     });
   });
 
   it("treats a queue snapshot with no orders as empty", () => {
     expect(isQueueSnapshotEmpty(null)).toBe(true);
     expect(isQueueSnapshotEmpty({
-      version: 1,
-      orderSequence: 1,
+      queue: { id: "queue-1", workspaceId: "workspace-1" },
       activeOrderId: null,
       orders: [],
     })).toBe(true);
     expect(isQueueSnapshotEmpty({
-      version: 1,
-      orderSequence: 1,
+      queue: { id: "queue-1", workspaceId: "workspace-1" },
       activeOrderId: "order-1",
       orders: [{ id: "order-1" }],
     })).toBe(false);
