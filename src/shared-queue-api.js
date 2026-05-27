@@ -44,13 +44,15 @@ export async function fetchSharedQueueSnapshot(queueId) {
   return payload;
 }
 
-export async function saveSharedQueueSnapshot(snapshot) {
+export async function saveSharedQueueSnapshot(snapshot, options = {}) {
+  const { keepalive = false } = options;
   const response = await fetch("/api/shared-queue", {
     method: "PUT",
     headers: {
       "Content-Type": "application/json",
       Accept: "application/json",
     },
+    keepalive,
     body: JSON.stringify({ snapshot }),
   });
   const payload = await readJsonOrFallback(response, {});

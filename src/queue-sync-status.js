@@ -11,17 +11,25 @@ export function buildQueueSyncStatus(kind, options = {}) {
     case "restored-local":
     case "empty":
       return null;
+    case "local-recovery":
+      return {
+        tone: "warning",
+        label: "Local recovery only",
+        detail: typeof options.detail === "string" && options.detail.trim()
+          ? options.detail.trim()
+          : `Shared queue sync is unavailable. ${formatCount(count, "design is", "designs are")} being kept only in this browser for recovery.`,
+      };
     case "restored-remote":
       return {
         tone: "ok",
-        label: "Restored from Neon",
-        detail: `${formatCount(count, "design was", "designs were")} loaded from the remote saved batch.`,
+        label: "Shared queue loaded",
+        detail: `${formatCount(count, "design was", "designs were")} loaded from the shared queue.`,
       };
     case "saved-remote":
       return {
         tone: "ok",
-        label: "Saved to Neon",
-        detail: `${formatCount(count, "design is", "designs are")} synced to the remote saved batch.`,
+        label: "Shared queue saved",
+        detail: `${formatCount(count, "design was", "designs were")} saved to the shared queue.`,
       };
     default:
       return null;

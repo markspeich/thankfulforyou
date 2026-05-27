@@ -84,6 +84,33 @@ describe("shared queue api client", () => {
       message: "Revision conflict",
     });
   });
+
+  it("passes keepalive through for unload-safe shared saves", async () => {
+    const snapshot = {
+      queue: { id: "queue-1", workspaceId: "workspace-1" },
+      activeOrderId: "order-1",
+      orders: [{ id: "order-1", revision: 1 }],
+    };
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => snapshot,
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { saveSharedQueueSnapshot } = await import("../../src/shared-queue-api.js");
+
+    await expect(saveSharedQueueSnapshot(snapshot, { keepalive: true })).resolves.toEqual(snapshot);
+    expect(fetchMock).toHaveBeenCalledWith("/api/shared-queue", {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      keepalive: true,
+      body: JSON.stringify({ snapshot }),
+    });
+  });
 });
 
 describe("auth session helpers", () => {

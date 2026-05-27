@@ -2,6 +2,10 @@ import { expect, test } from "playwright/test";
 
 test.describe.configure({ mode: "serial" });
 
+const SHARED_QUEUE_REMOTE_RESTORE_TEST_TITLE = "restores the shared queue from the backend before stale local cache";
+const SHARED_QUEUE_CONFLICT_TEST_TITLE = "keeps shared sync enabled on revision conflict";
+const SHARED_QUEUE_PAGEHIDE_TEST_TITLE = "pagehide keepalive saves even while a shared autosave is in flight";
+
 function completeButton(page) {
   return page.locator("#captureButton");
 }
@@ -227,7 +231,15 @@ async function measureVisibleTextBounds(page) {
   });
 }
 
-test.beforeEach(async ({ page, request }) => {
+test.beforeEach(async ({ page, request }, testInfo) => {
+  if (
+    testInfo.title === SHARED_QUEUE_REMOTE_RESTORE_TEST_TITLE
+    || testInfo.title === SHARED_QUEUE_CONFLICT_TEST_TITLE
+    || testInfo.title === SHARED_QUEUE_PAGEHIDE_TEST_TITLE
+  ) {
+    return;
+  }
+
   async function waitForStartup() {
     await expect.poll(async () => {
       const value = await page.locator("#importStatus").textContent();
@@ -466,6 +478,310 @@ test("refines auto-fit against the rendered face ink bounds", async ({ page }) =
 test("keeps the queue sync status hidden until there is a message", async ({ page }) => {
   await expect(page.locator("#queueSyncStatus")).toBeHidden();
   await expect(page.locator("#orderSearchInput")).toBeVisible();
+});
+
+test(SHARED_QUEUE_REMOTE_RESTORE_TEST_TITLE, async ({ page }) => {
+  const staleLocalSnapshot = {
+    version: 1,
+    orderSequence: 2,
+    activeOrderId: "local-order-1",
+    orders: [
+      {
+        id: "local-order-1",
+        text: "Stale Local",
+        status: "in-progress",
+        settings: {
+          text: "Stale Local",
+          presetId: "preset-oval",
+          backingMm: 2.2,
+          weldExportedDesign: true,
+          lines: [
+            {
+              fontId: "candlepin",
+              bridgeMm: 0.5,
+              lineBridgeMm: 0.5,
+              offsetXMm: 0,
+              fontSizeMm: 34,
+              horizontalScale: 1,
+              verticalScale: 1,
+              lockTextHeight: false,
+            },
+          ],
+        },
+      },
+    ],
+  };
+  const remoteSnapshot = {
+    queue: {
+      id: "queue-1",
+      workspaceId: "workspace-1",
+    },
+    activeOrderId: "remote-order-1",
+    orders: [
+      {
+        id: "remote-order-1",
+        revision: 3,
+        text: "Remote Shared",
+        status: "in-progress",
+        settings: {
+          text: "Remote Shared",
+          presetId: "preset-oval",
+          backingMm: 2.2,
+          weldExportedDesign: true,
+          lines: [
+            {
+              fontId: "candlepin",
+              bridgeMm: 0.5,
+              lineBridgeMm: 0.5,
+              offsetXMm: 0,
+              fontSizeMm: 34,
+              horizontalScale: 1,
+              verticalScale: 1,
+              lockTextHeight: false,
+            },
+          ],
+        },
+      },
+    ],
+  };
+  let sharedSessionRequests = 0;
+  let sharedQueueRequests = 0;
+  const sharedQueueSavePayloads = [];
+
+  await page.route("**/api/shared-session", async (route) => {
+    sharedSessionRequests += 1;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify({
+        operator: { id: "user-1", email: "mark@example.com" },
+        workspace: { id: "workspace-1", name: "Thankful For You" },
+        queue: { id: "queue-1", workspaceId: "workspace-1" },
+      }),
+    });
+  });
+  await page.route("**/api/shared-queue?queueId=queue-1", async (route) => {
+    sharedQueueRequests += 1;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify(remoteSnapshot),
+    });
+  });
+  await page.route("**/api/shared-queue", async (route) => {
+    if (route.request().method() !== "PUT") {
+      await route.fallback();
+      return;
+    }
+
+    const requestSnapshot = route.request().postDataJSON()?.snapshot;
+    sharedQueueSavePayloads.push(requestSnapshot);
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify(requestSnapshot),
+    });
+  });
+  await page.addInitScript(({ storageKey, snapshot }) => {
+    window.localStorage.setItem(storageKey, JSON.stringify(snapshot));
+  }, {
+    storageKey: "thankfulforyou.designQueue",
+    snapshot: staleLocalSnapshot,
+  });
+
+  await page.goto("/");
+
+  await expect.poll(() => sharedSessionRequests).toBe(1);
+  await expect.poll(() => sharedQueueRequests).toBe(1);
+  await expect(page.locator("#textInput")).toHaveValue("Remote Shared");
+  await expect(page.locator("#orderList")).toContainText("Remote Shared");
+  await expect(page.locator("#orderList")).not.toContainText("Stale Local");
+
+  await page.locator("#textInput").fill("Remote Shared Updated");
+
+  await expect.poll(() => sharedQueueSavePayloads.length).toBeGreaterThan(0);
+  await expect
+    .poll(() => sharedQueueSavePayloads.at(-1)?.orders?.[0]?.text ?? null)
+    .toBe("Remote Shared Updated");
+});
+
+test(SHARED_QUEUE_CONFLICT_TEST_TITLE, async ({ page }) => {
+  const remoteSnapshot = {
+    queue: {
+      id: "queue-1",
+      workspaceId: "workspace-1",
+    },
+    activeOrderId: "remote-order-1",
+    orders: [
+      {
+        id: "remote-order-1",
+        revision: 3,
+        text: "Remote Shared",
+        status: "in-progress",
+        settings: {
+          text: "Remote Shared",
+          presetId: "preset-oval",
+          backingMm: 2.2,
+          weldExportedDesign: true,
+          lines: [
+            {
+              fontId: "candlepin",
+              bridgeMm: 0.5,
+              lineBridgeMm: 0.5,
+              offsetXMm: 0,
+              fontSizeMm: 34,
+              horizontalScale: 1,
+              verticalScale: 1,
+              lockTextHeight: false,
+            },
+          ],
+        },
+      },
+    ],
+  };
+  const sharedQueueSavePayloads = [];
+
+  await page.route("**/api/shared-session", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify({
+        operator: { id: "user-1", email: "mark@example.com" },
+        workspace: { id: "workspace-1", name: "Thankful For You" },
+        queue: { id: "queue-1", workspaceId: "workspace-1" },
+      }),
+    });
+  });
+  await page.route("**/api/shared-queue?queueId=queue-1", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify(remoteSnapshot),
+    });
+  });
+  await page.route("**/api/shared-queue", async (route) => {
+    if (route.request().method() !== "PUT") {
+      await route.fallback();
+      return;
+    }
+
+    sharedQueueSavePayloads.push(route.request().postDataJSON()?.snapshot);
+    await route.fulfill({
+      status: 409,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify({
+        error: "Revision conflict",
+        details: { orderId: "remote-order-1", revision: 3 },
+      }),
+    });
+  });
+
+  await page.goto("/");
+  await expect(page.locator("#textInput")).toHaveValue("Remote Shared");
+
+  await page.locator("#textInput").fill("Remote Shared Updated");
+  await expect.poll(() => sharedQueueSavePayloads.length).toBe(1);
+  await expect(page.locator("#queueSyncStatus")).not.toContainText("Local recovery only");
+
+  await page.locator("#textInput").fill("Remote Shared Updated Again");
+  await expect.poll(() => sharedQueueSavePayloads.length).toBe(2);
+});
+
+test(SHARED_QUEUE_PAGEHIDE_TEST_TITLE, async ({ page }) => {
+  const remoteSnapshot = {
+    queue: {
+      id: "queue-1",
+      workspaceId: "workspace-1",
+    },
+    activeOrderId: "remote-order-1",
+    orders: [
+      {
+        id: "remote-order-1",
+        revision: 3,
+        text: "Remote Shared",
+        status: "in-progress",
+        settings: {
+          text: "Remote Shared",
+          presetId: "preset-oval",
+          backingMm: 2.2,
+          weldExportedDesign: true,
+          lines: [
+            {
+              fontId: "candlepin",
+              bridgeMm: 0.5,
+              lineBridgeMm: 0.5,
+              offsetXMm: 0,
+              fontSizeMm: 34,
+              horizontalScale: 1,
+              verticalScale: 1,
+              lockTextHeight: false,
+            },
+          ],
+        },
+      },
+    ],
+  };
+  const sharedQueueSavePayloads = [];
+  let releaseFirstSave = null;
+  const firstSaveBlocked = new Promise((resolve) => {
+    releaseFirstSave = resolve;
+  });
+
+  await page.route("**/api/shared-session", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify({
+        operator: { id: "user-1", email: "mark@example.com" },
+        workspace: { id: "workspace-1", name: "Thankful For You" },
+        queue: { id: "queue-1", workspaceId: "workspace-1" },
+      }),
+    });
+  });
+  await page.route("**/api/shared-queue?queueId=queue-1", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify(remoteSnapshot),
+    });
+  });
+  await page.route("**/api/shared-queue", async (route) => {
+    if (route.request().method() !== "PUT") {
+      await route.fallback();
+      return;
+    }
+
+    const requestSnapshot = route.request().postDataJSON()?.snapshot;
+    sharedQueueSavePayloads.push(requestSnapshot);
+
+    if (sharedQueueSavePayloads.length === 1) {
+      await firstSaveBlocked;
+    }
+
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify(requestSnapshot),
+    });
+  });
+
+  await page.goto("/");
+  await expect(page.locator("#textInput")).toHaveValue("Remote Shared");
+
+  await page.locator("#textInput").fill("Remote Shared Draft 1");
+  await expect.poll(() => sharedQueueSavePayloads.length).toBe(1);
+
+  await page.locator("#textInput").fill("Remote Shared Draft 2");
+  await page.evaluate(() => {
+    window.dispatchEvent(new PageTransitionEvent("pagehide", { persisted: false }));
+  });
+
+  await expect.poll(() => sharedQueueSavePayloads.length).toBe(2);
+  await expect
+    .poll(() => sharedQueueSavePayloads.at(-1)?.orders?.[0]?.text ?? null)
+    .toBe("Remote Shared Draft 2");
+
+  releaseFirstSave();
 });
 
 test("keeps the preview title above the scrollable pane", async ({ page }) => {

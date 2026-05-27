@@ -37,8 +37,6 @@ import {
   getSettingsSignatureCandidates,
 } from "./order-signatures.js";
 import {
-  buildRemoteQueuePayload,
-  chooseInitialQueueSnapshot,
   isQueueSnapshotEmpty,
 } from "./queue-sync.js";
 import { buildQueueSyncStatus } from "./queue-sync-status.js";
@@ -47,6 +45,16 @@ import {
   buildLayoutControlsSnapshot,
 } from "./layout-controls-clipboard.js";
 import { buildReloadedPresetSettings } from "./preset-selection.js";
+import {
+  fetchSharedQueueSnapshot,
+  fetchSharedSession,
+  SharedQueueConflictError,
+  saveSharedQueueSnapshot,
+} from "./shared-queue-api.js";
+import {
+  chooseSharedQueueStartupState,
+  createSharedQueueSnapshot,
+} from "./shared-queue-model.js";
 
 const FONT_OPTIONS = [
   {
@@ -229,6 +237,16 @@ let navCollapsed = false;
 let presetEditorDraft = null;
 let activeConfirmationRequest = null;
 let confirmationDialogRestoreFocusTarget = null;
+let sharedSessionContext = null;
+let sharedQueueContext = null;
+let sharedQueueRecoveryDraft = null;
+let sharedQueueAutosaveTimeoutId = null;
+let sharedQueueAutosaveInFlight = false;
+let sharedQueueAutosavePending = false;
+let suppressSharedQueueAutosave = false;
+let lastSharedQueueSaveKey = null;
+let sharedQueueSyncState = "disabled";
+let sharedQueueSyncDetail = "";
 
 const statusLabels = {
   "not-started": "Not started",
@@ -240,7 +258,6 @@ const IMPORT_SOURCE_TAG = "thankfulforyou-etsy-clipboard";
 const IMPORT_MOJIBAKE_PATTERN = /[ÂÃâ]/;
 const STORAGE_KEY = "thankfulforyou.designQueue";
 const STORAGE_VERSION = 1;
-const QUEUE_SNAPSHOT_API_PATH = "/api/queue-snapshot";
 
 function getFontOption(fontId) {
   return FONT_BY_ID.get(fontId) || FONT_OPTIONS[0];
@@ -1668,25 +1685,188 @@ function hydrateStoredOrder(order, index) {
   };
 }
 
+function normalizeSharedQueueContext(queue) {
+  if (!queue || typeof queue !== "object") {
+    return null;
+  }
+
+  const id = typeof queue.id === "string" ? queue.id.trim() : "";
+  const workspaceId = typeof queue.workspaceId === "string" ? queue.workspaceId.trim() : "";
+
+  if (!id || !workspaceId) {
+    return null;
+  }
+
+  return {
+    ...structuredClone(queue),
+    id,
+    workspaceId,
+  };
+}
+
+function setSharedQueueContext(queue) {
+  sharedQueueContext = normalizeSharedQueueContext(queue);
+}
+
+function buildSerializedQueueOrders() {
+  return orders.map((order) => ({
+    id: order.id,
+    text: order.text,
+    status: order.status,
+    settings: normalizeSettings(order.settings),
+    source: order.source ? { ...order.source } : null,
+    cachedBuild: order.cachedBuild ? structuredClone(order.cachedBuild) : null,
+    previousCompletedBuild: order.previousCompletedBuild ? structuredClone(order.previousCompletedBuild) : null,
+    savedSettingsSignature: order.savedSettingsSignature,
+    completedSettingsSignature: order.completedSettingsSignature,
+    analysisBadge: order.analysisBadge ? structuredClone(order.analysisBadge) : null,
+    pendingAnalysisSignature: order.pendingAnalysisSignature,
+  }));
+}
+
 function buildPersistedQueueState() {
   return {
     version: STORAGE_VERSION,
     orderSequence,
+    queue: sharedQueueContext ? structuredClone(sharedQueueContext) : null,
     activeOrderId,
-    orders: orders.map((order) => ({
-      id: order.id,
-      text: order.text,
-      status: order.status,
-      settings: normalizeSettings(order.settings),
-      source: order.source ? { ...order.source } : null,
-      cachedBuild: order.cachedBuild ? structuredClone(order.cachedBuild) : null,
-      previousCompletedBuild: order.previousCompletedBuild ? structuredClone(order.previousCompletedBuild) : null,
-      savedSettingsSignature: order.savedSettingsSignature,
-      completedSettingsSignature: order.completedSettingsSignature,
-      analysisBadge: order.analysisBadge ? structuredClone(order.analysisBadge) : null,
-      pendingAnalysisSignature: order.pendingAnalysisSignature,
-    })),
+    orders: buildSerializedQueueOrders(),
   };
+}
+
+function buildSharedQueueSnapshot() {
+  return createSharedQueueSnapshot({
+    queue: sharedQueueContext ? structuredClone(sharedQueueContext) : null,
+    activeOrderId,
+    orders: buildSerializedQueueOrders(),
+  });
+}
+
+function setSharedQueueSyncState(mode, detail = "") {
+  sharedQueueSyncState = mode;
+  sharedQueueSyncDetail = typeof detail === "string" ? detail.trim() : "";
+
+  if (mode !== "enabled") {
+    clearSharedQueueAutosaveTimeout();
+    sharedQueueAutosavePending = false;
+  }
+}
+
+function enableSharedQueueSync(queue = sharedQueueContext) {
+  if (queue) {
+    setSharedQueueContext(queue);
+  }
+
+  if (hasSharedQueueSyncContext()) {
+    setSharedQueueSyncState("enabled");
+    return true;
+  }
+
+  setSharedQueueSyncState("disabled");
+  return false;
+}
+
+function disableSharedQueueSync(detail = "Shared queue sync is unavailable.") {
+  setSharedQueueSyncState("local-recovery", detail);
+}
+
+function isSharedQueueSyncEnabled() {
+  return sharedQueueSyncState === "enabled" && hasSharedQueueSyncContext();
+}
+
+function hasSharedQueueSyncContext() {
+  return Boolean(sharedQueueContext?.id && sharedQueueContext?.workspaceId);
+}
+
+function buildSharedQueueSaveKey(snapshot) {
+  if (!snapshot) {
+    return null;
+  }
+
+  try {
+    return JSON.stringify(snapshot);
+  } catch {
+    return null;
+  }
+}
+
+function hasPendingSharedQueueChanges() {
+  if (!isSharedQueueSyncEnabled()) {
+    return false;
+  }
+
+  const snapshotKey = buildSharedQueueSaveKey(buildSharedQueueSnapshot());
+  return Boolean(snapshotKey && snapshotKey !== lastSharedQueueSaveKey);
+}
+
+function clearSharedQueueAutosaveTimeout() {
+  if (sharedQueueAutosaveTimeoutId != null) {
+    window.clearTimeout(sharedQueueAutosaveTimeoutId);
+    sharedQueueAutosaveTimeoutId = null;
+  }
+}
+
+async function flushSharedQueueAutosave(options = {}) {
+  const { force = false, keepalive = false } = options;
+  const allowConcurrentKeepalive = force && keepalive;
+  clearSharedQueueAutosaveTimeout();
+
+  if (
+    ((!sharedQueueAutosavePending && !force) || (sharedQueueAutosaveInFlight && !allowConcurrentKeepalive) || suppressSharedQueueAutosave || !isSharedQueueSyncEnabled())
+  ) {
+    if (!sharedQueueAutosaveInFlight) {
+      sharedQueueAutosavePending = false;
+    }
+    return;
+  }
+
+  sharedQueueAutosavePending = false;
+  const autosaveWasAlreadyInFlight = sharedQueueAutosaveInFlight;
+  if (!autosaveWasAlreadyInFlight) {
+    sharedQueueAutosaveInFlight = true;
+  }
+
+  try {
+    await saveQueueSnapshotToRemote({
+      persistActiveDraft: false,
+      successMessage: false,
+      keepalive,
+      degradeOnFailure: !keepalive,
+    });
+  } finally {
+    if (!autosaveWasAlreadyInFlight) {
+      sharedQueueAutosaveInFlight = false;
+    }
+    if (sharedQueueAutosavePending && !autosaveWasAlreadyInFlight) {
+      triggerSharedQueueAutosave();
+    }
+  }
+}
+
+function triggerSharedQueueAutosave(options = {}) {
+  const { immediate = false } = options;
+
+  if (suppressSharedQueueAutosave || !isSharedQueueSyncEnabled()) {
+    return;
+  }
+
+  sharedQueueAutosavePending = true;
+
+  if (sharedQueueAutosaveInFlight) {
+    return;
+  }
+
+  clearSharedQueueAutosaveTimeout();
+
+  if (immediate) {
+    void flushSharedQueueAutosave();
+    return;
+  }
+
+  sharedQueueAutosaveTimeoutId = window.setTimeout(() => {
+    sharedQueueAutosaveTimeoutId = null;
+    void flushSharedQueueAutosave();
+  }, 150);
 }
 
 function updateQueueSyncStatus(kind, options = {}) {
@@ -1711,10 +1891,11 @@ function updateQueueSyncStatus(kind, options = {}) {
 }
 
 function applyPersistedQueueState(parsed) {
-  if (!parsed || parsed.version !== STORAGE_VERSION || !Array.isArray(parsed.orders)) {
+  if (!parsed || !Array.isArray(parsed.orders)) {
     return false;
   }
 
+  setSharedQueueContext(parsed.queue || sharedQueueContext || sharedSessionContext?.queue || null);
   const restoredOrders = parsed.orders
     .map((order, index) => hydrateStoredOrder(order, index))
     .filter(Boolean);
@@ -1730,43 +1911,60 @@ function applyPersistedQueueState(parsed) {
   return restoredOrders.length > 0;
 }
 
-function persistQueueState() {
+function persistQueueState(options = {}) {
+  const { skipRemoteSave = false } = options;
+
   try {
     if (!orders.length) {
       localStorage.removeItem(STORAGE_KEY);
       if (!suppressQueueSyncLocalNotice) {
         updateQueueSyncStatus("empty");
       }
-      return;
-    }
-
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(buildPersistedQueueState()));
-    if (!suppressQueueSyncLocalNotice) {
-      updateQueueSyncStatus("local-only", { count: orders.length });
+    } else {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(buildPersistedQueueState()));
+      if (!suppressQueueSyncLocalNotice) {
+        if (sharedQueueSyncState === "local-recovery") {
+          updateQueueSyncStatus("local-recovery", { count: orders.length, detail: sharedQueueSyncDetail });
+        } else if (!isSharedQueueSyncEnabled()) {
+          updateQueueSyncStatus("local-only", { count: orders.length });
+        }
+      }
     }
   } catch {
     // Ignore storage failures and continue with in-memory editing.
   }
+
+  if (!skipRemoteSave) {
+    triggerSharedQueueAutosave();
+  }
 }
 
-function schedulePersistQueueState() {
+function schedulePersistQueueState(options = {}) {
   if (queuePersistenceTimeoutId != null) {
     window.clearTimeout(queuePersistenceTimeoutId);
   }
 
   queuePersistenceTimeoutId = window.setTimeout(() => {
     queuePersistenceTimeoutId = null;
-    persistQueueState();
+    persistQueueState(options);
   }, 150);
 }
 
-function flushPersistQueueState() {
+function flushPersistQueueState(options = {}) {
+  const { keepalive = false } = options;
+
   if (queuePersistenceTimeoutId != null) {
     window.clearTimeout(queuePersistenceTimeoutId);
     queuePersistenceTimeoutId = null;
   }
 
-  persistQueueState();
+  persistQueueState({ skipRemoteSave: true });
+  if (keepalive && hasPendingSharedQueueChanges()) {
+    void flushSharedQueueAutosave({ force: true, keepalive: true });
+    return;
+  }
+
+  triggerSharedQueueAutosave({ immediate: true });
 }
 
 function scheduleRenderOrderList() {
@@ -1798,6 +1996,8 @@ function clearPersistedQueueState() {
     window.clearTimeout(queuePersistenceTimeoutId);
     queuePersistenceTimeoutId = null;
   }
+  clearSharedQueueAutosaveTimeout();
+  sharedQueueAutosavePending = false;
   try {
     localStorage.removeItem(STORAGE_KEY);
   } catch {
@@ -1829,66 +2029,12 @@ function loadPersistedQueueState() {
   return applyPersistedQueueState(readPersistedQueueState());
 }
 
-async function fetchRemoteQueueSnapshot() {
-  const response = await fetch(`${QUEUE_SNAPSHOT_API_PATH}?workspaceKey=primary`, {
-    headers: {
-      Accept: "application/json",
-    },
-  });
-
-  if (response.status === 404) {
-    return null;
-  }
-
-  if (!response.ok) {
-    let message = "Unable to load the saved remote batch.";
-
-    try {
-      const payload = await response.json();
-      if (typeof payload?.error === "string" && payload.error.trim()) {
-        message = payload.error.trim();
-      }
-    } catch {
-      // Ignore JSON parsing failures and use the fallback message.
-    }
-
-    throw new Error(message);
-  }
-
-  const payload = await response.json();
-  return payload?.snapshot ?? null;
-}
-
-async function clearRemoteQueueSnapshot(options = {}) {
-  const { quiet = false } = options;
-  const response = await fetch(`${QUEUE_SNAPSHOT_API_PATH}?workspaceKey=primary`, {
-    method: "DELETE",
-  });
-
-  if (!response.ok && response.status !== 404) {
-    let message = "Unable to clear the saved remote batch.";
-
-    try {
-      const payload = await response.json();
-      if (typeof payload?.error === "string" && payload.error.trim()) {
-        message = payload.error.trim();
-      }
-    } catch {
-      // Ignore JSON parsing failures and use the fallback message.
-    }
-
-    throw new Error(message);
-  }
-
-  if (!quiet) {
-    updateQueueSyncStatus("empty");
-  }
-}
-
 async function saveQueueSnapshotToRemote(options = {}) {
   const {
     persistActiveDraft = true,
     successMessage = null,
+    keepalive = false,
+    degradeOnFailure = true,
   } = options;
 
   if (persistActiveDraft) {
@@ -1896,44 +2042,52 @@ async function saveQueueSnapshotToRemote(options = {}) {
   }
 
   try {
-    const snapshot = buildPersistedQueueState();
+    const snapshot = buildSharedQueueSnapshot();
+    const snapshotKey = buildSharedQueueSaveKey(snapshot);
 
-    if (isQueueSnapshotEmpty(snapshot)) {
-      await clearRemoteQueueSnapshot({ quiet: true });
-      updateQueueSyncStatus("empty");
+    if (!isSharedQueueSyncEnabled() || !snapshot.queue?.id || !snapshot.queue?.workspaceId) {
       return;
     }
 
-    const response = await fetch(QUEUE_SNAPSHOT_API_PATH, {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(buildRemoteQueuePayload(snapshot)),
-    });
+    if (snapshotKey && snapshotKey === lastSharedQueueSaveKey) {
+      return;
+    }
 
-    if (!response.ok) {
-      let message = "Unable to save the current batch remotely.";
+    const savedSnapshot = await saveSharedQueueSnapshot(snapshot, { keepalive });
+    if (savedSnapshot?.queue) {
+      enableSharedQueueSync(savedSnapshot.queue);
+    }
+    sharedQueueRecoveryDraft = null;
+    lastSharedQueueSaveKey = snapshotKey;
+    suppressQueueSyncLocalNotice = true;
+    suppressSharedQueueAutosave = true;
+    persistQueueState({ skipRemoteSave: true });
+    suppressSharedQueueAutosave = false;
+    suppressQueueSyncLocalNotice = false;
 
-      try {
-        const payload = await response.json();
-        if (typeof payload?.error === "string" && payload.error.trim()) {
-          message = payload.error.trim();
-        }
-      } catch {
-        // Ignore JSON parsing failures and use the fallback message.
-      }
-
-      throw new Error(message);
+    if (isQueueSnapshotEmpty(savedSnapshot || snapshot)) {
+      updateQueueSyncStatus("empty");
+      return;
     }
 
     if (typeof successMessage === "string" && successMessage.trim()) {
       updateWorkflowAlert(successMessage.trim(), "success");
     }
-    updateQueueSyncStatus("saved-remote", { count: snapshot.orders.length });
+    updateQueueSyncStatus("saved-remote", { count: (savedSnapshot || snapshot).orders.length });
   } catch (error) {
+    suppressSharedQueueAutosave = false;
+    suppressQueueSyncLocalNotice = false;
+    const isConflictError = error instanceof SharedQueueConflictError;
+    if (degradeOnFailure && !isConflictError) {
+      disableSharedQueueSync(
+        error instanceof Error && error.message
+          ? `Shared queue sync is unavailable. ${error.message}`
+          : "Shared queue sync is unavailable.",
+      );
+      persistQueueState({ skipRemoteSave: true });
+    }
     updateWorkflowAlert(
-      error instanceof Error ? error.message : "Unable to save the current batch remotely.",
+      error instanceof Error ? error.message : "Unable to save the shared queue.",
       "error",
     );
   }
@@ -1941,43 +2095,87 @@ async function saveQueueSnapshotToRemote(options = {}) {
 
 async function restoreInitialQueueState() {
   const localSnapshot = readPersistedQueueState();
+  let sharedSession = null;
   let remoteSnapshot = null;
+  let sharedSyncUnavailable = false;
 
-  if (isQueueSnapshotEmpty(localSnapshot)) {
+  try {
+    sharedSession = await fetchSharedSession();
+    sharedSessionContext = sharedSession;
+    if (sharedSession?.queue) {
+      enableSharedQueueSync(sharedSession.queue);
+    } else {
+      setSharedQueueContext(localSnapshot?.queue || null);
+      setSharedQueueSyncState("disabled");
+    }
+  } catch (error) {
+    sharedSessionContext = null;
+    setSharedQueueContext(localSnapshot?.queue || null);
+    disableSharedQueueSync(
+      error instanceof Error && error.message
+        ? `Shared queue sync is unavailable. ${error.message}`
+        : "Shared queue sync is unavailable.",
+    );
+    sharedSyncUnavailable = true;
+  }
+
+  if (sharedSession?.queue?.id) {
     try {
-      remoteSnapshot = await fetchRemoteQueueSnapshot();
+      remoteSnapshot = await fetchSharedQueueSnapshot(sharedSession.queue.id);
     } catch (error) {
-      updateWorkflowAlert(
-        error instanceof Error ? error.message : "Unable to load the saved remote batch.",
-        "error",
+      disableSharedQueueSync(
+        error instanceof Error && error.message
+          ? `Shared queue sync is unavailable. ${error.message}`
+          : "Shared queue sync is unavailable.",
       );
+      sharedSyncUnavailable = true;
     }
   }
 
-  const initialSnapshot = chooseInitialQueueSnapshot({
-    localSnapshot,
+  const startupState = chooseSharedQueueStartupState({
     remoteSnapshot,
+    localCache: localSnapshot,
   });
+  const initialSnapshot = startupState.snapshot;
+  sharedQueueRecoveryDraft = startupState.recoveryDraft ? structuredClone(startupState.recoveryDraft) : null;
 
-  if (!initialSnapshot.snapshot || !applyPersistedQueueState(initialSnapshot.snapshot)) {
+  if (initialSnapshot?.queue) {
+    setSharedQueueContext(initialSnapshot.queue);
+  }
+
+  if (!initialSnapshot || !applyPersistedQueueState(initialSnapshot)) {
+    suppressQueueSyncLocalNotice = true;
+    persistQueueState({ skipRemoteSave: true });
+    suppressQueueSyncLocalNotice = false;
+    lastSharedQueueSaveKey = null;
     updateQueueSyncStatus("empty");
     return {
-      source: null,
+      source: startupState.source,
       count: 0,
     };
   }
 
-  if (initialSnapshot.source === "remote") {
-    suppressQueueSyncLocalNotice = true;
-    persistQueueState();
-    suppressQueueSyncLocalNotice = false;
+  suppressQueueSyncLocalNotice = true;
+  persistQueueState({ skipRemoteSave: true });
+  suppressQueueSyncLocalNotice = false;
+  lastSharedQueueSaveKey = startupState.source === "remote"
+    ? buildSharedQueueSaveKey(buildSharedQueueSnapshot())
+    : null;
+
+  if (startupState.source === "remote") {
     updateQueueSyncStatus("restored-remote", { count: orders.length });
-  } else if (initialSnapshot.source === "local") {
+  } else if (sharedQueueSyncState === "local-recovery") {
+    updateQueueSyncStatus("local-recovery", { count: orders.length });
+  } else if (startupState.source === "local-cache") {
     updateQueueSyncStatus("restored-local", { count: orders.length });
   }
 
+  if (sharedSyncUnavailable && !orders.length) {
+    updateWorkflowAlert("Shared queue sync is unavailable. Local recovery mode is ready if you make changes.", "pending");
+  }
+
   return {
-    source: initialSnapshot.source,
+    source: startupState.source,
     count: orders.length,
   };
 }
@@ -3468,8 +3666,8 @@ async function deleteOrder(orderId) {
   if (!orders.length) {
     activeOrderId = null;
     orderSequence = 1;
-    clearPersistedQueueState();
-    updateWorkflowAlert("Queue cleared.", "pending");
+    persistQueueState();
+    updateWorkflowAlert(isSharedQueueSyncEnabled() ? "Shared queue cleared." : "Queue cleared.", "pending");
   } else {
     persistQueueState();
   }
@@ -3488,7 +3686,9 @@ async function clearAllOrders() {
 
   const confirmed = await showConfirmationDialog({
     title: "Clear Batch?",
-    description: "Clear the current batch and delete all saved local designs?",
+    description: isSharedQueueSyncEnabled()
+      ? "Clear the shared queue and refresh the local recovery cache?"
+      : "Clear the current batch and delete all saved local designs?",
     confirmLabel: "Confirm",
     cancelLabel: "Keep Batch",
     isDanger: true,
@@ -3500,21 +3700,14 @@ async function clearAllOrders() {
   orders.splice(0, orders.length);
   activeOrderId = null;
   orderSequence = 1;
-  clearPersistedQueueState();
   resetEditorToEmptyState();
-  try {
-    await clearRemoteQueueSnapshot({ quiet: true });
-    updateWorkflowAlert("Batch cleared locally and remotely.", "pending");
-    updateQueueSyncStatus("empty");
-  } catch (error) {
-    updateWorkflowAlert(
-      error instanceof Error
-        ? `Batch cleared locally, but remote clear failed: ${error.message}`
-        : "Batch cleared locally, but the saved remote batch could not be cleared.",
-      "error",
-    );
-    updateQueueSyncStatus("empty");
-  }
+  persistQueueState();
+  updateWorkflowAlert(
+    isSharedQueueSyncEnabled()
+      ? "Batch cleared from the shared queue and local recovery cache updated."
+      : "Batch cleared locally.",
+    "pending",
+  );
   renderOrderList();
 }
 
@@ -5127,7 +5320,9 @@ window.addEventListener("mouseup", (event) => {
   }
 });
 window.addEventListener("blur", endPreviewMiddlePan);
-window.addEventListener("pagehide", flushPersistQueueState);
+window.addEventListener("pagehide", () => {
+  flushPersistQueueState({ keepalive: true });
+});
 
 setActiveWorkspace(activeWorkspace);
 setNavCollapsed(navCollapsed);
