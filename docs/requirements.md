@@ -226,10 +226,22 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Re-importing a later Etsy batch must preserve any queue items already present in the current design queue instead of overwriting them.
 - During import, any Etsy line item that already exists in the current design queue should be skipped so the operator can import only newly arrived orders into the same working batch.
 - Imported queue items and subsequent design edits should persist across a browser refresh in local browser storage during the current batch workflow.
-- The app should support saving the current queue batch to remote hosted storage so the current batch can be restored on another browser or after local storage is lost.
-- Remote hosted batch persistence should store the same queue snapshot shape used by local browser persistence so hydration behavior stays consistent between local and hosted restores.
-- On startup, local browser queue data should take precedence over the hosted saved batch when both are present, so unsynced local edits are not overwritten silently.
+- Queued designs must be automatically available across browsers and locations for authorized users without requiring a manual export or import handoff step.
+- Shared queue state should use a hosted backend as the source of truth instead of treating browser local storage as the primary saved record.
+- The hosted queue solution does not need to be Neon specifically; the production implementation should prefer a backend that can provide authentication, structured shared records, and a practical path to live multi-browser updates.
+- Queue ownership should belong to a shared workspace or operational batch context rather than to an individual user account.
+- Authenticated users should control access to shared queues and provide audit history, but user accounts should not own the queue data model.
+- The first shared-storage implementation should favor a Supabase-backed design with shared workspace queues, authenticated access, and room for future realtime updates.
+- Browser local storage should remain only as a cache or temporary recovery mechanism and must not be treated as the primary source of truth when a shared hosted queue is available.
+- On startup, the app should load the current shared queue from the hosted backend first and use browser-local queue cache only for resilience or clearly surfaced recovery flows.
+- The browser must not silently prefer stale local queue data over newer shared hosted queue data.
+- Queue persistence should move from one serialized browser snapshot toward first-class shared records for workspaces, queues, and designs so collaboration and audit behavior can evolve cleanly.
+- The app should support saving the current queue batch to shared hosted storage so the current batch can be restored on another browser or after local storage is lost.
 - Persisted queue-item data should include enough information to restore the queue, the selected design, imported Etsy metadata, current text, current per-line settings, backing border, weld toggle, and saved/exported status after refresh.
+- Persisted shared-queue data should also include queue identity, queue membership in a workspace, `updatedAt`, `updatedBy`, and a revision or version field for each design so stale writes can be detected.
+- Shared queue editing should support one person creating a queue and another person opening and continuing that same queue later.
+- The collaboration model should support multiple authorized users in the future, but the first version may use lightweight edit ownership, presence, or stale-write detection instead of full simultaneous freeform co-editing.
+- The UI should show enough shared-state context for operators to avoid accidental overwrites, including at minimum who last updated a design and when.
 - In the selected-order editor, show the imported Etsy color as a read-only label directly below the `Design Text` field whenever imported color metadata is available.
 - In the selected-order editor, show the imported Etsy quantity as a read-only label directly below the `Color` label whenever imported quantity metadata is available.
 - If the imported color name contains the word `White`, highlight that displayed color name in the editor.
