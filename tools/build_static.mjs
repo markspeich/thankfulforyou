@@ -12,4 +12,11 @@ for (const entry of ["index.html", "src", "public"]) {
   cpSync(join(root, entry), join(dist, entry), { recursive: true });
 }
 
+for (const browserDependency of [
+  "node_modules/@supabase/auth-js/dist/module",
+  "node_modules/tslib/tslib.es6.mjs",
+]) {
+  cpSync(join(root, browserDependency), join(dist, browserDependency), { recursive: true });
+}
+
 writeFileSync(join(dist, "app-config.js"), buildPublicAppConfigScript(), "utf8");

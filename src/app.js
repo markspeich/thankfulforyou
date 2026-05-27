@@ -54,6 +54,7 @@ import {
 import {
   getAccessToken,
   getSignedInSession,
+  signOutBrowserSession,
   signInWithPassword as signInOperatorWithPassword,
 } from "./auth-session.js";
 import {
@@ -135,6 +136,7 @@ const ordersWorkspace = document.querySelector("#ordersWorkspace");
 const presetsWorkspace = document.querySelector("#presetsWorkspace");
 const orderWorkspaceButton = document.querySelector("#orderWorkspaceButton");
 const presetWorkspaceButton = document.querySelector("#presetWorkspaceButton");
+const sharedQueueLogoutButton = document.querySelector("#sharedQueueLogoutButton");
 const navCollapseButton = document.querySelector("#navCollapseButton");
 const addOrderButton = document.querySelector("#addOrderButton");
 const importClipboardButton = document.querySelector("#importClipboardButton");
@@ -288,6 +290,16 @@ function setSharedQueueAuthError(message) {
   sharedQueueAuthError.hidden = !normalized;
 }
 
+function renderSharedQueueLogoutButton() {
+  if (!sharedQueueLogoutButton) {
+    return;
+  }
+
+  const hasSharedQueueSession = typeof sharedQueueAccessToken === "string" && sharedQueueAccessToken.trim().length > 0;
+  sharedQueueLogoutButton.hidden = !hasSharedQueueSession;
+  sharedQueueLogoutButton.disabled = !hasSharedQueueSession;
+}
+
 function showSharedQueueAuthGate({ title, message, error = "", allowSignIn = true }) {
   sharedQueueAccessToken = null;
   if (sharedQueueAuthTitle) {
@@ -309,6 +321,7 @@ function showSharedQueueAuthGate({ title, message, error = "", allowSignIn = tru
     sharedQueueAuthGate.hidden = false;
   }
   setSharedQueueAuthError(error);
+  renderSharedQueueLogoutButton();
 }
 
 function hideSharedQueueAuthGate() {
@@ -319,6 +332,7 @@ function hideSharedQueueAuthGate() {
     workspaceStage.hidden = false;
   }
   setSharedQueueAuthError("");
+  renderSharedQueueLogoutButton();
 }
 
 function showSharedQueueConfigError(error) {
@@ -423,6 +437,31 @@ async function handleSharedQueueSignInSubmit(event) {
     if (sharedQueueSignInButton) {
       sharedQueueSignInButton.disabled = false;
     }
+  }
+}
+
+async function handleSharedQueueSignOut() {
+  if (sharedQueueLogoutButton) {
+    sharedQueueLogoutButton.disabled = true;
+  }
+
+  try {
+    await signOutBrowserSession();
+    if (sharedQueueEmailInput) {
+      sharedQueueEmailInput.value = "";
+    }
+    if (sharedQueuePasswordInput) {
+      sharedQueuePasswordInput.value = "";
+    }
+    handleSharedQueueAuthenticationRequired("You signed out of the shared queue.");
+  } catch (error) {
+    showSharedQueueSignIn(
+      error instanceof Error && error.message
+        ? error.message
+        : "Unable to sign out of the shared queue.",
+    );
+  } finally {
+    renderSharedQueueLogoutButton();
   }
 }
 
@@ -5962,6 +6001,9 @@ orderWorkspaceButton.addEventListener("click", () => {
 presetWorkspaceButton.addEventListener("click", () => {
   setActiveWorkspace("presets");
 });
+sharedQueueLogoutButton?.addEventListener("click", () => {
+  void handleSharedQueueSignOut();
+});
 presetEditorSelect?.addEventListener("change", () => {
   if (!presetEditorSelect.value) {
     presetEditorDraft = createPresetEditorDraft(null, { previousId: null, generateNewId: true });
@@ -6127,6 +6169,7 @@ window.addEventListener("pagehide", () => {
 
 setActiveWorkspace(activeWorkspace);
 setNavCollapsed(navCollapsed);
+renderSharedQueueLogoutButton();
 await checkFonts();
 await loadPresetRegistry();
 renderPresetOptions();

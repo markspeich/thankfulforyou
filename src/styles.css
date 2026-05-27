@@ -137,7 +137,7 @@ select {
 
 .workspace-nav {
   display: grid;
-  grid-template-rows: auto auto auto 1fr;
+  grid-template-rows: auto auto auto 1fr auto;
   gap: 10px;
   padding: 14px 10px;
   background: linear-gradient(180deg, #163341 0%, #21495d 100%);
@@ -250,6 +250,35 @@ select {
   height: 2px;
   background: currentColor;
   box-shadow: 0 4px 0 currentColor;
+}
+
+.workspace-nav-spacer {
+  min-height: 0;
+}
+
+.workspace-nav-item-logout {
+  margin-top: auto;
+}
+
+.workspace-nav-icon-logout::before {
+  left: 2px;
+  top: 4px;
+  width: 8px;
+  height: 8px;
+  border-top: 2px solid currentColor;
+  border-left: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  border-radius: 2px 0 0 2px;
+}
+
+.workspace-nav-icon-logout::after {
+  right: 0;
+  top: 7px;
+  width: 9px;
+  height: 2px;
+  background: currentColor;
+  box-shadow: 4px 0 0 -1px currentColor;
+  clip-path: polygon(0 0, 75% 0, 75% -50%, 100% 50%, 75% 150%, 75% 100%, 0 100%);
 }
 
 .workspace-nav-label {
