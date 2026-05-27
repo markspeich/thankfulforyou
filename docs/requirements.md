@@ -358,6 +358,8 @@ The website should be a practical production tool rather than a marketing site. 
 - The preset editor should represent reusable line settings through operator-friendly sections for `Line Defaults`, `First Line`, `Remaining Lines`, and any exact-index line overrides that exist for that preset.
 - The preset editor should show the Etsy listings currently assigned to the selected preset.
 - The preset editor should allow unassigning individual listing ids from the selected preset.
+- The preset editor should allow deleting a saved preset from the `Presets` workspace.
+- Deleting a preset must require an explicit in-app confirmation dialog before the preset is removed.
 - The selected-order header action buttons should remain visibly smaller than the preview and top-card content so they do not dominate the editor visually on desktop.
 - The app favicon should use bold enlarged white `TFU` lettering with a red outline around the letters themselves, prioritizing legibility in a browser tab at favicon size over decorative detail.
 - Command buttons should use one shared enabled color, one shared disabled color, and one shared enabled-hover color across queue tools, editor actions, export/copy/save/complete actions, and destructive actions. Non-command row-selection buttons may remain visually neutral.

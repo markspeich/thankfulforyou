@@ -596,6 +596,41 @@ export function savePresetDefinitionLocally({ preset, previousId = null }) {
   };
 }
 
+export function deletePresetDefinitionLocally(presetId) {
+  const normalizedPresetId = typeof presetId === "string" ? presetId.trim() : "";
+  if (!normalizedPresetId || !presetRegistry.presetById.has(normalizedPresetId)) {
+    throw new Error("Preset not found.");
+  }
+
+  const definitions = [...presetRegistry.presetById.values()]
+    .filter((definition) => definition.id !== normalizedPresetId);
+
+  if (!definitions.length) {
+    throw new Error("At least one preset must remain available.");
+  }
+
+  const nextDefaultPresetId = presetRegistry.defaultPresetId === normalizedPresetId
+    ? definitions[0].id
+    : presetRegistry.defaultPresetId;
+  const snapshot = buildPresetSnapshot(
+    { defaultPresetId: nextDefaultPresetId },
+    definitions,
+  );
+  const nextRegistry = createPresetRegistryFromSnapshot(snapshot);
+
+  if (!nextRegistry?.options.length) {
+    throw new Error("No preset definitions were loaded");
+  }
+
+  presetRegistry = nextRegistry;
+  persistPresetSnapshot(snapshot);
+
+  return {
+    deletedPresetId: normalizedPresetId,
+    snapshot,
+  };
+}
+
 export {
   buildPresetIdFromName,
   inferPresetDefinitionFromSettings,
