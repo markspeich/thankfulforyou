@@ -2417,6 +2417,41 @@ function updateWorkflowAlert(message, state = "pending", options = {}) {
   }, autoHideMs);
 }
 
+function closeDetailsMenu(menu) {
+  if (!(menu instanceof HTMLDetailsElement)) {
+    return;
+  }
+
+  menu.removeAttribute("open");
+}
+
+function registerOutsideDismissableDetailsMenu(menu) {
+  if (!(menu instanceof HTMLDetailsElement)) {
+    return;
+  }
+
+  document.addEventListener("pointerdown", (event) => {
+    if (!menu.hasAttribute("open")) {
+      return;
+    }
+
+    const target = event.target;
+    if (target instanceof Node && menu.contains(target)) {
+      return;
+    }
+
+    closeDetailsMenu(menu);
+  });
+
+  menu.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") {
+      return;
+    }
+
+    closeDetailsMenu(menu);
+  });
+}
+
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
@@ -5197,6 +5232,8 @@ assignPresetToListingButton?.addEventListener("click", () => {
       presetToolsMenu?.removeAttribute("open");
     });
   });
+registerOutsideDismissableDetailsMenu(queueToolsMenu);
+registerOutsideDismissableDetailsMenu(presetToolsMenu);
 closeColorCountsButton?.addEventListener("click", closeBatchColorCountsDialog);
 colorCountsDialog?.addEventListener("click", (event) => {
   if (event.target === colorCountsDialog) {

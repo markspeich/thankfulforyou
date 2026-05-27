@@ -1208,6 +1208,21 @@ test("shows a preset overflow menu above Global Settings with layout and preset 
   expect(pasteLayoutButtonBox.height).toBeLessThan(completeButtonBox.height);
 });
 
+test("closes queue and preset overflow menus when clicking outside them", async ({ page }) => {
+  const queueMenu = page.locator(".queue-header .queue-tools-menu");
+  const presetMenu = page.locator(".preset-tools-menu");
+
+  await openQueueTools(page);
+  await expect(queueMenu).toHaveAttribute("open", "");
+  await page.locator("#activeOrderName").click();
+  await expect(queueMenu).not.toHaveAttribute("open", "");
+
+  await openPresetTools(page);
+  await expect(presetMenu).toHaveAttribute("open", "");
+  await page.locator("#textInput").click();
+  await expect(presetMenu).not.toHaveAttribute("open", "");
+});
+
 test("copies layout controls onto another design without copying text", async ({ page }) => {
   await page.route("**/api/layout-analyze", async (route) => {
     await route.fulfill({
