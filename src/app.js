@@ -447,13 +447,16 @@ async function handleSharedQueueSignOut() {
 
   try {
     await signOutBrowserSession();
+    sharedSessionContext = null;
+    sharedQueueAccessToken = null;
     if (sharedQueueEmailInput) {
       sharedQueueEmailInput.value = "";
     }
     if (sharedQueuePasswordInput) {
       sharedQueuePasswordInput.value = "";
     }
-    handleSharedQueueAuthenticationRequired("You signed out of the shared queue.");
+    disableSharedQueueSync("You signed out of the shared queue.");
+    window.location.reload();
   } catch (error) {
     showSharedQueueSignIn(
       error instanceof Error && error.message

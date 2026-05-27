@@ -202,6 +202,29 @@ describe("auth session helpers", () => {
     });
   });
 
+  it("signs out through the browser supabase client", async () => {
+    const signOutMock = vi.fn().mockResolvedValue({
+      error: null,
+    });
+    vi.stubGlobal("window", {
+      __APP_CONFIG__: {
+        supabaseUrl: "https://example.supabase.co",
+        supabaseAnonKey: "anon-key",
+      },
+    });
+    vi.stubGlobal("__TFU_TEST_SUPABASE_CLIENT__", {
+      auth: {
+        signOut: signOutMock,
+        getSession: vi.fn().mockResolvedValue({ data: { session: null }, error: null }),
+      },
+    });
+
+    const { signOutBrowserSession } = await import("../../src/auth-session.js");
+
+    await expect(signOutBrowserSession()).resolves.toBeUndefined();
+    expect(signOutMock).toHaveBeenCalledTimes(1);
+  });
+
   it("returns the current access token when a session exists", async () => {
     const getSessionMock = vi.fn().mockResolvedValue({
       data: {
