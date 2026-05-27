@@ -1783,29 +1783,12 @@ button:disabled {
 
 .preview-workspace {
   display: grid;
-  grid-template-rows: auto minmax(440px, 1fr) auto;
+  grid-template-rows: minmax(440px, 1fr) auto;
   height: 100%;
   align-self: stretch;
   min-height: 0;
   min-width: 0;
   gap: 8px;
-}
-
-.preview-header-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 12px 16px;
-  background: #fff;
-  border: 1px solid var(--line);
-  border-radius: 14px;
-}
-
-.preview-caption {
-  color: var(--muted);
-  font-size: 0.82rem;
-  font-weight: 600;
 }
 
 .preview-panel {
@@ -1836,13 +1819,6 @@ button:disabled {
   width: 0;
   height: 0;
   display: none;
-}
-
-.preview-title {
-  margin: 0;
-  color: #21465e;
-  font-size: 1rem;
-  font-weight: 700;
 }
 
 .preview-panel::before {

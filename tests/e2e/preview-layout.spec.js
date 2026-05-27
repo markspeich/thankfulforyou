@@ -623,6 +623,28 @@ test("grows the preview area when the browser viewport gets taller", async ({ pa
   expect(tallerHeight).toBeGreaterThan(shorterHeight + 120);
 });
 
+test("keeps the preview panel large and the connection status compact", async ({ page }) => {
+  await page.setViewportSize({ width: 1500, height: 1000 });
+
+  const layout = await page.evaluate(() => {
+    const previewPanel = document.querySelector(".preview-panel");
+    const connectionStatus = document.querySelector("#connectionStatus");
+
+    if (!previewPanel || !connectionStatus) {
+      throw new Error("Expected preview panel and connection status to exist");
+    }
+
+    return {
+      previewHeight: previewPanel.getBoundingClientRect().height,
+      statusHeight: connectionStatus.getBoundingClientRect().height,
+    };
+  });
+
+  expect(layout.previewHeight).toBeGreaterThan(300);
+  expect(layout.statusHeight).toBeLessThan(180);
+  expect(layout.previewHeight).toBeGreaterThan(layout.statusHeight * 3);
+});
+
 test("keeps additional line control groups reachable in the right-side inspector", async ({ page }) => {
   await page.setViewportSize({ width: 1920, height: 1080 });
   await page.locator("#textInput").fill("DPT\nRN\nBSN");
@@ -681,6 +703,21 @@ test("keeps wheel zoom without rendering floating zoom controls", async ({ page 
   });
 
   expect(previewSizeAfter.height).toBeGreaterThan(previewSizeBefore.height);
+});
+
+test("supports zooming the preview up to the higher production ceiling", async ({ page }) => {
+  const previewPanel = page.locator(".preview-panel");
+  const preview = page.locator("#preview");
+  const previewWidthBefore = await preview.evaluate((element) => element.getBoundingClientRect().width);
+
+  await previewPanel.hover();
+  for (let step = 0; step < 20; step += 1) {
+    await page.mouse.wheel(0, -1000);
+  }
+
+  await expect.poll(async () => {
+    return preview.evaluate((element) => element.getBoundingClientRect().width);
+  }).toBeGreaterThan(previewWidthBefore * 4);
 });
 
 test("pans the preview with middle-click drag", async ({ page }) => {

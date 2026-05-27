@@ -2495,7 +2495,7 @@ function restoreSelectionScrollState(state) {
 
 function updateZoom(nextZoom, anchor = null) {
   const previousZoom = zoom;
-  zoom = clamp(nextZoom, 0.4, 6);
+  zoom = clamp(nextZoom, 0.4, 14);
 
   if (lastLayout) {
     preview.style.setProperty("--preview-width", `${lastLayout.previewWidthMm * PX_PER_MM * zoom}px`);
