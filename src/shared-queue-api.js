@@ -14,11 +14,18 @@ async function readJsonOrFallback(response, fallback) {
   }
 }
 
-export async function fetchSharedSession() {
+function buildAuthHeaders(accessToken, headers) {
+  return {
+    ...headers,
+    ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+  };
+}
+
+export async function fetchSharedSession(accessToken = null) {
   const response = await fetch("/api/shared-session", {
-    headers: {
+    headers: buildAuthHeaders(accessToken, {
       Accept: "application/json",
-    },
+    }),
   });
   const payload = await readJsonOrFallback(response, {});
 
@@ -29,11 +36,11 @@ export async function fetchSharedSession() {
   return payload;
 }
 
-export async function fetchSharedQueueSnapshot(queueId) {
+export async function fetchSharedQueueSnapshot(queueId, accessToken = null) {
   const response = await fetch(`/api/shared-queue?queueId=${encodeURIComponent(queueId)}`, {
-    headers: {
+    headers: buildAuthHeaders(accessToken, {
       Accept: "application/json",
-    },
+    }),
   });
   const payload = await readJsonOrFallback(response, {});
 
@@ -45,13 +52,13 @@ export async function fetchSharedQueueSnapshot(queueId) {
 }
 
 export async function saveSharedQueueSnapshot(snapshot, options = {}) {
-  const { keepalive = false } = options;
+  const { keepalive = false, accessToken = null } = options;
   const response = await fetch("/api/shared-queue", {
     method: "PUT",
-    headers: {
+    headers: buildAuthHeaders(accessToken, {
       "Content-Type": "application/json",
       Accept: "application/json",
-    },
+    }),
     keepalive,
     body: JSON.stringify({ snapshot }),
   });

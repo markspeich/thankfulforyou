@@ -28,6 +28,38 @@ export function getBrowserSupabaseClient() {
   return browserSupabaseClient;
 }
 
+export async function signInWithPassword(email, password) {
+  const client = getBrowserSupabaseClient();
+  const { data, error } = await client.auth.signInWithPassword({
+    email,
+    password,
+  });
+
+  if (error) {
+    throw error;
+  }
+
+  return data.session;
+}
+
+export async function signOutBrowserSession() {
+  const client = getBrowserSupabaseClient();
+  const { error } = await client.auth.signOut();
+
+  if (error) {
+    throw error;
+  }
+}
+
+export function subscribeToAuthChanges(onChange) {
+  const client = getBrowserSupabaseClient();
+  const { data } = client.auth.onAuthStateChange((_event, session) => {
+    onChange(session);
+  });
+
+  return () => data.subscription.unsubscribe();
+}
+
 export async function getSignedInSession() {
   const client = getBrowserSupabaseClient();
   const { data, error } = await client.auth.getSession();
@@ -37,4 +69,9 @@ export async function getSignedInSession() {
   }
 
   return data.session;
+}
+
+export async function getAccessToken() {
+  const session = await getSignedInSession();
+  return session?.access_token ?? null;
 }
