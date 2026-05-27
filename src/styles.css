@@ -1543,23 +1543,13 @@ button:disabled {
   position: relative;
   z-index: 2;
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
   align-content: start;
   gap: 12px;
   height: 100%;
   min-height: 0;
   min-width: 0;
   overflow: hidden;
-}
-
-.layout-utility-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  min-width: 0;
-  margin: 4px 0 0;
-  padding: 0;
-  grid-row: 1;
 }
 
 .line-controls {
@@ -1573,7 +1563,7 @@ button:disabled {
   overflow-x: hidden;
   padding-right: 4px;
   overscroll-behavior: contain;
-  grid-row: 3;
+  grid-row: 2;
 }
 
 .line-controls-cards {
@@ -1606,7 +1596,22 @@ button:disabled {
 }
 
 .global-controls-panel {
-  grid-row: 2;
+  position: relative;
+  grid-row: 1;
+}
+
+.preset-tools-menu {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.preset-tools-toggle {
+  width: 34px;
+  height: 34px;
+}
+
+.preset-tools-popover {
+  width: min(304px, calc(100vw - 56px));
 }
 
 .line-control-header {

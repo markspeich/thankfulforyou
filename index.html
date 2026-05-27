@@ -258,65 +258,89 @@
               </section>
 
               <aside class="line-controls-rail" aria-label="Layout controls">
-                <div class="layout-utility-row" aria-label="Layout utilities">
-                  <button id="copyLayoutPlacementButton" class="editor-action-button editor-utility-button" type="button" disabled>
-                    <span class="editor-action-icon" aria-hidden="true">
-                      <svg viewBox="0 0 24 24" focusable="false">
-                        <rect x="9" y="9" width="10" height="10" rx="2" />
-                        <path d="M7 15H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v1" />
-                        <path d="M12 12h4M14 10v4" />
-                      </svg>
-                    </span>
-                    <span class="editor-action-label">Copy Layout</span>
-                  </button>
-                  <button id="pasteLayoutPlacementButton" class="editor-action-button editor-utility-button" type="button" disabled>
-                    <span class="editor-action-icon" aria-hidden="true">
-                      <svg viewBox="0 0 24 24" focusable="false">
-                        <path d="M8 5.5h3l1-1h4a2 2 0 0 1 2 2v10.5a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2v-1.5" />
-                        <path d="M8 4v5h5" />
-                        <path d="M8 9 4 13m0 0h3m-3 0v-3" />
-                      </svg>
-                    </span>
-                    <span class="editor-action-label">Paste Layout</span>
-                  </button>
-                  <button id="saveAsNewPresetButton" class="editor-action-button editor-utility-button" type="button" disabled>
-                    <span class="editor-action-icon" aria-hidden="true">
-                      <svg viewBox="0 0 24 24" focusable="false">
-                        <path d="M5 5h11l3 3v11a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5Z" />
-                        <path d="M9 5v6h6V5" />
-                        <path d="M9 16h6" />
-                      </svg>
-                    </span>
-                    <span class="editor-action-label">Save as New Preset</span>
-                  </button>
-                </div>
-
                 <section class="global-controls-panel" aria-label="Preset selection controls">
-                  <div class="section-heading">Preset</div>
+                  <div class="section-heading">
+                    <span>Preset</span>
+                    <details class="queue-tools-menu preset-tools-menu">
+                      <summary class="queue-tools-toggle preset-tools-toggle" aria-label="Preset tools"></summary>
+                      <div class="queue-tools-popover preset-tools-popover">
+                        <div class="queue-tools-actions" role="menu" aria-label="Preset actions">
+                          <div class="queue-tools-group" aria-label="Layout actions">
+                            <p class="queue-tools-heading">Layout</p>
+                            <button id="copyLayoutPlacementButton" class="queue-tool-button" type="button" disabled>
+                              <span class="queue-tool-icon" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" focusable="false">
+                                  <rect x="9" y="9" width="10" height="10" rx="2" />
+                                  <path d="M7 15H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v1" />
+                                  <path d="M12 12h4M14 10v4" />
+                                </svg>
+                              </span>
+                              <span class="queue-tool-label">Copy Layout</span>
+                            </button>
+                            <button id="pasteLayoutPlacementButton" class="queue-tool-button" type="button" disabled>
+                              <span class="queue-tool-icon" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" focusable="false">
+                                  <path d="M8 5.5h3l1-1h4a2 2 0 0 1 2 2v10.5a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2v-1.5" />
+                                  <path d="M8 4v5h5" />
+                                  <path d="M8 9 4 13m0 0h3m-3 0v-3" />
+                                </svg>
+                              </span>
+                              <span class="queue-tool-label">Paste Layout</span>
+                            </button>
+                          </div>
+
+                          <div class="queue-tools-group" aria-label="Preset actions">
+                            <p class="queue-tools-heading">Preset</p>
+                            <button id="saveAsNewPresetButton" class="queue-tool-button" type="button" disabled>
+                              <span class="queue-tool-icon" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" focusable="false">
+                                  <path d="M5 5h11l3 3v11a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5Z" />
+                                  <path d="M9 5v6h6V5" />
+                                  <path d="M9 16h6" />
+                                </svg>
+                              </span>
+                              <span class="queue-tool-label">Save as New Preset</span>
+                            </button>
+                            <button id="overwritePresetButton" class="queue-tool-button" type="button" disabled>
+                              <span class="queue-tool-icon" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" focusable="false">
+                                  <path d="M5 5h11l3 3v11a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5Z" />
+                                  <path d="M9 5v6h6V5" />
+                                  <path d="M9 16h6" />
+                                  <path d="m15 13 3 3 3-3" />
+                                </svg>
+                              </span>
+                              <span class="queue-tool-label">Overwrite</span>
+                            </button>
+                            <button id="assignPresetToListingButton" class="queue-tool-button" type="button" disabled>
+                              <span class="queue-tool-icon" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" focusable="false">
+                                  <path d="M8 6h8" />
+                                  <path d="M6 10h12" />
+                                  <path d="M7 4h10a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z" />
+                                  <path d="m10 14 2 2 4-4" />
+                                </svg>
+                              </span>
+                              <span class="queue-tool-label">Assign Preset to Listing</span>
+                            </button>
+                            <button id="reloadPresetButton" class="queue-tool-button" type="button" disabled>
+                              <span class="queue-tool-icon" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" focusable="false">
+                                  <path d="M20 11a8 8 0 1 0 2 5.5" />
+                                  <path d="M20 4v7h-7" />
+                                </svg>
+                              </span>
+                              <span class="queue-tool-label">Reload preset</span>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </details>
+                  </div>
                   <label class="field compact-field">
                     <span>Preset Name</span>
                     <select id="presetInput"></select>
                   </label>
-                  <button id="assignPresetToListingButton" class="editor-action-button editor-utility-button" type="button" disabled>
-                    <span class="editor-action-icon" aria-hidden="true">
-                      <svg viewBox="0 0 24 24" focusable="false">
-                        <path d="M8 6h8" />
-                        <path d="M6 10h12" />
-                        <path d="M7 4h10a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z" />
-                        <path d="m10 14 2 2 4-4" />
-                      </svg>
-                    </span>
-                    <span class="editor-action-label">Assign Preset to Listing</span>
-                  </button>
-                  <button id="reloadPresetButton" class="editor-action-button editor-utility-button" type="button" disabled>
-                    <span class="editor-action-icon" aria-hidden="true">
-                      <svg viewBox="0 0 24 24" focusable="false">
-                        <path d="M20 11a8 8 0 1 0 2 5.5" />
-                        <path d="M20 4v7h-7" />
-                      </svg>
-                    </span>
-                    <span class="editor-action-label">Reload preset</span>
-                  </button>
                 </section>
 
                 <div id="lineControls" class="line-controls">

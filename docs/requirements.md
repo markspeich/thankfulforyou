@@ -63,6 +63,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Allow text to be arranged in one or more lines.
 - Treat the number of editable text lines as fully dynamic and derive it directly from the number of lines entered by the user.
 - Add a `Presets` dropdown directly below the `Order Text` field.
+- The `Preset` control card in the selected-order editor must expose its secondary actions from an ellipses menu in the card header rather than showing them as always-visible buttons.
 - The `Presets` dropdown must offer these production presets: `All Candlepin`, `Candlepin, Skywalk`, `Skywalk, Somekind`, and `Skywalk, Candlepin`.
 - The app should add a top-level left navigation bar with two items: `Order Items` and `Presets`.
 - The left navigation bar should be collapsible between an expanded icon-plus-label state and a collapsed icon-only state.
@@ -325,9 +326,9 @@ The website should be a practical production tool rather than a marketing site. 
 - Under the selected-order header action row on desktop, the content area should split into two main columns.
 - The left editor column should contain the imported listing details, imported color and quantity, the `Design Text` field, and the preview with connectedness status.
 - In the selected-order editor, the `Design Text` title and textarea should use slightly larger type than the surrounding compact controls so entered personalization is easier to read while editing.
-- The right editor column should begin with compact `Copy Layout` and `Paste Layout` utility buttons, and a `Save as New Preset` action above the preset-selection area.
+- The right editor column should begin with the `Preset` card, and `Copy Layout` plus `Paste Layout` should live in that card's ellipses menu rather than a separate utility row.
 - The selected-order editor should split preset selection and global layout settings into two separate cards titled `Preset` and `Global Settings`.
-- The `Preset` card should contain the preset dropdown and the `Assign Preset to Listing` action.
+- The `Preset` card should contain the preset dropdown, while its ellipses menu should contain `Copy Layout`, `Paste Layout`, `Save as New Preset`, `Overwrite`, `Assign Preset to Listing`, and `Reload preset`.
 - The preset dropdown label in the `Preset` card should read `Preset Name`.
 - The `Preset` card should include a `Reload preset` button at the bottom that reapplies the currently selected preset and overwrites all current layout settings for the active design with that preset's current values.
 - The `Global Settings` card should contain `Weld Exported Design`, global `Horizontal Stretch`, global `Vertical Stretch`, and `Backing Border`, followed by the per-line controls for `Line 1`, `Line 2`, and any additional lines.

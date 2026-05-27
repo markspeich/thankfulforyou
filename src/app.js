@@ -126,6 +126,7 @@ const exportCompletedButton = document.querySelector("#exportCompletedButton");
 const showColorCountsButton = document.querySelector("#showColorCountsButton");
 const copyCompletedButton = document.querySelector("#copyCompletedButton");
 const queueToolsMenu = document.querySelector(".queue-tools-menu");
+const presetToolsMenu = document.querySelector(".preset-tools-menu");
 const queueActionLabelByButton = new Map(
   [addOrderButton, importClipboardButton, clearQueueButton, showColorCountsButton, exportCompletedButton, copyCompletedButton]
     .filter(Boolean)
@@ -183,6 +184,7 @@ const copyButton = document.querySelector("#copyButton");
 const copyLayoutControlsButton = document.querySelector("#copyLayoutPlacementButton");
 const pasteLayoutControlsButton = document.querySelector("#pasteLayoutPlacementButton");
 const saveAsNewPresetButton = document.querySelector("#saveAsNewPresetButton");
+const overwritePresetButton = document.querySelector("#overwritePresetButton");
 const assignPresetToListingButton = document.querySelector("#assignPresetToListingButton");
 const reloadPresetButton = document.querySelector("#reloadPresetButton");
 const captureButton = document.querySelector("#captureButton");
@@ -1145,6 +1147,79 @@ function openPresetEditorForNewPreset() {
   renderPresetEditorDraft();
   setActiveWorkspace("presets");
   setPresetEditorStatus("Preset draft ready from the current order settings.", "pending");
+}
+
+function buildOverwrittenPresetDefinition({ preset, settings }) {
+  const inferredPreset = inferPresetDefinitionFromSettings({
+    name: preset?.name || "",
+    settings,
+  });
+
+  return {
+    ...preset,
+    id: preset?.id || inferredPreset.id,
+    name: preset?.name || inferredPreset.name,
+    description: preset?.description || "",
+    globalDefaults: inferredPreset.globalDefaults,
+    lineDefaults: inferredPreset.lineDefaults,
+    lineRules: inferredPreset.lineRules,
+    listingAssignments: Array.isArray(preset?.listingAssignments)
+      ? structuredClone(preset.listingAssignments)
+      : [],
+  };
+}
+
+async function overwriteSelectedPresetFromActiveOrder() {
+  const activeOrder = getActiveOrder();
+  if (!activeOrder) {
+    updateWorkflowAlert("Add or select a design before overwriting a preset.", "error");
+    return;
+  }
+
+  const selectedPresetId = presetInput.value;
+  const existingPreset = getPresetDefinitionForEditor(selectedPresetId);
+  if (!existingPreset) {
+    updateWorkflowAlert("Choose a saved preset before overwriting it.", "error");
+    return;
+  }
+
+  if (overwritePresetButton) {
+    overwritePresetButton.disabled = true;
+  }
+  updateWorkflowAlert(`Overwriting ${existingPreset.name}...`, "pending", { autoHideMs: 0 });
+
+  const overwrittenPreset = buildOverwrittenPresetDefinition({
+    preset: existingPreset,
+    settings: getCurrentSettings(),
+  });
+
+  try {
+    savePresetDefinitionLocally({
+      preset: overwrittenPreset,
+      previousId: existingPreset.id,
+    });
+    renderPresetOptions();
+    presetInput.value = overwrittenPreset.id;
+    if (presetEditorDraft?.previousId === existingPreset.id) {
+      presetEditorDraft = createPresetEditorDraft(overwrittenPreset, { previousId: overwrittenPreset.id });
+      renderPresetEditorDraft();
+    }
+    persistQueueState();
+    render();
+    try {
+      await savePresetSnapshot(getPresetSnapshot());
+      updateWorkflowAlert(`Overwrote ${overwrittenPreset.name} with the current settings.`, "success");
+    } catch (error) {
+      updateWorkflowAlert(
+        error instanceof Error
+          ? `Overwrote ${overwrittenPreset.name} locally. Neon sync failed: ${error.message}`
+          : `Overwrote ${overwrittenPreset.name} locally, but Neon sync failed.`,
+        "error",
+      );
+    }
+  } catch (error) {
+    updateWorkflowAlert(error instanceof Error ? error.message : "Unable to overwrite preset.", "error");
+  }
 }
 
 async function persistPresetEditorDraft({ syncInputs = false, successMessage } = {}) {
@@ -3417,6 +3492,7 @@ function renderOrderList() {
   copyLayoutControlsButton.disabled = !canCopyLayoutControls(activeOrder);
   pasteLayoutControlsButton.disabled = !canPasteLayoutControls(activeOrder);
   saveAsNewPresetButton.disabled = !activeOrder;
+  overwritePresetButton.disabled = !activeOrder || !getPresetDefinitionForEditor(presetInput.value);
   assignPresetToListingButton.disabled = !activeOrder?.source?.listingId;
   reloadPresetButton.disabled = !activeOrder;
 }
@@ -5101,6 +5177,9 @@ showColorCountsButton?.addEventListener("click", openBatchColorCountsDialog);
 exportCompletedButton.addEventListener("click", exportAllOrders);
 copyCompletedButton.addEventListener("click", copyAllOrders);
 saveAsNewPresetButton?.addEventListener("click", openPresetEditorForNewPreset);
+overwritePresetButton?.addEventListener("click", () => {
+  void overwriteSelectedPresetFromActiveOrder();
+});
 assignPresetToListingButton?.addEventListener("click", () => {
   void assignSelectedPresetToActiveListing();
 });
@@ -5109,6 +5188,13 @@ assignPresetToListingButton?.addEventListener("click", () => {
   .forEach((button) => {
     button.addEventListener("click", () => {
       queueToolsMenu?.removeAttribute("open");
+    });
+  });
+[copyLayoutControlsButton, pasteLayoutControlsButton, saveAsNewPresetButton, overwritePresetButton, assignPresetToListingButton, reloadPresetButton]
+  .filter(Boolean)
+  .forEach((button) => {
+    button.addEventListener("click", () => {
+      presetToolsMenu?.removeAttribute("open");
     });
   });
 closeColorCountsButton?.addEventListener("click", closeBatchColorCountsDialog);
