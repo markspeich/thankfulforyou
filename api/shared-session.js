@@ -1,3 +1,4 @@
+import { resolveSharedQueueAuth } from "./_lib/shared-queue-auth.js";
 import { getSessionContext } from "./_lib/shared-queue-store.js";
 
 export default async function handler(req, res) {
@@ -8,11 +9,7 @@ export default async function handler(req, res) {
       return;
     }
 
-    if (!req.auth?.userId || !req.auth?.workspaceId) {
-      res.status(401).json({ error: "Authentication required." });
-      return;
-    }
-
+    req.auth = await resolveSharedQueueAuth(req);
     const context = await getSessionContext(req.auth);
     res.status(200).json(context);
   } catch (error) {

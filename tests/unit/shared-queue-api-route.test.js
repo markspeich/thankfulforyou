@@ -2,10 +2,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const loadSharedQueueMock = vi.fn();
 const saveSharedQueueMock = vi.fn();
+const resolveSharedQueueAuthMock = vi.fn();
 
 vi.mock("../../api/_lib/shared-queue-store.js", () => ({
   loadSharedQueue: loadSharedQueueMock,
   saveSharedQueue: saveSharedQueueMock,
+}));
+
+vi.mock("../../api/_lib/shared-queue-auth.js", () => ({
+  resolveSharedQueueAuth: resolveSharedQueueAuthMock,
 }));
 
 function createResponseRecorder() {
@@ -34,6 +39,7 @@ beforeEach(() => {
   vi.resetModules();
   loadSharedQueueMock.mockReset();
   saveSharedQueueMock.mockReset();
+  resolveSharedQueueAuthMock.mockReset();
 });
 
 afterEach(() => {
@@ -42,6 +48,10 @@ afterEach(() => {
 
 describe("shared queue api route", () => {
   it("returns a shared queue snapshot for a valid GET request", async () => {
+    resolveSharedQueueAuthMock.mockResolvedValue({
+      userId: "user-1",
+      workspaceId: "workspace-1",
+    });
     loadSharedQueueMock.mockResolvedValue({
       queue: { id: "queue-1", workspaceId: "workspace-1" },
       activeOrderId: "order-1",
@@ -53,10 +63,15 @@ describe("shared queue api route", () => {
 
     await handler({
       method: "GET",
+      headers: { authorization: "Bearer token-1" },
       query: { queueId: "queue-1" },
-      auth: { userId: "user-1", workspaceId: "workspace-1" },
     }, response);
 
+    expect(resolveSharedQueueAuthMock).toHaveBeenCalledWith(expect.objectContaining({
+      method: "GET",
+      headers: { authorization: "Bearer token-1" },
+      query: { queueId: "queue-1" },
+    }));
     expect(loadSharedQueueMock).toHaveBeenCalledWith({
       queueId: "queue-1",
       workspaceId: "workspace-1",
@@ -66,12 +81,16 @@ describe("shared queue api route", () => {
   });
 
   it("rejects PUT requests without queue metadata", async () => {
+    resolveSharedQueueAuthMock.mockResolvedValue({
+      userId: "user-1",
+      workspaceId: "workspace-1",
+    });
     const { default: handler } = await import("../../api/shared-queue.js");
     const response = createResponseRecorder();
 
     await handler({
       method: "PUT",
-      auth: { userId: "user-1", workspaceId: "workspace-1" },
+      headers: { authorization: "Bearer token-1" },
       body: {
         snapshot: { activeOrderId: null, orders: [] },
       },
@@ -84,12 +103,16 @@ describe("shared queue api route", () => {
   });
 
   it("rejects PUT requests when the snapshot workspace does not match the auth workspace", async () => {
+    resolveSharedQueueAuthMock.mockResolvedValue({
+      userId: "user-1",
+      workspaceId: "workspace-1",
+    });
     const { default: handler } = await import("../../api/shared-queue.js");
     const response = createResponseRecorder();
 
     await handler({
       method: "PUT",
-      auth: { userId: "user-1", workspaceId: "workspace-1" },
+      headers: { authorization: "Bearer token-1" },
       body: {
         snapshot: {
           queue: { id: "queue-1", workspaceId: "workspace-2" },
@@ -107,12 +130,16 @@ describe("shared queue api route", () => {
   });
 
   it("rejects PUT requests when snapshot.orders is not an array", async () => {
+    resolveSharedQueueAuthMock.mockResolvedValue({
+      userId: "user-1",
+      workspaceId: "workspace-1",
+    });
     const { default: handler } = await import("../../api/shared-queue.js");
     const response = createResponseRecorder();
 
     await handler({
       method: "PUT",
-      auth: { userId: "user-1", workspaceId: "workspace-1" },
+      headers: { authorization: "Bearer token-1" },
       body: {
         snapshot: {
           queue: { id: "queue-1", workspaceId: "workspace-1" },
@@ -130,6 +157,10 @@ describe("shared queue api route", () => {
   });
 
   it("returns a normalized shared queue snapshot for a valid PUT request", async () => {
+    resolveSharedQueueAuthMock.mockResolvedValue({
+      userId: "user-1",
+      workspaceId: "workspace-1",
+    });
     saveSharedQueueMock.mockResolvedValue({
       queue_json: { id: "queue-1", workspaceId: "workspace-1", updatedBy: "user-1" },
       active_order_id: "order-2",
@@ -146,7 +177,7 @@ describe("shared queue api route", () => {
 
     await handler({
       method: "PUT",
-      auth: { userId: "user-1", workspaceId: "workspace-1" },
+      headers: { authorization: "Bearer token-1" },
       body: { snapshot },
     }, response);
 
@@ -163,6 +194,10 @@ describe("shared queue api route", () => {
   });
 
   it("returns 409 when a stale revision save is rejected", async () => {
+    resolveSharedQueueAuthMock.mockResolvedValue({
+      userId: "user-1",
+      workspaceId: "workspace-1",
+    });
     saveSharedQueueMock.mockRejectedValue(Object.assign(new Error("Revision conflict"), {
       code: "REVISION_CONFLICT",
       details: { orderId: "order-1" },
@@ -173,7 +208,7 @@ describe("shared queue api route", () => {
 
     await handler({
       method: "PUT",
-      auth: { userId: "user-1", workspaceId: "workspace-1" },
+      headers: { authorization: "Bearer token-1" },
       body: {
         snapshot: {
           queue: { id: "queue-1", workspaceId: "workspace-1" },
@@ -187,6 +222,28 @@ describe("shared queue api route", () => {
     expect(response.body).toEqual({
       error: "Revision conflict",
       details: { orderId: "order-1" },
+    });
+  });
+
+  it("returns 401 when auth resolution fails before queue access", async () => {
+    resolveSharedQueueAuthMock.mockRejectedValue(Object.assign(new Error("Authentication required."), {
+      statusCode: 401,
+      expose: true,
+    }));
+
+    const { default: handler } = await import("../../api/shared-queue.js");
+    const response = createResponseRecorder();
+
+    await handler({
+      method: "GET",
+      headers: {},
+      query: { queueId: "queue-1" },
+    }, response);
+
+    expect(loadSharedQueueMock).not.toHaveBeenCalled();
+    expect(response.statusCode).toBe(401);
+    expect(response.body).toEqual({
+      error: "Authentication required.",
     });
   });
 });

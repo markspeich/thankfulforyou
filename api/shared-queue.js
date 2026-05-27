@@ -1,3 +1,4 @@
+import { resolveSharedQueueAuth } from "./_lib/shared-queue-auth.js";
 import { loadSharedQueue, saveSharedQueue } from "./_lib/shared-queue-store.js";
 
 function readJsonBody(req) {
@@ -42,10 +43,7 @@ function normalizeSnapshot(value) {
 
 export default async function handler(req, res) {
   try {
-    if (!req.auth?.userId || !req.auth?.workspaceId) {
-      res.status(401).json({ error: "Authentication required." });
-      return;
-    }
+    req.auth = await resolveSharedQueueAuth(req);
 
     if (req.method === "GET") {
       const queueId = typeof req.query?.queueId === "string" ? req.query.queueId.trim() : "";
@@ -99,6 +97,13 @@ export default async function handler(req, res) {
     res.setHeader("Allow", "GET, PUT");
     res.status(405).json({ error: "Method not allowed." });
   } catch (error) {
+    if (error?.statusCode && error?.expose) {
+      res.status(error.statusCode).json({
+        error: error.message,
+      });
+      return;
+    }
+
     if (error?.code === "REVISION_CONFLICT") {
       res.status(409).json({
         error: error.message,
