@@ -37,6 +37,55 @@ function installSupabaseSession(page, session) {
   }, { providedSession: session });
 }
 
+function installSupabaseSessionWithLogoutTracking(page, session) {
+  return page.addInitScript(({ providedSession }) => {
+    window.__APP_CONFIG__ = {
+      supabaseUrl: "https://example.supabase.co",
+      supabaseAnonKey: "anon-key",
+    };
+    const readSignOutCalls = () => Number(window.sessionStorage.getItem("__TFU_SIGN_OUT_CALLS__") || "0");
+    const writeSignOutCalls = (count) => {
+      window.sessionStorage.setItem("__TFU_SIGN_OUT_CALLS__", String(count));
+      window.__TFU_SIGN_OUT_CALLS__ = count;
+    };
+    writeSignOutCalls(readSignOutCalls());
+    window.__TFU_TEST_SUPABASE_CLIENT__ = {
+      auth: {
+        getSession: async () => {
+          const hasSignedOut = readSignOutCalls() > 0;
+          return {
+            data: { session: hasSignedOut ? null : providedSession },
+            error: null,
+          };
+        },
+        signInWithPassword: async ({ email }) => ({
+          data: {
+            session: {
+              access_token: "token-1",
+              user: {
+                id: "user-1",
+                email,
+              },
+            },
+          },
+          error: null,
+        }),
+        signOut: async () => {
+          writeSignOutCalls(readSignOutCalls() + 1);
+          return { error: null };
+        },
+        onAuthStateChange: () => ({
+          data: {
+            subscription: {
+              unsubscribe() {},
+            },
+          },
+        }),
+      },
+    };
+  }, { providedSession: session });
+}
+
 test("shows an operator sign-in screen when no shared session exists", async ({ page }) => {
   await installSupabaseSession(page, null);
 
@@ -144,4 +193,111 @@ test("returns to the sign-in state when a shared queue save gets a 401", async (
 
   await expect(page.getByRole("heading", { name: "Sign in to shared queue" })).toBeVisible();
   await expect(page.locator("#sharedQueueAuthError")).toContainText("Shared queue session expired");
+});
+
+test("logs out from the left nav and returns to the sign-in gate", async ({ page }) => {
+  await installSupabaseSessionWithLogoutTracking(page, {
+    access_token: "token-1",
+    user: {
+      id: "user-1",
+      email: "mark@example.com",
+    },
+  });
+
+  await page.route("**/api/shared-session", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify({
+        operator: { id: "user-1", email: "mark@example.com" },
+        workspace: { id: "workspace-1", name: "Thankful For You" },
+        queue: { id: "queue-1", workspaceId: "workspace-1" },
+      }),
+    });
+  });
+  await page.route("**/api/shared-queue?queueId=queue-1", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify({
+        queue: { id: "queue-1", workspaceId: "workspace-1" },
+        activeOrderId: "remote-order-1",
+        orders: [
+          {
+            id: "remote-order-1",
+            revision: 1,
+            text: "Remote Shared",
+            status: "in-progress",
+            settings: {
+              text: "Remote Shared",
+              presetId: "preset-oval",
+              backingMm: 2.2,
+              weldExportedDesign: true,
+              lines: [
+                {
+                  fontId: "candlepin",
+                  bridgeMm: 0.5,
+                  lineBridgeMm: 0.5,
+                  offsetXMm: 0,
+                  fontSizeMm: 34,
+                  horizontalScale: 1,
+                  verticalScale: 1,
+                  lockTextHeight: false,
+                },
+              ],
+            },
+          },
+        ],
+      }),
+    });
+  });
+
+  await page.goto("/");
+  await expect(page.locator("#sharedQueueLogoutButton")).toBeVisible();
+
+  await page.locator("#sharedQueueLogoutButton").click();
+
+  await expect(page.getByRole("heading", { name: "Sign in to shared queue" })).toBeVisible();
+  await expect.poll(async () => page.evaluate(() => window.__TFU_SIGN_OUT_CALLS__)).toBe(1);
+});
+
+test("switches to the presets workspace from the left nav", async ({ page }) => {
+  await installSupabaseSession(page, {
+    access_token: "token-1",
+    user: {
+      id: "user-1",
+      email: "mark@example.com",
+    },
+  });
+
+  await page.route("**/api/shared-session", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify({
+        operator: { id: "user-1", email: "mark@example.com" },
+        workspace: { id: "workspace-1", name: "Thankful For You" },
+        queue: { id: "queue-1", workspaceId: "workspace-1" },
+      }),
+    });
+  });
+  await page.route("**/api/shared-queue?queueId=queue-1", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify({
+        queue: { id: "queue-1", workspaceId: "workspace-1" },
+        activeOrderId: "remote-order-1",
+        orders: [],
+      }),
+    });
+  });
+
+  await page.goto("/");
+  await expect(page.locator("#ordersWorkspace")).toBeVisible();
+
+  await page.locator("#presetWorkspaceButton").click();
+
+  await expect(page.locator("#presetWorkspaceButton")).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator("#presetsWorkspace")).toBeVisible();
 });

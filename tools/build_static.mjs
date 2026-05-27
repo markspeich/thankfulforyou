@@ -13,8 +13,7 @@ for (const entry of ["index.html", "src", "public"]) {
 }
 
 for (const browserDependency of [
-  "node_modules/@supabase/auth-js/dist/module",
-  "node_modules/tslib/tslib.es6.mjs",
+  "node_modules/@supabase/supabase-js/dist/umd/supabase.js",
 ]) {
   cpSync(join(root, browserDependency), join(dist, browserDependency), { recursive: true });
 }

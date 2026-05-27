@@ -1,9 +1,19 @@
-import AuthClient from "../node_modules/@supabase/auth-js/dist/module/AuthClient.js";
-
 let browserSupabaseClient = null;
 
 function readBrowserSupabaseClientOverride() {
   return globalThis.__TFU_TEST_SUPABASE_CLIENT__ ?? null;
+}
+
+function readBrowserSupabaseFactory() {
+  const runtime = globalThis.supabase ?? null;
+
+  if (typeof runtime?.createClient !== "function") {
+    throw new Error(
+      "Supabase browser runtime is missing. Load /node_modules/@supabase/supabase-js/dist/umd/supabase.js before shared queue auth.",
+    );
+  }
+
+  return runtime.createClient;
 }
 
 function readBrowserSupabaseConfig() {
@@ -33,20 +43,16 @@ export function getBrowserSupabaseClient() {
   }
 
   const { url, anonKey } = readBrowserSupabaseConfig();
+  const createClient = readBrowserSupabaseFactory();
 
-  browserSupabaseClient = {
-    auth: new AuthClient({
-      url: `${url.replace(/\/$/, "")}/auth/v1`,
-      headers: {
-        apikey: anonKey,
-        Authorization: `Bearer ${anonKey}`,
-      },
+  browserSupabaseClient = createClient(url, anonKey, {
+    auth: {
       storageKey: "thankfulforyou.supabase.auth",
       persistSession: true,
       autoRefreshToken: true,
       detectSessionInUrl: false,
-    }),
-  };
+    },
+  });
   return browserSupabaseClient;
 }
 
