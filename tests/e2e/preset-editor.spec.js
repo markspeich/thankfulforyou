@@ -554,3 +554,62 @@ test("shows assigned listings for a preset and lets operators unassign them", as
   await expect(page.locator("#importStatus")).toContainText("Imported 1 Etsy design from the clipboard.");
   await expect(page.locator("#presetInput")).not.toHaveValue("preset-c3e8a1d7f520");
 });
+
+test("deletes a saved preset only after confirmation and migrates active uses away from it", async ({ page }) => {
+  const nonce = Date.now();
+  const createdPresetName = `Delete Me ${nonce}`;
+
+  await installPresetRoutes(page);
+  await page.route("**/api/layout-analyze", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify(buildMockAnalysisResponse()),
+    });
+  });
+
+  await page.goto("/");
+
+  await clickQueueAction(page, "Add Design");
+  await page.locator("#textInput").fill("Morgan\nRN");
+  await page.locator('[data-line-index="0"] [data-setting="fontId"]').selectOption("skywalk");
+  await page.locator('[data-line-index="1"] [data-setting="fontId"]').selectOption("somekind");
+
+  await page.getByRole("button", { name: "Save as New Preset" }).click();
+  await page.locator("#presetDraftName").fill(createdPresetName);
+  await page.getByRole("button", { name: "Save Preset" }).click();
+
+  let createdPresetId = "";
+  await expect.poll(async () => {
+    createdPresetId = await page.locator("#presetEditorSelect").inputValue();
+    return createdPresetId !== "";
+  }, { timeout: 10000 }).toBe(true);
+  await expect(page.locator("#presetEditorStatus")).toContainText("Saved");
+
+  await page.getByRole("button", { name: "Order Items" }).click();
+  await page.locator("#presetInput").selectOption(createdPresetId);
+  await expect(page.locator("#presetInput")).toHaveValue(createdPresetId);
+
+  await page.getByRole("button", { name: "Presets" }).click();
+  await page.locator("#presetEditorSelect").selectOption(createdPresetId);
+
+  await page.getByRole("button", { name: "Delete Preset" }).click();
+  const dialog = page.locator("#confirmationDialog");
+  await expect(dialog).toBeVisible();
+  await expect(dialog.locator("#confirmationDialogTitle")).toHaveText("Delete Preset?");
+  await expect(dialog.locator("#confirmationDialogDescription")).toContainText(createdPresetName);
+  await dialog.locator("#confirmationDialogCancelButton").click();
+  await expect(dialog).not.toBeVisible();
+  await expect(page.locator("#presetEditorSelect")).toHaveValue(createdPresetId);
+
+  await page.getByRole("button", { name: "Delete Preset" }).click();
+  await expect(dialog).toBeVisible();
+  await dialog.locator("#confirmationDialogConfirmButton").click();
+  await expect(dialog).not.toBeVisible();
+  await expect(page.locator("#presetEditorStatus")).toContainText("Deleted");
+  await expect(page.locator(`#presetEditorSelect option[value="${createdPresetId}"]`)).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Order Items" }).click();
+  await expect(page.locator("#presetInput")).not.toHaveValue(createdPresetId);
+  await expect(page.locator(`#presetInput option[value="${createdPresetId}"]`)).toHaveCount(0);
+});

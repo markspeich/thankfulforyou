@@ -16,6 +16,7 @@ import {
 } from "./layout-math.js";
 import {
   buildPresetLines,
+  deletePresetDefinitionLocally,
   getDefaultPresetId,
   getPresetDefinitionForEditor,
   getPresetGlobalDefaults,
@@ -189,6 +190,7 @@ const completeNextButton = document.querySelector("#completeNextButton");
 const presetEditorSelect = document.querySelector("#presetEditorSelect");
 const presetDraftNameInput = document.querySelector("#presetDraftName");
 const savePresetButton = document.querySelector("#savePresetButton");
+const deletePresetButton = document.querySelector("#deletePresetButton");
 const presetWeldExportedDesignInput = document.querySelector("#presetWeldExportedDesignInput");
 const presetGlobalHorizontalScaleInput = document.querySelector("#presetGlobalHorizontalScaleInput");
 const presetGlobalHorizontalScaleOutput = document.querySelector("#presetGlobalHorizontalScaleOutput");
@@ -961,6 +963,11 @@ function renderPresetEditorDraft() {
   updatePresetBackingOutput();
   renderPresetEditorLineControls();
   savePresetButton.disabled = false;
+  if (deletePresetButton) {
+    deletePresetButton.disabled = !presetEditorDraft?.previousId
+      || !isValidPresetId(presetEditorDraft.previousId)
+      || getPresetOptions().length <= 1;
+  }
   renderPresetAssignmentList();
 }
 
@@ -1208,6 +1215,62 @@ async function persistPresetEditorDraft({ syncInputs = false, successMessage } =
 
 async function savePresetEditorDraft() {
   await persistPresetEditorDraft({ syncInputs: true });
+}
+
+async function deletePresetEditorDraft() {
+  const presetId = presetEditorDraft?.previousId;
+  if (!presetId || !isValidPresetId(presetId)) {
+    setPresetEditorStatus("Choose a saved preset to delete.", "error");
+    return;
+  }
+
+  const presetName = presetEditorDraft?.preset?.name?.trim() || "this preset";
+  const confirmed = await showConfirmationDialog({
+    title: "Delete Preset?",
+    description: `Delete ${presetName} from the preset library? Any designs using it in this workspace will switch to the current default preset.`,
+    confirmLabel: "Delete Preset",
+    cancelLabel: "Keep Preset",
+    isDanger: true,
+  });
+  if (!confirmed) {
+    return;
+  }
+
+  savePresetButton.disabled = true;
+  if (deletePresetButton) {
+    deletePresetButton.disabled = true;
+  }
+  setPresetEditorStatus(`Deleting ${presetName}...`, "pending");
+
+  try {
+    const result = deletePresetDefinitionLocally(presetId);
+    const replacementPresetId = result.snapshot.defaultPresetId;
+    migratePresetReferences(presetId, replacementPresetId);
+    renderPresetOptions();
+    const replacementPreset = getPresetDefinitionForEditor(replacementPresetId);
+    presetEditorDraft = createPresetEditorDraft(replacementPreset, { previousId: replacementPresetId });
+    renderPresetEditorDraft();
+    renderOrderList();
+    persistQueueState();
+    render();
+    try {
+      await savePresetSnapshot(result.snapshot);
+      setPresetEditorStatus(`Deleted ${presetName}.`, "success");
+    } catch (error) {
+      setPresetEditorStatus(
+        error instanceof Error
+          ? `Deleted locally. Neon sync failed: ${error.message}`
+          : "Deleted locally, but Neon sync failed.",
+        "error",
+      );
+    }
+  } catch (error) {
+    setPresetEditorStatus(error instanceof Error ? error.message : "Unable to delete preset.", "error");
+    savePresetButton.disabled = false;
+    if (deletePresetButton) {
+      deletePresetButton.disabled = false;
+    }
+  }
 }
 
 async function unassignListingFromPreset(listingId) {
@@ -5000,6 +5063,9 @@ presetEditorSelect?.addEventListener("change", () => {
 presetDraftNameInput?.addEventListener("input", syncPresetEditorDraftFromInputs);
 savePresetButton?.addEventListener("click", () => {
   void savePresetEditorDraft();
+});
+deletePresetButton?.addEventListener("click", () => {
+  void deletePresetEditorDraft();
 });
 presetBackingInput?.addEventListener("input", () => {
   updatePresetBackingOutput();
