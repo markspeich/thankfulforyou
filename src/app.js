@@ -160,6 +160,12 @@ const notStartedCountOutput = document.querySelector("#notStartedCountOutput");
 const orderList = document.querySelector("#orderList");
 const activeOrderName = document.querySelector("#activeOrderName");
 const activeOrderMeta = document.querySelector("#activeOrderMeta");
+const saveQueueButton = document.querySelector("#saveQueueButton");
+const sharedQueueBanner = document.querySelector("#sharedQueueBanner");
+const sharedQueueBannerLabel = document.querySelector("#sharedQueueBannerLabel");
+const sharedQueueBannerDetail = document.querySelector("#sharedQueueBannerDetail");
+const sharedQueueBannerAudit = document.querySelector("#sharedQueueBannerAudit");
+const sharedQueueBannerReloadButton = document.querySelector("#sharedQueueBannerReloadButton");
 const editorPanel = document.querySelector(".editor-panel");
 const listingReferenceCard = document.querySelector("#listingReferenceCard");
 const listingReferenceTitle = document.querySelector("#listingReferenceTitle");
@@ -209,7 +215,7 @@ const presetAssignmentsList = document.querySelector("#presetAssignmentsList");
 const presetAssignmentsEmptyState = document.querySelector("#presetAssignmentsEmptyState");
 const presetEditorStatus = document.querySelector("#presetEditorStatus");
 const editorActionLabelByButton = new Map(
-  [captureButton, completeNextButton, copyButton, copyLayoutControlsButton, pasteLayoutControlsButton, downloadButton]
+  [saveQueueButton, captureButton, completeNextButton, copyButton, copyLayoutControlsButton, pasteLayoutControlsButton, downloadButton]
     .filter(Boolean)
     .map((button) => [button, button.querySelector(".editor-action-label")]),
 );
@@ -247,6 +253,9 @@ let suppressSharedQueueAutosave = false;
 let lastSharedQueueSaveKey = null;
 let sharedQueueSyncState = "disabled";
 let sharedQueueSyncDetail = "";
+let sharedQueueConflictState = null;
+let sharedQueueRecoveryState = null;
+let sharedQueueRecoveryMarker = null;
 
 const statusLabels = {
   "not-started": "Not started",
@@ -1329,6 +1338,59 @@ function buildManualDesignName(order) {
   return `Design ${index >= 0 ? index + 1 : orderSequence}`;
 }
 
+function buildAuditActorLabel(actor) {
+  const name = actor?.name?.trim();
+  const email = actor?.email?.trim();
+  return name || email || "";
+}
+
+function formatAuditTimestamp(value) {
+  if (typeof value !== "string" || !value.trim()) {
+    return "";
+  }
+
+  const timestamp = Date.parse(value);
+  if (Number.isNaN(timestamp)) {
+    return "";
+  }
+
+  return new Intl.DateTimeFormat("en-US", {
+    dateStyle: "long",
+    timeStyle: "short",
+  }).format(timestamp);
+}
+
+function buildLastUpdatedText(source) {
+  const actorLabel = buildAuditActorLabel(source?.updatedBy);
+  const timestampLabel = formatAuditTimestamp(source?.updatedAt);
+
+  if (actorLabel && timestampLabel) {
+    return `Last updated by ${actorLabel} at ${timestampLabel}.`;
+  }
+
+  if (actorLabel) {
+    return `Last updated by ${actorLabel}.`;
+  }
+
+  if (timestampLabel) {
+    return `Last updated at ${timestampLabel}.`;
+  }
+
+  return "";
+}
+
+function getSharedQueueAuditSource(order = getActiveOrder()) {
+  if (order && (order.updatedBy || order.updatedAt)) {
+    return order;
+  }
+
+  if (sharedQueueContext && (sharedQueueContext.updatedBy || sharedQueueContext.updatedAt)) {
+    return sharedQueueContext;
+  }
+
+  return null;
+}
+
 function buildActiveMeta(order) {
   if (!order) {
     return "Add or import a design to start editing.";
@@ -1570,6 +1632,82 @@ function normalizeStoredSource(source) {
   };
 }
 
+function normalizeStoredAuditActor(actor) {
+  if (!actor || typeof actor !== "object") {
+    return null;
+  }
+
+  const name = typeof actor.name === "string" ? actor.name.trim() : "";
+  const email = typeof actor.email === "string" ? actor.email.trim() : "";
+
+  if (!name && !email) {
+    return null;
+  }
+
+  return {
+    ...(structuredClone(actor)),
+    name,
+    email,
+  };
+}
+
+function normalizeStoredRevision(revision) {
+  const parsedRevision = Number(revision);
+  return Number.isFinite(parsedRevision) ? parsedRevision : null;
+}
+
+function normalizeStoredUpdatedAt(updatedAt) {
+  if (typeof updatedAt !== "string" || !updatedAt.trim()) {
+    return null;
+  }
+
+  const normalized = updatedAt.trim();
+  return Number.isNaN(Date.parse(normalized)) ? null : normalized;
+}
+
+function normalizeSharedQueueRecoveryMarker(marker) {
+  if (!marker || typeof marker !== "object") {
+    return null;
+  }
+
+  if (marker.reason !== "shared-queue-conflict") {
+    return null;
+  }
+
+  const preservedAt = normalizeStoredUpdatedAt(marker.preservedAt);
+  const conflictOrderId = typeof marker.conflictOrderId === "string" ? marker.conflictOrderId.trim() : "";
+  const queueId = typeof marker.queueId === "string" ? marker.queueId.trim() : "";
+  const workspaceId = typeof marker.workspaceId === "string" ? marker.workspaceId.trim() : "";
+
+  return {
+    reason: "shared-queue-conflict",
+    preservedAt,
+    conflictOrderId,
+    queueId,
+    workspaceId,
+  };
+}
+
+function doesRecoveryMarkerMatchQueue(marker, queue) {
+  if (!marker || !queue) {
+    return false;
+  }
+
+  const markerQueueId = typeof marker.queueId === "string" ? marker.queueId.trim() : "";
+  const markerWorkspaceId = typeof marker.workspaceId === "string" ? marker.workspaceId.trim() : "";
+  const queueId = typeof queue.id === "string" ? queue.id.trim() : "";
+  const workspaceId = typeof queue.workspaceId === "string" ? queue.workspaceId.trim() : "";
+
+  return Boolean(
+    markerQueueId
+    && markerWorkspaceId
+    && queueId
+    && workspaceId
+    && markerQueueId === queueId
+    && markerWorkspaceId === workspaceId
+  );
+}
+
 function hydrateStoredOrder(order, index) {
   if (!order || typeof order !== "object") {
     return null;
@@ -1669,6 +1807,9 @@ function hydrateStoredOrder(order, index) {
 
   return {
     id: typeof order.id === "string" && order.id.trim() ? order.id : crypto.randomUUID(),
+    revision: normalizeStoredRevision(order.revision),
+    updatedAt: normalizeStoredUpdatedAt(order.updatedAt),
+    updatedBy: normalizeStoredAuditActor(order.updatedBy),
     text,
     status,
     settings,
@@ -1711,6 +1852,9 @@ function setSharedQueueContext(queue) {
 function buildSerializedQueueOrders() {
   return orders.map((order) => ({
     id: order.id,
+    revision: order.revision,
+    updatedAt: order.updatedAt,
+    updatedBy: order.updatedBy ? structuredClone(order.updatedBy) : null,
     text: order.text,
     status: order.status,
     settings: normalizeSettings(order.settings),
@@ -1729,6 +1873,8 @@ function buildPersistedQueueState() {
     version: STORAGE_VERSION,
     orderSequence,
     queue: sharedQueueContext ? structuredClone(sharedQueueContext) : null,
+    recoveryDraftMeta: sharedQueueRecoveryMarker ? structuredClone(sharedQueueRecoveryMarker) : null,
+    recoveryDraftSnapshot: sharedQueueRecoveryDraft ? structuredClone(sharedQueueRecoveryDraft) : null,
     activeOrderId,
     orders: buildSerializedQueueOrders(),
   };
@@ -1740,6 +1886,31 @@ function buildSharedQueueSnapshot() {
     activeOrderId,
     orders: buildSerializedQueueOrders(),
   });
+}
+
+function applySharedQueueAuditToOrder(order, auditSource) {
+  if (!order || !auditSource || typeof auditSource !== "object") {
+    return;
+  }
+
+  order.revision = normalizeStoredRevision(auditSource.revision);
+  order.updatedAt = normalizeStoredUpdatedAt(auditSource.updatedAt);
+  order.updatedBy = normalizeStoredAuditActor(auditSource.updatedBy);
+}
+
+function mergeSharedQueueAuditFromSnapshot(snapshot) {
+  if (!snapshot || !Array.isArray(snapshot.orders)) {
+    return;
+  }
+
+  for (const remoteOrder of snapshot.orders) {
+    const localOrder = orders.find((order) => order.id === remoteOrder?.id);
+    if (!localOrder) {
+      continue;
+    }
+
+    applySharedQueueAuditToOrder(localOrder, remoteOrder);
+  }
 }
 
 function setSharedQueueSyncState(mode, detail = "") {
@@ -1772,6 +1943,11 @@ function disableSharedQueueSync(detail = "Shared queue sync is unavailable.") {
 
 function isSharedQueueSyncEnabled() {
   return sharedQueueSyncState === "enabled" && hasSharedQueueSyncContext();
+}
+
+function canAttemptSharedQueueSave() {
+  return hasSharedQueueSyncContext()
+    && (sharedQueueSyncState === "enabled" || sharedQueueSyncState === "recovery-review");
 }
 
 function hasSharedQueueSyncContext() {
@@ -1890,11 +2066,66 @@ function updateQueueSyncStatus(kind, options = {}) {
   queueSyncStatusDetail.textContent = status.detail;
 }
 
+function renderSharedQueueBanner(activeOrder = getActiveOrder()) {
+  if (!sharedQueueBanner || !sharedQueueBannerLabel || !sharedQueueBannerDetail || !sharedQueueBannerAudit || !sharedQueueBannerReloadButton) {
+    return;
+  }
+
+  const auditSource = sharedQueueConflictState?.auditSource || getSharedQueueAuditSource(activeOrder);
+  const auditText = buildLastUpdatedText(auditSource);
+  let tone = "pending";
+  let label = "";
+  let detail = "";
+  let actionLabel = "";
+
+  if (sharedQueueConflictState) {
+    tone = "warning";
+    label = "Save conflict";
+    detail = sharedQueueConflictState.detail;
+    actionLabel = "Reload Shared Queue";
+  } else if (sharedQueueRecoveryState === "available" && sharedQueueRecoveryDraft) {
+    tone = "warning";
+    label = "Local recovery draft available";
+    detail = "A newer shared revision was loaded. Review your saved local draft if you still need those edits.";
+    actionLabel = "Review Local Draft";
+  } else if (sharedQueueRecoveryState === "active") {
+    tone = "warning";
+    label = "Recovered local draft";
+    detail = "Review this local draft, then click Save to retry it against the shared queue.";
+  } else if (sharedQueueSyncState === "local-recovery") {
+    tone = "warning";
+    label = "Local recovery only";
+    detail = sharedQueueSyncDetail || "Shared queue sync is unavailable in this browser right now.";
+  } else if (isSharedQueueSyncEnabled()) {
+    label = "Shared queue connected";
+    detail = "Save pushes this queue back to the shared workspace.";
+  } else {
+    sharedQueueBanner.hidden = true;
+    sharedQueueBannerLabel.textContent = "";
+    sharedQueueBannerDetail.textContent = "";
+    sharedQueueBannerAudit.textContent = "";
+    sharedQueueBannerReloadButton.hidden = true;
+    sharedQueueBanner.classList.remove("status-ok", "status-warning", "status-pending");
+    return;
+  }
+
+  sharedQueueBanner.hidden = false;
+  sharedQueueBanner.classList.remove("status-ok", "status-warning", "status-pending");
+  sharedQueueBanner.classList.add(`status-${tone}`);
+  sharedQueueBannerLabel.textContent = label;
+  sharedQueueBannerDetail.textContent = detail;
+  sharedQueueBannerAudit.textContent = auditText;
+  sharedQueueBannerAudit.hidden = !auditText;
+  sharedQueueBannerReloadButton.hidden = !actionLabel;
+  sharedQueueBannerReloadButton.textContent = actionLabel;
+}
+
 function applyPersistedQueueState(parsed) {
   if (!parsed || !Array.isArray(parsed.orders)) {
     return false;
   }
 
+  sharedQueueRecoveryMarker = normalizeSharedQueueRecoveryMarker(parsed.recoveryDraftMeta);
   setSharedQueueContext(parsed.queue || sharedQueueContext || sharedSessionContext?.queue || null);
   const restoredOrders = parsed.orders
     .map((order, index) => hydrateStoredOrder(order, index))
@@ -1967,6 +2198,89 @@ function flushPersistQueueState(options = {}) {
   triggerSharedQueueAutosave({ immediate: true });
 }
 
+function flushLocalQueuePersistence() {
+  if (queuePersistenceTimeoutId != null) {
+    window.clearTimeout(queuePersistenceTimeoutId);
+    queuePersistenceTimeoutId = null;
+  }
+
+  persistQueueState({ skipRemoteSave: true });
+}
+
+function restoreSharedQueueRecoveryDraft() {
+  if (!sharedQueueRecoveryDraft || !applyPersistedQueueState(sharedQueueRecoveryDraft)) {
+    return;
+  }
+
+  sharedQueueConflictState = null;
+  sharedQueueRecoveryState = "active";
+  sharedQueueRecoveryMarker = null;
+  sharedQueueRecoveryDraft = null;
+  setSharedQueueSyncState("recovery-review");
+
+  const activeOrder = getActiveOrder();
+  if (activeOrder) {
+    applySettings(activeOrder.settings);
+  } else {
+    resetEditorToEmptyState();
+  }
+
+  suppressQueueSyncLocalNotice = true;
+  suppressSharedQueueAutosave = true;
+  persistQueueState({ skipRemoteSave: true });
+  suppressSharedQueueAutosave = false;
+  suppressQueueSyncLocalNotice = false;
+
+  renderOrderList();
+  scheduleDeferredPreviewRender();
+}
+
+async function saveCurrentQueueManually() {
+  const activeOrder = getActiveOrder();
+  if (!activeOrder || !saveQueueButton) {
+    return;
+  }
+
+  saveQueueButton.disabled = true;
+  saveQueueButton.setAttribute("aria-busy", "true");
+  setEditorActionLabel(saveQueueButton, "Saving...");
+
+  try {
+    saveActiveOrderDraft();
+    clearSharedQueueAutosaveTimeout();
+    sharedQueueAutosavePending = false;
+    flushLocalQueuePersistence();
+
+    if (!canAttemptSharedQueueSave()) {
+      updateWorkflowAlert("Saved in this browser. Shared queue sync is currently unavailable.", "pending");
+      return;
+    }
+
+    await saveQueueSnapshotToRemote({
+      persistActiveDraft: false,
+      successMessage: "Shared queue saved.",
+    });
+  } finally {
+    saveQueueButton.removeAttribute("aria-busy");
+    setEditorActionLabel(saveQueueButton, "Save");
+    saveQueueButton.disabled = !getActiveOrder();
+    renderSharedQueueBanner();
+  }
+}
+
+function reloadSharedQueueFromBanner() {
+  if (sharedQueueRecoveryState === "available") {
+    restoreSharedQueueRecoveryDraft();
+    return;
+  }
+
+  saveActiveOrderDraft();
+  clearSharedQueueAutosaveTimeout();
+  sharedQueueAutosavePending = false;
+  flushLocalQueuePersistence();
+  window.location.reload();
+}
+
 function scheduleRenderOrderList() {
   if (orderListRenderFrameId != null) {
     return;
@@ -2036,16 +2350,17 @@ async function saveQueueSnapshotToRemote(options = {}) {
     keepalive = false,
     degradeOnFailure = true,
   } = options;
+  let snapshot = null;
 
   if (persistActiveDraft) {
     saveActiveOrderDraft();
   }
 
   try {
-    const snapshot = buildSharedQueueSnapshot();
+    snapshot = buildSharedQueueSnapshot();
     const snapshotKey = buildSharedQueueSaveKey(snapshot);
 
-    if (!isSharedQueueSyncEnabled() || !snapshot.queue?.id || !snapshot.queue?.workspaceId) {
+    if (!canAttemptSharedQueueSave() || !snapshot.queue?.id || !snapshot.queue?.workspaceId) {
       return;
     }
 
@@ -2057,8 +2372,12 @@ async function saveQueueSnapshotToRemote(options = {}) {
     if (savedSnapshot?.queue) {
       enableSharedQueueSync(savedSnapshot.queue);
     }
+    mergeSharedQueueAuditFromSnapshot(savedSnapshot);
+    sharedQueueConflictState = null;
+    sharedQueueRecoveryState = null;
+    sharedQueueRecoveryMarker = null;
     sharedQueueRecoveryDraft = null;
-    lastSharedQueueSaveKey = snapshotKey;
+    lastSharedQueueSaveKey = buildSharedQueueSaveKey(buildSharedQueueSnapshot());
     suppressQueueSyncLocalNotice = true;
     suppressSharedQueueAutosave = true;
     persistQueueState({ skipRemoteSave: true });
@@ -2078,6 +2397,29 @@ async function saveQueueSnapshotToRemote(options = {}) {
     suppressSharedQueueAutosave = false;
     suppressQueueSyncLocalNotice = false;
     const isConflictError = error instanceof SharedQueueConflictError;
+    if (isConflictError) {
+      const conflictingOrder = orders.find((order) => order.id === error.details?.orderId) || getActiveOrder();
+      if (conflictingOrder) {
+        applySharedQueueAuditToOrder(conflictingOrder, error.details);
+      }
+      sharedQueueRecoveryMarker = {
+        reason: "shared-queue-conflict",
+        preservedAt: new Date().toISOString(),
+        conflictOrderId: typeof error.details?.orderId === "string" ? error.details.orderId : "",
+        queueId: typeof snapshot.queue?.id === "string" ? snapshot.queue.id : "",
+        workspaceId: typeof snapshot.queue?.workspaceId === "string" ? snapshot.queue.workspaceId : "",
+      };
+      sharedQueueRecoveryDraft = structuredClone(buildPersistedQueueState());
+      sharedQueueRecoveryState = null;
+      sharedQueueConflictState = {
+        detail: "Another browser or user updated this design first. Reload the shared queue to compare the newer revision with your local draft.",
+        auditSource: error.details && typeof error.details === "object" ? structuredClone(error.details) : null,
+      };
+      persistQueueState({ skipRemoteSave: true });
+      renderSharedQueueBanner();
+      return;
+    }
+
     if (degradeOnFailure && !isConflictError) {
       disableSharedQueueSync(
         error instanceof Error && error.message
@@ -2086,6 +2428,10 @@ async function saveQueueSnapshotToRemote(options = {}) {
       );
       persistQueueState({ skipRemoteSave: true });
     }
+    sharedQueueConflictState = null;
+    sharedQueueRecoveryState = null;
+    sharedQueueRecoveryMarker = null;
+    renderSharedQueueBanner();
     updateWorkflowAlert(
       error instanceof Error ? error.message : "Unable to save the shared queue.",
       "error",
@@ -2095,9 +2441,12 @@ async function saveQueueSnapshotToRemote(options = {}) {
 
 async function restoreInitialQueueState() {
   const localSnapshot = readPersistedQueueState();
+  const localRecoveryMarker = normalizeSharedQueueRecoveryMarker(localSnapshot?.recoveryDraftMeta);
   let sharedSession = null;
   let remoteSnapshot = null;
   let sharedSyncUnavailable = false;
+  sharedQueueConflictState = null;
+  sharedQueueRecoveryState = null;
 
   try {
     sharedSession = await fetchSharedSession();
@@ -2137,13 +2486,25 @@ async function restoreInitialQueueState() {
     localCache: localSnapshot,
   });
   const initialSnapshot = startupState.snapshot;
-  sharedQueueRecoveryDraft = startupState.recoveryDraft ? structuredClone(startupState.recoveryDraft) : null;
+  const currentRecoveryQueue = sharedSession?.queue || initialSnapshot?.queue || null;
+  const hasMatchingRecoveryMarker = doesRecoveryMarkerMatchQueue(localRecoveryMarker, currentRecoveryQueue);
+  const storedRecoveryDraftSnapshot = localSnapshot?.recoveryDraftSnapshot;
+  sharedQueueRecoveryDraft = hasMatchingRecoveryMarker
+    ? structuredClone(storedRecoveryDraftSnapshot || startupState.recoveryDraft)
+    : null;
+  if (startupState.source === "remote" && sharedQueueRecoveryDraft) {
+    sharedQueueRecoveryState = "available";
+    sharedQueueRecoveryMarker = structuredClone(localRecoveryMarker);
+  }
 
   if (initialSnapshot?.queue) {
     setSharedQueueContext(initialSnapshot.queue);
   }
 
   if (!initialSnapshot || !applyPersistedQueueState(initialSnapshot)) {
+    if (startupState.source === "remote" && sharedQueueRecoveryDraft && localRecoveryMarker) {
+      sharedQueueRecoveryMarker = structuredClone(localRecoveryMarker);
+    }
     suppressQueueSyncLocalNotice = true;
     persistQueueState({ skipRemoteSave: true });
     suppressQueueSyncLocalNotice = false;
@@ -2155,6 +2516,9 @@ async function restoreInitialQueueState() {
     };
   }
 
+  if (startupState.source === "remote" && sharedQueueRecoveryDraft && localRecoveryMarker) {
+    sharedQueueRecoveryMarker = structuredClone(localRecoveryMarker);
+  }
   suppressQueueSyncLocalNotice = true;
   persistQueueState({ skipRemoteSave: true });
   suppressQueueSyncLocalNotice = false;
@@ -2227,6 +2591,9 @@ function createQueueItem({
 
   return {
     id: crypto.randomUUID(),
+    revision: null,
+    updatedAt: null,
+    updatedBy: null,
     text,
     status,
     settings: normalizeSettings({
@@ -3351,6 +3718,19 @@ function isOrderReadyForExport(order) {
   return true;
 }
 
+function updateSaveButtonState(activeOrder) {
+  if (!saveQueueButton) {
+    return;
+  }
+
+  if (saveQueueButton.getAttribute("aria-busy") === "true") {
+    return;
+  }
+
+  setEditorActionLabel(saveQueueButton, "Save");
+  saveQueueButton.disabled = !activeOrder;
+}
+
 function updateCaptureButtonState(activeOrder) {
   setEditorActionLabel(captureButton, "Complete");
   setEditorActionLabel(completeNextButton, "Complete & Next");
@@ -3546,6 +3926,8 @@ function renderOrderList() {
   renderImportedColor(activeOrder);
   activeOrderName.textContent = activeOrder ? buildQueueOrderNumber(activeOrder) : "No design selected";
   activeOrderMeta.textContent = buildActiveMeta(activeOrder);
+  renderSharedQueueBanner(activeOrder);
+  updateSaveButtonState(activeOrder);
   updateCaptureButtonState(activeOrder);
   downloadButton.disabled = !activeOrder || !isOrderReadyForExport(activeOrder);
   copyButton.disabled = !activeOrder || !isOrderReadyForExport(activeOrder) || !canCopySvgToClipboard();
@@ -5293,10 +5675,14 @@ captureButton.addEventListener("click", () => {
 completeNextButton.addEventListener("click", () => {
   captureActiveOrder({ advanceToNext: true });
 });
+saveQueueButton?.addEventListener("click", () => {
+  void saveCurrentQueueManually();
+});
 downloadButton.addEventListener("click", downloadSvg);
 copyButton.addEventListener("click", copyCurrentSvg);
 copyLayoutControlsButton.addEventListener("click", copyActiveLayoutControls);
 pasteLayoutControlsButton.addEventListener("click", pasteLayoutControlsIntoActiveOrder);
+sharedQueueBannerReloadButton?.addEventListener("click", reloadSharedQueueFromBanner);
 previewPanel.addEventListener("mousedown", startPreviewMiddlePan);
 previewPanel.addEventListener("auxclick", (event) => {
   if (event.button === 1) {

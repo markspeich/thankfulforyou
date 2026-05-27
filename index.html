@@ -167,6 +167,16 @@
               <p id="activeOrderMeta" class="editor-meta">Add or import a design to start editing.</p>
             </div>
             <div class="editor-actions">
+              <button id="saveQueueButton" class="editor-action-button" type="button">
+                <span class="editor-action-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" focusable="false">
+                    <path d="M6 4.5h9l3 3V19a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 6 19Z" />
+                    <path d="M9 4.5v5h6v-5" />
+                    <path d="M9 15.5h6" />
+                  </svg>
+                </span>
+                <span class="editor-action-label">Save</span>
+              </button>
               <button id="captureButton" class="editor-action-button" type="button">
                 <span class="editor-action-icon" aria-hidden="true">
                   <svg viewBox="0 0 24 24" focusable="false">
@@ -205,6 +215,16 @@
               </button>
             </div>
           </header>
+          <section id="sharedQueueBanner" class="shared-queue-banner status-card" aria-live="polite" hidden>
+            <div class="shared-queue-banner-copy">
+              <strong id="sharedQueueBannerLabel"></strong>
+              <span id="sharedQueueBannerDetail"></span>
+              <span id="sharedQueueBannerAudit" class="shared-queue-banner-audit"></span>
+            </div>
+            <button id="sharedQueueBannerReloadButton" class="shared-queue-banner-action" type="button" hidden>
+              Reload Shared Queue
+            </button>
+          </section>
 
           <div class="editor-body">
             <section class="editor-workspace">
