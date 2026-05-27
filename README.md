@@ -62,8 +62,8 @@ The browser session bootstrap reads:
 
 The app now populates `window.__APP_CONFIG__` from `/app-config.js`.
 
-- `npm start` serves `/app-config.js` dynamically from environment variables
-- `npm run build` writes `dist/app-config.js` from the same environment variables
+- `npm start` loads `.env.local` when present, then serves `/app-config.js` dynamically from environment variables
+- `npm run build` loads `.env.local` when present, then writes `dist/app-config.js` from the same environment variables
 - the browser key prefers `SUPABASE_PUBLISHABLE_KEY` and falls back to `SUPABASE_ANON_KEY`
 
 Operators sign in through the app with invite-only email-and-password Supabase Auth accounts. The app does not expose self-service sign-up for shared queue access.
@@ -74,6 +74,8 @@ The server-side shared queue routes read:
 
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
+
+Local shared-queue sign-in requires the dev server process to reach Supabase from Node. In restricted agent sandboxes, start `npm start` with network permission; otherwise token verification can fail even after the browser sign-in succeeds.
 
 The shared queue implementation expects these Supabase resources:
 

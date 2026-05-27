@@ -242,6 +242,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Server-side shared queue authorization should resolve the signed-in operator's workspace membership and populate request auth context from verified identity rather than trusting browser-supplied workspace ids directly.
 - Browser local storage should remain only as a cache or temporary recovery mechanism and must not be treated as the primary source of truth when a shared hosted queue is available.
 - On startup, the app should load the current shared queue from the hosted backend first and use browser-local queue cache only for resilience or clearly surfaced recovery flows.
+- While the app is initially loading shared queue data, the production workspace should show an immediate visual loading state, such as skeleton placeholders, so operators can tell the shared queue is still being fetched.
 - The browser must not silently prefer stale local queue data over newer shared hosted queue data.
 - Ordinary local text and layout edits must not publish to the shared queue until the operator explicitly clicks `Save` or `Save & Next`.
 - After a shared-queue revision conflict, the operator workflow should present only two paths: save again from the current editor state to overwrite the shared version, or reload the shared version and discard the preserved local draft.

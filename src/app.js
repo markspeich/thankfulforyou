@@ -125,6 +125,7 @@ const PRESET_SYNC_LINE_SETTING_KEYS = Object.freeze([
 
 const appShell = document.querySelector(".app-shell");
 const workspaceStage = document.querySelector("#workspaceStage");
+const initialQueueLoading = document.querySelector("#initialQueueLoading");
 const sharedQueueAuthGate = document.querySelector("#sharedQueueAuthGate");
 const sharedQueueAuthTitle = document.querySelector("#sharedQueueAuthTitle");
 const sharedQueueAuthMessage = document.querySelector("#sharedQueueAuthMessage");
@@ -4549,6 +4550,14 @@ function renderOrderList() {
   reloadPresetButton.disabled = !activeOrder;
 }
 
+function hideInitialQueueLoading() {
+  if (!initialQueueLoading) {
+    return;
+  }
+
+  initialQueueLoading.hidden = true;
+}
+
 function setActiveWorkspace(workspace) {
   activeWorkspace = workspace === "presets" ? "presets" : "orders";
   appShell.dataset.workspace = activeWorkspace;
@@ -6407,3 +6416,4 @@ if (activeOrderId) {
 renderPreviewGuideOnly();
 render();
 renderOrderList();
+hideInitialQueueLoading();

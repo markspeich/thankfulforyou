@@ -72,6 +72,58 @@
       <section id="workspaceStage" class="workspace-stage">
         <section id="ordersWorkspace" class="workspace-view is-active" aria-label="Order items workspace">
           <section class="production-workspace">
+            <section
+              id="initialQueueLoading"
+              class="initial-queue-loading"
+              role="status"
+              aria-live="polite"
+              aria-label="Loading shared queue"
+            >
+              <aside class="initial-loading-queue" aria-hidden="true">
+                <div class="initial-loading-header">
+                  <span class="skeleton-line skeleton-line-title"></span>
+                  <span class="skeleton-pill"></span>
+                </div>
+                <div class="initial-loading-stats">
+                  <span class="skeleton-box"></span>
+                  <span class="skeleton-box"></span>
+                </div>
+                <div class="initial-loading-search skeleton-line"></div>
+                <div class="order-skeleton-row">
+                  <span class="skeleton-line skeleton-line-medium"></span>
+                  <span class="skeleton-line"></span>
+                  <span class="skeleton-line skeleton-line-short"></span>
+                </div>
+                <div class="order-skeleton-row">
+                  <span class="skeleton-line skeleton-line-medium"></span>
+                  <span class="skeleton-line"></span>
+                  <span class="skeleton-line skeleton-line-short"></span>
+                </div>
+                <div class="order-skeleton-row">
+                  <span class="skeleton-line skeleton-line-medium"></span>
+                  <span class="skeleton-line"></span>
+                  <span class="skeleton-line skeleton-line-short"></span>
+                </div>
+                <div class="order-skeleton-row">
+                  <span class="skeleton-line skeleton-line-medium"></span>
+                  <span class="skeleton-line"></span>
+                  <span class="skeleton-line skeleton-line-short"></span>
+                </div>
+              </aside>
+              <section class="initial-loading-editor" aria-hidden="true">
+                <header class="initial-loading-editor-header">
+                  <span class="skeleton-line skeleton-line-title"></span>
+                  <span class="skeleton-pill"></span>
+                </header>
+                <div class="initial-loading-preview skeleton-panel"></div>
+                <div class="initial-loading-controls">
+                  <span class="skeleton-line skeleton-line-medium"></span>
+                  <span class="skeleton-line"></span>
+                  <span class="skeleton-line"></span>
+                </div>
+              </section>
+              <span class="visually-hidden">Loading shared queue</span>
+            </section>
         <aside class="orders-panel" aria-label="Design navigation">
           <div class="queue-header">
             <h1>Design Queue</h1>

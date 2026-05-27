@@ -107,6 +107,32 @@ describe("shared queue auth helper", () => {
     });
   });
 
+  it("returns 503 when the dev server cannot reach Supabase auth", async () => {
+    const fetchError = new Error("fetch failed");
+    fetchError.name = "AuthRetryableFetchError";
+    createSupabaseAdminClientMock.mockReturnValue({
+      auth: {
+        getUser: vi.fn().mockResolvedValue({
+          data: { user: null },
+          error: fetchError,
+        }),
+      },
+      from: vi.fn(),
+    });
+
+    const { resolveSharedQueueAuth } = await import("../../api/_lib/shared-queue-auth.js");
+
+    await expect(resolveSharedQueueAuth({
+      headers: {
+        authorization: "Bearer token-1",
+      },
+    })).rejects.toMatchObject({
+      statusCode: 503,
+      expose: true,
+      message: "Unable to reach Supabase auth from this dev server process.",
+    });
+  });
+
   it("returns 403 when the verified user has no shared workspace membership", async () => {
     createSupabaseAdminClientMock.mockReturnValue({
       auth: {

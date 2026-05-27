@@ -1,9 +1,11 @@
 import { cpSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { buildPublicAppConfigScript } from "./app_config.mjs";
+import { loadEnvFile } from "./env_file.mjs";
 
 const root = process.cwd();
 const dist = join(root, "dist");
+loadEnvFile({ cwd: root });
 
 rmSync(dist, { recursive: true, force: true });
 mkdirSync(dist, { recursive: true });
