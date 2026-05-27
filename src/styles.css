@@ -65,13 +65,79 @@ select {
   overflow: hidden;
 }
 
+.shared-auth-gate {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background:
+    radial-gradient(circle at top, rgba(68, 111, 139, 0.2), transparent 38%),
+    linear-gradient(180deg, rgba(22, 51, 65, 0.96) 0%, rgba(29, 58, 73, 0.98) 100%);
+}
+
+.shared-auth-gate[hidden] {
+  display: none;
+}
+
+.shared-auth-form[hidden] {
+  display: none;
+}
+
+.shared-auth-card {
+  width: min(460px, 100%);
+  padding: 28px;
+  background: rgba(252, 254, 255, 0.98);
+  border: 1px solid rgba(33, 73, 93, 0.16);
+  border-radius: 18px;
+  box-shadow: 0 24px 44px rgba(14, 33, 41, 0.24);
+}
+
+.shared-auth-eyebrow {
+  margin: 0 0 10px;
+  color: #2b6174;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.shared-auth-card h1 {
+  margin: 0;
+  font-size: 1.65rem;
+}
+
+.shared-auth-message {
+  margin: 10px 0 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.shared-auth-form {
+  display: grid;
+  gap: 14px;
+  margin-top: 22px;
+}
+
+.shared-auth-actions {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.shared-auth-error {
+  margin: 14px 0 0;
+  color: #a53a28;
+  font-weight: 600;
+}
+
 .app-shell[data-nav-collapsed="true"] {
   grid-template-columns: 84px minmax(0, 1fr);
 }
 
 .workspace-nav {
   display: grid;
-  grid-template-rows: auto auto auto 1fr;
+  grid-template-rows: auto auto auto 1fr auto;
   gap: 10px;
   padding: 14px 10px;
   background: linear-gradient(180deg, #163341 0%, #21495d 100%);
@@ -186,6 +252,35 @@ select {
   box-shadow: 0 4px 0 currentColor;
 }
 
+.workspace-nav-spacer {
+  min-height: 0;
+}
+
+.workspace-nav-item-logout {
+  margin-top: auto;
+}
+
+.workspace-nav-icon-logout::before {
+  left: 2px;
+  top: 4px;
+  width: 8px;
+  height: 8px;
+  border-top: 2px solid currentColor;
+  border-left: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  border-radius: 2px 0 0 2px;
+}
+
+.workspace-nav-icon-logout::after {
+  right: 0;
+  top: 7px;
+  width: 9px;
+  height: 2px;
+  background: currentColor;
+  box-shadow: 4px 0 0 -1px currentColor;
+  clip-path: polygon(0 0, 75% 0, 75% -50%, 100% 50%, 75% 150%, 75% 100%, 0 100%);
+}
+
 .workspace-nav-label {
   min-width: 0;
   color: inherit;
@@ -294,11 +389,13 @@ select {
   color: currentColor;
 }
 
-.queue-tools-menu {
+.queue-tools-menu,
+.editor-tools-menu {
   position: static;
 }
 
-.queue-tools-toggle {
+.queue-tools-toggle,
+.editor-tools-toggle {
   position: relative;
   width: 42px;
   height: 42px;
@@ -309,11 +406,13 @@ select {
   border-radius: 999px;
 }
 
-.queue-tools-toggle::-webkit-details-marker {
+.queue-tools-toggle::-webkit-details-marker,
+.editor-tools-toggle::-webkit-details-marker {
   display: none;
 }
 
-.queue-tools-toggle::before {
+.queue-tools-toggle::before,
+.editor-tools-toggle::before {
   content: "";
   position: absolute;
   left: 50%;
@@ -326,7 +425,8 @@ select {
   box-shadow: -8px 0 0 var(--muted), 8px 0 0 var(--muted);
 }
 
-.queue-tools-popover {
+.queue-tools-popover,
+.editor-tools-popover {
   position: absolute;
   top: calc(100% + 10px);
   right: 0;
@@ -341,7 +441,8 @@ select {
   box-shadow: 0 12px 30px rgba(28, 32, 36, 0.12);
 }
 
-.queue-tools-actions {
+.queue-tools-actions,
+.editor-tools-actions {
   display: grid;
   gap: 14px;
 }
@@ -818,7 +919,7 @@ select {
 
 .editor-panel {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
   height: 100%;
   min-height: 0;
   min-width: 0;
@@ -840,12 +941,41 @@ select {
   border-bottom: 1px solid var(--line);
 }
 
+.shared-queue-banner {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  margin: 12px 22px 0 24px;
+  border-radius: 14px;
+}
+
+.shared-queue-banner-copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.shared-queue-banner-audit[hidden] {
+  display: none;
+}
+
+.shared-queue-banner-action {
+  min-height: 38px;
+  padding: 0 14px;
+  border-radius: 10px;
+  white-space: nowrap;
+}
+
 .editor-actions {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
   align-items: center;
   gap: 8px;
+}
+
+.editor-tools-menu {
+  position: relative;
 }
 
 .editor-body {
@@ -2135,7 +2265,11 @@ button:disabled {
   .editor-actions {
     width: 100%;
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .shared-queue-banner {
+    grid-template-columns: 1fr;
   }
 
   .line-control-grid {

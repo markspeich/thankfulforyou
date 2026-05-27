@@ -187,10 +187,10 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - The selected-order editor should focus on editable design text and layout settings rather than a separate editable design-label field.
 - Allow each order to store its own customer text and layout settings, including letter bridge, line bridge, text height, backing border, and guide visibility.
 - Provide a way to save the current preview and settings for the active order before moving to the next order.
-- Clicking `Complete` should immediately save the active design text and layout settings, mark the queue item complete, and disable both completion buttons until the design changes again.
-- Clicking `Complete` should also start face analysis and cache the export-ready geometry tied to that completed state in the background without advancing to another design.
-- Clicking `Complete & Next` should perform the same save, complete, and background-analysis work as `Complete`, then advance to the next queue item that is not already complete or exported when one exists.
-- The selected-order `Complete` button state should depend only on whether the active design has unsaved text or layout changes, not on whether background analysis and export-geometry caching have finished.
+- Clicking `Save` should immediately save the active design text and layout settings, mark the queue item complete, and disable both primary save buttons until the design changes again.
+- Clicking `Save` should also start face analysis and cache the export-ready geometry tied to that completed state in the background without advancing to another design.
+- Clicking `Save & Next` should perform the same save, complete, and background-analysis work as `Save`, then advance immediately to the next queue item that is not already complete or exported when one exists while caching and shared-queue persistence continue in the background.
+- The selected-order `Save` button state should depend only on whether the active design has unsaved text or layout changes, not on whether background analysis and export-geometry caching have finished.
 - Show which orders are not started, in progress, complete, or exported so a batch of orders can be completed without losing track.
 - The design queue should show a compact per-design face-analysis indicator: a small spinner while background analysis is running, a checkmark when the completed face layer is one connected piece, or a warning sign with the compact piece count when the completed face layer has multiple disconnected pieces.
 - Allow saved orders to be reopened for adjustment without losing their previously saved settings.
@@ -229,10 +229,36 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Re-importing a later Etsy batch must preserve any queue items already present in the current design queue instead of overwriting them.
 - During import, any Etsy line item that already exists in the current design queue should be skipped so the operator can import only newly arrived orders into the same working batch.
 - Imported queue items and subsequent design edits should persist across a browser refresh in local browser storage during the current batch workflow.
-- The app should support saving the current queue batch to remote hosted storage so the current batch can be restored on another browser or after local storage is lost.
-- Remote hosted batch persistence should store the same queue snapshot shape used by local browser persistence so hydration behavior stays consistent between local and hosted restores.
-- On startup, local browser queue data should take precedence over the hosted saved batch when both are present, so unsynced local edits are not overwritten silently.
+- Queued designs must be automatically available across browsers and locations for authorized users without requiring a manual export or import handoff step.
+- Shared queue state should use a hosted backend as the source of truth instead of treating browser local storage as the primary saved record.
+- The hosted queue solution does not need to be Neon specifically; the production implementation should prefer a backend that can provide authentication, structured shared records, and a practical path to live multi-browser updates.
+- Queue ownership should belong to a shared workspace or operational batch context rather than to an individual user account.
+- Authenticated users should control access to shared queues and provide audit history, but user accounts should not own the queue data model.
+- The first shared-storage implementation should favor a Supabase-backed design with shared workspace queues, authenticated access, and room for future realtime updates.
+- Shared queue access should require authenticated operator sessions rather than anonymous browser access.
+- The first in-app shared-queue authentication flow should use Supabase Auth with invite-only operator accounts and email-plus-password sign-in.
+- The operator UI should not expose self-service sign-up for shared queue access.
+- Shared queue API requests should carry the browser's authenticated session token, and server routes should verify that token before loading or saving shared queue data.
+- Server-side shared queue authorization should resolve the signed-in operator's workspace membership and populate request auth context from verified identity rather than trusting browser-supplied workspace ids directly.
+- Browser local storage should remain only as a cache or temporary recovery mechanism and must not be treated as the primary source of truth when a shared hosted queue is available.
+- On startup, the app should load the current shared queue from the hosted backend first and use browser-local queue cache only for resilience or clearly surfaced recovery flows.
+- The browser must not silently prefer stale local queue data over newer shared hosted queue data.
+- Ordinary local text and layout edits must not publish to the shared queue until the operator explicitly clicks `Save` or `Save & Next`.
+- After a shared-queue revision conflict, the operator workflow should present only two paths: save again from the current editor state to overwrite the shared version, or reload the shared version and discard the preserved local draft.
+- If required shared queue configuration is missing, the app should show a clear blocked configuration error state instead of silently falling back to local-only queue persistence.
+- If no valid authenticated shared-queue session is present, the app should show an operator sign-in state instead of attempting anonymous shared queue access or local-only fallback.
+- When a shared queue session is active, the app should provide a visible operator `Logout` action so the current browser can end its Supabase session without clearing local storage manually.
+- If a previously valid authenticated shared-queue session expires or is revoked, shared autosave should pause and the app should require sign-in again before shared queue writes resume.
+- Queue persistence should move from one serialized browser snapshot toward first-class shared records for workspaces, queues, and designs so collaboration and audit behavior can evolve cleanly.
+- The first Supabase shared-queue backend pass may keep `workspaces`, `workspace_memberships`, and `design_queues` as first-class relational records while storing the canonical queue snapshot in `design_queues.queue_json` and `design_queues.orders_json` so the current app contract can ship without a second storage-model rewrite.
+- The app should support saving the current queue batch to shared hosted storage so the current batch can be restored on another browser or after local storage is lost.
 - Persisted queue-item data should include enough information to restore the queue, the selected design, imported Etsy metadata, current text, current per-line settings, backing border, weld toggle, and saved/exported status after refresh.
+- Persisted shared-queue data should also include queue identity, queue membership in a workspace, `updatedAt`, `updatedBy`, and a revision or version field for each design so stale writes can be detected.
+- Shared queue editing should support one person creating a queue and another person opening and continuing that same queue later.
+- The collaboration model should support multiple authorized users in the future, but the first version may use lightweight edit ownership, presence, or stale-write detection instead of full simultaneous freeform co-editing.
+- The UI should show enough shared-state context for operators to avoid accidental overwrites, including at minimum who last updated a design and when.
+- Remote pre-production testing should support a Vercel preview deployment paired with a non-production Supabase environment such as a Supabase preview branch or staging project.
+- The repository should keep Supabase schema changes in versioned migration files so preview branches and future production promotions can reproduce the shared queue backend reliably.
 - In the selected-order editor, show the imported Etsy color as a read-only label directly below the `Design Text` field whenever imported color metadata is available.
 - In the selected-order editor, show the imported Etsy quantity as a read-only label directly below the `Color` label whenever imported quantity metadata is available.
 - If the imported color name contains the word `White`, highlight that displayed color name in the editor.
@@ -271,7 +297,8 @@ Future-facing product ideas and optional later-phase workflow enhancements are t
 - A production-safe minimum bridge width for 1/8 inch acrylic still needs explicit shop confirmation. Until confirmed otherwise, use 0.5 mm as the working default bridge target for Candlepin letter and line connections.
 - If direct Ruida support is pursued, prefer USB as the first transport path for this shop because the machine is currently USB-connected and because the current production workflow does not need to depend on Ruida Ethernet/UDP behavior.
 - The initial hosted deployment target is Vercel.
-- The first production authentication step should use Vercel Deployment Protection so the hosted tool and its API routes stay private before any in-app user system is added.
+- Vercel Deployment Protection may remain enabled as an outer deployment guard, but it must not substitute for in-app operator authentication on shared queue routes.
+- The first shared-backend bootstrap may seed one primary workspace and one primary queue so the first invited operator membership has an immediately usable shared batch to open.
 - A production deployment must include the real production font assets used for preview, analysis, and export. A deployment flow that omits those font files is not production-ready.
 - The production font assets are allowed to be included in the deployed app and served from the deployed `public/fonts` path.
 - Production deployment must preserve the geometry analysis and SVG export pipeline in a way that remains deterministic between local use and hosted use.
@@ -287,10 +314,11 @@ Future-facing product ideas and optional later-phase workflow enhancements are t
 - The Python runtime compatibility range should be declared in both `.python-version` and `pyproject.toml` because Vercel's current Python builder uses `uv` during dependency installation.
 - The Vercel Python function dependency set should stay small enough for serverless bundle limits. The current geometry pipeline depends on `fonttools` and `Pillow`; connectedness and hole filling should avoid heavyweight numeric packages unless the geometry service moves off Vercel Functions.
 - Vercel Python functions cannot assume CDN/static font assets are present on the function filesystem. If bundled font lookup fails, the geometry pipeline should fetch the same deployed `/public/fonts/...` asset from the request host and cache it in temporary function storage so hosted analysis and SVG export still use the production fonts.
+- When Vercel Deployment Protection is enabled, hosted analysis and export must preserve the request's protection context for any internal font asset fetches so the geometry pipeline does not fail with protected-preview 401 responses.
 - Deployment configuration should explicitly define the production install, build, and runtime behavior instead of relying on local-only defaults.
 - Production should have a smoke-test flow that verifies font loading, queue persistence, save-triggered analysis, and SVG export in the hosted environment before operators rely on it for Etsy batches.
-- If the hosted app is only for internal production use, deployment protection or authentication should be enabled before processing real Etsy order data.
-- For the current internal production rollout, enable Vercel Deployment Protection on the linked Vercel project before processing real Etsy order data.
+- Before processing real Etsy order data in production, the hosted app should require in-app authenticated operator access for shared queue features.
+- For the current internal production rollout, enable in-app operator authentication before processing real Etsy order data, and keep Vercel Deployment Protection enabled if it remains operationally helpful.
 - Automated checks against a protected Vercel preview should use Vercel Protection Bypass for Automation so smoke tests can keep Deployment Protection enabled while still exercising the hosted UI and API routes.
 - Local development and browser automation should share one deterministic per-worktree port-resolution helper so multiple git worktrees can run in parallel without port collisions or hardcoded test URLs drifting from the local server.
 - In the current Windows Codex worktree environment, local server launch workflow should prefer a foreground or otherwise persistent terminal session over a detached hidden process, because detached launches may exit early and break browser connectivity.
@@ -343,7 +371,8 @@ The website should be a practical production tool rather than a marketing site. 
 - Each per-line control group should clearly map to a specific entered text line and should appear or disappear as the number of entered lines changes.
 - The first text line should not show a `Line Bridge` control because there is no line above it to connect to.
 - The left-side order queue should not show browser-storage sync notifications such as `Saved in this browser`, `Restored from browser`, or `No saved batch`; only meaningful remote Neon sync statuses should appear there.
-- The selected-order header should hold the primary order actions in this order: `Save`, `Complete`, `Complete & Next`, `Copy This Design`, and `Export This Design`.
+- The selected-order header should hold the primary order actions in this order: `Save`, `Save & Next`, and `Cancel`.
+- The selected-order header should place `Copy This Design` and `Export This Design` behind a compact ellipsis tools menu instead of keeping them as always-visible primary actions.
 - The selected-order header should not hold the layout-copy utility actions; those actions should live in the right controls column above the `Presets` card so they read as layout tools rather than primary order actions.
 - The layout-copy utility actions should be labeled `Copy Layout` and `Paste Layout`.
 - `Copy Layout` should capture only layout-related settings from the currently selected design.
@@ -377,7 +406,7 @@ For batch Etsy order sessions, the preferred workflow is:
 1. Click Add Order to create a new blank order row in the order queue.
 2. Enter or paste the customer text in the selected-order editor. The order text may contain multiple lines.
 3. Adjust the text layout using the existing preview and sliders.
-4. Complete the layout for that order, saving both text and slider settings while analysis continues in the background.
+4. Save the layout for that order, saving both text and slider settings while analysis continues in the background.
 5. Automatically advance to the next unsaved order.
 6. Review the order list before export.
 7. Export the active order SVG from the editor.
@@ -385,6 +414,8 @@ For batch Etsy order sessions, the preferred workflow is:
 9. Delete a single queue item when it should be excluded from the batch.
 10. Clear the full queue and its saved local batch state when starting a new batch.
 
-- Clicking `Complete` should immediately mark the current design as finished for editing, even if connectedness analysis is still running in the background.
-- After clicking `Complete`, the `Complete` button should stay disabled for that design until the operator changes the text or layout settings again.
-- The `Complete & Next` button should be disabled whenever there are no other queued designs that are still incomplete.
+- Clicking `Save` should immediately mark the current design as finished for editing, even if connectedness analysis is still running in the background.
+- After clicking `Save`, both `Save` and `Save & Next` should stay disabled for that design until the operator changes the text or layout settings again.
+- The selected-order `Cancel` button should stay disabled until the active design has unsaved changes relative to its last saved shared design state.
+- Clicking `Cancel` should restore the active design text and layout settings to the last saved shared design state without publishing a new shared queue revision.
+- The `Save & Next` button should be disabled whenever there are no other queued designs that are still incomplete.

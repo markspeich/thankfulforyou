@@ -9,6 +9,31 @@
   </head>
   <body>
     <main class="app-shell" data-workspace="orders" data-nav-collapsed="false">
+      <section id="sharedQueueAuthGate" class="shared-auth-gate" hidden>
+        <div class="shared-auth-card">
+          <p class="shared-auth-eyebrow">Shared Queue Access</p>
+          <h1 id="sharedQueueAuthTitle">Sign in to shared queue</h1>
+          <p id="sharedQueueAuthMessage" class="shared-auth-message">
+            Use your invited operator account to continue.
+          </p>
+          <form id="sharedQueueSignInForm" class="shared-auth-form">
+            <label class="field compact-field">
+              <span>Email</span>
+              <input id="sharedQueueEmail" type="email" autocomplete="username" required>
+            </label>
+            <label class="field compact-field">
+              <span>Password</span>
+              <input id="sharedQueuePassword" type="password" autocomplete="current-password" required>
+            </label>
+            <div class="shared-auth-actions">
+              <button id="sharedQueueSignInButton" class="editor-action-button" type="submit">
+                <span class="editor-action-label">Sign In</span>
+              </button>
+            </div>
+          </form>
+          <p id="sharedQueueAuthError" class="shared-auth-error" role="alert" hidden></p>
+        </div>
+      </section>
       <aside class="workspace-nav" aria-label="Workspace navigation">
         <button id="navCollapseButton" class="workspace-nav-toggle" type="button" aria-label="Collapse navigation">
           <span class="workspace-nav-toggle-icon" aria-hidden="true"></span>
@@ -31,9 +56,20 @@
           <span class="workspace-nav-icon workspace-nav-icon-presets" aria-hidden="true"></span>
           <span class="workspace-nav-label">Presets</span>
         </button>
+        <div class="workspace-nav-spacer" aria-hidden="true"></div>
+        <button
+          id="sharedQueueLogoutButton"
+          class="workspace-nav-item workspace-nav-item-logout"
+          type="button"
+          aria-label="Log out"
+          hidden
+        >
+          <span class="workspace-nav-icon workspace-nav-icon-logout" aria-hidden="true"></span>
+          <span class="workspace-nav-label">Logout</span>
+        </button>
       </aside>
 
-      <section class="workspace-stage">
+      <section id="workspaceStage" class="workspace-stage">
         <section id="ordersWorkspace" class="workspace-view is-active" aria-label="Order items workspace">
           <section class="production-workspace">
         <aside class="orders-panel" aria-label="Design navigation">
@@ -173,7 +209,7 @@
                     <path d="M6 12.5 10 16.5 18 8.5" />
                   </svg>
                 </span>
-                <span class="editor-action-label">Complete</span>
+                <span class="editor-action-label">Save</span>
               </button>
               <button id="completeNextButton" class="editor-action-button" type="button">
                 <span class="editor-action-icon" aria-hidden="true">
@@ -183,28 +219,54 @@
                     <path d="M18 8.5 11 15.5" />
                   </svg>
                 </span>
-                <span class="editor-action-label">Complete &amp; Next</span>
+                <span class="editor-action-label">Save &amp; Next</span>
               </button>
-              <button id="copyButton" class="editor-action-button" type="button">
+              <button id="cancelDesignButton" class="editor-action-button" type="button">
                 <span class="editor-action-icon" aria-hidden="true">
                   <svg viewBox="0 0 24 24" focusable="false">
-                    <rect x="9" y="9" width="10" height="10" rx="2" />
-                    <path d="M7 15H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v1" />
+                    <path d="M7 7 17 17" />
+                    <path d="M17 7 7 17" />
                   </svg>
                 </span>
-                <span class="editor-action-label">Copy This Design</span>
+                <span class="editor-action-label">Cancel</span>
               </button>
-              <button id="downloadButton" class="editor-action-button" type="button">
-                <span class="editor-action-icon" aria-hidden="true">
-                  <svg viewBox="0 0 24 24" focusable="false">
-                    <path d="M12 4v10M8.5 10.5 12 14l3.5-3.5" />
-                    <path d="M5 16v1a3 3 0 0 0 3 3h8a3 3 0 0 0 3-3v-1" />
-                  </svg>
-                </span>
-                <span class="editor-action-label">Export This Design</span>
-              </button>
+              <details class="editor-tools-menu">
+                <summary class="editor-tools-toggle" aria-label="Design tools"></summary>
+                <div class="editor-tools-popover">
+                  <div class="editor-tools-actions" role="menu" aria-label="Design actions">
+                    <button id="copyButton" class="queue-tool-button" type="button">
+                      <span class="queue-tool-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" focusable="false">
+                          <rect x="9" y="9" width="10" height="10" rx="2" />
+                          <path d="M7 15H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v1" />
+                        </svg>
+                      </span>
+                      <span class="queue-tool-label">Copy This Design</span>
+                    </button>
+                    <button id="downloadButton" class="queue-tool-button" type="button">
+                      <span class="queue-tool-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" focusable="false">
+                          <path d="M12 4v10M8.5 10.5 12 14l3.5-3.5" />
+                          <path d="M5 16v1a3 3 0 0 0 3 3h8a3 3 0 0 0 3-3v-1" />
+                        </svg>
+                      </span>
+                      <span class="queue-tool-label">Export This Design</span>
+                    </button>
+                  </div>
+                </div>
+              </details>
             </div>
           </header>
+          <section id="sharedQueueBanner" class="shared-queue-banner status-card" aria-live="polite" hidden>
+            <div class="shared-queue-banner-copy">
+              <strong id="sharedQueueBannerLabel"></strong>
+              <span id="sharedQueueBannerDetail"></span>
+              <span id="sharedQueueBannerAudit" class="shared-queue-banner-audit"></span>
+            </div>
+            <button id="sharedQueueBannerReloadButton" class="shared-queue-banner-action" type="button" hidden>
+              Reload Shared Queue
+            </button>
+          </section>
 
           <div class="editor-body">
             <section class="editor-workspace">
@@ -569,6 +631,8 @@
       </div>
     </dialog>
 
+    <script src="/app-config.js"></script>
+    <script src="/node_modules/@supabase/supabase-js/dist/umd/supabase.js"></script>
     <script src="src/app.js" type="module"></script>
   </body>
 </html>

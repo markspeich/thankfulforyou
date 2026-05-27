@@ -306,7 +306,19 @@ def cache_remote_font(font_ref):
         return cache_path
 
     font_url = urllib.parse.urljoin(f"{asset_base_url.rstrip('/')}/", urllib.parse.quote(font_ref))
-    with urllib.request.urlopen(font_url, timeout=10) as response:
+    headers = {}
+    asset_cookie = os.environ.get("THANKFULFORYOU_ASSET_REQUEST_COOKIE", "").strip()
+    protection_bypass = (
+        os.environ.get("THANKFULFORYOU_ASSET_PROTECTION_BYPASS", "").strip()
+        or os.environ.get("VERCEL_AUTOMATION_BYPASS_SECRET", "").strip()
+    )
+    if asset_cookie:
+        headers["Cookie"] = asset_cookie
+    if protection_bypass:
+        headers["x-vercel-protection-bypass"] = protection_bypass
+
+    request = urllib.request.Request(font_url, headers=headers)
+    with urllib.request.urlopen(request, timeout=10) as response:
         font_bytes = response.read(REMOTE_FONT_MAX_BYTES + 1)
 
     if len(font_bytes) > REMOTE_FONT_MAX_BYTES:
