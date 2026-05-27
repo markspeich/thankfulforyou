@@ -184,6 +184,25 @@ test("returns to the sign-in state when a shared queue save gets a 401", async (
       }),
     });
   });
+  await page.route("**/api/layout-analyze", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify({
+        isConnected: true,
+        connectedComponentCount: 1,
+        facePath: "M0 0 L10 0 L10 10 L0 10 Z",
+        exportFacePath: "M0 0 L10 0 L10 10 L0 10 Z",
+        backingPath: "M-1 -1 L11 -1 L11 11 L-1 11 Z",
+        faceBoundsMm: {
+          x: 0,
+          y: 0,
+          width: 10,
+          height: 10,
+        },
+      }),
+    });
+  });
 
   await page.goto("/");
   await expect(page.locator("#textInput")).toHaveValue("Remote Shared");

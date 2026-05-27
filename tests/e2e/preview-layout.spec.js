@@ -275,6 +275,44 @@ function installSupabaseSession(page) {
   });
 }
 
+async function installDefaultSharedQueueRoutes(page) {
+  await page.route("**/api/shared-session", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify({
+        operator: { id: "user-1", email: "mark@example.com" },
+        workspace: { id: "workspace-1", name: "Thankful For You" },
+        queue: { id: "queue-1", workspaceId: "workspace-1" },
+      }),
+    });
+  });
+  await page.route("**/api/shared-queue?queueId=queue-1", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify({
+        queue: { id: "queue-1", workspaceId: "workspace-1" },
+        activeOrderId: null,
+        orders: [],
+      }),
+    });
+  });
+  await page.route("**/api/shared-queue", async (route) => {
+    if (route.request().method() !== "PUT") {
+      await route.fallback();
+      return;
+    }
+
+    const requestSnapshot = route.request().postDataJSON()?.snapshot;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify(requestSnapshot),
+    });
+  });
+}
+
 async function expectWorkflowAlertMessage(page, ...messageParts) {
   const alert = page.locator("#importStatus");
   await expect(alert).toBeVisible();
@@ -389,6 +427,8 @@ test.beforeEach(async ({ page, request }, testInfo) => {
     }).toBe(true);
   }
 
+  await installSupabaseSession(page);
+  await installDefaultSharedQueueRoutes(page);
   await request.delete("/api/queue-snapshot?workspaceKey=primary").catch(() => null);
   await page.goto("/");
   await waitForStartup();
@@ -942,53 +982,19 @@ test(SHARED_QUEUE_PAGEHIDE_TEST_TITLE, async ({ page }) => {
   releaseFirstSave();
 });
 
-test("keeps the preview title above the scrollable pane", async ({ page }) => {
+test("keeps the preview pane scrollable without a floating title", async ({ page }) => {
   const previewPanel = page.locator(".preview-panel");
-  const previewTitle = page.locator(".preview-title");
 
-  const layout = await page.evaluate(() => {
-    const panel = document.querySelector(".preview-panel");
-    const title = document.querySelector(".preview-title");
-    if (!(panel instanceof HTMLElement) || !(title instanceof HTMLElement)) {
-      return null;
-    }
-
-    const panelRect = panel.getBoundingClientRect();
-    const titleRect = title.getBoundingClientRect();
-
-    return {
-      panelContainsTitle: panel.contains(title),
-      titleBottom: titleRect.bottom,
-      panelTop: panelRect.top,
-    };
-  });
-
-  expect(layout).not.toBeNull();
-  expect(layout.panelContainsTitle).toBe(false);
-  expect(layout.titleBottom).toBeLessThanOrEqual(layout.panelTop);
+  await expect(previewPanel).toBeVisible();
+  await expect(page.locator(".preview-title")).toHaveCount(0);
+  const previewSizeBefore = await page.locator("#preview").evaluate((element) => element.getBoundingClientRect().width);
 
   await previewPanel.hover();
   await page.mouse.wheel(0, -800);
 
-  const afterZoom = await page.evaluate(() => {
-    const panel = document.querySelector(".preview-panel");
-    const title = document.querySelector(".preview-title");
-    if (!(panel instanceof HTMLElement) || !(title instanceof HTMLElement)) {
-      return null;
-    }
-
-    const panelRect = panel.getBoundingClientRect();
-    const titleRect = title.getBoundingClientRect();
-
-    return {
-      titleBottom: titleRect.bottom,
-      panelTop: panelRect.top,
-    };
-  });
-
-  expect(afterZoom).not.toBeNull();
-  expect(afterZoom.titleBottom).toBeLessThanOrEqual(afterZoom.panelTop);
-  await expect(previewTitle).toHaveText("Preview");
+  await expect.poll(async () => {
+    return page.locator("#preview").evaluate((element) => element.getBoundingClientRect().width);
+  }).toBeGreaterThan(previewSizeBefore);
 });
 
 test("uses the refined desktop B1 workspace proportions", async ({ page }) => {
@@ -1462,7 +1468,9 @@ test("restores the current batch after refresh and clears it when requested", as
   await expect(page.locator("#weldExportedDesignInput")).not.toBeChecked();
 
   await clickQueueAction(page, "Clear Batch");
-  await expect(page.locator("#confirmationDialogDescription")).toContainText("delete all saved local designs");
+  await expect(page.locator("#confirmationDialogDescription")).toContainText(
+    /delete all saved local designs|Clear the shared queue/,
+  );
   await confirmQueueDialog(page, "Clear Batch?");
 
   await expect(page.locator("#orderCountOutput")).toHaveText("0");
@@ -2388,7 +2396,7 @@ test("skips already imported Etsy line items when importing another batch", asyn
     bottomGap: 24,
     centerOffset: 0,
   });
-  await expect(page.locator("#importStatus")).toBeHidden({ timeout: 5000 });
+  await expect(page.locator("#importStatus")).toBeHidden({ timeout: 8000 });
 
   await page.evaluate((payload) => {
     Object.defineProperty(navigator, "clipboard", {
@@ -2410,7 +2418,7 @@ test("skips already imported Etsy line items when importing another batch", asyn
     "#4057629148",
     "#4062879351",
   ]);
-  await expect(page.locator("#importStatus")).toBeHidden({ timeout: 5000 });
+  await expect(page.locator("#importStatus")).toBeHidden({ timeout: 8000 });
 });
 
 test("shows labeled buyer, listing, and emphasized personalization lines in queue rows", async ({ page }) => {

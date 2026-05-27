@@ -225,7 +225,87 @@ function buildMockAnalysisResponse(overrides = {}) {
   };
 }
 
+function installSupabaseSession(page) {
+  return page.addInitScript(({ providedSession }) => {
+    window.__APP_CONFIG__ = {
+      supabaseUrl: "https://example.supabase.co",
+      supabaseAnonKey: "anon-key",
+    };
+    window.__TFU_TEST_SHARED_QUEUE_ACCESS_TOKEN__ = providedSession.access_token;
+    window.__TFU_TEST_SUPABASE_CLIENT__ = {
+      auth: {
+        getSession: async () => ({
+          data: { session: providedSession },
+          error: null,
+        }),
+        signInWithPassword: async () => ({
+          data: {
+            session: providedSession,
+          },
+          error: null,
+        }),
+        signOut: async () => ({ error: null }),
+        onAuthStateChange: () => ({
+          data: {
+            subscription: {
+              unsubscribe() {},
+            },
+          },
+        }),
+      },
+    };
+  }, {
+    providedSession: {
+      access_token: "token-1",
+      user: {
+        id: "user-1",
+        email: "mark@example.com",
+      },
+    },
+  });
+}
+
+async function installDefaultSharedQueueRoutes(page) {
+  await page.route("**/api/shared-session", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify({
+        operator: { id: "user-1", email: "mark@example.com" },
+        workspace: { id: "workspace-1", name: "Thankful For You" },
+        queue: { id: "queue-1", workspaceId: "workspace-1" },
+      }),
+    });
+  });
+  await page.route("**/api/shared-queue?queueId=queue-1", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify({
+        queue: { id: "queue-1", workspaceId: "workspace-1" },
+        activeOrderId: null,
+        orders: [],
+      }),
+    });
+  });
+  await page.route("**/api/shared-queue", async (route) => {
+    if (route.request().method() !== "PUT") {
+      await route.fallback();
+      return;
+    }
+
+    const requestSnapshot = route.request().postDataJSON()?.snapshot;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify(requestSnapshot),
+    });
+  });
+}
+
 test.beforeEach(async ({ page, request }) => {
+  await installSupabaseSession(page);
+  await installDefaultSharedQueueRoutes(page);
   await request.delete("/api/queue-snapshot?workspaceKey=primary").catch(() => null);
   await page.addInitScript(() => {
     window.localStorage.removeItem("thankfulforyou.designQueue");
