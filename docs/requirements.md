@@ -232,9 +232,17 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Queue ownership should belong to a shared workspace or operational batch context rather than to an individual user account.
 - Authenticated users should control access to shared queues and provide audit history, but user accounts should not own the queue data model.
 - The first shared-storage implementation should favor a Supabase-backed design with shared workspace queues, authenticated access, and room for future realtime updates.
+- Shared queue access should require authenticated operator sessions rather than anonymous browser access.
+- The first in-app shared-queue authentication flow should use Supabase Auth with invite-only operator accounts and email-plus-password sign-in.
+- The operator UI should not expose self-service sign-up for shared queue access.
+- Shared queue API requests should carry the browser's authenticated session token, and server routes should verify that token before loading or saving shared queue data.
+- Server-side shared queue authorization should resolve the signed-in operator's workspace membership and populate request auth context from verified identity rather than trusting browser-supplied workspace ids directly.
 - Browser local storage should remain only as a cache or temporary recovery mechanism and must not be treated as the primary source of truth when a shared hosted queue is available.
 - On startup, the app should load the current shared queue from the hosted backend first and use browser-local queue cache only for resilience or clearly surfaced recovery flows.
 - The browser must not silently prefer stale local queue data over newer shared hosted queue data.
+- If required shared queue configuration is missing, the app should show a clear blocked configuration error state instead of silently falling back to local-only queue persistence.
+- If no valid authenticated shared-queue session is present, the app should show an operator sign-in state instead of attempting anonymous shared queue access or local-only fallback.
+- If a previously valid authenticated shared-queue session expires or is revoked, shared autosave should pause and the app should require sign-in again before shared queue writes resume.
 - Queue persistence should move from one serialized browser snapshot toward first-class shared records for workspaces, queues, and designs so collaboration and audit behavior can evolve cleanly.
 - The app should support saving the current queue batch to shared hosted storage so the current batch can be restored on another browser or after local storage is lost.
 - Persisted queue-item data should include enough information to restore the queue, the selected design, imported Etsy metadata, current text, current per-line settings, backing border, weld toggle, and saved/exported status after refresh.
@@ -280,7 +288,7 @@ Future-facing product ideas and optional later-phase workflow enhancements are t
 - A production-safe minimum bridge width for 1/8 inch acrylic still needs explicit shop confirmation. Until confirmed otherwise, use 0.5 mm as the working default bridge target for Candlepin letter and line connections.
 - If direct Ruida support is pursued, prefer USB as the first transport path for this shop because the machine is currently USB-connected and because the current production workflow does not need to depend on Ruida Ethernet/UDP behavior.
 - The initial hosted deployment target is Vercel.
-- The first production authentication step should use Vercel Deployment Protection so the hosted tool and its API routes stay private before any in-app user system is added.
+- Vercel Deployment Protection may remain enabled as an outer deployment guard, but it must not substitute for in-app operator authentication on shared queue routes.
 - A production deployment must include the real production font assets used for preview, analysis, and export. A deployment flow that omits those font files is not production-ready.
 - The production font assets are allowed to be included in the deployed app and served from the deployed `public/fonts` path.
 - Production deployment must preserve the geometry analysis and SVG export pipeline in a way that remains deterministic between local use and hosted use.
@@ -298,8 +306,8 @@ Future-facing product ideas and optional later-phase workflow enhancements are t
 - Vercel Python functions cannot assume CDN/static font assets are present on the function filesystem. If bundled font lookup fails, the geometry pipeline should fetch the same deployed `/public/fonts/...` asset from the request host and cache it in temporary function storage so hosted analysis and SVG export still use the production fonts.
 - Deployment configuration should explicitly define the production install, build, and runtime behavior instead of relying on local-only defaults.
 - Production should have a smoke-test flow that verifies font loading, queue persistence, save-triggered analysis, and SVG export in the hosted environment before operators rely on it for Etsy batches.
-- If the hosted app is only for internal production use, deployment protection or authentication should be enabled before processing real Etsy order data.
-- For the current internal production rollout, enable Vercel Deployment Protection on the linked Vercel project before processing real Etsy order data.
+- Before processing real Etsy order data in production, the hosted app should require in-app authenticated operator access for shared queue features.
+- For the current internal production rollout, enable in-app operator authentication before processing real Etsy order data, and keep Vercel Deployment Protection enabled if it remains operationally helpful.
 - Automated checks against a protected Vercel preview should use Vercel Protection Bypass for Automation so smoke tests can keep Deployment Protection enabled while still exercising the hosted UI and API routes.
 - Local development and browser automation should share one deterministic per-worktree port-resolution helper so multiple git worktrees can run in parallel without port collisions or hardcoded test URLs drifting from the local server.
 - In the current Windows Codex worktree environment, local server launch workflow should prefer a foreground or otherwise persistent terminal session over a detached hidden process, because detached launches may exit early and break browser connectivity.
