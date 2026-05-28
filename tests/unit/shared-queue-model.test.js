@@ -4,11 +4,10 @@ import {
   chooseSharedQueueStartupState,
   createSharedQueueSnapshot,
   getNextRevision,
-  hasRecoverableLocalDraft,
 } from "../../src/shared-queue-model.js";
 
 describe("shared queue model", () => {
-  it("prefers remote snapshot when it exists and preserves local cache as recoveryDraft", () => {
+  it("prefers remote snapshot when it exists", () => {
     const remoteSnapshot = {
       queue: {
         id: "queue-1",
@@ -34,7 +33,6 @@ describe("shared queue model", () => {
     })).toEqual({
       source: "remote",
       snapshot: remoteSnapshot,
-      recoveryDraft: localCache,
     });
   });
 
@@ -55,20 +53,12 @@ describe("shared queue model", () => {
     })).toEqual({
       source: "local-cache",
       snapshot: localCache,
-      recoveryDraft: null,
     });
   });
 
   it("returns 1 for null and increments an existing revision", () => {
     expect(getNextRevision(null)).toBe(1);
     expect(getNextRevision({ revision: 4 })).toBe(5);
-  });
-
-  it("returns true when a local order revision is newer than the remote order revision", () => {
-    expect(hasRecoverableLocalDraft({
-      remoteOrder: { id: "order-1", revision: 2 },
-      localOrder: { id: "order-1", revision: 3 },
-    })).toBe(true);
   });
 
   it("returns queue metadata, activeOrderId, and orders unchanged", () => {

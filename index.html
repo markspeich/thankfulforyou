@@ -228,8 +228,6 @@
               </details>
             </div>
           </div>
-          <p id="importStatus" class="note queue-alert" role="status" aria-live="polite" hidden></p>
-
           <div class="order-stats" aria-label="Design status summary">
             <div>
               <span>Complete</span>
@@ -313,20 +311,10 @@
               </details>
             </div>
           </header>
-          <section id="sharedQueueBanner" class="shared-queue-banner status-card" aria-live="polite" hidden>
-            <div class="shared-queue-banner-copy">
-              <strong id="sharedQueueBannerLabel"></strong>
-              <span id="sharedQueueBannerDetail"></span>
-              <span id="sharedQueueBannerAudit" class="shared-queue-banner-audit"></span>
-            </div>
-            <button id="sharedQueueBannerReloadButton" class="shared-queue-banner-action" type="button" hidden>
-              Reload Shared Queue
-            </button>
-          </section>
-
           <div class="editor-body">
             <section class="editor-workspace">
               <section class="editor-main-column" aria-label="Design preview workspace">
+                <div id="importStatus" class="note queue-alert" role="status" aria-live="polite" hidden><span id="workflowAlertText"></span><button id="workflowAlertActionButton" class="workflow-alert-action" type="button" hidden></button></div>
                 <section class="editor-top-card" aria-label="Order-level information">
                   <div class="editor-top-grid">
                     <section class="top-card-section top-card-reference" aria-label="Listing details">

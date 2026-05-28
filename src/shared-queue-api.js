@@ -21,6 +21,19 @@ function buildAuthHeaders(accessToken, headers) {
   };
 }
 
+function normalizeConflictDetails(details) {
+  if (typeof details !== "string") {
+    return details || null;
+  }
+
+  try {
+    const parsed = JSON.parse(details);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function fetchSharedSession(accessToken = null) {
   const response = await fetch("/api/shared-session", {
     headers: buildAuthHeaders(accessToken, {
@@ -65,7 +78,10 @@ export async function saveSharedQueueSnapshot(snapshot, options = {}) {
   const payload = await readJsonOrFallback(response, {});
 
   if (response.status === 409) {
-    throw new SharedQueueConflictError(payload.error || "Revision conflict", payload.details || null);
+    throw new SharedQueueConflictError(
+      payload.error || "Revision conflict",
+      normalizeConflictDetails(payload.details),
+    );
   }
 
   if (!response.ok) {

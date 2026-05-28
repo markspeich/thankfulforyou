@@ -161,6 +161,11 @@ describe("shared queue api route", () => {
       userId: "user-1",
       workspaceId: "workspace-1",
     });
+    loadSharedQueueMock.mockResolvedValue({
+      queue: { id: "queue-1", workspaceId: "workspace-1" },
+      activeOrderId: "order-2",
+      orders: [{ id: "order-2", revision: 4 }],
+    });
     saveSharedQueueMock.mockResolvedValue({
       queue_json: { id: "queue-1", workspaceId: "workspace-1", updatedBy: "user-1" },
       active_order_id: "order-2",
@@ -193,10 +198,61 @@ describe("shared queue api route", () => {
     });
   });
 
+  it("returns 409 before saving when the current shared queue has a newer row revision", async () => {
+    resolveSharedQueueAuthMock.mockResolvedValue({
+      userId: "user-1",
+      workspaceId: "workspace-1",
+    });
+    loadSharedQueueMock.mockResolvedValue({
+      queue: { id: "queue-1", workspaceId: "workspace-1" },
+      activeOrderId: "order-1",
+      orders: [
+        {
+          id: "order-1",
+          revision: 4,
+          updatedAt: "2026-05-28T04:30:00.000Z",
+          updatedBy: { email: "first-browser@example.com" },
+        },
+      ],
+    });
+
+    const { default: handler } = await import("../../api/shared-queue.js");
+    const response = createResponseRecorder();
+
+    await handler({
+      method: "PUT",
+      headers: { authorization: "Bearer token-1" },
+      body: {
+        snapshot: {
+          queue: { id: "queue-1", workspaceId: "workspace-1" },
+          activeOrderId: "order-1",
+          orders: [{ id: "order-1", revision: 3 }],
+        },
+      },
+    }, response);
+
+    expect(saveSharedQueueMock).not.toHaveBeenCalled();
+    expect(response.statusCode).toBe(409);
+    expect(response.body).toEqual({
+      error: "Revision conflict",
+      details: {
+        orderId: "order-1",
+        revision: 4,
+        updatedAt: "2026-05-28T04:30:00.000Z",
+        updatedBy: { email: "first-browser@example.com" },
+      },
+    });
+  });
+
   it("returns 409 when a stale revision save is rejected", async () => {
     resolveSharedQueueAuthMock.mockResolvedValue({
       userId: "user-1",
       workspaceId: "workspace-1",
+    });
+    loadSharedQueueMock.mockResolvedValue({
+      queue: { id: "queue-1", workspaceId: "workspace-1" },
+      activeOrderId: "order-1",
+      orders: [{ id: "order-1", revision: 2 }],
     });
     saveSharedQueueMock.mockRejectedValue(Object.assign(new Error("Revision conflict"), {
       code: "REVISION_CONFLICT",

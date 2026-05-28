@@ -41,6 +41,45 @@ function normalizeSnapshot(value) {
   };
 }
 
+function normalizeRevision(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function findRevisionConflict(incomingSnapshot, currentSnapshot) {
+  if (!incomingSnapshot || !currentSnapshot || !Array.isArray(incomingSnapshot.orders) || !Array.isArray(currentSnapshot.orders)) {
+    return null;
+  }
+
+  const currentOrdersById = new Map(
+    currentSnapshot.orders
+      .filter((order) => typeof order?.id === "string" && order.id.trim())
+      .map((order) => [order.id.trim(), order]),
+  );
+
+  for (const incomingOrder of incomingSnapshot.orders) {
+    const orderId = typeof incomingOrder?.id === "string" ? incomingOrder.id.trim() : "";
+    if (!orderId || !currentOrdersById.has(orderId)) {
+      continue;
+    }
+
+    const currentOrder = currentOrdersById.get(orderId);
+    const expectedRevision = normalizeRevision(incomingOrder.revision);
+    const currentRevision = normalizeRevision(currentOrder.revision);
+
+    if (expectedRevision !== currentRevision) {
+      return {
+        orderId,
+        revision: currentRevision,
+        updatedAt: currentOrder.updatedAt ?? null,
+        updatedBy: currentOrder.updatedBy ?? null,
+      };
+    }
+  }
+
+  return null;
+}
+
 export default async function handler(req, res) {
   try {
     req.auth = await resolveSharedQueueAuth(req);
@@ -82,6 +121,25 @@ export default async function handler(req, res) {
 
       if (!Array.isArray(snapshot.orders)) {
         res.status(400).json({ error: "snapshot.orders must be an array." });
+        return;
+      }
+
+      const currentSnapshot = await loadSharedQueue({
+        queueId: snapshot.queue.id,
+        workspaceId: req.auth.workspaceId,
+      });
+
+      if (!currentSnapshot) {
+        res.status(404).json({ error: "Shared queue not found." });
+        return;
+      }
+
+      const revisionConflict = findRevisionConflict(snapshot, normalizeSnapshot(currentSnapshot));
+      if (revisionConflict) {
+        res.status(409).json({
+          error: "Revision conflict",
+          details: revisionConflict,
+        });
         return;
       }
 

@@ -2412,19 +2412,26 @@ test("skips already imported Etsy line items when importing another batch", asyn
   await expect(page.locator("#importStatus")).toBeVisible();
   await expect(page.locator("#importStatus")).toContainText("Imported 2 Etsy designs from the clipboard.");
   await expect.poll(async () => {
-    return page.locator("#importStatus").evaluate((node) => {
-      const rect = node.getBoundingClientRect();
-      const style = window.getComputedStyle(node);
+    return page.evaluate(() => {
+      const alert = document.querySelector("#importStatus");
+      const topCard = document.querySelector(".editor-top-card");
+      if (!(alert instanceof HTMLElement) || !(topCard instanceof HTMLElement)) {
+        return null;
+      }
+
+      const alertRect = alert.getBoundingClientRect();
+      const topCardRect = topCard.getBoundingClientRect();
+      const style = window.getComputedStyle(alert);
       return {
         position: style.position,
-        bottomGap: Math.round(window.innerHeight - rect.bottom),
-        centerOffset: Math.round(Math.abs(window.innerWidth / 2 - (rect.left + rect.width / 2))),
+        aboveTopCard: alertRect.bottom <= topCardRect.top,
+        alignedWithTopCard: Math.abs(alertRect.left - topCardRect.left) <= 1,
       };
     });
   }).toEqual({
-    position: "fixed",
-    bottomGap: 24,
-    centerOffset: 0,
+    position: "relative",
+    aboveTopCard: true,
+    alignedWithTopCard: true,
   });
   await expect(page.locator("#importStatus")).toBeHidden({ timeout: 8000 });
 

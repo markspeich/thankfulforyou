@@ -15,27 +15,11 @@ export function getNextRevision(order) {
   return (Number.isFinite(currentRevision) ? currentRevision : 0) + 1;
 }
 
-export function hasRecoverableLocalDraft({ remoteOrder, localOrder }) {
-  if (!remoteOrder || !localOrder || remoteOrder.id !== localOrder.id) {
-    return false;
-  }
-
-  const remoteRevision = Number(remoteOrder.revision);
-  const localRevision = Number(localOrder.revision);
-
-  if (!Number.isFinite(localRevision)) {
-    return false;
-  }
-
-  return localRevision > (Number.isFinite(remoteRevision) ? remoteRevision : 0);
-}
-
 export function chooseSharedQueueStartupState({ remoteSnapshot, localCache }) {
   if (!isSharedQueueSnapshotEmpty(remoteSnapshot)) {
     return {
       source: "remote",
       snapshot: remoteSnapshot,
-      recoveryDraft: isSharedQueueSnapshotEmpty(localCache) ? null : localCache,
     };
   }
 
@@ -43,13 +27,11 @@ export function chooseSharedQueueStartupState({ remoteSnapshot, localCache }) {
     return {
       source: "local-cache",
       snapshot: localCache,
-      recoveryDraft: null,
     };
   }
 
   return {
     source: null,
     snapshot: null,
-    recoveryDraft: null,
   };
 }
