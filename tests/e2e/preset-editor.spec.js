@@ -340,6 +340,27 @@ test("switches between order items and presets from the left nav", async ({ page
   await expect(appShell).toHaveAttribute("data-nav-collapsed", "true");
 });
 
+test("shows size presets in the Presets workspace", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Presets" }).click();
+
+  const sizePresets = page.getByLabel("Size Presets");
+  await expect(sizePresets.getByRole("heading", { name: "Size Presets" })).toBeVisible();
+  await expect(sizePresets.getByText("2.2 x 1.5 in", { exact: true })).toBeVisible();
+  await expect(sizePresets.getByText("Max 2.2 x 1.5 in")).toBeVisible();
+  await expect(sizePresets.getByText("Min 1.6 x 1.1 in")).toBeVisible();
+});
+
+test("preserves bounding size when saving and reloading a layout preset", async ({ page }) => {
+  await page.goto("/");
+  await clickQueueAction(page, "Add Design");
+
+  await page.locator("#boundingSizePresetInput").selectOption("size-2-2x1-5");
+  await clickPresetAction(page, "Save as New Preset");
+  await page.locator("#presetDraftName").fill("Default Size Preset");
+  await expect(page.locator("#presetBoundingSizePresetInput")).toHaveValue("size-2-2x1-5");
+});
+
 test("remembers the collapsed left nav state after refresh", async ({ page }) => {
   await page.goto("/");
 

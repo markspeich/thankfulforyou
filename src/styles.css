@@ -2189,6 +2189,36 @@ button:disabled {
   width: min(860px, 100%);
 }
 
+.size-presets-card {
+  margin-top: 18px;
+  width: min(860px, 100%);
+}
+
+.size-preset-list {
+  display: grid;
+  gap: 10px;
+}
+
+.size-preset-row {
+  display: grid;
+  gap: 3px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.size-preset-name {
+  margin: 0;
+  font-weight: 700;
+}
+
+.size-preset-meta {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
 .preset-editor-helper {
   display: grid;
   gap: 8px;

@@ -242,6 +242,7 @@ const presetBackingOutput = document.querySelector("#presetBackingOutput");
 const presetLineRuleControls = document.querySelector("#presetLineRuleControls");
 const presetAssignmentsList = document.querySelector("#presetAssignmentsList");
 const presetAssignmentsEmptyState = document.querySelector("#presetAssignmentsEmptyState");
+const sizePresetList = document.querySelector("#sizePresetList");
 const presetEditorStatus = document.querySelector("#presetEditorStatus");
 const editorActionLabelByButton = new Map(
   [captureButton, cancelDesignButton, completeNextButton, copyButton, copyLayoutControlsButton, pasteLayoutControlsButton, downloadButton]
@@ -857,6 +858,7 @@ function createPresetEditorDraft(preset, options = {}) {
         name: "",
         settings: {
           backingMm: DEFAULT_BACKING_MM,
+          boundingSizePresetId: DEFAULT_BOUNDING_SIZE_PRESET_ID,
           weldExportedDesign: DEFAULT_WELD_EXPORTED_DESIGN,
           lines: [],
         },
@@ -912,6 +914,9 @@ function updatePresetGlobalVerticalScaleOutput() {
 
 function normalizePresetGlobalDefaults(globalDefaults = {}) {
   return {
+    boundingSizePresetId: isValidBoundingSizePresetId(globalDefaults.boundingSizePresetId)
+      ? globalDefaults.boundingSizePresetId
+      : DEFAULT_BOUNDING_SIZE_PRESET_ID,
     backingMm: Number.isFinite(Number(globalDefaults.backingMm)) ? Number(globalDefaults.backingMm) : DEFAULT_BACKING_MM,
     weldExportedDesign: typeof globalDefaults.weldExportedDesign === "boolean"
       ? globalDefaults.weldExportedDesign
@@ -1198,6 +1203,7 @@ function syncPresetEditorDraftFromControls() {
       globalDefaults: {
         ...currentPreset.globalDefaults,
         ...normalizePresetGlobalDefaults({
+          boundingSizePresetId: presetBoundingSizePresetInput?.value,
           backingMm: presetBackingInput?.value,
           weldExportedDesign: presetWeldExportedDesignInput?.checked,
         }),
@@ -1253,6 +1259,9 @@ function renderPresetEditorDraft() {
   presetDraftNameInput.value = draftName;
   if (presetWeldExportedDesignInput) {
     presetWeldExportedDesignInput.checked = globalDefaults.weldExportedDesign;
+  }
+  if (presetBoundingSizePresetInput) {
+    presetBoundingSizePresetInput.value = globalDefaults.boundingSizePresetId;
   }
   if (presetGlobalHorizontalScaleInput) {
     presetGlobalHorizontalScaleInput.value = String(lineGroups.lineDefaults.horizontalScale);
@@ -2453,6 +2462,35 @@ function resolveSharedQueueSaveOrderIds(publishOrderIds) {
   return orders
     .filter((order) => hasUnsavedPublishedSnapshotChanges(order) || isOrderAwaitingPublishedSave(order))
     .map((order) => order.id);
+}
+
+function renderSizePresetList() {
+  if (!sizePresetList) {
+    return;
+  }
+
+  sizePresetList.replaceChildren(...getBoundingSizePresetOptions().map((option) => {
+    const preset = resolveBoundingSizePreset(option.id);
+    const row = document.createElement("article");
+    row.className = "size-preset-row";
+
+    const content = document.createElement("div");
+    const name = document.createElement("p");
+    name.className = "size-preset-name";
+    name.textContent = preset.label;
+
+    const max = document.createElement("p");
+    max.className = "size-preset-meta";
+    max.textContent = `Max ${preset.maxWidthIn} x ${preset.maxHeightIn} in`;
+
+    const min = document.createElement("p");
+    min.className = "size-preset-meta";
+    min.textContent = `Min ${preset.minWidthIn} x ${preset.minHeightIn} in`;
+
+    content.append(name, max, min);
+    row.append(content);
+    return row;
+  }));
 }
 
 function canSaveThroughSharedQueueConflict(publishOrderIds) {
@@ -4537,6 +4575,9 @@ function setActiveWorkspace(workspace) {
   presetWorkspaceButton.classList.toggle("is-active", activeWorkspace === "presets");
   orderWorkspaceButton.setAttribute("aria-pressed", String(activeWorkspace === "orders"));
   presetWorkspaceButton.setAttribute("aria-pressed", String(activeWorkspace === "presets"));
+  if (activeWorkspace === "presets") {
+    renderSizePresetList();
+  }
 }
 
 function readNavCollapsedPreference() {
@@ -6201,6 +6242,7 @@ deletePresetButton?.addEventListener("click", () => {
 presetBackingInput?.addEventListener("input", () => {
   updatePresetBackingOutput();
 });
+presetBoundingSizePresetInput?.addEventListener("change", syncPresetEditorDraftFromControls);
 presetGlobalHorizontalScaleInput?.addEventListener("input", () => {
   updatePresetGlobalHorizontalScaleOutput();
 });
@@ -6371,6 +6413,7 @@ await loadPresetRegistry();
 renderPresetOptions();
 renderBoundingSizePresetOptions(boundingSizePresetInput);
 renderBoundingSizePresetOptions(presetBoundingSizePresetInput);
+renderSizePresetList();
 renderPresetEditorDraft();
 updateBackingOutput();
 sharedQueueAccessToken = await bootstrapSharedQueueAccess();
