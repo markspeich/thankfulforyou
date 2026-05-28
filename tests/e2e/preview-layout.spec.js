@@ -660,6 +660,7 @@ test("refines auto-fit against the rendered face ink bounds", async ({ page }) =
 
 test("does not render a queue sync status card in the queue tools menu", async ({ page }) => {
   await expect(page.locator("#queueSyncStatus")).toHaveCount(0);
+  await expect(page.locator(".order-queue-card")).toHaveCount(0);
   await expect(page.locator("#orderSearchInput")).toBeVisible();
 });
 

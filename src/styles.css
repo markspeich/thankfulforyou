@@ -1257,20 +1257,9 @@ h2 {
 
 .order-queue {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  gap: 8px;
-  min-height: 0;
-}
-
-.order-queue-card {
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
   gap: 10px;
   min-height: 0;
-  padding: 10px;
-  background: linear-gradient(180deg, #ffffff 0%, #f9fbfc 100%);
-  border: 1px solid var(--line);
-  border-radius: 14px;
 }
 
 .order-list {
