@@ -63,6 +63,7 @@ The browser session bootstrap reads:
 The app now populates `window.__APP_CONFIG__` from `/app-config.js`.
 
 - `npm start` loads `.env.local` when present, then serves `/app-config.js` dynamically from environment variables
+- `npm start` first prepares `.env.local` for Codex worktrees by merging missing shared-queue Supabase keys from the machine-local seed file at `C:\Users\Mark\CodexProjects\thankfulforyou\.env.local.shared`
 - `npm run build` loads `.env.local` when present, then writes `dist/app-config.js` from the same environment variables
 - the browser key prefers `SUPABASE_PUBLISHABLE_KEY` and falls back to `SUPABASE_ANON_KEY`
 

@@ -8,7 +8,8 @@
   },
   "scripts": {
     "build": "node tools/build_static.mjs",
-    "start": "node --watch tools/dev_server.mjs",
+    "setup:worktree": "node tools/setup_worktree_env.mjs",
+    "start": "node tools/setup_worktree_env.mjs && node --watch tools/dev_server.mjs",
     "test": "npm run test:unit && npm run test:e2e",
     "test:unit": "vitest run",
     "test:e2e": "playwright test",

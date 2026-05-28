@@ -195,6 +195,7 @@ const importedColorValue = document.querySelector("#importedColorValue");
 const importedQuantityField = document.querySelector("#importedQuantityField");
 const importedQuantityValue = document.querySelector("#importedQuantityValue");
 const presetInput = document.querySelector("#presetInput");
+const presetListingIndicator = document.querySelector("#presetListingIndicator");
 const weldExportedDesignInput = document.querySelector("#weldExportedDesignInput");
 const globalHorizontalScaleInput = document.querySelector("#globalHorizontalScaleInput");
 const globalHorizontalScaleOutput = document.querySelector("#globalHorizontalScaleOutput");
@@ -4421,6 +4422,29 @@ function getQueueAnalysisSummary(order) {
   return buildCompletedAnalysisBadge(analysis);
 }
 
+function renderPresetListingIndicator(order) {
+  const mappedPresetId = getMappedPresetIdForOrder(order);
+  const selectedPresetId = presetInput.value;
+
+  presetListingIndicator.classList.toggle("is-hidden", !mappedPresetId);
+  if (!mappedPresetId) {
+    presetListingIndicator.textContent = "";
+    presetListingIndicator.title = "";
+    return;
+  }
+
+  const listingId = order?.source?.listingId?.trim() || "this listing";
+  if (mappedPresetId === selectedPresetId) {
+    presetListingIndicator.textContent = "Linked";
+    presetListingIndicator.title = `This listing ID is assigned to the selected preset. Listing ID ${listingId}.`;
+    return;
+  }
+
+  const mappedPresetName = getPresetDefinitionForEditor(mappedPresetId)?.name || "another preset";
+  presetListingIndicator.textContent = "Assigned elsewhere";
+  presetListingIndicator.title = `Listing ID ${listingId} is assigned to ${mappedPresetName}.`;
+}
+
 function renderOrderList() {
   const searchTerm = orderSearchInput.value.trim().toLowerCase();
   const visibleOrders = orders.filter((order) => {
@@ -4536,6 +4560,7 @@ function renderOrderList() {
   editorPanel.classList.toggle("is-hidden", !activeOrder);
   renderListingReference(activeOrder);
   renderImportedColor(activeOrder);
+  renderPresetListingIndicator(activeOrder);
   activeOrderName.textContent = activeOrder ? buildQueueOrderNumber(activeOrder) : "No design selected";
   activeOrderMeta.textContent = buildActiveMeta(activeOrder);
   renderSharedQueueBanner(activeOrder);

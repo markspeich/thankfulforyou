@@ -61,6 +61,8 @@ When the user provides new product, workflow, material, manufacturing, design, o
 - When the user says `finish this worktree`, complete the standard post-feature workflow: merge latest `main` into the current worktree and resolve conflicts, run appropriate verification, commit the worktree changes to the current feature branch, merge that feature branch into `main`, push `main`, and delete the finished feature branch.
 - To start the local dev server in this worktree, run `npm start` from the repository root.
 - Use `npm start` as the canonical dev entrypoint for this app instead of invoking `node` directly with a guessed script.
+- `npm start` first runs `tools/setup_worktree_env.mjs`, which fills missing shared-queue Supabase keys in the worktree `.env.local` from the machine-local seed file at `C:\Users\Mark\CodexProjects\thankfulforyou\.env.local.shared`.
+- Keep `C:\Users\Mark\CodexProjects\thankfulforyou\.env.local.shared` out of git. It is the local source of truth for secrets that Vercel CLI cannot pull into new worktrees, especially `SUPABASE_SERVICE_ROLE_KEY`.
 - `npm start` loads `.env.local` automatically when present, so do not wrap it in a custom env-loading command unless a specific task needs different values.
 - When shared queue auth or shared queue API routes must work from Codex, start `npm start` with escalated/network permissions. A sandboxed dev server can serve the frontend but fail Supabase token verification, which appears to the user as an expired shared queue session.
 - The dev server port is determined by `tools/dev_port.mjs`. Do not hardcode or guess a worktree URL from `AGENTS.md`.

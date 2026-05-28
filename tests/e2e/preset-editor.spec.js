@@ -634,6 +634,7 @@ test("shows assigned listings for a preset and lets operators unassign them", as
   await page.locator("#importClipboardButton").click();
   await expect(page.locator("#importStatus")).toContainText("Imported 1 Etsy design from the clipboard.");
   await expect(page.locator("#presetInput")).toHaveValue("preset-c3e8a1d7f520");
+  await expect(page.locator("#presetListingIndicator")).toHaveText("Linked");
 
   await page.locator("#captureButton").click();
   await expect(page.locator("#downloadButton")).toBeEnabled();
@@ -660,6 +661,40 @@ test("shows assigned listings for a preset and lets operators unassign them", as
   await page.locator("#importClipboardButton").click();
   await expect(page.locator("#importStatus")).toContainText("Imported 1 Etsy design from the clipboard.");
   await expect(page.locator("#presetInput")).not.toHaveValue("preset-c3e8a1d7f520");
+});
+
+test("marks listing-assigned presets inline beside the preset name label", async ({ page }) => {
+  const importPayload = JSON.stringify([
+    {
+      orderNumber: "LINKED-1884223710",
+      listingId: "1884223710",
+      buyerName: "Preset Link Tester",
+      personalization: "Jordan\nRN",
+      listingTitle: "Skywalk + Somekind listing with shorter second line",
+      quantity: 1,
+    },
+  ]);
+
+  await installPresetRoutes(page);
+  await page.route("**/api/layout-analyze", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify(buildMockAnalysisResponse()),
+    });
+  });
+  await page.goto("/");
+
+  await setClipboardPayload(page, importPayload);
+  await page.locator("#importClipboardButton").click();
+  await expect(page.locator("#importStatus")).toContainText("Imported 1 Etsy design from the clipboard.");
+  await expect(page.locator("#presetInput")).toHaveValue("preset-c3e8a1d7f520");
+  await expect(page.locator("#presetListingIndicator")).toHaveText("Linked");
+  await expect(page.locator("#presetListingIndicator")).toHaveAttribute("title", /assigned to the selected preset/);
+
+  await page.locator("#presetInput").selectOption("preset-a1f4c8e2b601");
+  await expect(page.locator("#presetListingIndicator")).toHaveText("Assigned elsewhere");
+  await expect(page.locator("#presetListingIndicator")).toHaveAttribute("title", /assigned to Skywalk, Somekind/);
 });
 
 test("deletes a saved preset only after confirmation and migrates active uses away from it", async ({ page }) => {
