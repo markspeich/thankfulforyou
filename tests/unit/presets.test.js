@@ -357,6 +357,15 @@ describe("presets", () => {
 
   it("returns preset-level global defaults", () => {
     expect(getPresetGlobalDefaults("preset-c3e8a1d7f520")).toEqual({
+      boundingSizePresetId: "size-2-2x1-5",
+      backingMm: 3.1,
+      weldExportedDesign: true,
+    });
+  });
+
+  it("returns preset-level bounding size defaults", () => {
+    expect(getPresetGlobalDefaults("preset-a1f4c8e2b601")).toEqual({
+      boundingSizePresetId: "size-2-2x1-5",
       backingMm: 3.1,
       weldExportedDesign: true,
     });

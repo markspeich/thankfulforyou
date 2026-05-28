@@ -5,6 +5,7 @@
   "name": "All Candlepin",
   "description": "Use Candlepin on every line.",
   "globalDefaults": {
+    "boundingSizePresetId": "size-2-2x1-5",
     "backingMm": 3.1,
     "weldExportedDesign": true
   },

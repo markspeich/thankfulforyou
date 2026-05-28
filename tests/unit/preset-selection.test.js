@@ -60,4 +60,37 @@ describe("preset selection", () => {
       ],
     });
   });
+
+  it("rebuilds bounding size from the selected preset", () => {
+    const normalizeSettings = vi.fn((settings) => ({
+      text: settings.text ?? "Mark",
+      presetId: settings.presetId ?? "preset-old",
+      boundingSizePresetId: settings.boundingSizePresetId ?? "size-small",
+      backingMm: settings.backingMm ?? 8.8,
+      weldExportedDesign: settings.weldExportedDesign ?? false,
+      lines: settings.lines ?? [],
+    }));
+
+    const result = buildReloadedPresetSettings({
+      settings: {
+        text: "Mark",
+        boundingSizePresetId: "size-small",
+        backingMm: 8.8,
+        weldExportedDesign: false,
+        lines: [],
+      },
+      presetId: "preset-new",
+      getPresetBaseSettings: () => ({
+        boundingSizePresetId: "size-2-2x1-5",
+        backingMm: 3.1,
+        weldExportedDesign: true,
+      }),
+      buildPresetLines: () => [],
+      createDefaultLineSettings: () => ({}),
+      getRawTextLines: () => [],
+      normalizeSettings,
+    });
+
+    expect(result.boundingSizePresetId).toBe("size-2-2x1-5");
+  });
 });

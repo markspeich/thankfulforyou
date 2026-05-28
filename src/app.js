@@ -63,6 +63,10 @@ import {
   chooseSharedQueueStartupState,
   createSharedQueueSnapshot,
 } from "./shared-queue-model.js";
+import {
+  DEFAULT_BOUNDING_SIZE_PRESET_ID,
+  isValidBoundingSizePresetId,
+} from "./bounding-size-presets.js";
 
 const FONT_OPTIONS = [
   {
@@ -506,6 +510,9 @@ function getPresetBaseSettings(presetId) {
   const globalDefaults = getPresetGlobalDefaults(presetId);
 
   return {
+    boundingSizePresetId: isValidBoundingSizePresetId(globalDefaults.boundingSizePresetId)
+      ? globalDefaults.boundingSizePresetId
+      : DEFAULT_BOUNDING_SIZE_PRESET_ID,
     backingMm: Number.isFinite(Number(globalDefaults.backingMm)) ? Number(globalDefaults.backingMm) : DEFAULT_BACKING_MM,
     weldExportedDesign: typeof globalDefaults.weldExportedDesign === "boolean"
       ? globalDefaults.weldExportedDesign
@@ -571,6 +578,9 @@ function normalizeSettings(settings = {}) {
   return {
     text,
     presetId,
+    boundingSizePresetId: isValidBoundingSizePresetId(settings.boundingSizePresetId)
+      ? settings.boundingSizePresetId
+      : presetBaseSettings.boundingSizePresetId,
     backingMm: Number.isFinite(Number(settings.backingMm)) ? Number(settings.backingMm) : presetBaseSettings.backingMm,
     weldExportedDesign: typeof settings.weldExportedDesign === "boolean"
       ? settings.weldExportedDesign

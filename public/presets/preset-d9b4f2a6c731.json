@@ -5,6 +5,7 @@
   "name": "Skywalk, Candlepin",
   "description": "Use Skywalk on the first line and Candlepin on the remaining lines.",
   "globalDefaults": {
+    "boundingSizePresetId": "size-2-2x1-5",
     "backingMm": 3.1,
     "weldExportedDesign": true
   },

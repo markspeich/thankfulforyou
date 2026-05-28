@@ -82,6 +82,25 @@ describe("preset authoring", () => {
     ]);
   });
 
+  it("infers bounding size as a reusable global default", () => {
+    const preset = inferPresetDefinitionFromSettings({
+      name: "Default Size",
+      settings: {
+        text: "Mark",
+        boundingSizePresetId: "size-2-2x1-5",
+        backingMm: 3.1,
+        weldExportedDesign: true,
+        lines: [createDefaultLineSettings()],
+      },
+    });
+
+    expect(preset.globalDefaults).toMatchObject({
+      boundingSizePresetId: "size-2-2x1-5",
+      backingMm: 3.1,
+      weldExportedDesign: true,
+    });
+  });
+
   it("round-trips inferred reusable rules through the preset builder for a third line", () => {
     const preset = inferPresetDefinitionFromSettings({
       name: "Skywalk RN",

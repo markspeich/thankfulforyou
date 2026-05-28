@@ -106,6 +106,7 @@ export function inferPresetDefinitionFromSettings({ name, settings }) {
     name: String(name ?? "").trim(),
     description: "",
     globalDefaults: {
+      boundingSizePresetId: settings?.boundingSizePresetId,
       backingMm: settings?.backingMm,
       weldExportedDesign: settings?.weldExportedDesign,
     },

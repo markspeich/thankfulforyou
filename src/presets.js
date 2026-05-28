@@ -4,6 +4,7 @@ const FALLBACK_PRESET_DEFINITIONS = [
     id: "preset-a1f4c8e2b601",
     name: "All Candlepin",
     globalDefaults: {
+      boundingSizePresetId: "size-2-2x1-5",
       backingMm: 3.1,
       weldExportedDesign: true,
     },
@@ -34,6 +35,7 @@ const FALLBACK_PRESET_DEFINITIONS = [
     id: "preset-b7d2e9f4c318",
     name: "Candlepin, Skywalk",
     globalDefaults: {
+      boundingSizePresetId: "size-2-2x1-5",
       backingMm: 3.1,
       weldExportedDesign: true,
     },
@@ -85,6 +87,7 @@ const FALLBACK_PRESET_DEFINITIONS = [
     id: "preset-c3e8a1d7f520",
     name: "Skywalk, Somekind",
     globalDefaults: {
+      boundingSizePresetId: "size-2-2x1-5",
       backingMm: 3.1,
       weldExportedDesign: true,
     },
@@ -147,6 +150,7 @@ const FALLBACK_PRESET_DEFINITIONS = [
     id: "preset-d9b4f2a6c731",
     name: "Skywalk, Candlepin",
     globalDefaults: {
+      boundingSizePresetId: "size-2-2x1-5",
       backingMm: 3.1,
       weldExportedDesign: true,
     },
@@ -263,6 +267,9 @@ function normalizePresetDefinition(definition = {}) {
     description: typeof definition.description === "string" ? definition.description.trim() : "",
     globalDefaults: definition.globalDefaults && typeof definition.globalDefaults === "object"
       ? {
+          ...(Object.hasOwn(definition.globalDefaults, "boundingSizePresetId")
+            ? { boundingSizePresetId: definition.globalDefaults.boundingSizePresetId }
+            : {}),
           ...(Object.hasOwn(definition.globalDefaults, "backingMm") ? { backingMm: migratedBackingMm } : {}),
           ...(Object.hasOwn(definition.globalDefaults, "weldExportedDesign")
             ? { weldExportedDesign: definition.globalDefaults.weldExportedDesign }

@@ -15,6 +15,7 @@ export function buildReloadedPresetSettings({
   return normalizeSettings({
     ...normalized,
     presetId,
+    boundingSizePresetId: presetBaseSettings.boundingSizePresetId,
     backingMm: presetBaseSettings.backingMm,
     weldExportedDesign: presetBaseSettings.weldExportedDesign,
     lines: buildPresetLines(presetId, rawLines.length, createDefaultLineSettings, { listingId }),
