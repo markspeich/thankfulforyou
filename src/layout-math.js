@@ -1,9 +1,15 @@
+import {
+  DEFAULT_BOUNDING_SIZE_PRESET_ID,
+  resolveBoundingSizePreset,
+} from "./bounding-size-presets.js";
+
 export const PX_PER_MM = 96 / 25.4;
-export const MAX_RENDER_WIDTH_MM = 55.88;
-export const MAX_RENDER_HEIGHT_MM = 38.1;
 export const TEXT_FIT_SAFETY_MARGIN_MM = 0.2;
-export const PREVIEW_BOX_WIDTH_MM = 55.88;
-export const PREVIEW_BOX_HEIGHT_MM = 38.1;
+export const DEFAULT_PREVIEW_GUIDE = resolveBoundingSizePreset(DEFAULT_BOUNDING_SIZE_PRESET_ID);
+export const MAX_RENDER_WIDTH_MM = DEFAULT_PREVIEW_GUIDE.maxWidthMm;
+export const MAX_RENDER_HEIGHT_MM = DEFAULT_PREVIEW_GUIDE.maxHeightMm;
+export const PREVIEW_BOX_WIDTH_MM = DEFAULT_PREVIEW_GUIDE.maxWidthMm;
+export const PREVIEW_BOX_HEIGHT_MM = DEFAULT_PREVIEW_GUIDE.maxHeightMm;
 export const PREVIEW_MARGIN_MM = 6;
 export const PREVIEW_LABEL_RIGHT_MM = 10;
 export const DESIGN_BLEED_MM = 1;
@@ -11,10 +17,24 @@ export const DEFAULT_BACKING_MM = 3.1;
 export const MAX_FIT_WIDTH_MM = MAX_RENDER_WIDTH_MM - TEXT_FIT_SAFETY_MARGIN_MM;
 export const MAX_FIT_HEIGHT_MM = MAX_RENDER_HEIGHT_MM - TEXT_FIT_SAFETY_MARGIN_MM;
 
-export function computeTextFitScale(textWidthMm, textHeightMm) {
+function resolveGuide(guide = DEFAULT_PREVIEW_GUIDE) {
+  return guide && Number.isFinite(Number(guide.maxWidthMm)) && Number.isFinite(Number(guide.maxHeightMm))
+    ? guide
+    : DEFAULT_PREVIEW_GUIDE;
+}
+
+function getMaxFitWidthMm(guide) {
+  return Math.max(1, resolveGuide(guide).maxWidthMm - TEXT_FIT_SAFETY_MARGIN_MM);
+}
+
+function getMaxFitHeightMm(guide) {
+  return Math.max(1, resolveGuide(guide).maxHeightMm - TEXT_FIT_SAFETY_MARGIN_MM);
+}
+
+export function computeTextFitScale(textWidthMm, textHeightMm, guide = DEFAULT_PREVIEW_GUIDE) {
   return Math.min(
-    Math.max(1, MAX_FIT_WIDTH_MM) / Math.max(1, textWidthMm),
-    Math.max(1, MAX_FIT_HEIGHT_MM) / Math.max(1, textHeightMm),
+    getMaxFitWidthMm(guide) / Math.max(1, textWidthMm),
+    getMaxFitHeightMm(guide) / Math.max(1, textHeightMm),
   );
 }
 
@@ -25,7 +45,7 @@ export function computeLineScaleFactors(lines, fitScale) {
   });
 }
 
-export function computeMixedFitScale(lines) {
+export function computeMixedFitScale(lines, guide = DEFAULT_PREVIEW_GUIDE) {
   if (!Array.isArray(lines) || !lines.length) {
     return 1;
   }
@@ -46,21 +66,22 @@ export function computeMixedFitScale(lines) {
   const uniformFitScale = computeTextFitScale(
     Math.max(1, lineBounds.maxRightMm - lineBounds.minLeftMm),
     Math.max(1, lineBounds.maxBottomMm - lineBounds.minTopMm),
+    guide,
   );
 
-  const minBounds = computeMixedScaleBounds(lines, computeLineScaleFactors(lines, 0));
+  const minBounds = computeMixedScaleBounds(lines, computeLineScaleFactors(lines, 0), guide);
   if (minBounds.overflowsGuide) {
     return 1;
   }
 
   let lower = 0;
   let upper = Math.max(1, uniformFitScale);
-  let upperBounds = computeMixedScaleBounds(lines, computeLineScaleFactors(lines, upper));
+  let upperBounds = computeMixedScaleBounds(lines, computeLineScaleFactors(lines, upper), guide);
 
   while (!upperBounds.overflowsGuide && upper < 64) {
     lower = upper;
     upper *= 2;
-    upperBounds = computeMixedScaleBounds(lines, computeLineScaleFactors(lines, upper));
+    upperBounds = computeMixedScaleBounds(lines, computeLineScaleFactors(lines, upper), guide);
   }
 
   if (!upperBounds.overflowsGuide) {
@@ -69,7 +90,7 @@ export function computeMixedFitScale(lines) {
 
   for (let index = 0; index < 24; index += 1) {
     const middle = (lower + upper) / 2;
-    const middleBounds = computeMixedScaleBounds(lines, computeLineScaleFactors(lines, middle));
+    const middleBounds = computeMixedScaleBounds(lines, computeLineScaleFactors(lines, middle), guide);
 
     if (middleBounds.overflowsGuide) {
       upper = middle;
@@ -102,7 +123,8 @@ export function measureLineBounds(baseTextWidthMm, lines) {
   };
 }
 
-export function computeMixedScaleBounds(lines, lineScaleFactors) {
+export function computeMixedScaleBounds(lines, lineScaleFactors, guide = DEFAULT_PREVIEW_GUIDE) {
+  const resolvedGuide = resolveGuide(guide);
   const scaledBaseTextWidthMm = Math.max(
     1,
     ...lines.map((line, index) => line.mask.widthMm * lineScaleFactors[index]),
@@ -171,11 +193,11 @@ export function computeMixedScaleBounds(lines, lineScaleFactors) {
     maxBottomMm,
     textWidthMm,
     textHeightMm,
-    overflowsGuide: textWidthMm > MAX_FIT_WIDTH_MM || textHeightMm > MAX_FIT_HEIGHT_MM,
+    overflowsGuide: textWidthMm > getMaxFitWidthMm(resolvedGuide) || textHeightMm > getMaxFitHeightMm(resolvedGuide),
   };
 }
 
-export function computeGuideOverflow(lines, textWidthMm, textHeightMm) {
+export function computeGuideOverflow(lines, textWidthMm, textHeightMm, guide = DEFAULT_PREVIEW_GUIDE) {
   const hasLockedLines = Array.isArray(lines)
     && lines.some((line) => line?.settings?.lockTextHeight ?? line?.lockTextHeight ?? false);
 
@@ -183,7 +205,7 @@ export function computeGuideOverflow(lines, textWidthMm, textHeightMm) {
     return false;
   }
 
-  return computeTextFitScale(textWidthMm, textHeightMm) < 1 - 1e-6;
+  return computeTextFitScale(textWidthMm, textHeightMm, guide) < 1 - 1e-6;
 }
 
 export function buildScaledTextBounds(textWidthMm, textHeightMm, backingMm, scaleFactor) {
@@ -195,13 +217,14 @@ export function buildScaledTextBounds(textWidthMm, textHeightMm, backingMm, scal
   };
 }
 
-export function computePreviewFrame(layout, textBoundsMm = layout.textBoundsMm) {
-  const previewWidthMm = Math.max(layout.widthMm, PREVIEW_BOX_WIDTH_MM) + PREVIEW_MARGIN_MM * 2;
-  const previewHeightMm = Math.max(layout.heightMm, PREVIEW_BOX_HEIGHT_MM) + PREVIEW_MARGIN_MM * 2;
-  const previewBoxX = (previewWidthMm - PREVIEW_LABEL_RIGHT_MM - PREVIEW_BOX_WIDTH_MM) / 2;
-  const previewBoxY = (previewHeightMm - PREVIEW_BOX_HEIGHT_MM) / 2;
-  const designX = previewBoxX + (PREVIEW_BOX_WIDTH_MM - textBoundsMm.width) / 2 - textBoundsMm.left;
-  const designY = previewBoxY + (PREVIEW_BOX_HEIGHT_MM - textBoundsMm.height) / 2 - textBoundsMm.top;
+export function computePreviewFrame(layout, textBoundsMm = layout.textBoundsMm, guide = layout.guide || DEFAULT_PREVIEW_GUIDE) {
+  const resolvedGuide = resolveGuide(guide);
+  const previewWidthMm = Math.max(layout.widthMm, resolvedGuide.maxWidthMm) + PREVIEW_MARGIN_MM * 2;
+  const previewHeightMm = Math.max(layout.heightMm, resolvedGuide.maxHeightMm) + PREVIEW_MARGIN_MM * 2;
+  const previewBoxX = (previewWidthMm - PREVIEW_LABEL_RIGHT_MM - resolvedGuide.maxWidthMm) / 2;
+  const previewBoxY = (previewHeightMm - resolvedGuide.maxHeightMm) / 2;
+  const designX = previewBoxX + (resolvedGuide.maxWidthMm - textBoundsMm.width) / 2 - textBoundsMm.left;
+  const designY = previewBoxY + (resolvedGuide.maxHeightMm - textBoundsMm.height) / 2 - textBoundsMm.top;
 
   return {
     previewWidthMm,

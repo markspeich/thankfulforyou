@@ -12,11 +12,19 @@ import {
   MAX_RENDER_WIDTH_MM,
   PREVIEW_BOX_HEIGHT_MM,
   PREVIEW_BOX_WIDTH_MM,
+  TEXT_FIT_SAFETY_MARGIN_MM,
   buildScaledTextBounds,
   computePreviewFrame,
   computeTextFitScale,
   measureLineBounds,
 } from "../../src/layout-math.js";
+
+const SMALL_GUIDE = Object.freeze({
+  maxWidthMm: 25,
+  maxHeightMm: 20,
+  minWidthMm: 15,
+  minHeightMm: 10,
+});
 
 describe("layout math", () => {
   it("scales text to stay inside the 2.2 by 1.5 inch guide", () => {
@@ -250,5 +258,48 @@ describe("layout math", () => {
     expect(textBoundsMm.top).toBeCloseTo(DESIGN_BLEED_MM + 3.1, 6);
     expect(textBoundsMm.width).toBeCloseTo(35, 6);
     expect(textBoundsMm.height).toBeCloseTo(10, 6);
+  });
+
+  it("scales text against a provided custom max guide", () => {
+    const scale = computeTextFitScale(50, 10, SMALL_GUIDE);
+
+    expect(50 * scale).toBeLessThanOrEqual(SMALL_GUIDE.maxWidthMm - TEXT_FIT_SAFETY_MARGIN_MM);
+    expect(scale).toBeLessThan(1);
+  });
+
+  it("reports mixed-scale overflow against a provided guide", () => {
+    const bounds = computeMixedScaleBounds(
+      [
+        {
+          y: 0,
+          offsetXMm: 0,
+          settings: { fontSizeMm: 30, lockTextHeight: true },
+          mask: { widthMm: 30, topMm: 0, bottomMm: 10 },
+        },
+      ],
+      [1],
+      SMALL_GUIDE,
+    );
+
+    expect(bounds.overflowsGuide).toBe(true);
+  });
+
+  it("centers preview text inside a provided guide width and height", () => {
+    const textBoundsMm = buildScaledTextBounds(12, 10, 3.1, 1);
+    const frame = computePreviewFrame(
+      {
+        widthMm: 20,
+        heightMm: 18,
+        textBoundsMm,
+      },
+      textBoundsMm,
+      SMALL_GUIDE,
+    );
+
+    const textCenterX = frame.designX + textBoundsMm.left + textBoundsMm.width / 2;
+    const textCenterY = frame.designY + textBoundsMm.top + textBoundsMm.height / 2;
+
+    expect(textCenterX).toBeCloseTo(frame.previewBoxX + SMALL_GUIDE.maxWidthMm / 2, 6);
+    expect(textCenterY).toBeCloseTo(frame.previewBoxY + SMALL_GUIDE.maxHeightMm / 2, 6);
   });
 });
