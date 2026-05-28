@@ -347,18 +347,20 @@ select {
 
 .initial-loading-queue {
   display: grid;
-  grid-template-rows: auto auto auto repeat(4, 120px);
-  gap: 14px;
+  grid-template-rows: auto auto auto repeat(4, 88px);
+  align-content: start;
+  gap: 10px;
   min-height: 0;
-  padding: 22px 16px 16px;
+  padding: 18px 16px 16px;
   background: #fbfcfd;
   border-right: 1px solid var(--line);
 }
 
 .initial-loading-editor {
   display: grid;
-  grid-template-rows: auto minmax(280px, 1fr) auto;
-  gap: 18px;
+  grid-template-rows: auto 260px auto;
+  align-content: start;
+  gap: 12px;
   min-width: 0;
   min-height: 0;
   padding: 16px 22px 22px 24px;
@@ -371,7 +373,7 @@ select {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  min-height: 48px;
+  min-height: 42px;
 }
 
 .initial-loading-stats,
@@ -385,7 +387,7 @@ select {
 }
 
 .initial-loading-search {
-  height: 42px;
+  height: 36px;
 }
 
 .order-skeleton-row,
@@ -398,8 +400,8 @@ select {
 .order-skeleton-row {
   display: grid;
   align-content: center;
-  gap: 12px;
-  padding: 16px;
+  gap: 9px;
+  padding: 12px 14px;
   border-left: 4px solid #dce6ea;
   border-radius: 12px;
 }
@@ -410,7 +412,7 @@ select {
 }
 
 .skeleton-box {
-  height: 74px;
+  height: 56px;
   border-radius: 12px;
 }
 
