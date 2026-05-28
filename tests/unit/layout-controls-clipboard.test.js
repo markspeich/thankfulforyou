@@ -399,4 +399,33 @@ describe("layout controls clipboard", () => {
       },
     });
   });
+
+  it("copies and pastes the bounding size preset id as a global layout setting", () => {
+    const snapshot = buildLayoutControlsSnapshot({
+      id: "order-1",
+      label: "Design 1",
+      settings: {
+        text: "Mark",
+        presetId: "preset-a1f4c8e2b601",
+        boundingSizePresetId: "size-2-2x1-5",
+        backingMm: 3.1,
+        weldExportedDesign: true,
+        lines: [],
+      },
+    });
+
+    const result = applyLayoutControlsSnapshot(
+      {
+        text: "Avery",
+        presetId: "preset-c3e8a1d7f520",
+        boundingSizePresetId: "size-old",
+        backingMm: 4,
+        weldExportedDesign: false,
+        lines: [],
+      },
+      snapshot,
+    );
+
+    expect(result.settings.boundingSizePresetId).toBe("size-2-2x1-5");
+  });
 });

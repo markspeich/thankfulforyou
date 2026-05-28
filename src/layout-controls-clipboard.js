@@ -1,5 +1,6 @@
 const GLOBAL_SETTING_KEYS = [
   "presetId",
+  "boundingSizePresetId",
   "backingMm",
   "weldExportedDesign",
 ];

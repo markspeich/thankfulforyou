@@ -77,4 +77,20 @@ describe("order signatures", () => {
     });
     expect(JSON.parse(candidates[1]).lines[0]).not.toHaveProperty("lockTextHeight");
   });
+
+  it("changes the current settings signature when bounding size changes", () => {
+    const baseSettings = {
+      text: "Mark",
+      presetId: "preset-a1f4c8e2b601",
+      boundingSizePresetId: "size-2-2x1-5",
+      backingMm: 3.1,
+      weldExportedDesign: true,
+      lines: [],
+    };
+
+    expect(buildSettingsSignature({
+      ...baseSettings,
+      boundingSizePresetId: "size-other",
+    })).not.toBe(buildSettingsSignature(baseSettings));
+  });
 });

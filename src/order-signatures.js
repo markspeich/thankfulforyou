@@ -13,6 +13,7 @@ function buildSignaturePayload(settings = {}, options = {}) {
     ...(version == null ? {} : { version }),
     text: typeof settings.text === "string" ? settings.text : "",
     presetId: typeof settings.presetId === "string" ? settings.presetId : "",
+    boundingSizePresetId: typeof settings.boundingSizePresetId === "string" ? settings.boundingSizePresetId : "",
     backingMm: toFiniteNumber(settings.backingMm),
     weldExportedDesign: Boolean(settings.weldExportedDesign),
     lines: normalizeLines(settings.lines).map((line = {}) => ({
