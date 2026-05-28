@@ -246,6 +246,7 @@ const editorActionLabelByButton = new Map(
 let workflowAlertHideTimer = null;
 let workflowAlertToken = 0;
 
+const NAV_COLLAPSED_STORAGE_KEY = "thankfulforyou.workspaceNavCollapsed";
 const canvas = document.createElement("canvas");
 const ctx = canvas.getContext("2d");
 const MASK_SCALE = 3;
@@ -263,7 +264,7 @@ let deferredPreviewRenderToken = 0;
 let suppressQueueSyncLocalNotice = false;
 let copiedLayoutControlsSnapshot = null;
 let activeWorkspace = "orders";
-let navCollapsed = false;
+let navCollapsed = readNavCollapsedPreference();
 let presetEditorDraft = null;
 let activeConfirmationRequest = null;
 let confirmationDialogRestoreFocusTarget = null;
@@ -4595,10 +4596,29 @@ function setActiveWorkspace(workspace) {
   presetWorkspaceButton.setAttribute("aria-pressed", String(activeWorkspace === "presets"));
 }
 
-function setNavCollapsed(nextCollapsed) {
+function readNavCollapsedPreference() {
+  try {
+    return localStorage.getItem(NAV_COLLAPSED_STORAGE_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
+function persistNavCollapsedPreference(nextCollapsed) {
+  try {
+    localStorage.setItem(NAV_COLLAPSED_STORAGE_KEY, String(Boolean(nextCollapsed)));
+  } catch {
+    // Navigation preference persistence should never block the production workspace.
+  }
+}
+
+function setNavCollapsed(nextCollapsed, options = {}) {
   navCollapsed = Boolean(nextCollapsed);
   appShell.dataset.navCollapsed = String(navCollapsed);
   navCollapseButton.setAttribute("aria-label", navCollapsed ? "Expand navigation" : "Collapse navigation");
+  if (options.persist) {
+    persistNavCollapsedPreference(navCollapsed);
+  }
 }
 
 function selectOrder(orderId) {
@@ -6252,7 +6272,7 @@ presetAssignmentsList?.addEventListener("click", (event) => {
   void unassignListingFromPreset(listingId);
 });
 navCollapseButton.addEventListener("click", () => {
-  setNavCollapsed(!navCollapsed);
+  setNavCollapsed(!navCollapsed, { persist: true });
 });
 
 addOrderButton.addEventListener("click", addOrder);

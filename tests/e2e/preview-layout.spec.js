@@ -658,8 +658,9 @@ test("refines auto-fit against the rendered face ink bounds", async ({ page }) =
   expect(bounds.textHeightMm).toBeLessThanOrEqual(bounds.guideHeightMm);
 });
 
-test("keeps the queue sync status hidden until there is a message", async ({ page }) => {
-  await expect(page.locator("#queueSyncStatus")).toBeHidden();
+test("does not render a queue sync status card in the queue tools menu", async ({ page }) => {
+  await expect(page.locator("#queueSyncStatus")).toHaveCount(0);
+  await expect(page.locator(".order-queue-card")).toHaveCount(0);
   await expect(page.locator("#orderSearchInput")).toBeVisible();
 });
 
@@ -871,7 +872,7 @@ test(SHARED_QUEUE_CONFLICT_TEST_TITLE, async ({ page }) => {
   await page.locator("#textInput").fill("Remote Shared Updated");
   await page.waitForTimeout(300);
   await expect.poll(() => sharedQueueSavePayloads.length).toBe(0);
-  await expect(page.locator("#queueSyncStatus")).not.toContainText("Local recovery only");
+  await expect(page.locator("#queueSyncStatus")).toHaveCount(0);
 
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect.poll(() => sharedQueueSavePayloads.length).toBeGreaterThan(0);
