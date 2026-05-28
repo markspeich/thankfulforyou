@@ -2424,6 +2424,15 @@ function resolveSharedQueueSaveOrderIds(publishOrderIds) {
     .map((order) => order.id);
 }
 
+function canSaveThroughSharedQueueConflict(publishOrderIds) {
+  if (!sharedQueueConflictState?.orderId) {
+    return true;
+  }
+
+  return Array.isArray(publishOrderIds)
+    && resolveSharedQueueSaveOrderIds(publishOrderIds).includes(sharedQueueConflictState.orderId);
+}
+
 function clearSharedQueueAutosaveTimeout() {
   if (sharedQueueAutosaveTimeoutId != null) {
     window.clearTimeout(sharedQueueAutosaveTimeoutId);
@@ -2738,7 +2747,7 @@ async function saveQueueSnapshotToRemote(options = {}) {
     saveActiveOrderDraft();
   }
 
-  if (sharedQueueConflictState) {
+  if (!canSaveThroughSharedQueueConflict(publishOrderIds)) {
     renderSharedQueueToast();
     return;
   }

@@ -1128,12 +1128,15 @@ test("keeps the preview panel large and the connection status compact", async ({
     return {
       previewHeight: previewPanel.getBoundingClientRect().height,
       statusHeight: connectionStatus.getBoundingClientRect().height,
+      statusBottom: connectionStatus.getBoundingClientRect().bottom,
+      viewportHeight: window.innerHeight,
     };
   });
 
   expect(layout.previewHeight).toBeGreaterThan(300);
   expect(layout.statusHeight).toBeLessThan(180);
   expect(layout.previewHeight).toBeGreaterThan(layout.statusHeight * 3);
+  expect(layout.statusBottom).toBeGreaterThan(layout.viewportHeight - 32);
 });
 
 test("keeps additional line control groups reachable in the right-side inspector", async ({ page }) => {
