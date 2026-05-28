@@ -65,7 +65,9 @@ import {
 } from "./shared-queue-model.js";
 import {
   DEFAULT_BOUNDING_SIZE_PRESET_ID,
+  getBoundingSizePresetOptions,
   isValidBoundingSizePresetId,
+  resolveBoundingSizePreset,
 } from "./bounding-size-presets.js";
 
 const FONT_OPTIONS = [
@@ -199,6 +201,7 @@ const importedQuantityValue = document.querySelector("#importedQuantityValue");
 const presetInput = document.querySelector("#presetInput");
 const presetListingIndicator = document.querySelector("#presetListingIndicator");
 const weldExportedDesignInput = document.querySelector("#weldExportedDesignInput");
+const boundingSizePresetInput = document.querySelector("#boundingSizePresetInput");
 const globalHorizontalScaleInput = document.querySelector("#globalHorizontalScaleInput");
 const globalHorizontalScaleOutput = document.querySelector("#globalHorizontalScaleOutput");
 const globalVerticalScaleInput = document.querySelector("#globalVerticalScaleInput");
@@ -229,6 +232,7 @@ const presetDraftNameInput = document.querySelector("#presetDraftName");
 const savePresetButton = document.querySelector("#savePresetButton");
 const deletePresetButton = document.querySelector("#deletePresetButton");
 const presetWeldExportedDesignInput = document.querySelector("#presetWeldExportedDesignInput");
+const presetBoundingSizePresetInput = document.querySelector("#presetBoundingSizePresetInput");
 const presetGlobalHorizontalScaleInput = document.querySelector("#presetGlobalHorizontalScaleInput");
 const presetGlobalHorizontalScaleOutput = document.querySelector("#presetGlobalHorizontalScaleOutput");
 const presetGlobalVerticalScaleInput = document.querySelector("#presetGlobalVerticalScaleInput");
@@ -814,6 +818,23 @@ function renderPresetOptions() {
   presetInput.value = isValidPresetId(selectedPresetId)
     ? selectedPresetId
     : getDefaultPresetId();
+}
+
+function renderBoundingSizePresetOptions(selectElement) {
+  if (!selectElement) {
+    return;
+  }
+
+  const selectedValue = selectElement.value;
+  selectElement.replaceChildren(...getBoundingSizePresetOptions().map((option) => {
+    const element = document.createElement("option");
+    element.value = option.id;
+    element.textContent = option.label;
+    return element;
+  }));
+  selectElement.value = isValidBoundingSizePresetId(selectedValue)
+    ? selectedValue
+    : DEFAULT_BOUNDING_SIZE_PRESET_ID;
 }
 
 function buildPresetDraftNameFromOrder(order) {
@@ -3433,82 +3454,92 @@ function endPreviewMiddlePan() {
 }
 
 function renderPreviewGuideOnly() {
-  const previewBoxX = (DEFAULT_PREVIEW_WIDTH_MM - PREVIEW_LABEL_RIGHT_MM - PREVIEW_BOX_WIDTH_MM) / 2;
-  const previewBoxY = (DEFAULT_PREVIEW_HEIGHT_MM - PREVIEW_BOX_HEIGHT_MM) / 2;
+  const guide = resolveBoundingSizePreset(boundingSizePresetInput?.value || DEFAULT_BOUNDING_SIZE_PRESET_ID);
+  const previewWidthMm = guide.maxWidthMm + PREVIEW_MARGIN_MM * 2 + PREVIEW_LABEL_RIGHT_MM;
+  const previewHeightMm = guide.maxHeightMm + PREVIEW_MARGIN_MM * 2;
+  const previewBoxX = (previewWidthMm - PREVIEW_LABEL_RIGHT_MM - guide.maxWidthMm) / 2;
+  const previewBoxY = (previewHeightMm - guide.maxHeightMm) / 2;
 
   preview.replaceChildren();
-  preview.setAttribute("viewBox", `0 0 ${DEFAULT_PREVIEW_WIDTH_MM} ${DEFAULT_PREVIEW_HEIGHT_MM}`);
+  preview.setAttribute("viewBox", `0 0 ${previewWidthMm} ${previewHeightMm}`);
   lastLayout = {
-    previewWidthMm: DEFAULT_PREVIEW_WIDTH_MM,
-    previewHeightMm: DEFAULT_PREVIEW_HEIGHT_MM,
+    previewWidthMm,
+    previewHeightMm,
     previewBoxX,
     previewBoxY,
+    guide,
   };
   updateZoom(zoom);
-  appendPreviewGuide(previewBoxX, previewBoxY);
+  appendPreviewGuide(previewBoxX, previewBoxY, guide);
   updateConnectionStatus("pending", "Connectedness pending", "Enter text to analyze whether the face layer cuts as one acrylic piece.");
 }
 
-function appendPreviewGuide(previewBoxX, previewBoxY) {
-  const guideCenterX = previewBoxX + PREVIEW_BOX_WIDTH_MM / 2;
-  const guideCenterY = previewBoxY + PREVIEW_BOX_HEIGHT_MM / 2;
-  const leftInnerX = previewBoxX + PREVIEW_INNER_GUIDE_INSET_X_MM;
-  const rightInnerX = previewBoxX + PREVIEW_BOX_WIDTH_MM - PREVIEW_INNER_GUIDE_INSET_X_MM;
-  const topInnerY = previewBoxY + PREVIEW_INNER_GUIDE_INSET_Y_MM;
-  const bottomInnerY = previewBoxY + PREVIEW_BOX_HEIGHT_MM - PREVIEW_INNER_GUIDE_INSET_Y_MM;
+function appendPreviewGuide(previewBoxX, previewBoxY, guide = resolveBoundingSizePreset(DEFAULT_BOUNDING_SIZE_PRESET_ID)) {
+  const guideCenterX = previewBoxX + guide.maxWidthMm / 2;
+  const guideCenterY = previewBoxY + guide.maxHeightMm / 2;
+  const minBoxX = guideCenterX - guide.minWidthMm / 2;
+  const minBoxY = guideCenterY - guide.minHeightMm / 2;
   const topLabel = makeSvgElement("text", {
     class: "preview-guide-label",
     x: guideCenterX,
     y: previewBoxY - 2.6,
     "text-anchor": "middle",
   });
-  topLabel.textContent = '2.2"';
+  topLabel.textContent = `${guide.maxWidthIn}"`;
 
   const sideLabel = makeSvgElement("text", {
     class: "preview-guide-label",
-    x: previewBoxX + PREVIEW_BOX_WIDTH_MM + 4.5,
-    y: previewBoxY + PREVIEW_BOX_HEIGHT_MM / 2,
+    x: previewBoxX + guide.maxWidthMm + 4.5,
+    y: previewBoxY + guide.maxHeightMm / 2,
     "text-anchor": "middle",
-    transform: `rotate(90 ${previewBoxX + PREVIEW_BOX_WIDTH_MM + 4.5} ${previewBoxY + PREVIEW_BOX_HEIGHT_MM / 2})`,
+    transform: `rotate(90 ${previewBoxX + guide.maxWidthMm + 4.5} ${previewBoxY + guide.maxHeightMm / 2})`,
   });
-  sideLabel.textContent = '1.5"';
+  sideLabel.textContent = `${guide.maxHeightIn}"`;
 
   preview.append(
     makeSvgElement("rect", {
       class: "preview-guide-box",
       x: previewBoxX,
       y: previewBoxY,
-      width: PREVIEW_BOX_WIDTH_MM,
-      height: PREVIEW_BOX_HEIGHT_MM,
+      width: guide.maxWidthMm,
+      height: guide.maxHeightMm,
+      rx: 1.6,
+    }),
+    makeSvgElement("rect", {
+      class: "preview-guide-min-box",
+      x: minBoxX,
+      y: minBoxY,
+      width: guide.minWidthMm,
+      height: guide.minHeightMm,
       rx: 1.6,
     }),
     makeSvgElement("line", {
       class: "preview-guide-inner-line",
-      x1: leftInnerX,
+      x1: minBoxX,
       y1: previewBoxY,
-      x2: leftInnerX,
-      y2: previewBoxY + PREVIEW_BOX_HEIGHT_MM,
+      x2: minBoxX,
+      y2: previewBoxY + guide.maxHeightMm,
     }),
     makeSvgElement("line", {
       class: "preview-guide-inner-line",
-      x1: rightInnerX,
+      x1: minBoxX + guide.minWidthMm,
       y1: previewBoxY,
-      x2: rightInnerX,
-      y2: previewBoxY + PREVIEW_BOX_HEIGHT_MM,
+      x2: minBoxX + guide.minWidthMm,
+      y2: previewBoxY + guide.maxHeightMm,
     }),
     makeSvgElement("line", {
       class: "preview-guide-inner-line",
       x1: previewBoxX,
-      y1: topInnerY,
-      x2: previewBoxX + PREVIEW_BOX_WIDTH_MM,
-      y2: topInnerY,
+      y1: minBoxY,
+      x2: previewBoxX + guide.maxWidthMm,
+      y2: minBoxY,
     }),
     makeSvgElement("line", {
       class: "preview-guide-inner-line",
       x1: previewBoxX,
-      y1: bottomInnerY,
-      x2: previewBoxX + PREVIEW_BOX_WIDTH_MM,
-      y2: bottomInnerY,
+      y1: minBoxY + guide.minHeightMm,
+      x2: previewBoxX + guide.maxWidthMm,
+      y2: minBoxY + guide.minHeightMm,
     }),
     makeSvgElement("circle", {
       class: "preview-guide-box",
@@ -3841,6 +3872,7 @@ function getCurrentSettings() {
   return normalizeSettings({
     text: textInput.value,
     presetId,
+    boundingSizePresetId: boundingSizePresetInput?.value || DEFAULT_BOUNDING_SIZE_PRESET_ID,
     backingMm: Number(backingInput.value),
     weldExportedDesign: weldExportedDesignInput.checked,
     lines,
@@ -3851,6 +3883,9 @@ function applySettings(settings) {
   const normalized = normalizeSettings(settings);
   textInput.value = normalized.text;
   presetInput.value = normalized.presetId;
+  if (boundingSizePresetInput) {
+    boundingSizePresetInput.value = normalized.boundingSizePresetId;
+  }
   weldExportedDesignInput.checked = normalized.weldExportedDesign;
   backingInput.value = String(normalized.backingMm);
   updateBackingOutput();
@@ -5580,7 +5615,7 @@ function renderPreviewFromLayout(layout) {
   const previewBounds = facePreview.boundsMm.width > 0 && facePreview.boundsMm.height > 0
     ? facePreview.boundsMm
     : analysis?.faceBoundsMm || layout.textBoundsMm;
-  const frame = computePreviewFrame(layout, previewBounds);
+  const frame = computePreviewFrame(layout, previewBounds, layout.guide);
 
   lastLayout = {
     ...layout,
@@ -5624,7 +5659,7 @@ function renderPreviewFromLayout(layout) {
       });
 
   preview.append(backingLayer, faceLayer);
-  appendPreviewGuide(frame.previewBoxX, frame.previewBoxY);
+  appendPreviewGuide(frame.previewBoxX, frame.previewBoxY, layout.guide);
 }
 
 function updateConnectionStatusFromAnalysis(analysis) {
@@ -5927,7 +5962,7 @@ async function copyAllOrders() {
   }
 }
 
-function assembleOrderLayout(normalized, sourceLines, fitScale, fitted) {
+function assembleOrderLayout(normalized, sourceLines, fitScale, fitted, guide) {
   const text = normalized.text.trim();
   const lineScaleFactors = computeLineScaleFactors(sourceLines, fitScale);
   const {
@@ -5940,7 +5975,7 @@ function assembleOrderLayout(normalized, sourceLines, fitScale, fitted) {
     textHeightMm,
   } = fitted;
   const backingMm = normalized.backingMm;
-  const overflowsGuide = computeGuideOverflow(sourceLines, textWidthMm, textHeightMm);
+  const overflowsGuide = computeGuideOverflow(sourceLines, textWidthMm, textHeightMm, guide);
   const textBoundsMm = buildScaledTextBounds(textWidthMm, textHeightMm, backingMm, 1);
   const widthMm = textBoundsMm.width + textBoundsMm.left * 2;
   const heightMm = textBoundsMm.height + textBoundsMm.top * 2;
@@ -5967,6 +6002,8 @@ function assembleOrderLayout(normalized, sourceLines, fitScale, fitted) {
     heightMm,
     backingMm,
     weldExportedDesign: normalized.weldExportedDesign,
+    boundingSizePresetId: normalized.boundingSizePresetId,
+    guide,
     textBoundsMm,
     fit: {
       fitScale,
@@ -5979,11 +6016,12 @@ function assembleOrderLayout(normalized, sourceLines, fitScale, fitted) {
 
 function buildOrderLayout(settings) {
   const normalized = normalizeSettings(settings);
+  const guide = resolveBoundingSizePreset(normalized.boundingSizePresetId);
   const { lines } = measureTextLayoutForFit(normalized.text, normalized.lines);
-  let fitScale = computeMixedFitScale(lines);
+  let fitScale = computeMixedFitScale(lines, guide);
   let scaledLineSettings = buildScaledLineSettings(lines, fitScale);
   let fitted = measureTextLayoutForFit(normalized.text, scaledLineSettings);
-  let layout = assembleOrderLayout(normalized, lines, fitScale, fitted);
+  let layout = assembleOrderLayout(normalized, lines, fitScale, fitted, guide);
 
   for (let index = 0; index < 3; index += 1) {
     if (layout.fit.overflowsGuide && hasLockedTextHeight(lines)) {
@@ -5991,7 +6029,7 @@ function buildOrderLayout(settings) {
     }
 
     const faceBounds = renderFaceCanvas(layout.letters, layout.widthMm, layout.heightMm).boundsMm;
-    const residualFitScale = computeTextFitScale(faceBounds.width, faceBounds.height);
+    const residualFitScale = computeTextFitScale(faceBounds.width, faceBounds.height, guide);
 
     if (!Number.isFinite(residualFitScale) || Math.abs(residualFitScale - 1) < 0.001) {
       break;
@@ -6000,7 +6038,7 @@ function buildOrderLayout(settings) {
     fitScale *= residualFitScale;
     scaledLineSettings = buildScaledLineSettings(lines, fitScale);
     fitted = measureTextLayoutForFit(normalized.text, scaledLineSettings);
-    layout = assembleOrderLayout(normalized, lines, fitScale, fitted);
+    layout = assembleOrderLayout(normalized, lines, fitScale, fitted, guide);
   }
 
   return layout;
@@ -6094,6 +6132,10 @@ presetInput.addEventListener("change", () => {
     order.source.manualPresetOverride = true;
   }
   applyPresetSelection(presetInput.value);
+});
+boundingSizePresetInput?.addEventListener("change", () => {
+  updateActiveOrderFromControls();
+  render();
 });
 reloadPresetButton?.addEventListener("click", () => {
   const order = getActiveOrder();
@@ -6327,6 +6369,8 @@ renderSharedQueueLogoutButton();
 await checkFonts();
 await loadPresetRegistry();
 renderPresetOptions();
+renderBoundingSizePresetOptions(boundingSizePresetInput);
+renderBoundingSizePresetOptions(presetBoundingSizePresetInput);
 renderPresetEditorDraft();
 updateBackingOutput();
 sharedQueueAccessToken = await bootstrapSharedQueueAccess();

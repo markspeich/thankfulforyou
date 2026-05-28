@@ -2133,6 +2133,7 @@ button:disabled {
 }
 
 .preview-guide-box,
+.preview-guide-min-box,
 .preview-guide-inner-line {
   fill: none;
   stroke: rgb(12, 150, 217);
