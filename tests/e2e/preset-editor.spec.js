@@ -340,6 +340,35 @@ test("switches between order items and presets from the left nav", async ({ page
   await expect(appShell).toHaveAttribute("data-nav-collapsed", "true");
 });
 
+test("remembers the collapsed left nav state after refresh", async ({ page }) => {
+  await page.goto("/");
+
+  const appShell = page.locator(".app-shell");
+  await expect(appShell).toHaveAttribute("data-nav-collapsed", "false");
+
+  await page.getByRole("button", { name: "Collapse navigation" }).click();
+  await expect(appShell).toHaveAttribute("data-nav-collapsed", "true");
+
+  await page.reload();
+
+  await expect(appShell).toHaveAttribute("data-nav-collapsed", "true");
+  await expect(page.getByRole("button", { name: "Expand navigation" })).toBeVisible();
+});
+
+test("applies the stored collapsed left nav state before the app module loads", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem("thankfulforyou.workspaceNavCollapsed", "true");
+  });
+  await page.route("**/src/app.js", async () => {
+    await new Promise(() => {});
+  });
+
+  await page.goto("/", { waitUntil: "commit" });
+  await page.locator(".workspace-nav").waitFor();
+
+  await expect(page.locator(".app-shell")).toHaveAttribute("data-nav-collapsed", "true");
+});
+
 test("can create a new preset from order settings and update an existing preset", async ({ page }) => {
   const nonce = Date.now();
   const createdPresetName = `Morgan RN ${nonce}`;

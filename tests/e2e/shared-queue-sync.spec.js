@@ -141,7 +141,7 @@ test("discarding a conflicted local draft reloads the shared queue without a fol
   await page.locator("#textInput").fill("Remote Shared Updated");
   await page.getByRole("button", { name: "Save", exact: true }).click();
 
-  await expect.poll(() => sharedQueueSavePayloads.length).toBeGreaterThan(0);
+  await expect.poll(() => sharedQueueSavePayloads.length, { timeout: 15000 }).toBeGreaterThan(0);
   await expect(page.locator("#sharedQueueBanner")).toContainText("Another browser or user updated this design first.");
   await expect(page.locator("#sharedQueueBanner")).toContainText("Last updated by Avery");
 

@@ -9,6 +9,16 @@
   </head>
   <body>
     <main class="app-shell" data-workspace="orders" data-nav-collapsed="false">
+      <script>
+        (() => {
+          try {
+            const shell = document.currentScript.parentElement;
+            const isCollapsed = localStorage.getItem("thankfulforyou.workspaceNavCollapsed") === "true";
+            shell.dataset.navCollapsed = String(isCollapsed);
+          } catch {
+          }
+        })();
+      </script>
       <section id="sharedQueueAuthGate" class="shared-auth-gate" hidden>
         <div class="shared-auth-card">
           <p class="shared-auth-eyebrow">Shared Queue Access</p>
@@ -214,10 +224,6 @@
                     </button>
                   </div>
                 </div>
-                <div id="queueSyncStatus" class="status-card" aria-live="polite" hidden>
-                  <strong id="queueSyncStatusLabel"></strong>
-                  <span id="queueSyncStatusDetail"></span>
-                </div>
               </div>
               </details>
             </div>
@@ -238,13 +244,11 @@
 
           <section class="order-queue" aria-label="Design queue">
             <div class="section-heading">Queue <output id="orderCountOutput">0</output></div>
-            <div class="order-queue-card">
-              <label class="search-field">
-                <span class="visually-hidden">Search designs</span>
-                <input id="orderSearchInput" type="search" autocomplete="off" placeholder="Search designs...">
-              </label>
-              <div id="orderList" class="order-list" role="list"></div>
-            </div>
+            <label class="search-field">
+              <span class="visually-hidden">Search designs</span>
+              <input id="orderSearchInput" type="search" autocomplete="off" placeholder="Search designs...">
+            </label>
+            <div id="orderList" class="order-list" role="list"></div>
           </section>
         </aside>
 
