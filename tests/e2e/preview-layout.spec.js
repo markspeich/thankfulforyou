@@ -1071,6 +1071,35 @@ test("keeps the queue tools popover inside the queue panel near the tablet break
   expect(popoverBounds.popover.width).toBeLessThanOrEqual(popoverBounds.queueHeader.width);
 });
 
+test("keeps the editor tools popover inside the editor panel near the tablet breakpoint", async ({ page }) => {
+  await page.setViewportSize({ width: 830, height: 900 });
+  await openEditorTools(page);
+
+  const popoverBounds = await page.evaluate(() => {
+    const popover = document.querySelector(".editor-tools-popover");
+    const editorPanel = document.querySelector(".editor-panel");
+    const rect = (node) => {
+      const box = node.getBoundingClientRect();
+      return {
+        left: box.left,
+        right: box.right,
+        width: box.width,
+      };
+    };
+
+    return {
+      popover: rect(popover),
+      editorPanel: rect(editorPanel),
+      viewportWidth: window.innerWidth,
+    };
+  });
+
+  expect(popoverBounds.popover.left).toBeGreaterThanOrEqual(popoverBounds.editorPanel.left);
+  expect(popoverBounds.popover.right).toBeLessThanOrEqual(popoverBounds.editorPanel.right);
+  expect(popoverBounds.popover.right).toBeLessThanOrEqual(popoverBounds.viewportWidth);
+  expect(popoverBounds.popover.width).toBeGreaterThan(160);
+});
+
 test("grows the preview area when the browser viewport gets taller", async ({ page }) => {
   const measurePreviewPanelHeight = async () => {
     return page.locator(".preview-panel").evaluate((element) => element.getBoundingClientRect().height);
@@ -2383,19 +2412,26 @@ test("skips already imported Etsy line items when importing another batch", asyn
   await expect(page.locator("#importStatus")).toBeVisible();
   await expect(page.locator("#importStatus")).toContainText("Imported 2 Etsy designs from the clipboard.");
   await expect.poll(async () => {
-    return page.locator("#importStatus").evaluate((node) => {
-      const rect = node.getBoundingClientRect();
-      const style = window.getComputedStyle(node);
+    return page.evaluate(() => {
+      const alert = document.querySelector("#importStatus");
+      const topCard = document.querySelector(".editor-top-card");
+      if (!(alert instanceof HTMLElement) || !(topCard instanceof HTMLElement)) {
+        return null;
+      }
+
+      const alertRect = alert.getBoundingClientRect();
+      const topCardRect = topCard.getBoundingClientRect();
+      const style = window.getComputedStyle(alert);
       return {
         position: style.position,
-        bottomGap: Math.round(window.innerHeight - rect.bottom),
-        centerOffset: Math.round(Math.abs(window.innerWidth / 2 - (rect.left + rect.width / 2))),
+        aboveTopCard: alertRect.bottom <= topCardRect.top,
+        alignedWithTopCard: Math.abs(alertRect.left - topCardRect.left) <= 1,
       };
     });
   }).toEqual({
-    position: "fixed",
-    bottomGap: 24,
-    centerOffset: 0,
+    position: "relative",
+    aboveTopCard: true,
+    alignedWithTopCard: true,
   });
   await expect(page.locator("#importStatus")).toBeHidden({ timeout: 8000 });
 

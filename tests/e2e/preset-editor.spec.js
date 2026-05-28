@@ -320,7 +320,7 @@ test("switches between order items and presets from the left nav", async ({ page
   const presetsWorkspace = page.locator("#presetsWorkspace");
   const editorPanel = page.locator(".editor-panel");
 
-  await expect(page.getByRole("button", { name: "Order Items" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Design Queue" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Presets" })).toBeVisible();
   await expect(ordersWorkspace).toBeVisible();
   await expect(presetsWorkspace).toBeHidden();
@@ -331,7 +331,7 @@ test("switches between order items and presets from the left nav", async ({ page
   await expect(page.getByRole("region", { name: "Preset editor workspace" })).toBeVisible();
   await expect(presetsWorkspace).toBeVisible();
 
-  await page.getByRole("button", { name: "Order Items" }).click();
+  await page.getByRole("button", { name: "Design Queue" }).click();
   await expect(page.getByRole("region", { name: "Order items workspace" })).toBeVisible();
   await expect(page.getByRole("region", { name: "Preset editor workspace" })).toBeHidden();
   await expect(editorPanel).toHaveClass(/is-hidden/);
@@ -426,7 +426,7 @@ test("can create a new preset from order settings and update an existing preset"
   await expect(page.locator("#presetEditorSelect")).toHaveValue(createdPresetId);
   await expect(page.locator("#presetEditorSelect")).toContainText(createdPresetName);
 
-  await page.getByRole("button", { name: "Order Items" }).click();
+  await page.getByRole("button", { name: "Design Queue" }).click();
   await page.locator("#presetInput").selectOption(createdPresetId);
   await expect(page.locator("#presetInput")).toHaveValue(createdPresetId);
   await expect(page.locator('[data-line-index="0"] [data-setting="fontId"]')).toHaveValue("skywalk");
@@ -467,7 +467,7 @@ test("can create a new preset from order settings and update an existing preset"
   await expect(page.locator("#presetEditorSelect")).toHaveValue(createdPresetId);
   await expect(page.locator("#presetEditorSelect")).toContainText(renamedPresetName);
 
-  await page.getByRole("button", { name: "Order Items" }).click();
+  await page.getByRole("button", { name: "Design Queue" }).click();
   await page.locator("#orderList .order-row").filter({ hasText: "Design 1" }).click();
   await expect(page.locator("#presetInput")).toHaveValue(createdPresetId);
   await expect(page.locator("#downloadButton")).toBeEnabled();
@@ -548,7 +548,7 @@ test("assigning a preset to a completed imported order clears stale batch-export
   }, { timeout: 10000 }).toBe(true);
   await expect(page.locator("#presetEditorStatus")).toContainText("Saved");
 
-  await page.getByRole("button", { name: "Order Items" }).click();
+  await page.getByRole("button", { name: "Design Queue" }).click();
   await completeDesign(page, "Design 1");
 
   await setClipboardPayload(page, importPayload);
@@ -604,7 +604,7 @@ test("renaming a preset while analysis is running still restores export readines
   }, { timeout: 10000 }).toBe(true);
   await expect(page.locator("#presetEditorStatus")).toContainText("Saved");
 
-  await page.getByRole("button", { name: "Order Items" }).click();
+  await page.getByRole("button", { name: "Design Queue" }).click();
   await page.locator("#presetInput").selectOption(createdPresetId);
   await page.locator("#captureButton").click();
 
@@ -621,7 +621,7 @@ test("renaming a preset while analysis is running still restores export readines
   const pendingAnalysis = pendingAnalyses.shift();
   await pendingAnalysis.fulfill();
 
-  await page.getByRole("button", { name: "Order Items" }).click();
+  await page.getByRole("button", { name: "Design Queue" }).click();
   await expect(page.locator("#presetInput")).toHaveValue(createdPresetId);
   await expect.poll(async () => page.locator("#downloadButton").isEnabled(), { timeout: 20000 }).toBe(true);
   await expect(page.locator("#orderList .order-row").filter({ hasText: "Design 1" })).toContainText("Complete");
@@ -682,7 +682,7 @@ test("shows assigned listings for a preset and lets operators unassign them", as
   await expect(page.locator(".preset-assignment-row")).toHaveCount(0);
   await expect(page.locator("#presetAssignmentsEmptyState")).toContainText("No Etsy listings are currently assigned to this preset.");
 
-  await page.getByRole("button", { name: "Order Items" }).click();
+  await page.getByRole("button", { name: "Design Queue" }).click();
   await expect(page.locator("#presetInput")).not.toHaveValue("preset-c3e8a1d7f520");
   await expect(page.locator("#downloadButton")).toBeDisabled();
 
@@ -757,7 +757,7 @@ test("deletes a saved preset only after confirmation and migrates active uses aw
   }, { timeout: 10000 }).toBe(true);
   await expect(page.locator("#presetEditorStatus")).toContainText("Saved");
 
-  await page.getByRole("button", { name: "Order Items" }).click();
+  await page.getByRole("button", { name: "Design Queue" }).click();
   await page.locator("#presetInput").selectOption(createdPresetId);
   await expect(page.locator("#presetInput")).toHaveValue(createdPresetId);
 
@@ -780,7 +780,7 @@ test("deletes a saved preset only after confirmation and migrates active uses aw
   await expect(page.locator("#presetEditorStatus")).toContainText("Deleted");
   await expect(page.locator(`#presetEditorSelect option[value="${createdPresetId}"]`)).toHaveCount(0);
 
-  await page.getByRole("button", { name: "Order Items" }).click();
+  await page.getByRole("button", { name: "Design Queue" }).click();
   await expect(page.locator("#presetInput")).not.toHaveValue(createdPresetId);
   await expect(page.locator(`#presetInput option[value="${createdPresetId}"]`)).toHaveCount(0);
 });

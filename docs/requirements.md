@@ -66,10 +66,10 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Add a `Presets` dropdown directly below the `Order Text` field.
 - The `Preset` control card in the selected-order editor must expose its secondary actions from an ellipses menu in the card header rather than showing them as always-visible buttons.
 - The `Presets` dropdown must offer these production presets: `All Candlepin`, `Candlepin, Skywalk`, `Skywalk, Somekind`, and `Skywalk, Candlepin`.
-- The app should add a top-level left navigation bar with two items: `Order Items` and `Presets`.
+- The app should add a top-level left navigation bar with two items: `Design Queue` and `Presets`.
 - The left navigation bar should be collapsible between an expanded icon-plus-label state and a collapsed icon-only state.
 - The left navigation bar should remember its expanded or collapsed state across browser refreshes.
-- `Order Items` should open the existing production queue workspace with the design queue and selected-order editor.
+- `Design Queue` should open the existing production queue workspace with the design queue and selected-order editor.
 - `Presets` should open a dedicated preset editor workspace for viewing, editing, and creating presets.
 - The `All Candlepin` preset must set every text line to the Candlepin font.
 - The `Candlepin, Skywalk` preset must set the first text line to Candlepin and every subsequent line to Skywalk.
@@ -210,6 +210,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - The first Etsy import target should accept an Etsy orders HTML save exported from the browser.
 - The repository docs folder includes a sample Etsy orders HTML export at `docs/Orders - Etsy.html` for import development and testing.
 - The import pipeline should extract at minimum the Etsy order number, the Etsy listing ID, and every Personalization text value present on each order line item.
+- The import pipeline should treat Etsy `transaction_id` as the preferred line-item identity when it is available, because one Etsy order can contain multiple personalized line items with the same order number.
 - The import pipeline should also extract the Etsy `Color` variation value when it is present on the line item and store it with the imported design metadata.
 - The import pipeline should also extract the Etsy line-item quantity when it is present and store it with the imported design metadata.
 - The import pipeline should prefer the embedded Etsy page data model when available rather than relying only on visible DOM scraping, because the saved page includes structured order and transaction data.
@@ -351,9 +352,11 @@ The website should be a practical production tool rather than a marketing site. 
 - The left queue should keep only `Complete` and `In Progress` summary counters visible in the main panel; `Not Started` does not need a visible counter in the desktop layout.
 - Queue batch actions should move behind a compact queue-tools affordance beside the `Design Queue` title instead of occupying a permanent full-width button block above the list.
 - The queue-tools menu should include a `View Color Counts` action that opens an in-app popup summarizing the entire queued batch's imported colors in a table, using imported quantity when available and otherwise counting each queued design as one.
-- After `Import Clipboard` runs, its status message should appear as a brief main-screen alert near the bottom center of the viewport instead of only inside the queue-tools popup.
-- Layout-control copy and paste feedback should use that same bottom-center floating main-screen alert pattern instead of introducing a separate notification style.
-- Future lightweight workflow confirmations and warnings of this kind should reuse the same floating alert technique so queue actions, copy/paste actions, and similar operator feedback stay visually consistent.
+- After `Import Clipboard` runs, its status message should appear as an alert card above the selected order's image/title/design text card instead of only inside the queue-tools popup.
+- Layout-control copy and paste feedback should use that same selected-order alert-card pattern instead of introducing a separate notification style.
+- Future lightweight workflow confirmations and warnings of this kind should reuse the same alert-card technique so queue actions, copy/paste actions, and similar operator feedback stay visually consistent.
+- Shared queue stale-design conflicts and shared-sync warnings should use the same alert-card pattern above the selected order's image/title/design text card. A stale-design alert should only show for the affected queue row and should say `A newer version of this design has been saved.` with a `Load Latest Design` action. The editor should not show a persistent shared-queue status card just to say the queue is connected.
+- Once a stale-design conflict is detected, the app must not send any further shared-queue saves, including background autosaves caused by row selection, until the operator clicks `Load Latest Design` or otherwise reloads the latest shared queue state.
 - Under the selected-order header action row on desktop, the content area should split into two main columns.
 - The left editor column should contain the imported listing details, imported color and quantity, the `Design Text` field, and the preview with connectedness status.
 - In the selected-order editor, the `Design Text` title and textarea should use slightly larger type than the surrounding compact controls so entered personalization is easier to read while editing.

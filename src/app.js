@@ -145,6 +145,8 @@ const addOrderButton = document.querySelector("#addOrderButton");
 const importClipboardButton = document.querySelector("#importClipboardButton");
 const clearQueueButton = document.querySelector("#clearQueueButton");
 const workflowAlert = document.querySelector("#importStatus");
+const workflowAlertText = document.querySelector("#workflowAlertText");
+const workflowAlertActionButton = document.querySelector("#workflowAlertActionButton");
 const queueSyncStatus = document.querySelector("#queueSyncStatus");
 const queueSyncStatusLabel = document.querySelector("#queueSyncStatusLabel");
 const queueSyncStatusDetail = document.querySelector("#queueSyncStatusDetail");
@@ -181,11 +183,6 @@ const notStartedCountOutput = document.querySelector("#notStartedCountOutput");
 const orderList = document.querySelector("#orderList");
 const activeOrderName = document.querySelector("#activeOrderName");
 const activeOrderMeta = document.querySelector("#activeOrderMeta");
-const sharedQueueBanner = document.querySelector("#sharedQueueBanner");
-const sharedQueueBannerLabel = document.querySelector("#sharedQueueBannerLabel");
-const sharedQueueBannerDetail = document.querySelector("#sharedQueueBannerDetail");
-const sharedQueueBannerAudit = document.querySelector("#sharedQueueBannerAudit");
-const sharedQueueBannerReloadButton = document.querySelector("#sharedQueueBannerReloadButton");
 const editorPanel = document.querySelector(".editor-panel");
 const listingReferenceCard = document.querySelector("#listingReferenceCard");
 const listingReferenceTitle = document.querySelector("#listingReferenceTitle");
@@ -270,7 +267,6 @@ let activeConfirmationRequest = null;
 let confirmationDialogRestoreFocusTarget = null;
 let sharedSessionContext = null;
 let sharedQueueContext = null;
-let sharedQueueRecoveryDraft = null;
 let sharedQueueAutosaveTimeoutId = null;
 let sharedQueueAutosaveInFlight = false;
 let sharedQueueAutosavePending = false;
@@ -279,10 +275,8 @@ let lastSharedQueueSaveKey = null;
 let sharedQueueSyncState = "disabled";
 let sharedQueueSyncDetail = "";
 let sharedQueueConflictState = null;
-let sharedQueueRecoveryState = null;
-let sharedQueueRecoveryOrderId = null;
-let sharedQueueRecoveryMarker = null;
 let sharedQueueAccessToken = null;
+let workflowAlertActionHandler = null;
 
 function readSharedQueueAccessTokenOverride() {
   return globalThis.__TFU_TEST_SHARED_QUEUE_ACCESS_TOKEN__ ?? null;
@@ -377,7 +371,7 @@ function handleSharedQueueAuthenticationRequired(detail = "Shared queue session 
   sharedQueueAccessToken = null;
   disableSharedQueueSync(detail);
   showSharedQueueSignIn(detail);
-  renderSharedQueueBanner();
+  renderSharedQueueToast();
 }
 
 async function bootstrapSharedQueueAccess() {
@@ -1786,14 +1780,6 @@ function resolveSharedQueueBannerOrderId() {
     return sharedQueueConflictState.orderId;
   }
 
-  if (sharedQueueRecoveryOrderId) {
-    return sharedQueueRecoveryOrderId;
-  }
-
-  if (sharedQueueRecoveryMarker?.conflictOrderId) {
-    return sharedQueueRecoveryMarker.conflictOrderId;
-  }
-
   return null;
 }
 
@@ -2080,49 +2066,6 @@ function normalizeStoredUpdatedAt(updatedAt) {
   return Number.isNaN(Date.parse(normalized)) ? null : normalized;
 }
 
-function normalizeSharedQueueRecoveryMarker(marker) {
-  if (!marker || typeof marker !== "object") {
-    return null;
-  }
-
-  if (marker.reason !== "shared-queue-conflict") {
-    return null;
-  }
-
-  const preservedAt = normalizeStoredUpdatedAt(marker.preservedAt);
-  const conflictOrderId = typeof marker.conflictOrderId === "string" ? marker.conflictOrderId.trim() : "";
-  const queueId = typeof marker.queueId === "string" ? marker.queueId.trim() : "";
-  const workspaceId = typeof marker.workspaceId === "string" ? marker.workspaceId.trim() : "";
-
-  return {
-    reason: "shared-queue-conflict",
-    preservedAt,
-    conflictOrderId,
-    queueId,
-    workspaceId,
-  };
-}
-
-function doesRecoveryMarkerMatchQueue(marker, queue) {
-  if (!marker || !queue) {
-    return false;
-  }
-
-  const markerQueueId = typeof marker.queueId === "string" ? marker.queueId.trim() : "";
-  const markerWorkspaceId = typeof marker.workspaceId === "string" ? marker.workspaceId.trim() : "";
-  const queueId = typeof queue.id === "string" ? queue.id.trim() : "";
-  const workspaceId = typeof queue.workspaceId === "string" ? queue.workspaceId.trim() : "";
-
-  return Boolean(
-    markerQueueId
-    && markerWorkspaceId
-    && queueId
-    && workspaceId
-    && markerQueueId === queueId
-    && markerWorkspaceId === workspaceId
-  );
-}
-
 function hydrateStoredOrder(order, index) {
   if (!order || typeof order !== "object") {
     return null;
@@ -2323,8 +2266,6 @@ function buildPersistedQueueState() {
     version: STORAGE_VERSION,
     orderSequence,
     queue: sharedQueueContext ? structuredClone(sharedQueueContext) : null,
-    recoveryDraftMeta: sharedQueueRecoveryMarker ? structuredClone(sharedQueueRecoveryMarker) : null,
-    recoveryDraftSnapshot: sharedQueueRecoveryDraft ? structuredClone(sharedQueueRecoveryDraft) : null,
     activeOrderId,
     orders: buildSerializedQueueOrders({ includePublishedSnapshot: true }),
   };
@@ -2445,8 +2386,7 @@ function isSharedQueueSyncEnabled() {
 }
 
 function canAttemptSharedQueueSave() {
-  return hasSharedQueueSyncContext()
-    && (sharedQueueSyncState === "enabled" || sharedQueueSyncState === "recovery-review");
+  return hasSharedQueueSyncContext() && sharedQueueSyncState === "enabled";
 }
 
 function hasSharedQueueSyncContext() {
@@ -2472,6 +2412,16 @@ function hasPendingSharedQueueChanges() {
 
   const snapshotKey = buildSharedQueueSaveKey(buildSharedQueueSnapshot());
   return Boolean(snapshotKey && snapshotKey !== lastSharedQueueSaveKey);
+}
+
+function resolveSharedQueueSaveOrderIds(publishOrderIds) {
+  if (Array.isArray(publishOrderIds)) {
+    return publishOrderIds.filter((value) => typeof value === "string" && value);
+  }
+
+  return orders
+    .filter((order) => hasUnsavedPublishedSnapshotChanges(order) || isOrderAwaitingPublishedSave(order))
+    .map((order) => order.id);
 }
 
 function clearSharedQueueAutosaveTimeout() {
@@ -2565,61 +2515,45 @@ function updateQueueSyncStatus(kind, options = {}) {
   queueSyncStatusDetail.textContent = status.detail;
 }
 
-function renderSharedQueueBanner(activeOrder = getActiveOrder()) {
-  if (!sharedQueueBanner || !sharedQueueBannerLabel || !sharedQueueBannerDetail || !sharedQueueBannerAudit || !sharedQueueBannerReloadButton) {
-    return;
-  }
-
+function renderSharedQueueToast(activeOrder = getActiveOrder()) {
   const isOrderRelevant = isSharedQueueBannerRelevantToOrder(activeOrder);
   const auditSource = isOrderRelevant && sharedQueueConflictState?.auditSource
     ? sharedQueueConflictState.auditSource
     : getSharedQueueAuditSource(activeOrder);
   const auditText = buildLastUpdatedText(auditSource);
-  let tone = "pending";
+  let tone = "error";
   let label = "";
   let detail = "";
   let actionLabel = "";
+  let actionHandler = null;
+  let includeAuditText = Boolean(auditText);
 
   if (sharedQueueConflictState && isOrderRelevant) {
-    tone = "warning";
-    label = "Save conflict";
-    detail = sharedQueueConflictState.detail;
-    actionLabel = "Reload Shared Queue";
-  } else if (sharedQueueRecoveryState === "available" && sharedQueueRecoveryDraft && isOrderRelevant) {
-    tone = "warning";
-    label = "Local recovery draft available";
-    detail = "A newer shared revision was loaded. Review your saved local draft if you still need those edits.";
-    actionLabel = "Review Local Draft";
-  } else if (sharedQueueRecoveryState === "active" && isOrderRelevant) {
-    tone = "warning";
-    label = "Recovered local draft";
-    detail = "Review this local draft, then click Save to retry it against the shared queue.";
+    label = "A newer version of this design has been saved";
+    actionLabel = "Load Latest Design";
+    actionHandler = reloadSharedQueueFromToast;
+    includeAuditText = false;
   } else if (sharedQueueSyncState === "local-recovery") {
-    tone = "warning";
     label = "Local recovery only";
     detail = sharedQueueSyncDetail || "Shared queue sync is unavailable in this browser right now.";
-  } else if (isSharedQueueSyncEnabled()) {
-    label = "Shared queue connected";
-    detail = "Save pushes this queue back to the shared workspace.";
   } else {
-    sharedQueueBanner.hidden = true;
-    sharedQueueBannerLabel.textContent = "";
-    sharedQueueBannerDetail.textContent = "";
-    sharedQueueBannerAudit.textContent = "";
-    sharedQueueBannerReloadButton.hidden = true;
-    sharedQueueBanner.classList.remove("status-ok", "status-warning", "status-pending");
+    clearSharedQueueToast();
     return;
   }
 
-  sharedQueueBanner.hidden = false;
-  sharedQueueBanner.classList.remove("status-ok", "status-warning", "status-pending");
-  sharedQueueBanner.classList.add(`status-${tone}`);
-  sharedQueueBannerLabel.textContent = label;
-  sharedQueueBannerDetail.textContent = detail;
-  sharedQueueBannerAudit.textContent = auditText;
-  sharedQueueBannerAudit.hidden = !auditText;
-  sharedQueueBannerReloadButton.hidden = !actionLabel;
-  sharedQueueBannerReloadButton.textContent = actionLabel;
+  const message = `${label}. ${[detail, includeAuditText ? auditText : ""].filter(Boolean).join(" ")}`.trim();
+  updateWorkflowAlert(message, tone, {
+    actionLabel,
+    onAction: actionHandler,
+    autoHideMs: 0,
+    source: "shared-queue",
+  });
+}
+
+function clearSharedQueueToast() {
+  if (workflowAlert?.dataset.source === "shared-queue") {
+    updateWorkflowAlert("", "pending", { autoHideMs: 0 });
+  }
 }
 
 function applyPersistedQueueState(parsed) {
@@ -2627,7 +2561,6 @@ function applyPersistedQueueState(parsed) {
     return false;
   }
 
-  sharedQueueRecoveryMarker = normalizeSharedQueueRecoveryMarker(parsed.recoveryDraftMeta);
   setSharedQueueContext(parsed.queue || sharedQueueContext || sharedSessionContext?.queue || null);
   const restoredOrders = parsed.orders
     .map((order, index) => hydrateStoredOrder(order, index))
@@ -2709,54 +2642,16 @@ function flushLocalQueuePersistence() {
   persistQueueState({ skipRemoteSave: true });
 }
 
-function restoreSharedQueueRecoveryDraft() {
-  if (!sharedQueueRecoveryDraft || !applyPersistedQueueState(sharedQueueRecoveryDraft)) {
-    return;
-  }
-
-  sharedQueueRecoveryOrderId = sharedQueueRecoveryMarker?.conflictOrderId || activeOrderId || null;
+function clearSharedQueueConflict() {
   sharedQueueConflictState = null;
-  sharedQueueRecoveryState = "active";
-  sharedQueueRecoveryMarker = null;
-  sharedQueueRecoveryDraft = null;
-  setSharedQueueSyncState("recovery-review");
-
-  const activeOrder = getActiveOrder();
-  if (activeOrder) {
-    applySettings(activeOrder.settings);
-  } else {
-    resetEditorToEmptyState();
-  }
-
-  suppressQueueSyncLocalNotice = true;
-  suppressSharedQueueAutosave = true;
-  persistQueueState({ skipRemoteSave: true });
-  suppressSharedQueueAutosave = false;
-  suppressQueueSyncLocalNotice = false;
-
-  renderOrderList();
-  scheduleDeferredPreviewRender();
-}
-
-function discardSharedQueueRecoveryDraft() {
-  sharedQueueConflictState = null;
-  sharedQueueRecoveryState = null;
-  sharedQueueRecoveryOrderId = null;
-  sharedQueueRecoveryMarker = null;
-  sharedQueueRecoveryDraft = null;
   suppressQueueSyncLocalNotice = true;
   persistQueueState({ skipRemoteSave: true });
   suppressQueueSyncLocalNotice = false;
 }
 
-function reloadSharedQueueFromBanner() {
-  if (sharedQueueRecoveryState === "available") {
-    restoreSharedQueueRecoveryDraft();
-    return;
-  }
-
-  if (sharedQueueConflictState || sharedQueueRecoveryDraft || sharedQueueRecoveryMarker) {
-    discardSharedQueueRecoveryDraft();
+function reloadSharedQueueFromToast() {
+  if (sharedQueueConflictState) {
+    clearSharedQueueConflict();
   }
 
   saveActiveOrderDraft();
@@ -2843,6 +2738,11 @@ async function saveQueueSnapshotToRemote(options = {}) {
     saveActiveOrderDraft();
   }
 
+  if (sharedQueueConflictState) {
+    renderSharedQueueToast();
+    return;
+  }
+
   try {
     snapshot = buildSharedQueueSnapshot({ publishOrderIds });
     const snapshotKey = buildSharedQueueSaveKey(snapshot);
@@ -2862,16 +2762,15 @@ async function saveQueueSnapshotToRemote(options = {}) {
     sharedQueueAccessToken = accessToken;
 
     const savedSnapshot = await saveSharedQueueSnapshot(snapshot, { keepalive, accessToken });
+    if (sharedQueueConflictState) {
+      renderSharedQueueToast();
+      return;
+    }
     if (savedSnapshot?.queue) {
       enableSharedQueueSync(savedSnapshot.queue);
     }
     mergeSharedQueuePublishedStateFromSnapshot(savedSnapshot || snapshot);
     mergeSharedQueueAuditFromSnapshot(savedSnapshot);
-    sharedQueueConflictState = null;
-    sharedQueueRecoveryState = null;
-    sharedQueueRecoveryOrderId = null;
-    sharedQueueRecoveryMarker = null;
-    sharedQueueRecoveryDraft = null;
     lastSharedQueueSaveKey = buildSharedQueueSaveKey(buildSharedQueueSnapshot());
     suppressQueueSyncLocalNotice = true;
     suppressSharedQueueAutosave = true;
@@ -2895,26 +2794,23 @@ async function saveQueueSnapshotToRemote(options = {}) {
     suppressQueueSyncLocalNotice = false;
     const isConflictError = error instanceof SharedQueueConflictError;
     if (isConflictError) {
-      const conflictingOrder = orders.find((order) => order.id === error.details?.orderId) || getActiveOrder();
+      const fallbackConflictOrderId = resolveSharedQueueSaveOrderIds(publishOrderIds)[0] || "";
+      const conflictingOrder = orders.find((order) => order.id === error.details?.orderId)
+        || orders.find((order) => order.id === fallbackConflictOrderId)
+        || getActiveOrder();
+      const conflictingOrderId = typeof error.details?.orderId === "string" && error.details.orderId
+        ? error.details.orderId
+        : conflictingOrder?.id || "";
       if (conflictingOrder) {
         applySharedQueueAuditToOrder(conflictingOrder, error.details);
       }
-      sharedQueueRecoveryMarker = {
-        reason: "shared-queue-conflict",
-        preservedAt: new Date().toISOString(),
-        conflictOrderId: typeof error.details?.orderId === "string" ? error.details.orderId : "",
-        queueId: typeof snapshot.queue?.id === "string" ? snapshot.queue.id : "",
-        workspaceId: typeof snapshot.queue?.workspaceId === "string" ? snapshot.queue.workspaceId : "",
-      };
-      sharedQueueRecoveryDraft = structuredClone(buildPersistedQueueState());
-      sharedQueueRecoveryState = null;
       sharedQueueConflictState = {
-        orderId: typeof error.details?.orderId === "string" ? error.details.orderId : "",
-        detail: "Another browser or user updated this design first. Reload the shared queue to compare the newer revision with your local draft.",
+        orderId: conflictingOrderId,
+        detail: "",
         auditSource: error.details && typeof error.details === "object" ? structuredClone(error.details) : null,
       };
       persistQueueState({ skipRemoteSave: true });
-      renderSharedQueueBanner();
+      renderSharedQueueToast();
       return;
     }
 
@@ -2935,10 +2831,7 @@ async function saveQueueSnapshotToRemote(options = {}) {
       persistQueueState({ skipRemoteSave: true });
     }
     sharedQueueConflictState = null;
-    sharedQueueRecoveryState = null;
-    sharedQueueRecoveryOrderId = null;
-    sharedQueueRecoveryMarker = null;
-    renderSharedQueueBanner();
+    renderSharedQueueToast();
     updateWorkflowAlert(
       error instanceof Error ? error.message : "Unable to save the shared queue.",
       "error",
@@ -2948,13 +2841,10 @@ async function saveQueueSnapshotToRemote(options = {}) {
 
 async function restoreInitialQueueState(accessToken) {
   const localSnapshot = readPersistedQueueState();
-  const localRecoveryMarker = normalizeSharedQueueRecoveryMarker(localSnapshot?.recoveryDraftMeta);
   let sharedSession = null;
   let remoteSnapshot = null;
   let sharedSyncUnavailable = false;
   sharedQueueConflictState = null;
-  sharedQueueRecoveryState = null;
-  sharedQueueRecoveryOrderId = null;
 
   try {
     sharedSession = await fetchSharedSession(accessToken);
@@ -3012,26 +2902,12 @@ async function restoreInitialQueueState(accessToken) {
     localCache: localSnapshot,
   });
   const initialSnapshot = startupState.snapshot;
-  const currentRecoveryQueue = sharedSession?.queue || initialSnapshot?.queue || null;
-  const hasMatchingRecoveryMarker = doesRecoveryMarkerMatchQueue(localRecoveryMarker, currentRecoveryQueue);
-  const storedRecoveryDraftSnapshot = localSnapshot?.recoveryDraftSnapshot;
-  sharedQueueRecoveryDraft = hasMatchingRecoveryMarker
-    ? structuredClone(storedRecoveryDraftSnapshot || startupState.recoveryDraft)
-    : null;
-  if (startupState.source === "remote" && sharedQueueRecoveryDraft) {
-    sharedQueueRecoveryState = "available";
-    sharedQueueRecoveryOrderId = localRecoveryMarker?.conflictOrderId || null;
-    sharedQueueRecoveryMarker = structuredClone(localRecoveryMarker);
-  }
 
   if (initialSnapshot?.queue) {
     setSharedQueueContext(initialSnapshot.queue);
   }
 
   if (!initialSnapshot || !applyPersistedQueueState(initialSnapshot)) {
-    if (startupState.source === "remote" && sharedQueueRecoveryDraft && localRecoveryMarker) {
-      sharedQueueRecoveryMarker = structuredClone(localRecoveryMarker);
-    }
     suppressQueueSyncLocalNotice = true;
     persistQueueState({ skipRemoteSave: true });
     suppressQueueSyncLocalNotice = false;
@@ -3043,9 +2919,6 @@ async function restoreInitialQueueState(accessToken) {
     };
   }
 
-  if (startupState.source === "remote" && sharedQueueRecoveryDraft && localRecoveryMarker) {
-    sharedQueueRecoveryMarker = structuredClone(localRecoveryMarker);
-  }
   suppressQueueSyncLocalNotice = true;
   persistQueueState({ skipRemoteSave: true });
   suppressQueueSyncLocalNotice = false;
@@ -3347,8 +3220,24 @@ function updateWorkflowAlert(message, state = "pending", options = {}) {
   workflowAlertToken += 1;
   const currentToken = workflowAlertToken;
   workflowAlert.hidden = !hasMessage;
-  workflowAlert.textContent = hasMessage ? message : "";
+  if (workflowAlertText) {
+    workflowAlertText.textContent = hasMessage ? message : "";
+  } else {
+    workflowAlert.textContent = hasMessage ? message : "";
+  }
   workflowAlert.dataset.state = state;
+  workflowAlert.dataset.source = hasMessage && typeof options.source === "string" ? options.source : "";
+
+  const hasAction = hasMessage
+    && typeof options.actionLabel === "string"
+    && options.actionLabel.trim().length > 0
+    && typeof options.onAction === "function";
+  workflowAlert.classList.toggle("has-action", hasAction);
+  workflowAlertActionHandler = hasAction ? options.onAction : null;
+  if (workflowAlertActionButton) {
+    workflowAlertActionButton.hidden = !hasAction;
+    workflowAlertActionButton.textContent = hasAction ? options.actionLabel.trim() : "";
+  }
 
   if (!hasMessage) {
     return;
@@ -4306,7 +4195,7 @@ function hasUnsavedPublishedSnapshotChanges(order) {
     return false;
   }
 
-  return buildSettingsSignature(getCurrentSettings())
+  return buildSettingsSignature(order.settings)
     !== buildSettingsSignature(order.publishedSnapshot.settings);
 }
 
@@ -4565,7 +4454,7 @@ function renderOrderList() {
   renderPresetListingIndicator(activeOrder);
   activeOrderName.textContent = activeOrder ? buildQueueOrderNumber(activeOrder) : "No design selected";
   activeOrderMeta.textContent = buildActiveMeta(activeOrder);
-  renderSharedQueueBanner(activeOrder);
+  renderSharedQueueToast(activeOrder);
   updateCaptureButtonState(activeOrder);
   downloadButton.disabled = !activeOrder || !isOrderReadyForExport(activeOrder);
   copyButton.disabled = !activeOrder || !isOrderReadyForExport(activeOrder) || !canCopySvgToClipboard();
@@ -6378,7 +6267,11 @@ downloadButton.addEventListener("click", downloadSvg);
 copyButton.addEventListener("click", copyCurrentSvg);
 copyLayoutControlsButton.addEventListener("click", copyActiveLayoutControls);
 pasteLayoutControlsButton.addEventListener("click", pasteLayoutControlsIntoActiveOrder);
-sharedQueueBannerReloadButton?.addEventListener("click", reloadSharedQueueFromBanner);
+workflowAlertActionButton?.addEventListener("click", () => {
+  if (typeof workflowAlertActionHandler === "function") {
+    workflowAlertActionHandler();
+  }
+});
 sharedQueueSignInForm?.addEventListener("submit", (event) => {
   void handleSharedQueueSignInSubmit(event);
 });

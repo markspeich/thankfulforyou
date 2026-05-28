@@ -101,6 +101,30 @@ describe("shared queue api client", () => {
     });
   });
 
+  it("normalizes JSON string conflict details from Supabase", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 409,
+      json: async () => ({
+        error: "Revision conflict",
+        details: JSON.stringify({ orderId: "order-2", revision: 5 }),
+      }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { SharedQueueConflictError, saveSharedQueueSnapshot } = await import("../../src/shared-queue-api.js");
+    const snapshot = {
+      queue: { id: "queue-1", workspaceId: "workspace-1" },
+      activeOrderId: "order-1",
+      orders: [{ id: "order-1", revision: 1 }],
+    };
+
+    const error = await saveSharedQueueSnapshot(snapshot).catch((caughtError) => caughtError);
+
+    expect(error).toBeInstanceOf(SharedQueueConflictError);
+    expect(error.details).toEqual({ orderId: "order-2", revision: 5 });
+  });
+
   it("passes keepalive through for unload-safe shared saves", async () => {
     const snapshot = {
       queue: { id: "queue-1", workspaceId: "workspace-1" },

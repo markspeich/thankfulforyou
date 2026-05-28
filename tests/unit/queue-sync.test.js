@@ -32,7 +32,7 @@ describe("queue sync helpers", () => {
     });
   });
 
-  it("uses the remote startup snapshot while preserving local cache for recovery", () => {
+  it("uses the remote startup snapshot", () => {
     const localSnapshot = {
       queue: {
         id: "queue-1",
@@ -58,7 +58,6 @@ describe("queue sync helpers", () => {
     })).toEqual({
       source: "remote",
       snapshot: remoteSnapshot,
-      recoveryDraft: localSnapshot,
     });
   });
 
@@ -79,7 +78,6 @@ describe("queue sync helpers", () => {
     })).toEqual({
       source: "local",
       snapshot: localSnapshot,
-      recoveryDraft: null,
     });
   });
 
