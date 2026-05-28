@@ -4,7 +4,7 @@ const FALLBACK_PRESET_DEFINITIONS = [
     id: "preset-a1f4c8e2b601",
     name: "All Candlepin",
     globalDefaults: {
-      backingMm: 2.2,
+      backingMm: 3.1,
       weldExportedDesign: true,
     },
     lineDefaults: {
@@ -34,7 +34,7 @@ const FALLBACK_PRESET_DEFINITIONS = [
     id: "preset-b7d2e9f4c318",
     name: "Candlepin, Skywalk",
     globalDefaults: {
-      backingMm: 2.2,
+      backingMm: 3.1,
       weldExportedDesign: true,
     },
     lineDefaults: {
@@ -85,7 +85,7 @@ const FALLBACK_PRESET_DEFINITIONS = [
     id: "preset-c3e8a1d7f520",
     name: "Skywalk, Somekind",
     globalDefaults: {
-      backingMm: 2.2,
+      backingMm: 3.1,
       weldExportedDesign: true,
     },
     lineDefaults: {
@@ -147,7 +147,7 @@ const FALLBACK_PRESET_DEFINITIONS = [
     id: "preset-d9b4f2a6c731",
     name: "Skywalk, Candlepin",
     globalDefaults: {
-      backingMm: 2.2,
+      backingMm: 3.1,
       weldExportedDesign: true,
     },
     lineDefaults: {
@@ -202,6 +202,9 @@ const FALLBACK_MANIFEST = {
 const PRESET_MANIFEST_URL = "public/presets/manifest.json";
 const PRESET_STORAGE_KEY = "thankfulforyou.presetSnapshot";
 const PRESET_SNAPSHOT_VERSION = 1;
+const CURRENT_DEFAULT_BACKING_MM = 3.1;
+const LEGACY_DEFAULT_BACKING_MM = 2.2;
+const BUILT_IN_PRESET_IDS = new Set(FALLBACK_PRESET_DEFINITIONS.map((definition) => definition.id));
 const ALLOWED_LINE_SETTINGS = [
   "fontId",
   "bridgeMm",
@@ -247,14 +250,20 @@ function normalizeListingAssignments(listingAssignments = []) {
 }
 
 function normalizePresetDefinition(definition = {}) {
+  const presetId = String(definition.id ?? "").trim();
+  const backingMm = definition.globalDefaults?.backingMm;
+  const migratedBackingMm = BUILT_IN_PRESET_IDS.has(presetId) && Number(backingMm) === LEGACY_DEFAULT_BACKING_MM
+    ? CURRENT_DEFAULT_BACKING_MM
+    : backingMm;
+
   return {
     schemaVersion: Number.isInteger(definition.schemaVersion) ? definition.schemaVersion : 1,
-    id: String(definition.id ?? "").trim(),
+    id: presetId,
     name: typeof definition.name === "string" ? definition.name.trim() : "",
     description: typeof definition.description === "string" ? definition.description.trim() : "",
     globalDefaults: definition.globalDefaults && typeof definition.globalDefaults === "object"
       ? {
-          ...(Object.hasOwn(definition.globalDefaults, "backingMm") ? { backingMm: definition.globalDefaults.backingMm } : {}),
+          ...(Object.hasOwn(definition.globalDefaults, "backingMm") ? { backingMm: migratedBackingMm } : {}),
           ...(Object.hasOwn(definition.globalDefaults, "weldExportedDesign")
             ? { weldExportedDesign: definition.globalDefaults.weldExportedDesign }
             : {}),

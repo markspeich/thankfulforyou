@@ -357,9 +357,31 @@ describe("presets", () => {
 
   it("returns preset-level global defaults", () => {
     expect(getPresetGlobalDefaults("preset-c3e8a1d7f520")).toEqual({
-      backingMm: 2.2,
+      backingMm: 3.1,
       weldExportedDesign: true,
     });
+  });
+
+  it("migrates old built-in preset backing defaults to the current production default", () => {
+    setPresetRegistryForTests(
+      { defaultPresetId: "preset-a1f4c8e2b601" },
+      [
+        {
+          schemaVersion: 1,
+          id: "preset-a1f4c8e2b601",
+          name: "All Candlepin",
+          globalDefaults: {
+            backingMm: 2.2,
+            weldExportedDesign: true,
+          },
+          lineDefaults: { fontId: "candlepin" },
+          lineRules: [{ match: { kind: "all" }, settings: { fontId: "candlepin" } }],
+          listingAssignments: [],
+        },
+      ],
+    );
+
+    expect(getPresetGlobalDefaults("preset-a1f4c8e2b601").backingMm).toBe(3.1);
   });
 
   it("maps listing ids to preset ids from preset data", () => {
