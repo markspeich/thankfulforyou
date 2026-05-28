@@ -9,6 +9,16 @@
   </head>
   <body>
     <main class="app-shell" data-workspace="orders" data-nav-collapsed="false">
+      <script>
+        (() => {
+          try {
+            const shell = document.currentScript.parentElement;
+            const isCollapsed = localStorage.getItem("thankfulforyou.workspaceNavCollapsed") === "true";
+            shell.dataset.navCollapsed = String(isCollapsed);
+          } catch {
+          }
+        })();
+      </script>
       <section id="sharedQueueAuthGate" class="shared-auth-gate" hidden>
         <div class="shared-auth-card">
           <p class="shared-auth-eyebrow">Shared Queue Access</p>

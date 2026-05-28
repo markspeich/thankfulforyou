@@ -68,6 +68,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - The `Presets` dropdown must offer these production presets: `All Candlepin`, `Candlepin, Skywalk`, `Skywalk, Somekind`, and `Skywalk, Candlepin`.
 - The app should add a top-level left navigation bar with two items: `Order Items` and `Presets`.
 - The left navigation bar should be collapsible between an expanded icon-plus-label state and a collapsed icon-only state.
+- The left navigation bar should remember its expanded or collapsed state across browser refreshes.
 - `Order Items` should open the existing production queue workspace with the design queue and selected-order editor.
 - `Presets` should open a dedicated preset editor workspace for viewing, editing, and creating presets.
 - The `All Candlepin` preset must set every text line to the Candlepin font.
