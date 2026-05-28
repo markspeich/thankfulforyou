@@ -1123,6 +1123,10 @@ select {
   position: relative;
 }
 
+.editor-tools-popover {
+  width: min(220px, calc(100vw - 32px));
+}
+
 .editor-body {
   display: grid;
   grid-template-rows: minmax(0, 1fr);

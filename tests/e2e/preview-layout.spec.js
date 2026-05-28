@@ -1070,6 +1070,35 @@ test("keeps the queue tools popover inside the queue panel near the tablet break
   expect(popoverBounds.popover.width).toBeLessThanOrEqual(popoverBounds.queueHeader.width);
 });
 
+test("keeps the editor tools popover inside the editor panel near the tablet breakpoint", async ({ page }) => {
+  await page.setViewportSize({ width: 830, height: 900 });
+  await openEditorTools(page);
+
+  const popoverBounds = await page.evaluate(() => {
+    const popover = document.querySelector(".editor-tools-popover");
+    const editorPanel = document.querySelector(".editor-panel");
+    const rect = (node) => {
+      const box = node.getBoundingClientRect();
+      return {
+        left: box.left,
+        right: box.right,
+        width: box.width,
+      };
+    };
+
+    return {
+      popover: rect(popover),
+      editorPanel: rect(editorPanel),
+      viewportWidth: window.innerWidth,
+    };
+  });
+
+  expect(popoverBounds.popover.left).toBeGreaterThanOrEqual(popoverBounds.editorPanel.left);
+  expect(popoverBounds.popover.right).toBeLessThanOrEqual(popoverBounds.editorPanel.right);
+  expect(popoverBounds.popover.right).toBeLessThanOrEqual(popoverBounds.viewportWidth);
+  expect(popoverBounds.popover.width).toBeGreaterThan(160);
+});
+
 test("grows the preview area when the browser viewport gets taller", async ({ page }) => {
   const measurePreviewPanelHeight = async () => {
     return page.locator(".preview-panel").evaluate((element) => element.getBoundingClientRect().height);
