@@ -35,6 +35,7 @@
   --button-border-disabled: #7f98a8;
   --button-icon: #ffffff;
   --button-focus: #6b9fbe;
+  --button-radius: 999px;
   --button-shadow-active: inset 0 2px 0 rgba(16, 45, 52, 0.22);
   --button-pressed-translate-y: 1px;
 }
@@ -156,7 +157,7 @@ select {
   color: #ecf6fb;
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 12px;
+  border-radius: var(--button-radius);
 }
 
 .workspace-nav-toggle {
@@ -507,7 +508,7 @@ select {
   color: #f7fbfd;
   background: linear-gradient(180deg, #2f7589 0%, #245d70 100%);
   border: 1px solid #1f5668;
-  border-radius: 999px;
+  border-radius: var(--button-radius);
   box-shadow: 0 10px 20px rgba(36, 93, 112, 0.18);
   font-size: 0.88rem;
   font-weight: 700;
@@ -548,7 +549,7 @@ select {
   cursor: pointer;
   background: #fff;
   border: 1px solid var(--line);
-  border-radius: 999px;
+  border-radius: var(--button-radius);
 }
 
 .queue-tools-toggle::-webkit-details-marker,
@@ -640,7 +641,7 @@ select {
   color: var(--button-current-text);
   background: var(--button-current-enabled);
   border: 1px solid var(--button-current-border);
-  border-radius: 10px;
+  border-radius: var(--button-radius);
   font-size: 0.88rem;
   font-weight: 700;
   text-align: left;
@@ -814,7 +815,7 @@ select {
 .confirmation-dialog-button {
   min-width: 124px;
   padding: 11px 14px;
-  border-radius: 10px;
+  border-radius: var(--button-radius);
   border: 1px solid transparent;
   font-size: 0.88rem;
   font-weight: 700;
@@ -1107,7 +1108,7 @@ select {
 .shared-queue-banner-action {
   min-height: 38px;
   padding: 0 14px;
-  border-radius: 10px;
+  border-radius: var(--button-radius);
   white-space: nowrap;
 }
 
@@ -1569,7 +1570,7 @@ button {
   color: var(--button-text);
   background: var(--button-enabled);
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--button-radius);
   cursor: pointer;
   font-weight: 700;
 }
@@ -1604,7 +1605,7 @@ button:disabled {
   color: var(--button-current-text);
   background: var(--button-current-enabled);
   border: 1px solid var(--button-current-border);
-  border-radius: 10px;
+  border-radius: var(--button-radius);
   font-size: 0.82rem;
   font-weight: 700;
   line-height: 1.1;
@@ -1677,7 +1678,7 @@ button:disabled {
 .editor-utility-button {
   min-height: 34px;
   padding: 0 11px;
-  border-radius: 9px;
+  border-radius: var(--button-radius);
   gap: 7px;
   font-size: 0.73rem;
 }
