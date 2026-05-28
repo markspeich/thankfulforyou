@@ -12,6 +12,7 @@ import {
   computeMixedScaleBounds,
   computePreviewFrame,
   computeTextFitScale,
+  buildScaledTextBounds,
   measureLineBounds,
 } from "./layout-math.js";
 import {
@@ -6010,15 +6011,15 @@ function assembleOrderLayout(normalized, sourceLines, fitScale, fitted) {
     textWidthMm,
     textHeightMm,
   } = fitted;
-  const scaledBackingMm = normalized.backingMm * fitScale;
-  const scaledBleedMm = DESIGN_BLEED_MM * fitScale;
+  const backingMm = normalized.backingMm;
   const overflowsGuide = computeGuideOverflow(sourceLines, textWidthMm, textHeightMm);
-  const widthMm = textWidthMm + scaledBackingMm * 2 + scaledBleedMm * 2;
-  const heightMm = textHeightMm + scaledBackingMm * 2 + scaledBleedMm * 2;
+  const textBoundsMm = buildScaledTextBounds(textWidthMm, textHeightMm, backingMm, 1);
+  const widthMm = textBoundsMm.width + textBoundsMm.left * 2;
+  const heightMm = textBoundsMm.height + textBoundsMm.top * 2;
   const absoluteLetters = lineBounds.flatMap(({ line, centeredLeftMm }) => {
     const font = getFontOption(line.settings.fontId);
-    const rawLineX = scaledBleedMm + scaledBackingMm + centeredLeftMm - minLeftMm - line.mask.leftMm;
-    const rawBaselineY = scaledBleedMm + scaledBackingMm + (line.y - minTopMm) + line.mask.baselineMm;
+    const rawLineX = textBoundsMm.left + centeredLeftMm - minLeftMm - line.mask.leftMm;
+    const rawBaselineY = textBoundsMm.top + (line.y - minTopMm) + line.mask.baselineMm;
 
     return line.letters.map((letter) => ({
       character: letter.character,
@@ -6036,14 +6037,9 @@ function assembleOrderLayout(normalized, sourceLines, fitScale, fitted) {
     text,
     widthMm,
     heightMm,
-    backingMm: scaledBackingMm,
+    backingMm,
     weldExportedDesign: normalized.weldExportedDesign,
-    textBoundsMm: {
-      left: scaledBleedMm + scaledBackingMm,
-      top: scaledBleedMm + scaledBackingMm,
-      width: textWidthMm,
-      height: textHeightMm,
-    },
+    textBoundsMm,
     fit: {
       fitScale,
       lineScaleFactors,

@@ -242,4 +242,13 @@ describe("layout math", () => {
     expect(textCenterX).toBeCloseTo(guideCenterX, 6);
     expect(textCenterY).toBeCloseTo(guideCenterY, 6);
   });
+
+  it("keeps the backing border at its authored physical size after text fit scaling", () => {
+    const textBoundsMm = buildScaledTextBounds(70, 20, 3.1, 0.5);
+
+    expect(textBoundsMm.left).toBeCloseTo(DESIGN_BLEED_MM + 3.1, 6);
+    expect(textBoundsMm.top).toBeCloseTo(DESIGN_BLEED_MM + 3.1, 6);
+    expect(textBoundsMm.width).toBeCloseTo(35, 6);
+    expect(textBoundsMm.height).toBeCloseTo(10, 6);
+  });
 });

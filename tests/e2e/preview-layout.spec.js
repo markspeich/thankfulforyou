@@ -460,10 +460,10 @@ test("shows the production defaults", async ({ page }) => {
   await expect(page.locator("#globalVerticalScaleInput")).toHaveValue("1");
   await expect(page.locator("#globalVerticalScaleInput")).toHaveAttribute("max", "1.5");
   await expect(page.locator("#globalVerticalScaleOutput")).toHaveText("100%");
-  await expect(page.locator("#backingInput")).toHaveValue("2.2");
+  await expect(page.locator("#backingInput")).toHaveValue("3.1");
   await expect(page.locator("#backingInput")).toHaveAttribute("min", "0");
   await expect(page.locator("#backingInput")).toHaveAttribute("step", "0.1");
-  await expect(page.locator("#backingOutput")).toHaveText("2.2 mm");
+  await expect(page.locator("#backingOutput")).toHaveText("3.1 mm");
   await expect(page.locator("#weldExportedDesignInput")).toBeChecked();
   await expect(page.locator("#preview .preview-guide-label").first()).toHaveText('2.2"');
   await expect(page.locator("#preview circle.preview-guide-box")).toHaveCount(1);
