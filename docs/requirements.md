@@ -65,9 +65,9 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Add a `Presets` dropdown directly below the `Order Text` field.
 - The `Preset` control card in the selected-order editor must expose its secondary actions from an ellipses menu in the card header rather than showing them as always-visible buttons.
 - The `Presets` dropdown must offer these production presets: `All Candlepin`, `Candlepin, Skywalk`, `Skywalk, Somekind`, and `Skywalk, Candlepin`.
-- The app should add a top-level left navigation bar with two items: `Order Items` and `Presets`.
+- The app should add a top-level left navigation bar with two items: `Design Queue` and `Presets`.
 - The left navigation bar should be collapsible between an expanded icon-plus-label state and a collapsed icon-only state.
-- `Order Items` should open the existing production queue workspace with the design queue and selected-order editor.
+- `Design Queue` should open the existing production queue workspace with the design queue and selected-order editor.
 - `Presets` should open a dedicated preset editor workspace for viewing, editing, and creating presets.
 - The `All Candlepin` preset must set every text line to the Candlepin font.
 - The `Candlepin, Skywalk` preset must set the first text line to Candlepin and every subsequent line to Skywalk.
