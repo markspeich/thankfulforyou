@@ -351,6 +351,35 @@ test("shows size presets in the Presets workspace", async ({ page }) => {
   await expect(sizePresets.getByText("Min 1.6 x 1.1 in")).toBeVisible();
 });
 
+test("shows a live preview while editing a bounding size preset", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Presets" }).click();
+
+  const preview = page.locator("#sizePresetPreview");
+  await expect(preview).toBeVisible();
+  await expect(page.locator("#sizePresetPreviewEmptyState")).toBeVisible();
+
+  await page.locator("#sizePresetNameInput").fill("Preview Box");
+  await page.locator("#sizePresetMaxWidthInput").fill("3");
+  await page.locator("#sizePresetMaxHeightInput").fill("2");
+  await page.locator("#sizePresetMinWidthInput").fill("2");
+  await page.locator("#sizePresetMinHeightInput").fill("1.25");
+
+  await expect(page.locator("#sizePresetPreviewEmptyState")).toBeHidden();
+  await expect(preview.locator(".preview-guide-box").first()).toHaveAttribute("width", String(3 * 25.4));
+  await expect(preview.locator(".preview-guide-box").first()).toHaveAttribute("height", String(2 * 25.4));
+  await expect(preview.locator(".preview-guide-label").first()).toHaveText('3"');
+  await expect(preview.locator(".preview-guide-label").nth(1)).toHaveText('2"');
+  await expect(preview.locator("circle.preview-guide-box")).toHaveCount(0);
+
+  await page.locator("#sizePresetCircleDiameterInput").fill("1.5");
+  await expect(preview.locator("circle.preview-guide-box")).toHaveCount(1);
+  await expect.poll(async () => {
+    const radius = Number(await preview.locator("circle.preview-guide-box").getAttribute("r"));
+    return radius * 2;
+  }).toBeCloseTo(1.5 * 25.4, 4);
+});
+
 test("preserves bounding size when saving and reloading a layout preset", async ({ page }) => {
   await page.goto("/");
   await clickQueueAction(page, "Add Design");

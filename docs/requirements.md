@@ -114,6 +114,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Support additional bounding-border size presets beyond the current 2.2 inch by 1.5 inch size.
 - Operators must be able to create new bounding-border size presets from the UI for testing and production setup, without editing source files or redeploying the app.
 - Each bounding-border size preset must define both a maximum rectangle and a minimum rectangle so the preview can show the allowed size range for that badge reel design.
+- The bounding-border size preset editor should include a live preview of the max rectangle, min rectangle, dimension labels, and optional centered circle from the fields currently being edited.
 - The active bounding-border size must be a global layout setting selected in the `Global Settings` card and saved as part of reusable presets.
 - Treat `Text Height` as the authored physical size for each line in millimeters.
 - When a line's `Lock Text Height` control is enabled, preserve that line's authored text height during automatic boundary-fit resizing instead of scaling it with the rest of the design.

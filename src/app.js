@@ -252,6 +252,8 @@ const sizePresetMaxHeightInput = document.querySelector("#sizePresetMaxHeightInp
 const sizePresetMinWidthInput = document.querySelector("#sizePresetMinWidthInput");
 const sizePresetMinHeightInput = document.querySelector("#sizePresetMinHeightInput");
 const sizePresetCircleDiameterInput = document.querySelector("#sizePresetCircleDiameterInput");
+const sizePresetPreview = document.querySelector("#sizePresetPreview");
+const sizePresetPreviewEmptyState = document.querySelector("#sizePresetPreviewEmptyState");
 const newSizePresetButton = document.querySelector("#newSizePresetButton");
 const saveSizePresetButton = document.querySelector("#saveSizePresetButton");
 const deleteSizePresetButton = document.querySelector("#deleteSizePresetButton");
@@ -2531,6 +2533,130 @@ function setSizePresetEditorStatus(message, state = "pending") {
   sizePresetEditorStatus.dataset.state = state;
 }
 
+function readPositiveNumberInput(input) {
+  const value = input?.value;
+  if (value === undefined || value === null || value === "") {
+    return null;
+  }
+
+  const numeric = Number(value);
+  return Number.isFinite(numeric) && numeric > 0 ? numeric : null;
+}
+
+function renderSizePresetEditorPreview() {
+  if (!sizePresetPreview || !sizePresetPreviewEmptyState) {
+    return;
+  }
+
+  const maxWidthIn = readPositiveNumberInput(sizePresetMaxWidthInput);
+  const maxHeightIn = readPositiveNumberInput(sizePresetMaxHeightInput);
+  const minWidthIn = readPositiveNumberInput(sizePresetMinWidthInput);
+  const minHeightIn = readPositiveNumberInput(sizePresetMinHeightInput);
+  const circleDiameterIn = readPositiveNumberInput(sizePresetCircleDiameterInput);
+  const canRender = maxWidthIn !== null
+    && maxHeightIn !== null
+    && minWidthIn !== null
+    && minHeightIn !== null
+    && minWidthIn <= maxWidthIn
+    && minHeightIn <= maxHeightIn;
+
+  sizePresetPreview.replaceChildren();
+  sizePresetPreviewEmptyState.hidden = canRender;
+
+  if (!canRender) {
+    sizePresetPreview.removeAttribute("viewBox");
+    return;
+  }
+
+  const maxWidthMm = maxWidthIn * 25.4;
+  const maxHeightMm = maxHeightIn * 25.4;
+  const minWidthMm = minWidthIn * 25.4;
+  const minHeightMm = minHeightIn * 25.4;
+  const marginMm = 8;
+  const labelRightMm = 10;
+  const previewBoxX = marginMm;
+  const previewBoxY = marginMm;
+  const guideCenterX = previewBoxX + maxWidthMm / 2;
+  const guideCenterY = previewBoxY + maxHeightMm / 2;
+  const minBoxX = guideCenterX - minWidthMm / 2;
+  const minBoxY = guideCenterY - minHeightMm / 2;
+  const topLabel = makeSvgElement("text", {
+    class: "preview-guide-label",
+    x: guideCenterX,
+    y: previewBoxY - 2.4,
+    "text-anchor": "middle",
+  });
+  const sideLabel = makeSvgElement("text", {
+    class: "preview-guide-label",
+    x: previewBoxX + maxWidthMm + 4.5,
+    y: guideCenterY,
+    "text-anchor": "middle",
+    transform: `rotate(90 ${previewBoxX + maxWidthMm + 4.5} ${guideCenterY})`,
+  });
+
+  topLabel.textContent = `${maxWidthIn}"`;
+  sideLabel.textContent = `${maxHeightIn}"`;
+  sizePresetPreview.setAttribute("viewBox", `0 0 ${maxWidthMm + marginMm * 2 + labelRightMm} ${maxHeightMm + marginMm * 2}`);
+
+  const elements = [
+    makeSvgElement("rect", {
+      class: "preview-guide-box",
+      x: previewBoxX,
+      y: previewBoxY,
+      width: maxWidthMm,
+      height: maxHeightMm,
+      rx: 1.6,
+    }),
+    makeSvgElement("rect", {
+      class: "preview-guide-min-box",
+      x: minBoxX,
+      y: minBoxY,
+      width: minWidthMm,
+      height: minHeightMm,
+      rx: 1.6,
+    }),
+    makeSvgElement("line", {
+      class: "preview-guide-inner-line",
+      x1: minBoxX,
+      y1: previewBoxY,
+      x2: minBoxX,
+      y2: previewBoxY + maxHeightMm,
+    }),
+    makeSvgElement("line", {
+      class: "preview-guide-inner-line",
+      x1: minBoxX + minWidthMm,
+      y1: previewBoxY,
+      x2: minBoxX + minWidthMm,
+      y2: previewBoxY + maxHeightMm,
+    }),
+    makeSvgElement("line", {
+      class: "preview-guide-inner-line",
+      x1: previewBoxX,
+      y1: minBoxY,
+      x2: previewBoxX + maxWidthMm,
+      y2: minBoxY,
+    }),
+    makeSvgElement("line", {
+      class: "preview-guide-inner-line",
+      x1: previewBoxX,
+      y1: minBoxY + minHeightMm,
+      x2: previewBoxX + maxWidthMm,
+      y2: minBoxY + minHeightMm,
+    }),
+  ];
+
+  if (circleDiameterIn !== null) {
+    elements.push(makeSvgElement("circle", {
+      class: "preview-guide-box",
+      cx: guideCenterX,
+      cy: guideCenterY,
+      r: (circleDiameterIn * 25.4) / 2,
+    }));
+  }
+
+  sizePresetPreview.append(...elements, topLabel, sideLabel);
+}
+
 function clearSizePresetEditor() {
   selectedSizePresetId = null;
   if (sizePresetNameInput) {
@@ -2555,6 +2681,7 @@ function clearSizePresetEditor() {
     deleteSizePresetButton.disabled = true;
   }
   setSizePresetEditorStatus("Create a size preset or select one below.", "pending");
+  renderSizePresetEditorPreview();
   renderSizePresetList();
 }
 
@@ -2592,6 +2719,7 @@ function selectSizePresetForEditing(presetId) {
     deleteSizePresetButton.disabled = isBuiltInBoundingSizePresetId(definition.id);
   }
   setSizePresetEditorStatus(`Editing ${definition.label}.`, "pending");
+  renderSizePresetEditorPreview();
   renderSizePresetList();
 }
 
@@ -6456,6 +6584,10 @@ presetGlobalVerticalScaleInput?.addEventListener("input", () => {
   updatePresetGlobalVerticalScaleOutput();
 });
 newSizePresetButton?.addEventListener("click", clearSizePresetEditor);
+[sizePresetNameInput, sizePresetMaxWidthInput, sizePresetMaxHeightInput, sizePresetMinWidthInput, sizePresetMinHeightInput, sizePresetCircleDiameterInput]
+  .forEach((input) => {
+    input?.addEventListener("input", renderSizePresetEditorPreview);
+  });
 saveSizePresetButton?.addEventListener("click", () => {
   void saveSizePresetFromEditor();
 });
@@ -6627,6 +6759,7 @@ renderPresetOptions();
 renderBoundingSizePresetOptions(boundingSizePresetInput);
 renderBoundingSizePresetOptions(presetBoundingSizePresetInput);
 renderSizePresetList();
+renderSizePresetEditorPreview();
 renderPresetEditorDraft();
 updateBackingOutput();
 sharedQueueAccessToken = await bootstrapSharedQueueAccess();
