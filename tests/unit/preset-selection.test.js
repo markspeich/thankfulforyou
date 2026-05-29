@@ -61,7 +61,7 @@ describe("preset selection", () => {
     });
   });
 
-  it("rebuilds bounding size from the selected preset", () => {
+  it("rebuilds size guide from the selected preset", () => {
     const normalizeSettings = vi.fn((settings) => ({
       text: settings.text ?? "Mark",
       presetId: settings.presetId ?? "preset-old",

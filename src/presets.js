@@ -723,15 +723,15 @@ export function saveBoundingSizePresetDefinitionLocally({ preset, previousId = n
 export function deleteBoundingSizePresetDefinitionLocally(presetId) {
   const normalizedPresetId = typeof presetId === "string" ? presetId.trim() : "";
   if (!normalizedPresetId) {
-    throw new Error("Size preset not found.");
+    throw new Error("Size guide not found.");
   }
   if (normalizedPresetId === DEFAULT_BOUNDING_SIZE_PRESET_ID || isBuiltInBoundingSizePresetId(normalizedPresetId)) {
-    throw new Error("The default bounding size cannot be deleted.");
+    throw new Error("The default size guide cannot be deleted.");
   }
 
   const definitions = getBoundingSizePresetDefinitions();
   if (!definitions.some((definition) => definition.id === normalizedPresetId)) {
-    throw new Error("Size preset not found.");
+    throw new Error("Size guide not found.");
   }
 
   const snapshot = saveSizePresetSnapshot(definitions.filter((definition) => definition.id !== normalizedPresetId));

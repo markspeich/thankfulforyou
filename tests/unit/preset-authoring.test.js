@@ -82,7 +82,7 @@ describe("preset authoring", () => {
     ]);
   });
 
-  it("infers bounding size as a reusable global default", () => {
+  it("infers size guide as a reusable global default", () => {
     const preset = inferPresetDefinitionFromSettings({
       name: "Default Size",
       settings: {

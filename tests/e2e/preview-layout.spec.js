@@ -492,11 +492,14 @@ test("shows the production defaults", async ({ page }) => {
   expect(guideMetrics.labelFills).toEqual(["rgb(12, 150, 217)", "rgb(12, 150, 217)"]);
 });
 
-test("shows a bounding size preset control in global settings", async ({ page }) => {
+test("shows a size guide control in global settings", async ({ page }) => {
   await expect(page.locator("#boundingSizePresetInput")).toBeVisible();
   await expect(page.locator("#boundingSizePresetInput")).toHaveValue("size-2-2x1-5");
   await expect(page.locator("#preview .preview-guide-label").first()).toHaveText('2.2"');
   await expect(page.locator("#preview .preview-guide-min-box")).toHaveCount(1);
+  await expect(page.locator("#preview .preview-guide-min-box")).toHaveCSS("stroke-width", "0.05px");
+  await expect(page.locator("#preview rect.preview-guide-box")).not.toHaveAttribute("rx", /.+/);
+  await expect(page.locator("#preview .preview-guide-min-box")).not.toHaveAttribute("rx", /.+/);
 });
 
 test("applies the global horizontal stretch slider to every line and persists the result", async ({ page }) => {

@@ -66,11 +66,12 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Add a `Presets` dropdown directly below the `Order Text` field.
 - The `Preset` control card in the selected-order editor must expose its secondary actions from an ellipses menu in the card header rather than showing them as always-visible buttons.
 - The `Presets` dropdown must offer these production presets: `All Candlepin`, `Candlepin, Skywalk`, `Skywalk, Somekind`, and `Skywalk, Candlepin`.
-- The app should add a top-level left navigation bar with two items: `Design Queue` and `Presets`.
+- The app should add a top-level left navigation bar with three items: `Design Queue`, `Presets`, and `Size Guides`.
 - The left navigation bar should be collapsible between an expanded icon-plus-label state and a collapsed icon-only state.
 - The left navigation bar should remember its expanded or collapsed state across browser refreshes.
 - `Design Queue` should open the existing production queue workspace with the design queue and selected-order editor.
 - `Presets` should open a dedicated preset editor workspace for viewing, editing, and creating presets.
+- `Size Guides` should open a dedicated size guide workspace for viewing, editing, and creating the named guide boxes used to constrain badge reel design sizes.
 - The `All Candlepin` preset must set every text line to the Candlepin font.
 - The `Candlepin, Skywalk` preset must set the first text line to Candlepin and every subsequent line to Skywalk.
 - The `Skywalk, Somekind` preset must set the first text line to Skywalk and every subsequent line to Somekind.
@@ -111,11 +112,16 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Center multi-line layouts by each line's actual visible shape bounds, not by rough text boxes or font advance widths.
 - The rendered text geometry must fit within the active preset's selected maximum bounding rectangle. The current default maximum bounding rectangle is 2.2 inches wide by 1.5 inches tall.
 - Scale the text proportionally to make the best use of the active preset's selected maximum bounding rectangle, scaling up or down as needed so the text fills as much of the allowed space as possible while still staying within that rectangle.
-- Support additional bounding-border size presets beyond the current 2.2 inch by 1.5 inch size.
-- Operators must be able to create new bounding-border size presets from the UI for testing and production setup, without editing source files or redeploying the app.
-- Each bounding-border size preset must define both a maximum rectangle and a minimum rectangle so the preview can show the allowed size range for that badge reel design.
-- The bounding-border size preset editor should include a live preview of the max rectangle, min rectangle, dimension labels, and optional centered circle from the fields currently being edited.
-- The active bounding-border size must be a global layout setting selected in the `Global Settings` card and saved as part of reusable presets.
+- Support additional size guides beyond the current 2.2 inch by 1.5 inch guide.
+- Operators must be able to create new size guides from the UI for testing and production setup, without editing source files or redeploying the app.
+- Each size guide must define both a maximum rectangle and a minimum rectangle so the preview can show the allowed size range for that badge reel design.
+- The size guide editor should live on its own `Size Guides` page rather than inside the preset editor.
+- The size guide editor should include a live preview of the max rectangle, min rectangle, dimension labels, and optional centered circle from the fields currently being edited.
+- The `Size Guides` page should follow the same two-pane production layout style as `Design Queue`: saved size guide rows in a left navigation panel, with the full size guide editor in a right editor panel on desktop-width screens. The editor panel should contain the number fields, preview, actions, and status.
+- Clicking a saved size guide row should load it into the editor directly; size guide rows should not include a separate `Edit` button.
+- The `New Guide` action should sit at the top of the left size-guide navigation panel. `Save Guide` and `Delete Guide` should sit at the top right of the size-guide editor panel.
+- Size guide editor fields should use compact spacing so production dimensions can be scanned and edited without excessive vertical spread.
+- The active size guide must be a global layout setting selected in the `Global Settings` card and saved as part of reusable presets.
 - Treat `Text Height` as the authored physical size for each line in millimeters.
 - When a line's `Lock Text Height` control is enabled, preserve that line's authored text height during automatic boundary-fit resizing instead of scaling it with the rest of the design.
 - Automatic boundary-fit resizing should continue scaling unlocked lines proportionally to make the best use of the active preset's selected maximum guide box.
@@ -142,9 +148,9 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Add a global `Vertical Stretch` slider in the Global controls box.
 - The global `Vertical Stretch` slider must overwrite every current text line's per-line `Vertical Stretch` value when adjusted.
 - When all text lines share the same vertical stretch value, the global `Vertical Stretch` slider should display that shared value; when lines differ, its readout should indicate a mixed state until the operator adjusts it.
-- The preview area should include non-exported guide geometry for the active bounding-border size preset, and the rendered design should be centered within the active maximum rectangle on screen.
-- The preview guide should show both the active size preset's maximum rectangle and minimum rectangle, matching the box guide style.
-- The preview guide should include a non-exported centered circle only when the active bounding-border size preset defines a circle diameter. The default 2.2 inch by 1.5 inch size uses a 1.25 inch circle; presets with no circle diameter should render no circle.
+- The preview area should include non-exported guide geometry for the active size guide, and the rendered design should be centered within the active maximum rectangle on screen.
+- The preview guide should show both the active size guide's maximum rectangle and minimum rectangle, matching the box guide style.
+- The preview guide should include a non-exported centered circle only when the active size guide defines a circle diameter. The default 2.2 inch by 1.5 inch guide uses a 1.25 inch circle; guides with no circle diameter should render no circle.
 - The preview guide should use thin solid `rgb(12, 150, 217)` strokes instead of dashed strokes.
 - The outer preview box, optional centered circle, and inner reference lines should all use a `0.05px` stroke in the on-screen preview.
 - The preview guide should include four inner reference lines, with one inset vertical line near each side and one inset horizontal line near the top and bottom, matching the production reference template.
@@ -152,7 +158,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - The two inner horizontal guide lines should be 1.1 inches apart.
 - The preview should center the visible text geometry within the guide box, even when the backing border extends beyond the guide area.
 - The active preview guide box should remain visible even when there is no active text.
-- The preview guide box should show dimension labels for the active bounding-border size preset outside the box.
+- The preview guide box should show dimension labels for the active size guide outside the box.
 - Preserve legibility while minimizing separate acrylic pieces.
 - The `Backing Border` slider must remain a single global control for the whole design rather than a per-line control.
 - The global `Backing Border` slider should appear below all per-line control groups.
@@ -304,7 +310,7 @@ Future-facing product ideas and optional later-phase workflow enhancements are t
 - Multi-line layouts should support intentional contact between lines, and for Candlepin layouts each lower line should slide upward until the visible outlines reach the configured line-bridge target.
 - The backing layer should be generated automatically as an offset silhouette in the production tool rather than remaining a preview-only approximation.
 - The active maximum guide box defines the text fitting target, not the total finished backing size limit. The current default maximum guide box is 2.2 inches by 1.5 inches.
-- The active minimum guide box is a visual/design constraint for the selected bounding-border size preset and should be shown in preview alongside the maximum guide box.
+- The active minimum guide box is a visual/design constraint for the selected size guide and should be shown in preview alongside the maximum guide box.
 - A production-safe minimum bridge width for 1/8 inch acrylic still needs explicit shop confirmation. Until confirmed otherwise, use 0.5 mm as the working default bridge target for Candlepin letter and line connections.
 - If direct Ruida support is pursued, prefer USB as the first transport path for this shop because the machine is currently USB-connected and because the current production workflow does not need to depend on Ruida Ethernet/UDP behavior.
 - The initial hosted deployment target is Vercel.
@@ -337,7 +343,7 @@ Future-facing product ideas and optional later-phase workflow enhancements are t
 
 ## Open Questions
 
-- What named bounding-border size presets should ship first, and what minimum and maximum rectangle dimensions should each preset use?
+- What named size guides should ship first, and what minimum and maximum rectangle dimensions should each guide use?
 - Should the minimum rectangle be advisory-only in preview, or should the tool warn when the finished text/backing silhouette is smaller than the minimum rectangle?
 - Beyond the active text guide area, what maximum finished badge reel face plate dimensions should the tool enforce?
 - What minimum stroke/bridge width is safe for 1/8 inch acrylic after shop validation?
@@ -374,7 +380,7 @@ The website should be a practical production tool rather than a marketing site. 
 - The `Preset` card should contain the preset dropdown, while its ellipses menu should contain `Copy Layout`, `Paste Layout`, `Save as New Preset`, `Overwrite`, `Assign Preset to Listing`, and `Reload preset`.
 - The preset dropdown label in the `Preset` card should read `Preset Name`.
 - The `Preset` card should include a `Reload preset` button at the bottom that reapplies the currently selected preset and overwrites all current layout settings for the active design with that preset's current values.
-- The `Global Settings` card should contain `Weld Exported Design`, bounding-border size preset, global `Horizontal Stretch`, global `Vertical Stretch`, and `Backing Border`, followed by the per-line controls for `Line 1`, `Line 2`, and any additional lines.
+- The `Global Settings` card should contain `Weld Exported Design`, `Size Guide`, global `Horizontal Stretch`, global `Vertical Stretch`, and `Backing Border`, followed by the per-line controls for `Line 1`, `Line 2`, and any additional lines.
 - The selected-order editor should also provide an `Assign Preset to Listing` action when the active order has an imported Etsy listing id.
 - The `Assign Preset to Listing` action should assign the currently selected preset to that listing id by updating the preset's listing assignments.
 - When the active order's imported listing id is assigned to the selected preset, the `Preset Name` label should show a compact inline `Linked` indicator without adding another row to the preset card.
@@ -399,7 +405,7 @@ The website should be a practical production tool rather than a marketing site. 
 - When the copied source and target design have different text-line counts, pasted layout controls should apply line by line only for matching line indexes and should leave unmatched target lines unchanged.
 - After pasting layout controls, the target design should be treated as changed, any saved completed/export-ready state should be cleared for that design, and the operator should need to complete it again so fresh analysis and export data are produced.
 - The preset editor should use the same practical visual language as the existing global and per-line layout controls rather than exposing raw JSON by default.
-- The preset editor should include a dedicated place to create, view, and edit bounding-border size presets with named maximum and minimum rectangles.
+- The `Size Guides` workspace should include a dedicated place to create, view, and edit named maximum and minimum rectangles.
 - The preset editor should allow selecting an existing preset, editing its metadata and reusable layout defaults, and saving those changes back to the preset definition.
 - Preset ids should be opaque random identifiers generated by the app, remain stable after creation, and not be shown or edited in the operator UI.
 - The preset editor should provide a `New Preset` action that starts from a blank or inferred preset draft and can be saved as a new schema-valid preset file and manifest entry.

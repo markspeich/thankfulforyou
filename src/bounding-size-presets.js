@@ -71,10 +71,10 @@ export function normalizeBoundingSizePresetDefinition(definition = {}) {
   const minHeightIn = assertPositiveNumber(definition.min?.heightIn, "Minimum height");
 
   if (!/^size-[a-z0-9]+(?:-[a-z0-9]+)*$/.test(id)) {
-    throw new Error("Size preset id must start with size- and contain only lowercase letters, numbers, and hyphens.");
+    throw new Error("Size guide id must start with size- and contain only lowercase letters, numbers, and hyphens.");
   }
   if (!label) {
-    throw new Error("Size preset name is required.");
+    throw new Error("Size guide name is required.");
   }
   if (minWidthIn > maxWidthIn) {
     throw new Error("Minimum width cannot be larger than maximum width.");

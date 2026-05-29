@@ -366,7 +366,7 @@ describe("presets", () => {
     });
   });
 
-  it("returns preset-level bounding size defaults", () => {
+  it("returns preset-level size guide defaults", () => {
     expect(getPresetGlobalDefaults("preset-a1f4c8e2b601")).toEqual({
       boundingSizePresetId: "size-2-2x1-5",
       backingMm: 3.1,
@@ -432,7 +432,7 @@ describe("presets", () => {
     expect(localStorageMock.setItem).toHaveBeenCalledTimes(1);
   });
 
-  it("can save custom bounding size presets into the preset snapshot", () => {
+  it("can save custom size guides into the preset snapshot", () => {
     const localStorageMock = {
       setItem: vi.fn(),
     };
@@ -458,7 +458,7 @@ describe("presets", () => {
     expect(localStorageMock.setItem).toHaveBeenCalledTimes(1);
   });
 
-  it("can delete custom bounding size presets but not the bundled default", () => {
+  it("can delete custom size guides but not the bundled default", () => {
     saveBoundingSizePresetDefinitionLocally({
       preset: {
         id: "size-delete-me",
@@ -470,7 +470,7 @@ describe("presets", () => {
 
     expect(deleteBoundingSizePresetDefinitionLocally("size-delete-me").deletedPresetId).toBe("size-delete-me");
     expect(getBoundingSizePresetDefinitionsForEditor().map((preset) => preset.id)).not.toContain("size-delete-me");
-    expect(() => deleteBoundingSizePresetDefinitionLocally("size-2-2x1-5")).toThrow("The default bounding size cannot be deleted.");
+    expect(() => deleteBoundingSizePresetDefinitionLocally("size-2-2x1-5")).toThrow("The default size guide cannot be deleted.");
   });
 
   it("can delete a preset definition locally and promote a surviving preset as the default when needed", () => {

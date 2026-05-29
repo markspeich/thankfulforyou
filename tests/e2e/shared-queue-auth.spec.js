@@ -319,6 +319,11 @@ test("switches to the presets workspace from the left nav", async ({ page }) => 
 
   await expect(page.locator("#presetWorkspaceButton")).toHaveAttribute("aria-pressed", "true");
   await expect(page.locator("#presetsWorkspace")).toBeVisible();
+
+  await page.locator("#sizeGuideWorkspaceButton").click();
+
+  await expect(page.locator("#sizeGuideWorkspaceButton")).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator("#sizeGuideWorkspace")).toBeVisible();
 });
 
 test("shows a loading skeleton while the initial shared queue loads", async ({ page }) => {

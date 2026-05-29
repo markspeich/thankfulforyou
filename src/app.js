@@ -146,8 +146,10 @@ const sharedQueueSignInButton = document.querySelector("#sharedQueueSignInButton
 const sharedQueueAuthError = document.querySelector("#sharedQueueAuthError");
 const ordersWorkspace = document.querySelector("#ordersWorkspace");
 const presetsWorkspace = document.querySelector("#presetsWorkspace");
+const sizeGuideWorkspace = document.querySelector("#sizeGuideWorkspace");
 const orderWorkspaceButton = document.querySelector("#orderWorkspaceButton");
 const presetWorkspaceButton = document.querySelector("#presetWorkspaceButton");
+const sizeGuideWorkspaceButton = document.querySelector("#sizeGuideWorkspaceButton");
 const sharedQueueLogoutButton = document.querySelector("#sharedQueueLogoutButton");
 const navCollapseButton = document.querySelector("#navCollapseButton");
 const addOrderButton = document.querySelector("#addOrderButton");
@@ -2489,7 +2491,20 @@ function renderSizePresetList() {
     const preset = resolveBoundingSizePreset(definition.id);
     const row = document.createElement("article");
     row.className = "size-preset-row";
+    row.role = "button";
+    row.tabIndex = 0;
     row.classList.toggle("is-selected", definition.id === selectedSizePresetId);
+    row.addEventListener("click", () => {
+      selectSizePresetForEditing(definition.id);
+    });
+    row.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" && event.key !== " ") {
+        return;
+      }
+
+      event.preventDefault();
+      selectSizePresetForEditing(definition.id);
+    });
 
     const content = document.createElement("div");
     const name = document.createElement("p");
@@ -2510,16 +2525,8 @@ function renderSizePresetList() {
       ? "No circle"
       : `Circle ${preset.circleDiameterIn} in`;
 
-    const selectButton = document.createElement("button");
-    selectButton.type = "button";
-    selectButton.className = "size-preset-select-button";
-    selectButton.textContent = "Edit";
-    selectButton.addEventListener("click", () => {
-      selectSizePresetForEditing(definition.id);
-    });
-
     content.append(name, max, min, circle);
-    row.append(content, selectButton);
+    row.append(content);
     return row;
   }));
 }
@@ -2605,7 +2612,6 @@ function renderSizePresetEditorPreview() {
       y: previewBoxY,
       width: maxWidthMm,
       height: maxHeightMm,
-      rx: 1.6,
     }),
     makeSvgElement("rect", {
       class: "preview-guide-min-box",
@@ -2613,7 +2619,6 @@ function renderSizePresetEditorPreview() {
       y: minBoxY,
       width: minWidthMm,
       height: minHeightMm,
-      rx: 1.6,
     }),
     makeSvgElement("line", {
       class: "preview-guide-inner-line",
@@ -2680,7 +2685,7 @@ function clearSizePresetEditor() {
   if (deleteSizePresetButton) {
     deleteSizePresetButton.disabled = true;
   }
-  setSizePresetEditorStatus("Create a size preset or select one below.", "pending");
+  setSizePresetEditorStatus("Create a size guide or select one below.", "pending");
   renderSizePresetEditorPreview();
   renderSizePresetList();
 }
@@ -2787,13 +2792,13 @@ async function saveSizePresetFromEditor() {
       );
     }
   } catch (error) {
-    setSizePresetEditorStatus(error instanceof Error ? error.message : "Unable to save size preset.", "error");
+    setSizePresetEditorStatus(error instanceof Error ? error.message : "Unable to save size guide.", "error");
   }
 }
 
 async function deleteSelectedSizePreset() {
   if (!selectedSizePresetId) {
-    setSizePresetEditorStatus("Select a custom size preset before deleting.", "error");
+    setSizePresetEditorStatus("Select a custom size guide before deleting.", "error");
     return;
   }
 
@@ -2806,7 +2811,7 @@ async function deleteSelectedSizePreset() {
 
     try {
       await savePresetSnapshot(result.snapshot);
-      setSizePresetEditorStatus(`Deleted ${deletedDefinition?.label || "size preset"}.`, "success");
+      setSizePresetEditorStatus(`Deleted ${deletedDefinition?.label || "size guide"}.`, "success");
     } catch (error) {
       setSizePresetEditorStatus(
         error instanceof Error
@@ -2816,7 +2821,7 @@ async function deleteSelectedSizePreset() {
       );
     }
   } catch (error) {
-    setSizePresetEditorStatus(error instanceof Error ? error.message : "Unable to delete size preset.", "error");
+    setSizePresetEditorStatus(error instanceof Error ? error.message : "Unable to delete size guide.", "error");
   }
 }
 
@@ -3868,7 +3873,6 @@ function appendPreviewGuide(previewBoxX, previewBoxY, guide = resolveBoundingSiz
       y: previewBoxY,
       width: guide.maxWidthMm,
       height: guide.maxHeightMm,
-      rx: 1.6,
     }),
     makeSvgElement("rect", {
       class: "preview-guide-min-box",
@@ -3876,7 +3880,6 @@ function appendPreviewGuide(previewBoxX, previewBoxY, guide = resolveBoundingSiz
       y: minBoxY,
       width: guide.minWidthMm,
       height: guide.minHeightMm,
-      rx: 1.6,
     }),
     makeSvgElement("line", {
       class: "preview-guide-inner-line",
@@ -4901,15 +4904,18 @@ function hideInitialQueueLoading() {
 }
 
 function setActiveWorkspace(workspace) {
-  activeWorkspace = workspace === "presets" ? "presets" : "orders";
+  activeWorkspace = ["orders", "presets", "sizeGuides"].includes(workspace) ? workspace : "orders";
   appShell.dataset.workspace = activeWorkspace;
   ordersWorkspace.hidden = activeWorkspace !== "orders";
   presetsWorkspace.hidden = activeWorkspace !== "presets";
+  sizeGuideWorkspace.hidden = activeWorkspace !== "sizeGuides";
   orderWorkspaceButton.classList.toggle("is-active", activeWorkspace === "orders");
   presetWorkspaceButton.classList.toggle("is-active", activeWorkspace === "presets");
+  sizeGuideWorkspaceButton.classList.toggle("is-active", activeWorkspace === "sizeGuides");
   orderWorkspaceButton.setAttribute("aria-pressed", String(activeWorkspace === "orders"));
   presetWorkspaceButton.setAttribute("aria-pressed", String(activeWorkspace === "presets"));
-  if (activeWorkspace === "presets") {
+  sizeGuideWorkspaceButton.setAttribute("aria-pressed", String(activeWorkspace === "sizeGuides"));
+  if (activeWorkspace === "sizeGuides") {
     renderSizePresetList();
   }
 }
@@ -6552,6 +6558,9 @@ orderWorkspaceButton.addEventListener("click", () => {
 });
 presetWorkspaceButton.addEventListener("click", () => {
   setActiveWorkspace("presets");
+});
+sizeGuideWorkspaceButton.addEventListener("click", () => {
+  setActiveWorkspace("sizeGuides");
 });
 sharedQueueLogoutButton?.addEventListener("click", () => {
   void handleSharedQueueSignOut();

@@ -11,7 +11,7 @@ import {
   setBoundingSizePresetDefinitionsForTests,
 } from "../../src/bounding-size-presets.js";
 
-describe("bounding size presets", () => {
+describe("size guides", () => {
   beforeEach(() => {
     setBoundingSizePresetDefinitionsForTests();
   });
@@ -101,7 +101,7 @@ describe("bounding size presets", () => {
     })).toThrow("Circle diameter must be greater than 0.");
   });
 
-  it("uses active custom size presets for options and resolution", () => {
+  it("uses active custom size guides for options and resolution", () => {
     setBoundingSizePresetDefinitionsForTests([
       {
         id: "size-custom",

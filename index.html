@@ -66,6 +66,15 @@
           <span class="workspace-nav-icon workspace-nav-icon-presets" aria-hidden="true"></span>
           <span class="workspace-nav-label">Presets</span>
         </button>
+        <button
+          id="sizeGuideWorkspaceButton"
+          class="workspace-nav-item"
+          type="button"
+          aria-label="Size Guides"
+        >
+          <span class="workspace-nav-icon workspace-nav-icon-size-guide" aria-hidden="true"></span>
+          <span class="workspace-nav-label">Size Guides</span>
+        </button>
         <div class="workspace-nav-spacer" aria-hidden="true"></div>
         <button
           id="sharedQueueLogoutButton"
@@ -457,7 +466,7 @@
                     </label>
 
                     <label class="field compact-field" for="boundingSizePresetInput">
-                      <span>Bounding Size</span>
+                      <span>Size Guide</span>
                       <select id="boundingSizePresetInput"></select>
                     </label>
 
@@ -543,7 +552,7 @@
                         <span>Weld Exported Design</span>
                       </label>
                       <label class="field compact-field" for="presetBoundingSizePresetInput">
-                        <span>Bounding Size</span>
+                        <span>Size Guide</span>
                         <select id="presetBoundingSizePresetInput"></select>
                       </label>
                       <label class="field compact-field">
@@ -583,61 +592,76 @@
                   </section>
                   <p id="presetEditorStatus" class="note" aria-live="polite">Choose a preset or start from an order layout.</p>
                 </article>
-                <section class="preset-workspace-card size-presets-card" aria-labelledby="sizePresetsTitle">
-                  <div class="preset-assignment-header">
-                    <div>
-                      <p class="preset-assignment-eyebrow">Production Sizes</p>
-                      <h3 id="sizePresetsTitle">Size Presets</h3>
-                    </div>
-                  </div>
-                  <div class="size-preset-editor" aria-label="Size preset editor">
-                    <label class="field compact-field" for="sizePresetNameInput">
-                      <span>Size Name</span>
-                      <input id="sizePresetNameInput" type="text" autocomplete="off" placeholder="Medium Badge">
-                    </label>
-                    <div class="size-preset-dimension-grid">
-                      <label class="field compact-field" for="sizePresetMaxWidthInput">
-                        <span>Max Width (in)</span>
-                        <input id="sizePresetMaxWidthInput" type="number" min="0.01" step="0.01">
-                      </label>
-                      <label class="field compact-field" for="sizePresetMaxHeightInput">
-                        <span>Max Height (in)</span>
-                        <input id="sizePresetMaxHeightInput" type="number" min="0.01" step="0.01">
-                      </label>
-                      <label class="field compact-field" for="sizePresetMinWidthInput">
-                        <span>Min Width (in)</span>
-                        <input id="sizePresetMinWidthInput" type="number" min="0.01" step="0.01">
-                      </label>
-                      <label class="field compact-field" for="sizePresetMinHeightInput">
-                        <span>Min Height (in)</span>
-                        <input id="sizePresetMinHeightInput" type="number" min="0.01" step="0.01">
-                      </label>
-                      <label class="field compact-field" for="sizePresetCircleDiameterInput">
-                        <span>Circle Diameter (in)</span>
-                        <input id="sizePresetCircleDiameterInput" type="number" min="0.01" step="0.01" placeholder="None">
-                      </label>
-                    </div>
-                    <section class="size-preset-preview-panel" aria-label="Size preset preview">
-                      <svg id="sizePresetPreview" class="size-preset-preview" role="img" aria-label="Preview of the size preset guide"></svg>
-                      <p id="sizePresetPreviewEmptyState" class="size-preset-preview-empty">Enter maximum and minimum dimensions to preview this size.</p>
-                    </section>
-                    <div class="preset-editor-actions">
-                      <button id="newSizePresetButton" class="editor-action-button" type="button">
-                        <span class="editor-action-label">New Size</span>
-                      </button>
-                      <button id="saveSizePresetButton" class="editor-action-button" type="button">
-                        <span class="editor-action-label">Save Size</span>
-                      </button>
-                      <button id="deleteSizePresetButton" class="editor-action-button editor-danger-button" type="button" disabled>
-                        <span class="editor-action-label">Delete Size</span>
-                      </button>
-                    </div>
-                    <p id="sizePresetEditorStatus" class="note" aria-live="polite">Create a size preset or select one below.</p>
-                  </div>
-                  <div id="sizePresetList" class="size-preset-list"></div>
-                </section>
               </section>
             </div>
+          </section>
+        </section>
+        <section id="sizeGuideWorkspace" class="workspace-view" aria-label="Size guides workspace" hidden>
+          <section class="production-workspace size-guide-workspace">
+            <aside class="orders-panel size-guide-panel" aria-label="Size guide navigation">
+              <div class="queue-header">
+                <h1>Size Guides</h1>
+                <button id="newSizePresetButton" class="queue-primary-action" type="button">
+                  <span class="queue-tool-label">New Guide</span>
+                </button>
+              </div>
+              <p class="queue-tools-note">Choose a saved guide to edit, or create a new production size for badge reel layouts.</p>
+              <div id="sizePresetList" class="size-preset-list"></div>
+            </aside>
+            <section class="editor-panel size-guide-editor-panel" aria-label="Size guide editor panel">
+              <header class="editor-header">
+                <div class="size-guide-editor-header-inner">
+                  <div>
+                    <p class="eyebrow">Production Sizes</p>
+                    <h2>Size Guide Editor</h2>
+                    <p class="editor-meta">Edit the max and min guide boxes used to constrain badge reel designs.</p>
+                  </div>
+                  <div class="editor-actions">
+                    <button id="saveSizePresetButton" class="editor-action-button" type="button">
+                      <span class="editor-action-label">Save Guide</span>
+                    </button>
+                    <button id="deleteSizePresetButton" class="editor-action-button editor-danger-button" type="button" disabled>
+                      <span class="editor-action-label">Delete Guide</span>
+                    </button>
+                  </div>
+                </div>
+              </header>
+              <div class="editor-body">
+                <section class="size-preset-editor" aria-label="Size guide editor">
+                  <label class="field compact-field" for="sizePresetNameInput">
+                    <span>Guide Name</span>
+                    <input id="sizePresetNameInput" type="text" autocomplete="off" placeholder="Medium Badge">
+                  </label>
+                  <div class="size-preset-dimension-grid">
+                    <label class="field compact-field" for="sizePresetMaxWidthInput">
+                      <span>Max Width (in)</span>
+                      <input id="sizePresetMaxWidthInput" type="number" min="0.01" step="0.01">
+                    </label>
+                    <label class="field compact-field" for="sizePresetMaxHeightInput">
+                      <span>Max Height (in)</span>
+                      <input id="sizePresetMaxHeightInput" type="number" min="0.01" step="0.01">
+                    </label>
+                    <label class="field compact-field" for="sizePresetMinWidthInput">
+                      <span>Min Width (in)</span>
+                      <input id="sizePresetMinWidthInput" type="number" min="0.01" step="0.01">
+                    </label>
+                    <label class="field compact-field" for="sizePresetMinHeightInput">
+                      <span>Min Height (in)</span>
+                      <input id="sizePresetMinHeightInput" type="number" min="0.01" step="0.01">
+                    </label>
+                    <label class="field compact-field" for="sizePresetCircleDiameterInput">
+                      <span>Circle Diameter (in)</span>
+                      <input id="sizePresetCircleDiameterInput" type="number" min="0.01" step="0.01" placeholder="None">
+                    </label>
+                  </div>
+                  <section class="size-preset-preview-panel" aria-label="Size guide preview">
+                    <svg id="sizePresetPreview" class="size-preset-preview" role="img" aria-label="Preview of the size guide"></svg>
+                    <p id="sizePresetPreviewEmptyState" class="size-preset-preview-empty">Enter maximum and minimum dimensions to preview this guide.</p>
+                  </section>
+                  <p id="sizePresetEditorStatus" class="note" aria-live="polite">Create a size guide or select one below.</p>
+                </section>
+              </div>
+            </section>
           </section>
         </section>
       </section>

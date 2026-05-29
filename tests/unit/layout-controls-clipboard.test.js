@@ -400,7 +400,7 @@ describe("layout controls clipboard", () => {
     });
   });
 
-  it("copies and pastes the bounding size preset id as a global layout setting", () => {
+  it("copies and pastes the size guide id as a global layout setting", () => {
     const snapshot = buildLayoutControlsSnapshot({
       id: "order-1",
       label: "Design 1",

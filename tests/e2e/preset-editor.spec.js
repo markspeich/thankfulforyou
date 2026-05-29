@@ -312,48 +312,179 @@ test.beforeEach(async ({ page, request }) => {
   });
 });
 
-test("switches between order items and presets from the left nav", async ({ page }) => {
+test("switches between order items, presets, and size guides from the left nav", async ({ page }) => {
   await page.goto("/");
 
   const appShell = page.locator(".app-shell");
   const ordersWorkspace = page.locator("#ordersWorkspace");
   const presetsWorkspace = page.locator("#presetsWorkspace");
-  const editorPanel = page.locator(".editor-panel");
+  const sizeGuideWorkspace = page.locator("#sizeGuideWorkspace");
+  const editorPanel = page.getByLabel("Selected design editor");
 
   await expect(page.getByRole("button", { name: "Design Queue" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Presets" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Size Guides" })).toBeVisible();
   await expect(ordersWorkspace).toBeVisible();
   await expect(presetsWorkspace).toBeHidden();
+  await expect(sizeGuideWorkspace).toBeHidden();
   await expect(editorPanel).toHaveClass(/is-hidden/);
 
   await page.getByRole("button", { name: "Presets" }).click();
   await expect(ordersWorkspace).toBeHidden();
   await expect(page.getByRole("region", { name: "Preset editor workspace" })).toBeVisible();
   await expect(presetsWorkspace).toBeVisible();
+  await expect(sizeGuideWorkspace).toBeHidden();
+
+  await page.getByRole("button", { name: "Size Guides" }).click();
+  await expect(ordersWorkspace).toBeHidden();
+  await expect(presetsWorkspace).toBeHidden();
+  await expect(sizeGuideWorkspace).toBeVisible();
+  await expect(page.getByRole("region", { name: "Size guides workspace" })).toBeVisible();
 
   await page.getByRole("button", { name: "Design Queue" }).click();
   await expect(page.getByRole("region", { name: "Order items workspace" })).toBeVisible();
   await expect(page.getByRole("region", { name: "Preset editor workspace" })).toBeHidden();
+  await expect(sizeGuideWorkspace).toBeHidden();
   await expect(editorPanel).toHaveClass(/is-hidden/);
 
   await page.getByRole("button", { name: "Collapse navigation" }).click();
   await expect(appShell).toHaveAttribute("data-nav-collapsed", "true");
 });
 
-test("shows size presets in the Presets workspace", async ({ page }) => {
+test("shows size guides in the Size Guides workspace", async ({ page }) => {
   await page.goto("/");
-  await page.getByRole("button", { name: "Presets" }).click();
+  await page.getByRole("button", { name: "Size Guides" }).click();
 
-  const sizePresets = page.getByLabel("Size Presets");
-  await expect(sizePresets.getByRole("heading", { name: "Size Presets" })).toBeVisible();
-  await expect(sizePresets.getByText("2.2 x 1.5 in", { exact: true })).toBeVisible();
-  await expect(sizePresets.getByText("Max 2.2 x 1.5 in")).toBeVisible();
-  await expect(sizePresets.getByText("Min 1.6 x 1.1 in")).toBeVisible();
+  const sizeGuide = page.locator("#sizeGuideWorkspace");
+  await expect(sizeGuide.getByRole("heading", { level: 1, name: "Size Guides" })).toBeVisible();
+  await expect(sizeGuide.getByRole("heading", { level: 2, name: "Size Guide Editor" })).toBeVisible();
+  await expect(sizeGuide.getByText("2.2 x 1.5 in", { exact: true })).toBeVisible();
+  await expect(sizeGuide.getByText("Max 2.2 x 1.5 in")).toBeVisible();
+  await expect(sizeGuide.getByText("Min 1.6 x 1.1 in")).toBeVisible();
+  await expect(sizeGuide.locator(".size-preset-select-button")).toHaveCount(0);
+  await expect(sizeGuide.locator(".size-guide-panel .queue-header").getByRole("button", { name: "New Guide" })).toBeVisible();
+  await expect(sizeGuide.locator(".size-guide-editor-panel .editor-header").getByRole("button", { name: "Save Guide" })).toBeVisible();
+  await expect(sizeGuide.locator(".size-guide-editor-panel .editor-header").getByRole("button", { name: "Delete Guide" })).toBeVisible();
+  await expect(sizeGuide.locator(".production-workspace")).toBeVisible();
+  await expect(sizeGuide.locator(".orders-panel")).toBeVisible();
+  await expect(sizeGuide.locator(".editor-panel")).toBeVisible();
+  await expect.poll(async () => {
+    return page.locator("#sizeGuideWorkspace").evaluate((workspace) => {
+      const editorBody = workspace.querySelector(".size-guide-editor-panel .editor-body");
+      const editor = workspace.querySelector(".size-preset-editor");
+      const guideNameInput = workspace.querySelector("#sizePresetNameInput");
+      const maxWidthInput = workspace.querySelector("#sizePresetMaxWidthInput");
+      const previewPanel = workspace.querySelector(".size-preset-preview-panel");
+      if (!editorBody || !editor || !guideNameInput || !maxWidthInput || !previewPanel) {
+        return null;
+      }
+
+      const bodyRect = editorBody.getBoundingClientRect();
+      const editorRect = editor.getBoundingClientRect();
+      const guideNameRect = guideNameInput.getBoundingClientRect();
+      const maxWidthRect = maxWidthInput.getBoundingClientRect();
+      return {
+        editorOffsetTop: Math.round(editorRect.top - bodyRect.top),
+        guideNameHeight: Math.round(guideNameRect.height),
+        maxWidthHeight: Math.round(maxWidthRect.height),
+        previewHeight: Math.round(previewPanel.getBoundingClientRect().height),
+      };
+    });
+  }).toEqual({
+    editorOffsetTop: expect.any(Number),
+    guideNameHeight: expect.any(Number),
+    maxWidthHeight: expect.any(Number),
+    previewHeight: expect.any(Number),
+  });
+  const editorMetrics = await page.locator("#sizeGuideWorkspace").evaluate((workspace) => {
+    const editorBody = workspace.querySelector(".size-guide-editor-panel .editor-body");
+    const editor = workspace.querySelector(".size-preset-editor");
+    const guideNameInput = workspace.querySelector("#sizePresetNameInput");
+    const maxWidthInput = workspace.querySelector("#sizePresetMaxWidthInput");
+    const previewPanel = workspace.querySelector(".size-preset-preview-panel");
+    const bodyRect = editorBody.getBoundingClientRect();
+    const editorRect = editor.getBoundingClientRect();
+    return {
+      editorOffsetTop: editorRect.top - bodyRect.top,
+      guideNameHeight: guideNameInput.getBoundingClientRect().height,
+      maxWidthHeight: maxWidthInput.getBoundingClientRect().height,
+      previewHeight: previewPanel.getBoundingClientRect().height,
+    };
+  });
+
+  expect(editorMetrics.editorOffsetTop).toBeLessThanOrEqual(24);
+  expect(editorMetrics.guideNameHeight).toBeLessThanOrEqual(38);
+  expect(editorMetrics.maxWidthHeight).toBeLessThanOrEqual(38);
+  expect(editorMetrics.previewHeight).toBeGreaterThanOrEqual(260);
+  const actionMetrics = await page.locator("#sizeGuideWorkspace").evaluate((workspace) => {
+    const editor = workspace.querySelector(".size-preset-editor");
+    const saveButton = workspace.querySelector("#saveSizePresetButton");
+    const deleteButton = workspace.querySelector("#deleteSizePresetButton");
+    const editorRect = editor.getBoundingClientRect();
+    const saveRect = saveButton.getBoundingClientRect();
+    const deleteRect = deleteButton.getBoundingClientRect();
+    return {
+      editorRight: editorRect.right,
+      saveRight: saveRect.right,
+      deleteRight: deleteRect.right,
+    };
+  });
+
+  expect(actionMetrics.saveRight).toBeLessThanOrEqual(actionMetrics.editorRight + 1);
+  expect(actionMetrics.deleteRight).toBeLessThanOrEqual(actionMetrics.editorRight + 1);
+  await expect.poll(async () => {
+    return page.locator("#sizeGuideWorkspace").evaluate((workspace) => {
+      const list = workspace.querySelector("#sizePresetList");
+      const editor = workspace.querySelector(".size-preset-editor");
+      const leftPanel = workspace.querySelector(".orders-panel");
+      const editorPanel = workspace.querySelector(".editor-panel");
+      if (!list || !editor || !leftPanel || !editorPanel) {
+        return null;
+      }
+
+      const leftPanelRect = leftPanel.getBoundingClientRect();
+      const editorPanelRect = editorPanel.getBoundingClientRect();
+      return {
+        leftPanelLeft: Math.round(leftPanelRect.left),
+        leftPanelRight: Math.round(leftPanelRect.right),
+        editorPanelLeft: Math.round(editorPanelRect.left),
+        editorPanelTop: Math.round(editorPanelRect.top),
+        leftPanelTop: Math.round(leftPanelRect.top),
+        listParentClass: list.parentElement?.className || "",
+        editorPanelClass: editor.closest(".editor-panel")?.className || "",
+        leftPanelClass: list.closest(".orders-panel")?.className || "",
+      };
+    });
+  }).toEqual(expect.objectContaining({
+    leftPanelLeft: expect.any(Number),
+    leftPanelRight: expect.any(Number),
+    editorPanelLeft: expect.any(Number),
+    editorPanelTop: expect.any(Number),
+    leftPanelTop: expect.any(Number),
+    leftPanelClass: expect.stringContaining("orders-panel"),
+    editorPanelClass: expect.stringContaining("editor-panel"),
+  }));
+  const layout = await page.locator("#sizeGuideWorkspace").evaluate((workspace) => {
+    const leftPanelRect = workspace.querySelector(".orders-panel").getBoundingClientRect();
+    const editorPanelRect = workspace.querySelector(".editor-panel").getBoundingClientRect();
+    return {
+      leftPanelRight: leftPanelRect.right,
+      editorPanelLeft: editorPanelRect.left,
+      leftPanelTop: leftPanelRect.top,
+      editorPanelTop: editorPanelRect.top,
+    };
+  });
+
+  expect(layout.leftPanelRight).toBeLessThanOrEqual(layout.editorPanelLeft);
+  expect(Math.abs(layout.leftPanelTop - layout.editorPanelTop)).toBeLessThanOrEqual(1);
+
+  await sizeGuide.locator(".size-preset-row", { hasText: "2.2 x 1.5 in" }).click();
+  await expect(page.locator("#sizePresetNameInput")).toHaveValue("2.2 x 1.5 in");
 });
 
-test("shows a live preview while editing a bounding size preset", async ({ page }) => {
+test("shows a live preview while editing a size guide", async ({ page }) => {
   await page.goto("/");
-  await page.getByRole("button", { name: "Presets" }).click();
+  await page.getByRole("button", { name: "Size Guides" }).click();
 
   const preview = page.locator("#sizePresetPreview");
   await expect(preview).toBeVisible();
@@ -368,6 +499,8 @@ test("shows a live preview while editing a bounding size preset", async ({ page 
   await expect(page.locator("#sizePresetPreviewEmptyState")).toBeHidden();
   await expect(preview.locator(".preview-guide-box").first()).toHaveAttribute("width", String(3 * 25.4));
   await expect(preview.locator(".preview-guide-box").first()).toHaveAttribute("height", String(2 * 25.4));
+  await expect(preview.locator("rect.preview-guide-box")).not.toHaveAttribute("rx", /.+/);
+  await expect(preview.locator(".preview-guide-min-box")).not.toHaveAttribute("rx", /.+/);
   await expect(preview.locator(".preview-guide-label").first()).toHaveText('3"');
   await expect(preview.locator(".preview-guide-label").nth(1)).toHaveText('2"');
   await expect(preview.locator("circle.preview-guide-box")).toHaveCount(0);
@@ -380,7 +513,7 @@ test("shows a live preview while editing a bounding size preset", async ({ page 
   }).toBeCloseTo(1.5 * 25.4, 4);
 });
 
-test("preserves bounding size when saving and reloading a layout preset", async ({ page }) => {
+test("preserves the size guide when saving and reloading a layout preset", async ({ page }) => {
   await page.goto("/");
   await clickQueueAction(page, "Add Design");
 
@@ -390,20 +523,20 @@ test("preserves bounding size when saving and reloading a layout preset", async 
   await expect(page.locator("#presetBoundingSizePresetInput")).toHaveValue("size-2-2x1-5");
 });
 
-test("creates a custom bounding size and uses it in the order editor preview", async ({ page }) => {
+test("creates a custom size guide and uses it in the order editor preview", async ({ page }) => {
   await installPresetRoutes(page);
   await page.goto("/");
 
-  await page.getByRole("button", { name: "Presets" }).click();
+  await page.getByRole("button", { name: "Size Guides" }).click();
   await page.locator("#sizePresetNameInput").fill("Test Box");
   await page.locator("#sizePresetMaxWidthInput").fill("3");
   await page.locator("#sizePresetMaxHeightInput").fill("2");
   await page.locator("#sizePresetMinWidthInput").fill("2");
   await page.locator("#sizePresetMinHeightInput").fill("1.25");
-  await page.getByRole("button", { name: "Save Size" }).click();
+  await page.getByRole("button", { name: "Save Guide" }).click();
 
   await expect(page.locator("#sizePresetEditorStatus")).toContainText("Saved Test Box");
-  await expect(page.getByLabel("Size Presets").getByText("Test Box", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Size Guides").getByText("Test Box", { exact: true })).toBeVisible();
 
   await page.getByRole("button", { name: "Design Queue" }).click();
   await clickQueueAction(page, "Add Design");
@@ -414,15 +547,15 @@ test("creates a custom bounding size and uses it in the order editor preview", a
   await expect(page.locator("#preview .preview-guide-label").nth(1)).toHaveText('2"');
   await expect(page.locator("#preview circle.preview-guide-box")).toHaveCount(0);
 
-  await page.getByRole("button", { name: "Presets" }).click();
-  await page.getByRole("button", { name: "New Size" }).click();
+  await page.getByRole("button", { name: "Size Guides" }).click();
+  await page.getByRole("button", { name: "New Guide" }).click();
   await page.locator("#sizePresetNameInput").fill("Circle Box");
   await page.locator("#sizePresetMaxWidthInput").fill("2.5");
   await page.locator("#sizePresetMaxHeightInput").fill("1.75");
   await page.locator("#sizePresetMinWidthInput").fill("1.5");
   await page.locator("#sizePresetMinHeightInput").fill("1");
   await page.locator("#sizePresetCircleDiameterInput").fill("1.75");
-  await page.getByRole("button", { name: "Save Size" }).click();
+  await page.getByRole("button", { name: "Save Guide" }).click();
 
   await page.getByRole("button", { name: "Design Queue" }).click();
   await page.locator("#boundingSizePresetInput").selectOption({ label: "Circle Box" });
