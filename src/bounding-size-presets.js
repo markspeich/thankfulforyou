@@ -2,7 +2,7 @@ const MM_PER_INCH = 25.4;
 
 export const DEFAULT_BOUNDING_SIZE_PRESET_ID = "size-2-2x1-5";
 
-const BOUNDING_SIZE_PRESETS = Object.freeze([
+const BUILT_IN_BOUNDING_SIZE_PRESETS = Object.freeze([
   {
     id: DEFAULT_BOUNDING_SIZE_PRESET_ID,
     label: "2.2 x 1.5 in",
@@ -10,9 +10,30 @@ const BOUNDING_SIZE_PRESETS = Object.freeze([
     min: { widthIn: 1.6, heightIn: 1.1 },
   },
 ]);
+const BUILT_IN_BOUNDING_SIZE_PRESET_IDS = new Set(BUILT_IN_BOUNDING_SIZE_PRESETS.map((preset) => preset.id));
+
+let boundingSizePresets = normalizeBoundingSizePresetDefinitions();
 
 function toMm(inches) {
   return Number(inches) * MM_PER_INCH;
+}
+
+function cloneDefinition(definition) {
+  return {
+    id: definition.id,
+    label: definition.label,
+    max: { ...definition.max },
+    min: { ...definition.min },
+  };
+}
+
+function assertPositiveNumber(value, fieldName) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) {
+    throw new Error(`${fieldName} must be greater than 0.`);
+  }
+
+  return numeric;
 }
 
 function resolveDefinition(definition) {
@@ -30,20 +51,78 @@ function resolveDefinition(definition) {
   };
 }
 
+export function normalizeBoundingSizePresetDefinition(definition = {}) {
+  const id = String(definition.id ?? "").trim();
+  const label = String(definition.label ?? "").trim();
+  const maxWidthIn = assertPositiveNumber(definition.max?.widthIn, "Maximum width");
+  const maxHeightIn = assertPositiveNumber(definition.max?.heightIn, "Maximum height");
+  const minWidthIn = assertPositiveNumber(definition.min?.widthIn, "Minimum width");
+  const minHeightIn = assertPositiveNumber(definition.min?.heightIn, "Minimum height");
+
+  if (!/^size-[a-z0-9]+(?:-[a-z0-9]+)*$/.test(id)) {
+    throw new Error("Size preset id must start with size- and contain only lowercase letters, numbers, and hyphens.");
+  }
+  if (!label) {
+    throw new Error("Size preset name is required.");
+  }
+  if (minWidthIn > maxWidthIn) {
+    throw new Error("Minimum width cannot be larger than maximum width.");
+  }
+  if (minHeightIn > maxHeightIn) {
+    throw new Error("Minimum height cannot be larger than maximum height.");
+  }
+
+  return {
+    id,
+    label,
+    max: { widthIn: maxWidthIn, heightIn: maxHeightIn },
+    min: { widthIn: minWidthIn, heightIn: minHeightIn },
+  };
+}
+
+export function normalizeBoundingSizePresetDefinitions(definitions = []) {
+  const normalizedById = new Map(
+    BUILT_IN_BOUNDING_SIZE_PRESETS.map((preset) => [preset.id, normalizeBoundingSizePresetDefinition(preset)]),
+  );
+
+  definitions.forEach((definition) => {
+    const normalized = normalizeBoundingSizePresetDefinition(definition);
+    normalizedById.set(normalized.id, normalized);
+  });
+
+  return [...normalizedById.values()];
+}
+
+export function setBoundingSizePresetDefinitions(definitions = []) {
+  boundingSizePresets = normalizeBoundingSizePresetDefinitions(definitions);
+}
+
+export function setBoundingSizePresetDefinitionsForTests(definitions = []) {
+  setBoundingSizePresetDefinitions(definitions);
+}
+
+export function getBoundingSizePresetDefinitions() {
+  return boundingSizePresets.map((preset) => cloneDefinition(preset));
+}
+
 export function getBoundingSizePresetOptions() {
-  return BOUNDING_SIZE_PRESETS.map((preset) => ({
+  return boundingSizePresets.map((preset) => ({
     id: preset.id,
     label: preset.label,
   }));
 }
 
 export function isValidBoundingSizePresetId(presetId) {
-  return BOUNDING_SIZE_PRESETS.some((preset) => preset.id === presetId);
+  return boundingSizePresets.some((preset) => preset.id === presetId);
+}
+
+export function isBuiltInBoundingSizePresetId(presetId) {
+  return BUILT_IN_BOUNDING_SIZE_PRESET_IDS.has(presetId);
 }
 
 export function resolveBoundingSizePreset(presetId) {
-  const definition = BOUNDING_SIZE_PRESETS.find((preset) => preset.id === presetId)
-    || BOUNDING_SIZE_PRESETS.find((preset) => preset.id === DEFAULT_BOUNDING_SIZE_PRESET_ID);
+  const definition = boundingSizePresets.find((preset) => preset.id === presetId)
+    || boundingSizePresets.find((preset) => preset.id === DEFAULT_BOUNDING_SIZE_PRESET_ID);
 
   return resolveDefinition(definition);
 }

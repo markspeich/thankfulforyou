@@ -3,13 +3,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   buildPresetLines,
   deletePresetDefinitionLocally,
+  deleteBoundingSizePresetDefinitionLocally,
   getDefaultPresetId,
+  getBoundingSizePresetDefinitionsForEditor,
   getPresetDefinitionForEditor,
   getPresetGlobalDefaults,
   getPresetOptions,
   getPresetSnapshot,
   getPresetIdForListingId,
   replacePresetDefinitionForTests,
+  saveBoundingSizePresetDefinitionLocally,
   savePresetDefinitionLocally,
   setPresetRegistryForTests,
 } from "../../src/presets.js";
@@ -427,6 +430,47 @@ describe("presets", () => {
     expect(result.snapshot).toEqual(getPresetSnapshot());
     expect(getPresetDefinitionForEditor("preset-a1f4c8e2b601")?.name).toBe("All Candlepin Updated");
     expect(localStorageMock.setItem).toHaveBeenCalledTimes(1);
+  });
+
+  it("can save custom bounding size presets into the preset snapshot", () => {
+    const localStorageMock = {
+      setItem: vi.fn(),
+    };
+    vi.stubGlobal("localStorage", localStorageMock);
+
+    const result = saveBoundingSizePresetDefinitionLocally({
+      preset: {
+        id: "size-custom",
+        label: "Custom Test",
+        max: { widthIn: 3, heightIn: 2 },
+        min: { widthIn: 2, heightIn: 1.25 },
+      },
+    });
+
+    expect(result.preset).toEqual({
+      id: "size-custom",
+      label: "Custom Test",
+      max: { widthIn: 3, heightIn: 2 },
+      min: { widthIn: 2, heightIn: 1.25 },
+    });
+    expect(getBoundingSizePresetDefinitionsForEditor()).toContainEqual(result.preset);
+    expect(getPresetSnapshot().sizePresets).toContainEqual(result.preset);
+    expect(localStorageMock.setItem).toHaveBeenCalledTimes(1);
+  });
+
+  it("can delete custom bounding size presets but not the bundled default", () => {
+    saveBoundingSizePresetDefinitionLocally({
+      preset: {
+        id: "size-delete-me",
+        label: "Delete Me",
+        max: { widthIn: 2.5, heightIn: 1.8 },
+        min: { widthIn: 1.5, heightIn: 1 },
+      },
+    });
+
+    expect(deleteBoundingSizePresetDefinitionLocally("size-delete-me").deletedPresetId).toBe("size-delete-me");
+    expect(getBoundingSizePresetDefinitionsForEditor().map((preset) => preset.id)).not.toContain("size-delete-me");
+    expect(() => deleteBoundingSizePresetDefinitionLocally("size-2-2x1-5")).toThrow("The default bounding size cannot be deleted.");
   });
 
   it("can delete a preset definition locally and promote a surviving preset as the default when needed", () => {

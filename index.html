@@ -590,6 +590,42 @@
                       <h3 id="sizePresetsTitle">Size Presets</h3>
                     </div>
                   </div>
+                  <div class="size-preset-editor" aria-label="Size preset editor">
+                    <label class="field compact-field" for="sizePresetNameInput">
+                      <span>Size Name</span>
+                      <input id="sizePresetNameInput" type="text" autocomplete="off" placeholder="Medium Badge">
+                    </label>
+                    <div class="size-preset-dimension-grid">
+                      <label class="field compact-field" for="sizePresetMaxWidthInput">
+                        <span>Max Width (in)</span>
+                        <input id="sizePresetMaxWidthInput" type="number" min="0.01" step="0.01">
+                      </label>
+                      <label class="field compact-field" for="sizePresetMaxHeightInput">
+                        <span>Max Height (in)</span>
+                        <input id="sizePresetMaxHeightInput" type="number" min="0.01" step="0.01">
+                      </label>
+                      <label class="field compact-field" for="sizePresetMinWidthInput">
+                        <span>Min Width (in)</span>
+                        <input id="sizePresetMinWidthInput" type="number" min="0.01" step="0.01">
+                      </label>
+                      <label class="field compact-field" for="sizePresetMinHeightInput">
+                        <span>Min Height (in)</span>
+                        <input id="sizePresetMinHeightInput" type="number" min="0.01" step="0.01">
+                      </label>
+                    </div>
+                    <div class="preset-editor-actions">
+                      <button id="newSizePresetButton" class="editor-action-button" type="button">
+                        <span class="editor-action-label">New Size</span>
+                      </button>
+                      <button id="saveSizePresetButton" class="editor-action-button" type="button">
+                        <span class="editor-action-label">Save Size</span>
+                      </button>
+                      <button id="deleteSizePresetButton" class="editor-action-button editor-danger-button" type="button" disabled>
+                        <span class="editor-action-label">Delete Size</span>
+                      </button>
+                    </div>
+                    <p id="sizePresetEditorStatus" class="note" aria-live="polite">Create a size preset or select one below.</p>
+                  </div>
                   <div id="sizePresetList" class="size-preset-list"></div>
                 </section>
               </section>

@@ -1,3 +1,12 @@
+import {
+  DEFAULT_BOUNDING_SIZE_PRESET_ID,
+  getBoundingSizePresetDefinitions,
+  isBuiltInBoundingSizePresetId,
+  normalizeBoundingSizePresetDefinition,
+  normalizeBoundingSizePresetDefinitions,
+  setBoundingSizePresetDefinitions,
+} from "./bounding-size-presets.js";
+
 const FALLBACK_PRESET_DEFINITIONS = [
   {
     schemaVersion: 1,
@@ -322,6 +331,7 @@ function createPresetRegistry(manifest = {}, presetDefinitions = []) {
     options,
     presetById,
     listingAssignmentMap,
+    sizePresets: normalizeBoundingSizePresetDefinitions(manifest.sizePresets),
   };
 }
 
@@ -337,6 +347,7 @@ function buildPresetSnapshot(manifest = {}, presetDefinitions = []) {
     version: PRESET_SNAPSHOT_VERSION,
     defaultPresetId,
     presets: normalizedDefinitions,
+    sizePresets: normalizeBoundingSizePresetDefinitions(manifest.sizePresets),
   };
 }
 
@@ -346,7 +357,7 @@ function createPresetRegistryFromSnapshot(snapshot = null) {
   }
 
   return createPresetRegistry(
-    { defaultPresetId: snapshot.defaultPresetId },
+    { defaultPresetId: snapshot.defaultPresetId, sizePresets: snapshot.sizePresets },
     snapshot.presets,
   );
 }
@@ -431,7 +442,10 @@ async function loadBundledPresetSnapshot(manifestUrl = PRESET_MANIFEST_URL) {
     }),
   );
 
-  return buildPresetSnapshot(manifest, presetDefinitions);
+  return buildPresetSnapshot({
+    ...manifest,
+    sizePresets: manifest.sizePresets,
+  }, presetDefinitions);
 }
 
 export async function loadPresetRegistry(manifestUrl = PRESET_MANIFEST_URL) {
@@ -440,6 +454,7 @@ export async function loadPresetRegistry(manifestUrl = PRESET_MANIFEST_URL) {
 
   if (persistedRegistry?.options.length) {
     presetRegistry = persistedRegistry;
+    setBoundingSizePresetDefinitions(presetRegistry.sizePresets);
     return presetRegistry;
   }
 
@@ -450,6 +465,7 @@ export async function loadPresetRegistry(manifestUrl = PRESET_MANIFEST_URL) {
 
     if (remoteRegistry?.options.length) {
       presetRegistry = remoteRegistry;
+      setBoundingSizePresetDefinitions(presetRegistry.sizePresets);
       persistPresetSnapshot(remoteSnapshot);
       return presetRegistry;
     }
@@ -466,8 +482,10 @@ export async function loadPresetRegistry(manifestUrl = PRESET_MANIFEST_URL) {
     }
 
     presetRegistry = bundledRegistry;
+    setBoundingSizePresetDefinitions(presetRegistry.sizePresets);
   } catch (error) {
     console.warn("Falling back to built-in preset registry.", error);
+    setBoundingSizePresetDefinitions(presetRegistry.sizePresets);
   }
 
   return presetRegistry;
@@ -559,6 +577,7 @@ export function buildPresetLines(presetId, lineCount, createLineSettings, option
 
 export function setPresetRegistryForTests(manifest = FALLBACK_MANIFEST, presetDefinitions = FALLBACK_PRESET_DEFINITIONS) {
   presetRegistry = createPresetRegistry(manifest, presetDefinitions);
+  setBoundingSizePresetDefinitions(presetRegistry.sizePresets);
 }
 
 export function replacePresetDefinitionForTests(definition) {
@@ -571,9 +590,16 @@ export function replacePresetDefinitionForTests(definition) {
 
 export function getPresetSnapshot() {
   return buildPresetSnapshot(
-    { defaultPresetId: presetRegistry.defaultPresetId },
+    {
+      defaultPresetId: presetRegistry.defaultPresetId,
+      sizePresets: getBoundingSizePresetDefinitions(),
+    },
     [...presetRegistry.presetById.values()],
   );
+}
+
+export function getBoundingSizePresetDefinitionsForEditor() {
+  return getBoundingSizePresetDefinitions();
 }
 
 export function savePresetDefinitionLocally({ preset, previousId = null }) {
@@ -594,7 +620,10 @@ export function savePresetDefinitionLocally({ preset, previousId = null }) {
     ? normalizedPreset.id
     : presetRegistry.defaultPresetId;
   const snapshot = buildPresetSnapshot(
-    { defaultPresetId: nextDefaultPresetId },
+    {
+      defaultPresetId: nextDefaultPresetId,
+      sizePresets: getBoundingSizePresetDefinitions(),
+    },
     definitions,
   );
   const nextRegistry = createPresetRegistryFromSnapshot(snapshot);
@@ -604,6 +633,7 @@ export function savePresetDefinitionLocally({ preset, previousId = null }) {
   }
 
   presetRegistry = nextRegistry;
+  setBoundingSizePresetDefinitions(nextRegistry.sizePresets);
   persistPresetSnapshot(snapshot);
 
   return {
@@ -629,7 +659,10 @@ export function deletePresetDefinitionLocally(presetId) {
     ? definitions[0].id
     : presetRegistry.defaultPresetId;
   const snapshot = buildPresetSnapshot(
-    { defaultPresetId: nextDefaultPresetId },
+    {
+      defaultPresetId: nextDefaultPresetId,
+      sizePresets: getBoundingSizePresetDefinitions(),
+    },
     definitions,
   );
   const nextRegistry = createPresetRegistryFromSnapshot(snapshot);
@@ -639,7 +672,69 @@ export function deletePresetDefinitionLocally(presetId) {
   }
 
   presetRegistry = nextRegistry;
+  setBoundingSizePresetDefinitions(nextRegistry.sizePresets);
   persistPresetSnapshot(snapshot);
+
+  return {
+    deletedPresetId: normalizedPresetId,
+    snapshot,
+  };
+}
+
+function saveSizePresetSnapshot(sizePresets) {
+  const snapshot = buildPresetSnapshot(
+    {
+      defaultPresetId: presetRegistry.defaultPresetId,
+      sizePresets,
+    },
+    [...presetRegistry.presetById.values()],
+  );
+  const nextRegistry = createPresetRegistryFromSnapshot(snapshot);
+
+  if (!nextRegistry?.options.length) {
+    throw new Error("No preset definitions were loaded");
+  }
+
+  presetRegistry = nextRegistry;
+  setBoundingSizePresetDefinitions(nextRegistry.sizePresets);
+  persistPresetSnapshot(snapshot);
+
+  return snapshot;
+}
+
+export function saveBoundingSizePresetDefinitionLocally({ preset, previousId = null }) {
+  const normalizedPreset = normalizeBoundingSizePresetDefinition(preset);
+  const lookupId = typeof previousId === "string" && previousId.trim()
+    ? previousId.trim()
+    : normalizedPreset.id;
+  const definitions = getBoundingSizePresetDefinitions();
+  const existingIndex = definitions.findIndex((definition) => definition.id === lookupId);
+  const nextDefinitions = existingIndex >= 0
+    ? definitions.map((definition, index) => (index === existingIndex ? normalizedPreset : definition))
+    : definitions.concat(normalizedPreset);
+  const snapshot = saveSizePresetSnapshot(nextDefinitions);
+
+  return {
+    preset: normalizedPreset,
+    snapshot,
+  };
+}
+
+export function deleteBoundingSizePresetDefinitionLocally(presetId) {
+  const normalizedPresetId = typeof presetId === "string" ? presetId.trim() : "";
+  if (!normalizedPresetId) {
+    throw new Error("Size preset not found.");
+  }
+  if (normalizedPresetId === DEFAULT_BOUNDING_SIZE_PRESET_ID || isBuiltInBoundingSizePresetId(normalizedPresetId)) {
+    throw new Error("The default bounding size cannot be deleted.");
+  }
+
+  const definitions = getBoundingSizePresetDefinitions();
+  if (!definitions.some((definition) => definition.id === normalizedPresetId)) {
+    throw new Error("Size preset not found.");
+  }
+
+  const snapshot = saveSizePresetSnapshot(definitions.filter((definition) => definition.id !== normalizedPresetId));
 
   return {
     deletedPresetId: normalizedPresetId,

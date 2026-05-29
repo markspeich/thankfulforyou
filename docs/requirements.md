@@ -112,6 +112,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - The rendered text geometry must fit within the active preset's selected maximum bounding rectangle. The current default maximum bounding rectangle is 2.2 inches wide by 1.5 inches tall.
 - Scale the text proportionally to make the best use of the active preset's selected maximum bounding rectangle, scaling up or down as needed so the text fills as much of the allowed space as possible while still staying within that rectangle.
 - Support additional bounding-border size presets beyond the current 2.2 inch by 1.5 inch size.
+- Operators must be able to create new bounding-border size presets from the UI for testing and production setup, without editing source files or redeploying the app.
 - Each bounding-border size preset must define both a maximum rectangle and a minimum rectangle so the preview can show the allowed size range for that badge reel design.
 - The active bounding-border size must be a global layout setting selected in the `Global Settings` card and saved as part of reusable presets.
 - Treat `Text Height` as the authored physical size for each line in millimeters.

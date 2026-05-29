@@ -17,7 +17,9 @@ import {
 } from "./layout-math.js";
 import {
   buildPresetLines,
+  deleteBoundingSizePresetDefinitionLocally,
   deletePresetDefinitionLocally,
+  getBoundingSizePresetDefinitionsForEditor,
   getDefaultPresetId,
   getPresetDefinitionForEditor,
   getPresetGlobalDefaults,
@@ -29,6 +31,7 @@ import {
   isValidPresetId,
   loadPresetRegistry,
   removeListingAssignment,
+  saveBoundingSizePresetDefinitionLocally,
   savePresetDefinitionLocally,
   upsertListingAssignment,
 } from "./presets.js";
@@ -66,6 +69,7 @@ import {
 import {
   DEFAULT_BOUNDING_SIZE_PRESET_ID,
   getBoundingSizePresetOptions,
+  isBuiltInBoundingSizePresetId,
   isValidBoundingSizePresetId,
   resolveBoundingSizePreset,
 } from "./bounding-size-presets.js";
@@ -243,6 +247,15 @@ const presetLineRuleControls = document.querySelector("#presetLineRuleControls")
 const presetAssignmentsList = document.querySelector("#presetAssignmentsList");
 const presetAssignmentsEmptyState = document.querySelector("#presetAssignmentsEmptyState");
 const sizePresetList = document.querySelector("#sizePresetList");
+const sizePresetNameInput = document.querySelector("#sizePresetNameInput");
+const sizePresetMaxWidthInput = document.querySelector("#sizePresetMaxWidthInput");
+const sizePresetMaxHeightInput = document.querySelector("#sizePresetMaxHeightInput");
+const sizePresetMinWidthInput = document.querySelector("#sizePresetMinWidthInput");
+const sizePresetMinHeightInput = document.querySelector("#sizePresetMinHeightInput");
+const newSizePresetButton = document.querySelector("#newSizePresetButton");
+const saveSizePresetButton = document.querySelector("#saveSizePresetButton");
+const deleteSizePresetButton = document.querySelector("#deleteSizePresetButton");
+const sizePresetEditorStatus = document.querySelector("#sizePresetEditorStatus");
 const presetEditorStatus = document.querySelector("#presetEditorStatus");
 const editorActionLabelByButton = new Map(
   [captureButton, cancelDesignButton, completeNextButton, copyButton, copyLayoutControlsButton, pasteLayoutControlsButton, downloadButton]
@@ -251,6 +264,7 @@ const editorActionLabelByButton = new Map(
 );
 let workflowAlertHideTimer = null;
 let workflowAlertToken = 0;
+let selectedSizePresetId = null;
 
 const NAV_COLLAPSED_STORAGE_KEY = "thankfulforyou.workspaceNavCollapsed";
 const canvas = document.createElement("canvas");
@@ -2469,10 +2483,11 @@ function renderSizePresetList() {
     return;
   }
 
-  sizePresetList.replaceChildren(...getBoundingSizePresetOptions().map((option) => {
-    const preset = resolveBoundingSizePreset(option.id);
+  sizePresetList.replaceChildren(...getBoundingSizePresetDefinitionsForEditor().map((definition) => {
+    const preset = resolveBoundingSizePreset(definition.id);
     const row = document.createElement("article");
     row.className = "size-preset-row";
+    row.classList.toggle("is-selected", definition.id === selectedSizePresetId);
 
     const content = document.createElement("div");
     const name = document.createElement("p");
@@ -2487,10 +2502,179 @@ function renderSizePresetList() {
     min.className = "size-preset-meta";
     min.textContent = `Min ${preset.minWidthIn} x ${preset.minHeightIn} in`;
 
+    const selectButton = document.createElement("button");
+    selectButton.type = "button";
+    selectButton.className = "size-preset-select-button";
+    selectButton.textContent = "Edit";
+    selectButton.addEventListener("click", () => {
+      selectSizePresetForEditing(definition.id);
+    });
+
     content.append(name, max, min);
-    row.append(content);
+    row.append(content, selectButton);
     return row;
   }));
+}
+
+function setSizePresetEditorStatus(message, state = "pending") {
+  if (!sizePresetEditorStatus) {
+    return;
+  }
+
+  sizePresetEditorStatus.textContent = message;
+  sizePresetEditorStatus.dataset.state = state;
+}
+
+function clearSizePresetEditor() {
+  selectedSizePresetId = null;
+  if (sizePresetNameInput) {
+    sizePresetNameInput.value = "";
+  }
+  if (sizePresetMaxWidthInput) {
+    sizePresetMaxWidthInput.value = "";
+  }
+  if (sizePresetMaxHeightInput) {
+    sizePresetMaxHeightInput.value = "";
+  }
+  if (sizePresetMinWidthInput) {
+    sizePresetMinWidthInput.value = "";
+  }
+  if (sizePresetMinHeightInput) {
+    sizePresetMinHeightInput.value = "";
+  }
+  if (deleteSizePresetButton) {
+    deleteSizePresetButton.disabled = true;
+  }
+  setSizePresetEditorStatus("Create a size preset or select one below.", "pending");
+  renderSizePresetList();
+}
+
+function selectSizePresetForEditing(presetId) {
+  const definition = getBoundingSizePresetDefinitionsForEditor()
+    .find((preset) => preset.id === presetId);
+
+  if (!definition) {
+    clearSizePresetEditor();
+    return;
+  }
+
+  selectedSizePresetId = definition.id;
+  if (sizePresetNameInput) {
+    sizePresetNameInput.value = definition.label;
+  }
+  if (sizePresetMaxWidthInput) {
+    sizePresetMaxWidthInput.value = String(definition.max.widthIn);
+  }
+  if (sizePresetMaxHeightInput) {
+    sizePresetMaxHeightInput.value = String(definition.max.heightIn);
+  }
+  if (sizePresetMinWidthInput) {
+    sizePresetMinWidthInput.value = String(definition.min.widthIn);
+  }
+  if (sizePresetMinHeightInput) {
+    sizePresetMinHeightInput.value = String(definition.min.heightIn);
+  }
+  if (deleteSizePresetButton) {
+    deleteSizePresetButton.disabled = isBuiltInBoundingSizePresetId(definition.id);
+  }
+  setSizePresetEditorStatus(`Editing ${definition.label}.`, "pending");
+  renderSizePresetList();
+}
+
+function generateSizePresetId() {
+  const rawId = globalThis.crypto?.randomUUID?.().replace(/-/g, "")
+    || `${Date.now().toString(16)}${Math.random().toString(16).slice(2, 10)}`;
+  return `size-${rawId.slice(0, 12)}`;
+}
+
+function readSizePresetEditorDefinition() {
+  const editingBuiltIn = selectedSizePresetId && isBuiltInBoundingSizePresetId(selectedSizePresetId);
+
+  return {
+    id: editingBuiltIn ? generateSizePresetId() : (selectedSizePresetId || generateSizePresetId()),
+    label: sizePresetNameInput?.value,
+    max: {
+      widthIn: sizePresetMaxWidthInput?.value,
+      heightIn: sizePresetMaxHeightInput?.value,
+    },
+    min: {
+      widthIn: sizePresetMinWidthInput?.value,
+      heightIn: sizePresetMinHeightInput?.value,
+    },
+  };
+}
+
+function refreshBoundingSizePresetUi(preferredSizePresetId = null) {
+  renderBoundingSizePresetOptions(boundingSizePresetInput);
+  renderBoundingSizePresetOptions(presetBoundingSizePresetInput);
+
+  if (preferredSizePresetId && isValidBoundingSizePresetId(preferredSizePresetId)) {
+    if (boundingSizePresetInput) {
+      boundingSizePresetInput.value = preferredSizePresetId;
+    }
+    if (presetBoundingSizePresetInput) {
+      presetBoundingSizePresetInput.value = preferredSizePresetId;
+    }
+  }
+
+  renderSizePresetList();
+  render();
+}
+
+async function saveSizePresetFromEditor() {
+  try {
+    const definition = readSizePresetEditorDefinition();
+    const previousId = selectedSizePresetId && !isBuiltInBoundingSizePresetId(selectedSizePresetId)
+      ? selectedSizePresetId
+      : null;
+    const result = saveBoundingSizePresetDefinitionLocally({ preset: definition, previousId });
+    selectedSizePresetId = result.preset.id;
+    refreshBoundingSizePresetUi(result.preset.id);
+    selectSizePresetForEditing(result.preset.id);
+
+    try {
+      await savePresetSnapshot(result.snapshot);
+      setSizePresetEditorStatus(`Saved ${result.preset.label}.`, "success");
+    } catch (error) {
+      setSizePresetEditorStatus(
+        error instanceof Error
+          ? `Saved locally. Neon sync failed: ${error.message}`
+          : "Saved locally, but Neon sync failed.",
+        "warning",
+      );
+    }
+  } catch (error) {
+    setSizePresetEditorStatus(error instanceof Error ? error.message : "Unable to save size preset.", "error");
+  }
+}
+
+async function deleteSelectedSizePreset() {
+  if (!selectedSizePresetId) {
+    setSizePresetEditorStatus("Select a custom size preset before deleting.", "error");
+    return;
+  }
+
+  try {
+    const deletedDefinition = getBoundingSizePresetDefinitionsForEditor()
+      .find((definition) => definition.id === selectedSizePresetId);
+    const result = deleteBoundingSizePresetDefinitionLocally(selectedSizePresetId);
+    clearSizePresetEditor();
+    refreshBoundingSizePresetUi(DEFAULT_BOUNDING_SIZE_PRESET_ID);
+
+    try {
+      await savePresetSnapshot(result.snapshot);
+      setSizePresetEditorStatus(`Deleted ${deletedDefinition?.label || "size preset"}.`, "success");
+    } catch (error) {
+      setSizePresetEditorStatus(
+        error instanceof Error
+          ? `Deleted locally. Neon sync failed: ${error.message}`
+          : "Deleted locally, but Neon sync failed.",
+        "warning",
+      );
+    }
+  } catch (error) {
+    setSizePresetEditorStatus(error instanceof Error ? error.message : "Unable to delete size preset.", "error");
+  }
 }
 
 function canSaveThroughSharedQueueConflict(publishOrderIds) {
@@ -6248,6 +6432,13 @@ presetGlobalHorizontalScaleInput?.addEventListener("input", () => {
 });
 presetGlobalVerticalScaleInput?.addEventListener("input", () => {
   updatePresetGlobalVerticalScaleOutput();
+});
+newSizePresetButton?.addEventListener("click", clearSizePresetEditor);
+saveSizePresetButton?.addEventListener("click", () => {
+  void saveSizePresetFromEditor();
+});
+deleteSizePresetButton?.addEventListener("click", () => {
+  void deleteSelectedSizePreset();
 });
 presetLineRuleControls?.addEventListener("input", (event) => {
   updateRangeOutputForInput(event.target);

@@ -2194,6 +2194,21 @@ button:disabled {
   width: min(860px, 100%);
 }
 
+.size-preset-editor {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8fbfc;
+}
+
+.size-preset-dimension-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
 .size-preset-list {
   display: grid;
   gap: 10px;
@@ -2201,11 +2216,18 @@ button:disabled {
 
 .size-preset-row {
   display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
   gap: 3px;
   padding: 10px 12px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fff;
+}
+
+.size-preset-row.is-selected {
+  border-color: rgb(12, 150, 217);
+  box-shadow: 0 0 0 1px rgba(12, 150, 217, 0.22);
 }
 
 .size-preset-name {
@@ -2217,6 +2239,21 @@ button:disabled {
   margin: 0;
   color: var(--muted);
   font-size: 0.86rem;
+}
+
+.size-preset-select-button {
+  min-width: 58px;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--ink);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.size-preset-select-button:hover {
+  border-color: rgb(12, 150, 217);
 }
 
 .preset-editor-helper {

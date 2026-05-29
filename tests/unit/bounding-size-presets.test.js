@@ -1,13 +1,21 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 
 import {
   DEFAULT_BOUNDING_SIZE_PRESET_ID,
+  getBoundingSizePresetDefinitions,
   getBoundingSizePresetOptions,
+  isBuiltInBoundingSizePresetId,
   isValidBoundingSizePresetId,
+  normalizeBoundingSizePresetDefinition,
   resolveBoundingSizePreset,
+  setBoundingSizePresetDefinitionsForTests,
 } from "../../src/bounding-size-presets.js";
 
 describe("bounding size presets", () => {
+  beforeEach(() => {
+    setBoundingSizePresetDefinitionsForTests();
+  });
+
   it("resolves the default 2.2 by 1.5 inch guide in millimeters", () => {
     const preset = resolveBoundingSizePreset(DEFAULT_BOUNDING_SIZE_PRESET_ID);
 
@@ -30,5 +38,77 @@ describe("bounding size presets", () => {
         label: "2.2 x 1.5 in",
       },
     ]);
+  });
+
+  it("normalizes custom inch definitions for snapshot persistence", () => {
+    expect(normalizeBoundingSizePresetDefinition({
+      id: "size-test",
+      label: "Test Size",
+      max: { widthIn: "3", heightIn: "2" },
+      min: { widthIn: "1.25", heightIn: "1" },
+    })).toEqual({
+      id: "size-test",
+      label: "Test Size",
+      max: { widthIn: 3, heightIn: 2 },
+      min: { widthIn: 1.25, heightIn: 1 },
+    });
+  });
+
+  it("rejects invalid custom size dimensions", () => {
+    expect(() => normalizeBoundingSizePresetDefinition({
+      id: "size-bad",
+      label: "Bad",
+      max: { widthIn: 1, heightIn: 1 },
+      min: { widthIn: 1.2, heightIn: 1 },
+    })).toThrow("Minimum width cannot be larger than maximum width.");
+
+    expect(() => normalizeBoundingSizePresetDefinition({
+      id: "size-bad",
+      label: "Bad",
+      max: { widthIn: 1, heightIn: 1 },
+      min: { widthIn: 0, heightIn: 0.8 },
+    })).toThrow("Minimum width must be greater than 0.");
+  });
+
+  it("uses active custom size presets for options and resolution", () => {
+    setBoundingSizePresetDefinitionsForTests([
+      {
+        id: "size-custom",
+        label: "Custom Test",
+        max: { widthIn: 3, heightIn: 2 },
+        min: { widthIn: 2, heightIn: 1.25 },
+      },
+    ]);
+
+    expect(getBoundingSizePresetOptions()).toEqual([
+      { id: "size-2-2x1-5", label: "2.2 x 1.5 in" },
+      { id: "size-custom", label: "Custom Test" },
+    ]);
+    expect(resolveBoundingSizePreset("size-custom")).toMatchObject({
+      id: "size-custom",
+      maxWidthIn: 3,
+      maxHeightIn: 2,
+      minWidthIn: 2,
+      minHeightIn: 1.25,
+    });
+    expect(getBoundingSizePresetDefinitions()).toEqual([
+      {
+        id: "size-2-2x1-5",
+        label: "2.2 x 1.5 in",
+        max: { widthIn: 2.2, heightIn: 1.5 },
+        min: { widthIn: 1.6, heightIn: 1.1 },
+      },
+      {
+        id: "size-custom",
+        label: "Custom Test",
+        max: { widthIn: 3, heightIn: 2 },
+        min: { widthIn: 2, heightIn: 1.25 },
+      },
+    ]);
+  });
+
+  it("tracks the bundled default as built-in", () => {
+    expect(isBuiltInBoundingSizePresetId(DEFAULT_BOUNDING_SIZE_PRESET_ID)).toBe(true);
+    expect(isBuiltInBoundingSizePresetId("size-custom")).toBe(false);
   });
 });

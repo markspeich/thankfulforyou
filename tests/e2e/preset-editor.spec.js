@@ -361,6 +361,30 @@ test("preserves bounding size when saving and reloading a layout preset", async 
   await expect(page.locator("#presetBoundingSizePresetInput")).toHaveValue("size-2-2x1-5");
 });
 
+test("creates a custom bounding size and uses it in the order editor preview", async ({ page }) => {
+  await installPresetRoutes(page);
+  await page.goto("/");
+
+  await page.getByRole("button", { name: "Presets" }).click();
+  await page.locator("#sizePresetNameInput").fill("Test Box");
+  await page.locator("#sizePresetMaxWidthInput").fill("3");
+  await page.locator("#sizePresetMaxHeightInput").fill("2");
+  await page.locator("#sizePresetMinWidthInput").fill("2");
+  await page.locator("#sizePresetMinHeightInput").fill("1.25");
+  await page.getByRole("button", { name: "Save Size" }).click();
+
+  await expect(page.locator("#sizePresetEditorStatus")).toContainText("Saved Test Box");
+  await expect(page.getByLabel("Size Presets").getByText("Test Box", { exact: true })).toBeVisible();
+
+  await page.getByRole("button", { name: "Design Queue" }).click();
+  await clickQueueAction(page, "Add Design");
+  await page.locator("#boundingSizePresetInput").selectOption({ label: "Test Box" });
+
+  await expect(page.locator("#boundingSizePresetInput")).toHaveValue(/size-/);
+  await expect(page.locator("#preview .preview-guide-label").first()).toHaveText('3"');
+  await expect(page.locator("#preview .preview-guide-label").nth(1)).toHaveText('2"');
+});
+
 test("remembers the collapsed left nav state after refresh", async ({ page }) => {
   await page.goto("/");
 
