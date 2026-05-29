@@ -8,6 +8,7 @@ const BUILT_IN_BOUNDING_SIZE_PRESETS = Object.freeze([
     label: "2.2 x 1.5 in",
     max: { widthIn: 2.2, heightIn: 1.5 },
     min: { widthIn: 1.6, heightIn: 1.1 },
+    circleDiameterIn: 1.25,
   },
 ]);
 const BUILT_IN_BOUNDING_SIZE_PRESET_IDS = new Set(BUILT_IN_BOUNDING_SIZE_PRESETS.map((preset) => preset.id));
@@ -19,12 +20,18 @@ function toMm(inches) {
 }
 
 function cloneDefinition(definition) {
-  return {
+  const clone = {
     id: definition.id,
     label: definition.label,
     max: { ...definition.max },
     min: { ...definition.min },
   };
+
+  if (Number.isFinite(definition.circleDiameterIn)) {
+    clone.circleDiameterIn = definition.circleDiameterIn;
+  }
+
+  return clone;
 }
 
 function assertPositiveNumber(value, fieldName) {
@@ -37,6 +44,8 @@ function assertPositiveNumber(value, fieldName) {
 }
 
 function resolveDefinition(definition) {
+  const circleDiameterIn = Number.isFinite(definition.circleDiameterIn) ? definition.circleDiameterIn : null;
+
   return {
     id: definition.id,
     label: definition.label,
@@ -48,6 +57,8 @@ function resolveDefinition(definition) {
     maxHeightIn: definition.max.heightIn,
     minWidthIn: definition.min.widthIn,
     minHeightIn: definition.min.heightIn,
+    circleDiameterIn,
+    circleDiameterMm: circleDiameterIn === null ? null : toMm(circleDiameterIn),
   };
 }
 
@@ -72,12 +83,18 @@ export function normalizeBoundingSizePresetDefinition(definition = {}) {
     throw new Error("Minimum height cannot be larger than maximum height.");
   }
 
-  return {
+  const normalized = {
     id,
     label,
     max: { widthIn: maxWidthIn, heightIn: maxHeightIn },
     min: { widthIn: minWidthIn, heightIn: minHeightIn },
   };
+
+  if (definition.circleDiameterIn !== undefined && definition.circleDiameterIn !== null && definition.circleDiameterIn !== "") {
+    normalized.circleDiameterIn = assertPositiveNumber(definition.circleDiameterIn, "Circle diameter");
+  }
+
+  return normalized;
 }
 
 export function normalizeBoundingSizePresetDefinitions(definitions = []) {

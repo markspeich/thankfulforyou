@@ -143,9 +143,9 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - When all text lines share the same vertical stretch value, the global `Vertical Stretch` slider should display that shared value; when lines differ, its readout should indicate a mixed state until the operator adjusts it.
 - The preview area should include non-exported guide geometry for the active bounding-border size preset, and the rendered design should be centered within the active maximum rectangle on screen.
 - The preview guide should show both the active size preset's maximum rectangle and minimum rectangle, matching the box guide style.
-- The preview guide should include a non-exported 1.25 inch circle centered inside the active maximum guide box, matching the box guide style unless a future size preset requires a different center reference.
+- The preview guide should include a non-exported centered circle only when the active bounding-border size preset defines a circle diameter. The default 2.2 inch by 1.5 inch size uses a 1.25 inch circle; presets with no circle diameter should render no circle.
 - The preview guide should use thin solid `rgb(12, 150, 217)` strokes instead of dashed strokes.
-- The outer preview box, centered circle, and inner reference lines should all use a `0.05px` stroke in the on-screen preview.
+- The outer preview box, optional centered circle, and inner reference lines should all use a `0.05px` stroke in the on-screen preview.
 - The preview guide should include four inner reference lines, with one inset vertical line near each side and one inset horizontal line near the top and bottom, matching the production reference template.
 - The two inner vertical guide lines should be 1.6 inches apart.
 - The two inner horizontal guide lines should be 1.1 inches apart.

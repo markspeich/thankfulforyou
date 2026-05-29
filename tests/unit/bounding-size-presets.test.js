@@ -24,6 +24,8 @@ describe("bounding size presets", () => {
     expect(preset.maxHeightMm).toBeCloseTo(38.1, 6);
     expect(preset.minWidthMm).toBeCloseTo(40.64, 6);
     expect(preset.minHeightMm).toBeCloseTo(27.94, 6);
+    expect(preset.circleDiameterIn).toBe(1.25);
+    expect(preset.circleDiameterMm).toBeCloseTo(31.75, 6);
   });
 
   it("falls back to the default when an unknown id is provided", () => {
@@ -46,11 +48,32 @@ describe("bounding size presets", () => {
       label: "Test Size",
       max: { widthIn: "3", heightIn: "2" },
       min: { widthIn: "1.25", heightIn: "1" },
+      circleDiameterIn: "1.5",
     })).toEqual({
       id: "size-test",
       label: "Test Size",
       max: { widthIn: 3, heightIn: 2 },
       min: { widthIn: 1.25, heightIn: 1 },
+      circleDiameterIn: 1.5,
+    });
+  });
+
+  it("allows custom presets to omit the center circle", () => {
+    const definition = normalizeBoundingSizePresetDefinition({
+      id: "size-no-circle",
+      label: "No Circle",
+      max: { widthIn: 3, heightIn: 2 },
+      min: { widthIn: 2, heightIn: 1.25 },
+      circleDiameterIn: "",
+    });
+
+    expect(definition).not.toHaveProperty("circleDiameterIn");
+
+    setBoundingSizePresetDefinitionsForTests([definition]);
+    expect(resolveBoundingSizePreset("size-no-circle")).toMatchObject({
+      id: "size-no-circle",
+      circleDiameterIn: null,
+      circleDiameterMm: null,
     });
   });
 
@@ -68,6 +91,14 @@ describe("bounding size presets", () => {
       max: { widthIn: 1, heightIn: 1 },
       min: { widthIn: 0, heightIn: 0.8 },
     })).toThrow("Minimum width must be greater than 0.");
+
+    expect(() => normalizeBoundingSizePresetDefinition({
+      id: "size-bad-circle",
+      label: "Bad Circle",
+      max: { widthIn: 1, heightIn: 1 },
+      min: { widthIn: 0.8, heightIn: 0.8 },
+      circleDiameterIn: "-1",
+    })).toThrow("Circle diameter must be greater than 0.");
   });
 
   it("uses active custom size presets for options and resolution", () => {
@@ -97,6 +128,7 @@ describe("bounding size presets", () => {
         label: "2.2 x 1.5 in",
         max: { widthIn: 2.2, heightIn: 1.5 },
         min: { widthIn: 1.6, heightIn: 1.1 },
+        circleDiameterIn: 1.25,
       },
       {
         id: "size-custom",

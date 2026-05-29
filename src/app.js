@@ -101,7 +101,6 @@ const FONT_OPTIONS = [
 const FONT_BY_ID = new Map(FONT_OPTIONS.map((font) => [font.id, font]));
 const DEFAULT_PREVIEW_WIDTH_MM = PREVIEW_BOX_WIDTH_MM + PREVIEW_MARGIN_MM * 2 + PREVIEW_LABEL_RIGHT_MM;
 const DEFAULT_PREVIEW_HEIGHT_MM = PREVIEW_BOX_HEIGHT_MM + PREVIEW_MARGIN_MM * 2;
-const PREVIEW_CENTER_CIRCLE_DIAMETER_MM = 1.25 * 25.4;
 const PREVIEW_INNER_GUIDE_WIDTH_MM = 1.6 * 25.4;
 const PREVIEW_INNER_GUIDE_HEIGHT_MM = 1.1 * 25.4;
 const PREVIEW_INNER_GUIDE_INSET_X_MM = (PREVIEW_BOX_WIDTH_MM - PREVIEW_INNER_GUIDE_WIDTH_MM) / 2;
@@ -252,6 +251,7 @@ const sizePresetMaxWidthInput = document.querySelector("#sizePresetMaxWidthInput
 const sizePresetMaxHeightInput = document.querySelector("#sizePresetMaxHeightInput");
 const sizePresetMinWidthInput = document.querySelector("#sizePresetMinWidthInput");
 const sizePresetMinHeightInput = document.querySelector("#sizePresetMinHeightInput");
+const sizePresetCircleDiameterInput = document.querySelector("#sizePresetCircleDiameterInput");
 const newSizePresetButton = document.querySelector("#newSizePresetButton");
 const saveSizePresetButton = document.querySelector("#saveSizePresetButton");
 const deleteSizePresetButton = document.querySelector("#deleteSizePresetButton");
@@ -2502,6 +2502,12 @@ function renderSizePresetList() {
     min.className = "size-preset-meta";
     min.textContent = `Min ${preset.minWidthIn} x ${preset.minHeightIn} in`;
 
+    const circle = document.createElement("p");
+    circle.className = "size-preset-meta";
+    circle.textContent = preset.circleDiameterIn === null
+      ? "No circle"
+      : `Circle ${preset.circleDiameterIn} in`;
+
     const selectButton = document.createElement("button");
     selectButton.type = "button";
     selectButton.className = "size-preset-select-button";
@@ -2510,7 +2516,7 @@ function renderSizePresetList() {
       selectSizePresetForEditing(definition.id);
     });
 
-    content.append(name, max, min);
+    content.append(name, max, min, circle);
     row.append(content, selectButton);
     return row;
   }));
@@ -2541,6 +2547,9 @@ function clearSizePresetEditor() {
   }
   if (sizePresetMinHeightInput) {
     sizePresetMinHeightInput.value = "";
+  }
+  if (sizePresetCircleDiameterInput) {
+    sizePresetCircleDiameterInput.value = "";
   }
   if (deleteSizePresetButton) {
     deleteSizePresetButton.disabled = true;
@@ -2574,6 +2583,11 @@ function selectSizePresetForEditing(presetId) {
   if (sizePresetMinHeightInput) {
     sizePresetMinHeightInput.value = String(definition.min.heightIn);
   }
+  if (sizePresetCircleDiameterInput) {
+    sizePresetCircleDiameterInput.value = Number.isFinite(definition.circleDiameterIn)
+      ? String(definition.circleDiameterIn)
+      : "";
+  }
   if (deleteSizePresetButton) {
     deleteSizePresetButton.disabled = isBuiltInBoundingSizePresetId(definition.id);
   }
@@ -2601,6 +2615,7 @@ function readSizePresetEditorDefinition() {
       widthIn: sizePresetMinWidthInput?.value,
       heightIn: sizePresetMinHeightInput?.value,
     },
+    circleDiameterIn: sizePresetCircleDiameterInput?.value,
   };
 }
 
@@ -3718,7 +3733,7 @@ function appendPreviewGuide(previewBoxX, previewBoxY, guide = resolveBoundingSiz
   });
   sideLabel.textContent = `${guide.maxHeightIn}"`;
 
-  preview.append(
+  const guideElements = [
     makeSvgElement("rect", {
       class: "preview-guide-box",
       x: previewBoxX,
@@ -3763,12 +3778,19 @@ function appendPreviewGuide(previewBoxX, previewBoxY, guide = resolveBoundingSiz
       x2: previewBoxX + guide.maxWidthMm,
       y2: minBoxY + guide.minHeightMm,
     }),
-    makeSvgElement("circle", {
+  ];
+
+  if (Number.isFinite(guide.circleDiameterMm) && guide.circleDiameterMm > 0) {
+    guideElements.push(makeSvgElement("circle", {
       class: "preview-guide-box",
       cx: guideCenterX,
       cy: guideCenterY,
-      r: PREVIEW_CENTER_CIRCLE_DIAMETER_MM / 2,
-    }),
+      r: guide.circleDiameterMm / 2,
+    }));
+  }
+
+  preview.append(
+    ...guideElements,
     topLabel,
     sideLabel,
   );

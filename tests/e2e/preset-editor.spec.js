@@ -383,6 +383,26 @@ test("creates a custom bounding size and uses it in the order editor preview", a
   await expect(page.locator("#boundingSizePresetInput")).toHaveValue(/size-/);
   await expect(page.locator("#preview .preview-guide-label").first()).toHaveText('3"');
   await expect(page.locator("#preview .preview-guide-label").nth(1)).toHaveText('2"');
+  await expect(page.locator("#preview circle.preview-guide-box")).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Presets" }).click();
+  await page.getByRole("button", { name: "New Size" }).click();
+  await page.locator("#sizePresetNameInput").fill("Circle Box");
+  await page.locator("#sizePresetMaxWidthInput").fill("2.5");
+  await page.locator("#sizePresetMaxHeightInput").fill("1.75");
+  await page.locator("#sizePresetMinWidthInput").fill("1.5");
+  await page.locator("#sizePresetMinHeightInput").fill("1");
+  await page.locator("#sizePresetCircleDiameterInput").fill("1.75");
+  await page.getByRole("button", { name: "Save Size" }).click();
+
+  await page.getByRole("button", { name: "Design Queue" }).click();
+  await page.locator("#boundingSizePresetInput").selectOption({ label: "Circle Box" });
+
+  await expect(page.locator("#preview circle.preview-guide-box")).toHaveCount(1);
+  await expect.poll(async () => {
+    const radius = Number(await page.locator("#preview circle.preview-guide-box").getAttribute("r"));
+    return radius * 2;
+  }).toBeCloseTo(1.75 * 25.4, 4);
 });
 
 test("remembers the collapsed left nav state after refresh", async ({ page }) => {
