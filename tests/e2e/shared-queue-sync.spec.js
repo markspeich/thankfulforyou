@@ -42,19 +42,26 @@ function installSupabaseSession(page) {
   });
 }
 
-async function expectAlertAboveEditorTopCard(page) {
+async function expectWorkflowAlertFloatingToast(page) {
   await expect(page.locator("#importStatus")).toBeVisible();
   await expect.poll(async () => page.evaluate(() => {
     const alert = document.querySelector("#importStatus");
     const topCard = document.querySelector(".editor-top-card");
     if (!(alert instanceof HTMLElement) || !(topCard instanceof HTMLElement)) {
-      return false;
+      return null;
     }
 
     const alertRect = alert.getBoundingClientRect();
     const topCardRect = topCard.getBoundingClientRect();
-    return alertRect.bottom <= topCardRect.top;
-  })).toBe(true);
+    const style = window.getComputedStyle(alert);
+    return {
+      position: style.position,
+      overlapsTopCard: alertRect.bottom > topCardRect.top && alertRect.top < topCardRect.bottom,
+    };
+  })).toEqual({
+    position: "fixed",
+    overlapsTopCard: false,
+  });
 }
 
 test("discarding a conflicted local draft reloads the shared queue without a follow-up recovery alert", async ({ page }) => {
@@ -163,7 +170,7 @@ test("discarding a conflicted local draft reloads the shared queue without a fol
 
   await expect.poll(() => sharedQueueSavePayloads.length, { timeout: 15000 }).toBeGreaterThan(0);
   await expect(page.locator("#importStatus")).toContainText("A newer version of this design has been saved.");
-  await expectAlertAboveEditorTopCard(page);
+  await expectWorkflowAlertFloatingToast(page);
 
   await page.getByRole("button", { name: "Load Latest Design", exact: true }).click();
   await expect(page.locator("#textInput")).toHaveValue("Remote Shared");
@@ -297,7 +304,7 @@ test("shows stale design alerts only on the affected design", async ({ page }) =
   await page.getByRole("button", { name: "Save", exact: true }).click();
 
   await expect(page.locator("#importStatus")).toContainText("A newer version of this design has been saved.");
-  await expectAlertAboveEditorTopCard(page);
+  await expectWorkflowAlertFloatingToast(page);
 
   const stableRow = page.locator("#orderList .order-row").filter({ hasText: "Stable Design" });
   await stableRow.locator(".order-item").click();
@@ -601,5 +608,81 @@ test("does not re-autosave immediately after a successful manual save merges rev
   await expect.poll(() => sharedQueueSavePayloads.length).toBe(1);
   await page.waitForTimeout(500);
   await expect.poll(() => sharedQueueSavePayloads.length).toBe(1);
+});
+
+test("save confirmation renders as a floating toast without entering the editor layout", async ({ page }) => {
+  await installSupabaseSession(page);
+  const remoteSnapshot = {
+    queue: {
+      id: "queue-1",
+      workspaceId: "workspace-1",
+    },
+    activeOrderId: "remote-order-1",
+    orders: [
+      {
+        id: "remote-order-1",
+        revision: 3,
+        text: "Remote Shared",
+        status: "in-progress",
+        settings: {
+          text: "Remote Shared",
+          presetId: "preset-oval",
+          backingMm: 2.2,
+          weldExportedDesign: true,
+          lines: [
+            {
+              fontId: "candlepin",
+              bridgeMm: 0.5,
+              lineBridgeMm: 0.5,
+              offsetXMm: 0,
+              fontSizeMm: 34,
+              horizontalScale: 1,
+              verticalScale: 1,
+              lockTextHeight: false,
+            },
+          ],
+        },
+      },
+    ],
+  };
+
+  await page.route("**/api/shared-session", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify({
+        operator: { id: "user-1", email: "mark@example.com" },
+        workspace: { id: "workspace-1", name: "Thankful For You" },
+        queue: { id: "queue-1", workspaceId: "workspace-1" },
+      }),
+    });
+  });
+  await page.route("**/api/shared-queue?queueId=queue-1", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify(remoteSnapshot),
+    });
+  });
+  await page.route("**/api/shared-queue", async (route) => {
+    if (route.request().method() !== "PUT") {
+      await route.fallback();
+      return;
+    }
+
+    const requestSnapshot = route.request().postDataJSON()?.snapshot;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify(requestSnapshot),
+    });
+  });
+
+  await page.goto("/");
+  await page.locator("#textInput").fill("Remote Shared Updated");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+
+  await expect(page.locator("#importStatus")).toContainText("Shared queue saved");
+  await expectWorkflowAlertFloatingToast(page);
 });
 

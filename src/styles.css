@@ -1953,13 +1953,17 @@ button:disabled {
 
 .queue-alert {
   display: block;
-  position: relative;
-  z-index: 3;
+  position: fixed;
+  left: 50%;
+  bottom: max(20px, env(safe-area-inset-bottom));
+  z-index: 80;
+  width: min(520px, calc(100vw - 32px));
   padding: 12px 16px;
   background: #eef4f7;
   border: 1px solid #d7e3ea;
   border-radius: 14px;
   box-shadow: 0 10px 22px rgba(17, 24, 39, 0.08);
+  transform: translateX(-50%);
 }
 
 .queue-alert.has-action {

@@ -2427,24 +2427,22 @@ test("skips already imported Etsy line items when importing another batch", asyn
   await expect.poll(async () => {
     return page.evaluate(() => {
       const alert = document.querySelector("#importStatus");
-      const topCard = document.querySelector(".editor-top-card");
-      if (!(alert instanceof HTMLElement) || !(topCard instanceof HTMLElement)) {
+      if (!(alert instanceof HTMLElement)) {
         return null;
       }
 
       const alertRect = alert.getBoundingClientRect();
-      const topCardRect = topCard.getBoundingClientRect();
       const style = window.getComputedStyle(alert);
       return {
         position: style.position,
-        aboveTopCard: alertRect.bottom <= topCardRect.top,
-        alignedWithTopCard: Math.abs(alertRect.left - topCardRect.left) <= 1,
+        horizontallyCentered: Math.abs(alertRect.left + alertRect.width / 2 - window.innerWidth / 2) <= 1,
+        nearViewportBottom: window.innerHeight - alertRect.bottom <= 24,
       };
     });
   }).toEqual({
-    position: "relative",
-    aboveTopCard: true,
-    alignedWithTopCard: true,
+    position: "fixed",
+    horizontallyCentered: true,
+    nearViewportBottom: true,
   });
   await expect(page.locator("#importStatus")).toBeHidden({ timeout: 8000 });
 
