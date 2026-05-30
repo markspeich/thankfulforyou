@@ -9,7 +9,7 @@ function readBrowserSupabaseFactory() {
 
   if (typeof runtime?.createClient !== "function") {
     throw new Error(
-      "Supabase browser runtime is missing. Load /node_modules/@supabase/supabase-js/dist/umd/supabase.js before shared queue auth.",
+      "Supabase browser runtime is missing. Load /node_modules/@supabase/supabase-js/dist/umd/supabase.js before production batch auth.",
     );
   }
 
@@ -24,7 +24,7 @@ function readBrowserSupabaseConfig() {
 
   if (!url || !anonKey) {
     throw new Error(
-      "Supabase browser config is missing. Set window.__APP_CONFIG__.supabaseUrl and window.__APP_CONFIG__.supabaseAnonKey before loading shared sessions.",
+      "Supabase browser config is missing. Set window.__APP_CONFIG__.supabaseUrl and window.__APP_CONFIG__.supabaseAnonKey before loading batch sessions.",
     );
   }
 

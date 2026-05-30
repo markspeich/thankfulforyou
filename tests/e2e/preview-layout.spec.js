@@ -2,9 +2,9 @@ import { expect, test } from "playwright/test";
 
 test.describe.configure({ mode: "serial" });
 
-const SHARED_QUEUE_REMOTE_RESTORE_TEST_TITLE = "restores the shared queue from the backend before stale local cache";
-const SHARED_QUEUE_CONFLICT_TEST_TITLE = "keeps shared sync enabled on revision conflict";
-const SHARED_QUEUE_PAGEHIDE_TEST_TITLE = "pagehide keepalive saves even while a shared autosave is in flight";
+const PRODUCTION_BATCH_REMOTE_RESTORE_TEST_TITLE = "restores the production batch from the backend before stale local cache";
+const PRODUCTION_BATCH_CONFLICT_TEST_TITLE = "keeps shared sync enabled on revision conflict";
+const PRODUCTION_BATCH_PAGEHIDE_TEST_TITLE = "pagehide keepalive saves even while a shared autosave is in flight";
 
 function completeButton(page) {
   return page.locator("#captureButton");
@@ -27,15 +27,15 @@ function exportDesignButton(page) {
 }
 
 function queueToolsToggle(page) {
-  return page.locator(".queue-header .queue-tools-toggle");
+  return page.locator(".batch-header .batch-tools-toggle");
 }
 
 function editorToolsToggle(page) {
   return page.locator(".editor-tools-toggle");
 }
 
-async function openQueueTools(page) {
-  const menu = page.locator(".queue-header .queue-tools-menu");
+async function openBatchTools(page) {
+  const menu = page.locator(".batch-header .batch-tools-menu");
   if (await menu.evaluate((node) => node.hasAttribute("open"))) {
     return;
   }
@@ -46,13 +46,13 @@ async function openQueueTools(page) {
   await expect(menu).toHaveAttribute("open", "");
 }
 
-async function clickQueueAction(page, name) {
-  await openQueueTools(page);
+async function clickBatchAction(page, name) {
+  await openBatchTools(page);
   await page.evaluate((actionName) => {
-    const button = Array.from(document.querySelectorAll(".queue-tools-menu .queue-tool-button"))
+    const button = Array.from(document.querySelectorAll(".batch-tools-menu .batch-tool-button"))
       .find((candidate) => candidate.textContent?.includes(actionName));
     if (!(button instanceof HTMLButtonElement)) {
-      throw new Error(`Queue action not found: ${actionName}`);
+      throw new Error(`Batch action not found: ${actionName}`);
     }
     button.click();
   }, name);
@@ -133,7 +133,7 @@ async function clickPresetAction(page, name) {
   await page.getByRole("button", { name }).click();
 }
 
-async function confirmQueueDialog(page, expectedTitle) {
+async function confirmBatchDialog(page, expectedTitle) {
   const dialog = page.locator("#confirmationDialog");
 
   await expect(dialog).toBeVisible();
@@ -241,7 +241,7 @@ function installSupabaseSession(page) {
       supabaseUrl: "https://example.supabase.co",
       supabaseAnonKey: "anon-key",
     };
-    window.__TFU_TEST_SHARED_QUEUE_ACCESS_TOKEN__ = providedSession.access_token;
+    window.__TFU_TEST_PRODUCTION_BATCH_ACCESS_TOKEN__ = providedSession.access_token;
     window.__TFU_TEST_SUPABASE_CLIENT__ = {
       auth: {
         getSession: async () => ({
@@ -275,30 +275,30 @@ function installSupabaseSession(page) {
   });
 }
 
-async function installDefaultSharedQueueRoutes(page) {
-  await page.route("**/api/shared-session", async (route) => {
+async function installDefaultProductionBatchRoutes(page) {
+  await page.route("**/api/batch-session", async (route) => {
     await route.fulfill({
       status: 200,
       contentType: "application/json; charset=utf-8",
       body: JSON.stringify({
         operator: { id: "user-1", email: "mark@example.com" },
         workspace: { id: "workspace-1", name: "Thankful For You" },
-        queue: { id: "queue-1", workspaceId: "workspace-1" },
+        batch: { id: "batch-1", workspaceId: "workspace-1" },
       }),
     });
   });
-  await page.route("**/api/shared-queue?queueId=queue-1", async (route) => {
+  await page.route("**/api/production-batch?batchId=batch-1", async (route) => {
     await route.fulfill({
       status: 200,
       contentType: "application/json; charset=utf-8",
       body: JSON.stringify({
-        queue: { id: "queue-1", workspaceId: "workspace-1" },
-        activeOrderId: null,
-        orders: [],
+        batch: { id: "batch-1", workspaceId: "workspace-1" },
+        activeOrderItemId: null,
+        orderItems: [],
       }),
     });
   });
-  await page.route("**/api/shared-queue", async (route) => {
+  await page.route("**/api/production-batch", async (route) => {
     if (route.request().method() !== "PUT") {
       await route.fallback();
       return;
@@ -411,9 +411,9 @@ async function measureVisibleTextBounds(page) {
 
 test.beforeEach(async ({ page, request }, testInfo) => {
   if (
-    testInfo.title === SHARED_QUEUE_REMOTE_RESTORE_TEST_TITLE
-    || testInfo.title === SHARED_QUEUE_CONFLICT_TEST_TITLE
-    || testInfo.title === SHARED_QUEUE_PAGEHIDE_TEST_TITLE
+    testInfo.title === PRODUCTION_BATCH_REMOTE_RESTORE_TEST_TITLE
+    || testInfo.title === PRODUCTION_BATCH_CONFLICT_TEST_TITLE
+    || testInfo.title === PRODUCTION_BATCH_PAGEHIDE_TEST_TITLE
   ) {
     return;
   }
@@ -428,8 +428,8 @@ test.beforeEach(async ({ page, request }, testInfo) => {
   }
 
   await installSupabaseSession(page);
-  await installDefaultSharedQueueRoutes(page);
-  await request.delete("/api/queue-snapshot?workspaceKey=primary").catch(() => null);
+  await installDefaultProductionBatchRoutes(page);
+  await request.delete("/api/batch-snapshot?workspaceKey=primary").catch(() => null);
   await page.goto("/");
   await waitForStartup();
   await page.evaluate(() => {
@@ -442,16 +442,16 @@ test.beforeEach(async ({ page, request }, testInfo) => {
   const orderCount = page.locator("#orderCountOutput");
 
   if ((await orderCount.textContent()) !== "0") {
-    await clickQueueAction(page, "Clear Batch");
-    await confirmQueueDialog(page, "Clear Batch?");
+    await clickBatchAction(page, "Clear Batch");
+    await confirmBatchDialog(page, "Clear Batch?");
     await expect(orderCount).toHaveText("0");
   }
 
-  await clickQueueAction(page, "Add Design");
+  await clickBatchAction(page, "Add Design");
 });
 
 test("shows the production defaults", async ({ page }) => {
-  await expect(page.locator("#saveQueueButton")).toHaveCount(0);
+  await expect(page.locator("#saveBatchButton")).toHaveCount(0);
   await expect(completeButton(page)).toHaveText("Save");
   await expect(completeAndNextButton(page)).toHaveText("Save & Next");
   await expect(page.locator("#globalHorizontalScaleInput")).toHaveValue("1");
@@ -578,12 +578,12 @@ test("coalesces rapid slider input into a single deferred preview rebuild", asyn
 
   const orderCount = page.locator("#orderCountOutput");
   if ((await orderCount.textContent()) !== "0") {
-    await clickQueueAction(page, "Clear Batch");
-    await confirmQueueDialog(page, "Clear Batch?");
+    await clickBatchAction(page, "Clear Batch");
+    await confirmBatchDialog(page, "Clear Batch?");
     await expect(orderCount).toHaveText("0");
   }
 
-  await clickQueueAction(page, "Add Design");
+  await clickBatchAction(page, "Add Design");
   await page.locator("#textInput").fill("Savannah\nRN");
   await page.waitForTimeout(250);
   await page.evaluate(() => window.__previewPerf.reset());
@@ -631,12 +631,12 @@ test("avoids redundant preview image encodes during a settled slider render", as
 
   const orderCount = page.locator("#orderCountOutput");
   if ((await orderCount.textContent()) !== "0") {
-    await clickQueueAction(page, "Clear Batch");
-    await confirmQueueDialog(page, "Clear Batch?");
+    await clickBatchAction(page, "Clear Batch");
+    await confirmBatchDialog(page, "Clear Batch?");
     await expect(orderCount).toHaveText("0");
   }
 
-  await clickQueueAction(page, "Add Design");
+  await clickBatchAction(page, "Add Design");
   await page.locator("#textInput").fill("Savannah\nRN");
   await page.waitForTimeout(250);
   await page.evaluate(() => window.__previewPerf.reset());
@@ -670,17 +670,17 @@ test("refines auto-fit against the rendered face ink bounds", async ({ page }) =
 
 test("does not render a queue sync status card in the queue tools menu", async ({ page }) => {
   await expect(page.locator("#queueSyncStatus")).toHaveCount(0);
-  await expect(page.locator(".order-queue-card")).toHaveCount(0);
+  await expect(page.locator(".order-batch-card")).toHaveCount(0);
   await expect(page.locator("#orderSearchInput")).toBeVisible();
 });
 
-test(SHARED_QUEUE_REMOTE_RESTORE_TEST_TITLE, async ({ page }) => {
+test(PRODUCTION_BATCH_REMOTE_RESTORE_TEST_TITLE, async ({ page }) => {
   await installSupabaseSession(page);
   const staleLocalSnapshot = {
     version: 1,
     orderSequence: 2,
-    activeOrderId: "local-order-1",
-    orders: [
+    activeOrderItemId: "local-order-1",
+    orderItems: [
       {
         id: "local-order-1",
         text: "Stale Local",
@@ -707,12 +707,11 @@ test(SHARED_QUEUE_REMOTE_RESTORE_TEST_TITLE, async ({ page }) => {
     ],
   };
   const remoteSnapshot = {
-    queue: {
-      id: "queue-1",
+    batch: { id: "batch-1",
       workspaceId: "workspace-1",
     },
-    activeOrderId: "remote-order-1",
-    orders: [
+    activeOrderItemId: "remote-order-1",
+    orderItems: [
       {
         id: "remote-order-1",
         revision: 3,
@@ -739,38 +738,38 @@ test(SHARED_QUEUE_REMOTE_RESTORE_TEST_TITLE, async ({ page }) => {
       },
     ],
   };
-  let sharedSessionRequests = 0;
-  let sharedQueueRequests = 0;
-  const sharedQueueSavePayloads = [];
+  let batchSessionRequests = 0;
+  let productionBatchRequests = 0;
+  const productionBatchSavePayloads = [];
 
-  await page.route("**/api/shared-session", async (route) => {
-    sharedSessionRequests += 1;
+  await page.route("**/api/batch-session", async (route) => {
+    batchSessionRequests += 1;
     await route.fulfill({
       status: 200,
       contentType: "application/json; charset=utf-8",
       body: JSON.stringify({
         operator: { id: "user-1", email: "mark@example.com" },
         workspace: { id: "workspace-1", name: "Thankful For You" },
-        queue: { id: "queue-1", workspaceId: "workspace-1" },
+        batch: { id: "batch-1", workspaceId: "workspace-1" },
       }),
     });
   });
-  await page.route("**/api/shared-queue?queueId=queue-1", async (route) => {
-    sharedQueueRequests += 1;
+  await page.route("**/api/production-batch?batchId=batch-1", async (route) => {
+    productionBatchRequests += 1;
     await route.fulfill({
       status: 200,
       contentType: "application/json; charset=utf-8",
       body: JSON.stringify(remoteSnapshot),
     });
   });
-  await page.route("**/api/shared-queue", async (route) => {
+  await page.route("**/api/production-batch", async (route) => {
     if (route.request().method() !== "PUT") {
       await route.fallback();
       return;
     }
 
     const requestSnapshot = route.request().postDataJSON()?.snapshot;
-    sharedQueueSavePayloads.push(requestSnapshot);
+    productionBatchSavePayloads.push(requestSnapshot);
     await route.fulfill({
       status: 200,
       contentType: "application/json; charset=utf-8",
@@ -780,39 +779,38 @@ test(SHARED_QUEUE_REMOTE_RESTORE_TEST_TITLE, async ({ page }) => {
   await page.addInitScript(({ storageKey, snapshot }) => {
     window.localStorage.setItem(storageKey, JSON.stringify(snapshot));
   }, {
-    storageKey: "thankfulforyou.designQueue",
+    storageKey: "thankfulforyou.designBatch",
     snapshot: staleLocalSnapshot,
   });
 
   await page.goto("/");
 
-  await expect.poll(() => sharedSessionRequests).toBe(1);
-  await expect.poll(() => sharedQueueRequests).toBe(1);
+  await expect.poll(() => batchSessionRequests).toBe(1);
+  await expect.poll(() => productionBatchRequests).toBe(1);
   await expect(page.locator("#textInput")).toHaveValue("Remote Shared");
   await expect(page.locator("#orderList")).toContainText("Remote Shared");
   await expect(page.locator("#orderList")).not.toContainText("Stale Local");
 
   await page.locator("#textInput").fill("Remote Shared Updated");
   await page.waitForTimeout(300);
-  await expect.poll(() => sharedQueueSavePayloads.length).toBe(0);
+  await expect.poll(() => productionBatchSavePayloads.length).toBe(0);
 
   await page.getByRole("button", { name: "Save", exact: true }).click();
 
-  await expect.poll(() => sharedQueueSavePayloads.length).toBeGreaterThan(0);
+  await expect.poll(() => productionBatchSavePayloads.length).toBeGreaterThan(0);
   await expect
-    .poll(() => sharedQueueSavePayloads.at(-1)?.orders?.[0]?.text ?? null)
+    .poll(() => productionBatchSavePayloads.at(-1)?.orders?.[0]?.text ?? null)
     .toBe("Remote Shared Updated");
 });
 
-test(SHARED_QUEUE_CONFLICT_TEST_TITLE, async ({ page }) => {
+test(PRODUCTION_BATCH_CONFLICT_TEST_TITLE, async ({ page }) => {
   await installSupabaseSession(page);
   const remoteSnapshot = {
-    queue: {
-      id: "queue-1",
+    batch: { id: "batch-1",
       workspaceId: "workspace-1",
     },
-    activeOrderId: "remote-order-1",
-    orders: [
+    activeOrderItemId: "remote-order-1",
+    orderItems: [
       {
         id: "remote-order-1",
         revision: 3,
@@ -839,39 +837,39 @@ test(SHARED_QUEUE_CONFLICT_TEST_TITLE, async ({ page }) => {
       },
     ],
   };
-  const sharedQueueSavePayloads = [];
+  const productionBatchSavePayloads = [];
 
-  await page.route("**/api/shared-session", async (route) => {
+  await page.route("**/api/batch-session", async (route) => {
     await route.fulfill({
       status: 200,
       contentType: "application/json; charset=utf-8",
       body: JSON.stringify({
         operator: { id: "user-1", email: "mark@example.com" },
         workspace: { id: "workspace-1", name: "Thankful For You" },
-        queue: { id: "queue-1", workspaceId: "workspace-1" },
+        batch: { id: "batch-1", workspaceId: "workspace-1" },
       }),
     });
   });
-  await page.route("**/api/shared-queue?queueId=queue-1", async (route) => {
+  await page.route("**/api/production-batch?batchId=batch-1", async (route) => {
     await route.fulfill({
       status: 200,
       contentType: "application/json; charset=utf-8",
       body: JSON.stringify(remoteSnapshot),
     });
   });
-  await page.route("**/api/shared-queue", async (route) => {
+  await page.route("**/api/production-batch", async (route) => {
     if (route.request().method() !== "PUT") {
       await route.fallback();
       return;
     }
 
-    sharedQueueSavePayloads.push(route.request().postDataJSON()?.snapshot);
+    productionBatchSavePayloads.push(route.request().postDataJSON()?.snapshot);
     await route.fulfill({
       status: 409,
       contentType: "application/json; charset=utf-8",
       body: JSON.stringify({
         error: "Revision conflict",
-        details: { orderId: "remote-order-1", revision: 3 },
+        details: { orderItemId: "remote-order-1", revision: 3 },
       }),
     });
   });
@@ -881,30 +879,29 @@ test(SHARED_QUEUE_CONFLICT_TEST_TITLE, async ({ page }) => {
 
   await page.locator("#textInput").fill("Remote Shared Updated");
   await page.waitForTimeout(300);
-  await expect.poll(() => sharedQueueSavePayloads.length).toBe(0);
+  await expect.poll(() => productionBatchSavePayloads.length).toBe(0);
   await expect(page.locator("#queueSyncStatus")).toHaveCount(0);
 
   await page.getByRole("button", { name: "Save", exact: true }).click();
-  await expect.poll(() => sharedQueueSavePayloads.length).toBeGreaterThan(0);
-  const savesAfterFirstClick = sharedQueueSavePayloads.length;
+  await expect.poll(() => productionBatchSavePayloads.length).toBeGreaterThan(0);
+  const savesAfterFirstClick = productionBatchSavePayloads.length;
 
   await page.locator("#textInput").fill("Remote Shared Updated Again");
   await page.waitForTimeout(300);
-  await expect.poll(() => sharedQueueSavePayloads.length).toBe(savesAfterFirstClick);
+  await expect.poll(() => productionBatchSavePayloads.length).toBe(savesAfterFirstClick);
 
   await page.getByRole("button", { name: "Save", exact: true }).click();
-  await expect.poll(() => sharedQueueSavePayloads.length).toBeGreaterThan(savesAfterFirstClick);
+  await expect.poll(() => productionBatchSavePayloads.length).toBeGreaterThan(savesAfterFirstClick);
 });
 
-test(SHARED_QUEUE_PAGEHIDE_TEST_TITLE, async ({ page }) => {
+test(PRODUCTION_BATCH_PAGEHIDE_TEST_TITLE, async ({ page }) => {
   await installSupabaseSession(page);
   const remoteSnapshot = {
-    queue: {
-      id: "queue-1",
+    batch: { id: "batch-1",
       workspaceId: "workspace-1",
     },
-    activeOrderId: "remote-order-1",
-    orders: [
+    activeOrderItemId: "remote-order-1",
+    orderItems: [
       {
         id: "remote-order-1",
         revision: 3,
@@ -931,40 +928,40 @@ test(SHARED_QUEUE_PAGEHIDE_TEST_TITLE, async ({ page }) => {
       },
     ],
   };
-  const sharedQueueSavePayloads = [];
+  const productionBatchSavePayloads = [];
   let releaseFirstSave = null;
   const firstSaveBlocked = new Promise((resolve) => {
     releaseFirstSave = resolve;
   });
 
-  await page.route("**/api/shared-session", async (route) => {
+  await page.route("**/api/batch-session", async (route) => {
     await route.fulfill({
       status: 200,
       contentType: "application/json; charset=utf-8",
       body: JSON.stringify({
         operator: { id: "user-1", email: "mark@example.com" },
         workspace: { id: "workspace-1", name: "Thankful For You" },
-        queue: { id: "queue-1", workspaceId: "workspace-1" },
+        batch: { id: "batch-1", workspaceId: "workspace-1" },
       }),
     });
   });
-  await page.route("**/api/shared-queue?queueId=queue-1", async (route) => {
+  await page.route("**/api/production-batch?batchId=batch-1", async (route) => {
     await route.fulfill({
       status: 200,
       contentType: "application/json; charset=utf-8",
       body: JSON.stringify(remoteSnapshot),
     });
   });
-  await page.route("**/api/shared-queue", async (route) => {
+  await page.route("**/api/production-batch", async (route) => {
     if (route.request().method() !== "PUT") {
       await route.fallback();
       return;
     }
 
     const requestSnapshot = route.request().postDataJSON()?.snapshot;
-    sharedQueueSavePayloads.push(requestSnapshot);
+    productionBatchSavePayloads.push(requestSnapshot);
 
-    if (sharedQueueSavePayloads.length === 1) {
+    if (productionBatchSavePayloads.length === 1) {
       await firstSaveBlocked;
     }
 
@@ -980,7 +977,7 @@ test(SHARED_QUEUE_PAGEHIDE_TEST_TITLE, async ({ page }) => {
 
   await page.locator("#textInput").fill("Remote Shared Draft 1");
   await page.waitForTimeout(300);
-  await expect.poll(() => sharedQueueSavePayloads.length).toBe(0);
+  await expect.poll(() => productionBatchSavePayloads.length).toBe(0);
 
   await page.locator("#textInput").fill("Remote Shared Draft 2");
   await page.evaluate(() => {
@@ -988,7 +985,7 @@ test(SHARED_QUEUE_PAGEHIDE_TEST_TITLE, async ({ page }) => {
   });
 
   await page.waitForTimeout(300);
-  await expect.poll(() => sharedQueueSavePayloads.length).toBe(0);
+  await expect.poll(() => productionBatchSavePayloads.length).toBe(0);
 
   releaseFirstSave();
 });
@@ -1019,7 +1016,7 @@ test("uses the refined desktop B1 workspace proportions", async ({ page }) => {
     const previewWorkspace = document.querySelector(".preview-workspace");
     const lineRail = document.querySelector(".line-controls-rail");
     const previewPanel = document.querySelector(".preview-panel");
-    const queueMenu = document.querySelector(".queue-tools-menu");
+    const queueMenu = document.querySelector(".batch-tools-menu");
     const stats = Array.from(document.querySelectorAll(".order-stats > div"));
     const rect = (node) => {
       if (!(node instanceof HTMLElement)) {
@@ -1038,7 +1035,7 @@ test("uses the refined desktop B1 workspace proportions", async ({ page }) => {
       previewWorkspace: rect(previewWorkspace),
       lineRail: rect(lineRail),
       previewPanel: rect(previewPanel),
-      hasQueueMenu: queueMenu instanceof HTMLElement,
+      hasBatchMenu: queueMenu instanceof HTMLElement,
       visibleStatCount: stats.length,
     };
   });
@@ -1049,16 +1046,16 @@ test("uses the refined desktop B1 workspace proportions", async ({ page }) => {
   expect(layout.previewWorkspace.width).toBeGreaterThan(layout.lineRail.width);
   expect(layout.previewPanel.height).toBeGreaterThan(420);
   expect(layout.visibleStatCount).toBe(2);
-  expect(layout.hasQueueMenu).toBe(true);
+  expect(layout.hasBatchMenu).toBe(true);
 });
 
 test("keeps the queue tools popover inside the queue panel near the tablet breakpoint", async ({ page }) => {
   await page.setViewportSize({ width: 830, height: 900 });
-  await openQueueTools(page);
+  await openBatchTools(page);
 
   const popoverBounds = await page.evaluate(() => {
-    const popover = document.querySelector(".queue-tools-popover");
-    const queueHeader = document.querySelector(".queue-header");
+    const popover = document.querySelector(".batch-tools-popover");
+    const queueHeader = document.querySelector(".batch-header");
     const queuePanel = document.querySelector(".orders-panel");
     const rect = (node) => {
       const box = node.getBoundingClientRect();
@@ -1510,11 +1507,11 @@ test("restores the current batch after refresh and clears it when requested", as
   await expect(page.locator("#backingInput")).toHaveValue("4.2");
   await expect(page.locator("#weldExportedDesignInput")).not.toBeChecked();
 
-  await clickQueueAction(page, "Clear Batch");
+  await clickBatchAction(page, "Clear Batch");
   await expect(page.locator("#confirmationDialogDescription")).toContainText(
-    /delete all saved local designs|Clear the shared queue/,
+    /delete all saved local designs|Clear the production batch/,
   );
-  await confirmQueueDialog(page, "Clear Batch?");
+  await confirmBatchDialog(page, "Clear Batch?");
 
   await expect(page.locator("#orderCountOutput")).toHaveText("0");
   await expect(page.locator("#importStatus")).toContainText("Batch cleared");
@@ -1526,9 +1523,9 @@ test("restores the current batch after refresh and clears it when requested", as
   await expect(page.locator("#importStatus")).not.toContainText("Restored");
 });
 
-test("keeps the design queue scroll position when selecting a row", async ({ page }) => {
+test("keeps the production batch scroll position when selecting a row", async ({ page }) => {
   for (let index = 0; index < 14; index += 1) {
-    await clickQueueAction(page, "Add Design");
+    await clickBatchAction(page, "Add Design");
   }
 
   await expect(page.locator("#orderCountOutput")).toHaveText("15");
@@ -1553,8 +1550,8 @@ test("keeps the design queue scroll position when selecting a row", async ({ pag
   expect(Math.abs(scrollTopAfter - scrollTopBefore)).toBeLessThanOrEqual(4);
 });
 
-test("uses a lighter hover color for inactive design queue rows", async ({ page }) => {
-  await clickQueueAction(page, "Add Design");
+test("uses a lighter hover color for inactive production batch rows", async ({ page }) => {
+  await clickBatchAction(page, "Add Design");
 
   const firstRow = page.locator("#orderList .order-row").filter({ hasText: "Design 1" });
   const secondRow = page.locator("#orderList .order-row").filter({ hasText: "Design 2" });
@@ -1577,7 +1574,7 @@ test("uses a lighter hover color for inactive design queue rows", async ({ page 
 
 test("applies a pressed-state hook to editor and queue command buttons", async ({ page }) => {
   await page.locator("#textInput").fill("Savannah");
-  await clickQueueAction(page, "Add Design");
+  await clickBatchAction(page, "Add Design");
   await page.locator("#textInput").fill("RN");
   await page.locator("#orderList .order-row").filter({ hasText: "Design 1" }).locator(".order-item").click();
 
@@ -1591,7 +1588,7 @@ test("applies a pressed-state hook to editor and queue command buttons", async (
     releasedProperties: editorProperties,
   });
 
-  await openQueueTools(page);
+  await openBatchTools(page);
 
   const queueProperties = ["transform"];
   await expect(measurePressedState(page, "#importClipboardButton", queueProperties)).resolves.toMatchObject({
@@ -1599,10 +1596,10 @@ test("applies a pressed-state hook to editor and queue command buttons", async (
     releasedProperties: queueProperties,
   });
 
-  await openQueueTools(page);
+  await openBatchTools(page);
 
   const dangerProperties = ["transform"];
-  await expect(measurePressedState(page, "#clearQueueButton", dangerProperties)).resolves.toMatchObject({
+  await expect(measurePressedState(page, "#clearBatchButton", dangerProperties)).resolves.toMatchObject({
     changedProperties: dangerProperties,
     releasedProperties: dangerProperties,
   });
@@ -1752,10 +1749,10 @@ test("shows a preset overflow menu above Global Settings with layout and preset 
 });
 
 test("closes queue and preset overflow menus when clicking outside them", async ({ page }) => {
-  const queueMenu = page.locator(".queue-header .queue-tools-menu");
+  const queueMenu = page.locator(".batch-header .batch-tools-menu");
   const presetMenu = page.locator(".preset-tools-menu");
 
-  await openQueueTools(page);
+  await openBatchTools(page);
   await expect(queueMenu).toHaveAttribute("open", "");
   await page.locator("#activeOrderName").click();
   await expect(queueMenu).not.toHaveAttribute("open", "");
@@ -1794,7 +1791,7 @@ test("copies layout controls onto another design without copying text", async ({
   await openPresetTools(page);
   await expect(pasteLayoutButton).toBeDisabled();
 
-  await clickQueueAction(page, "Add Design");
+  await clickBatchAction(page, "Add Design");
   await page.locator("#textInput").fill("Taylor\nDNP\nFNP");
   await page.locator("#presetInput").selectOption("preset-c3e8a1d7f520");
   await page.locator('.line-control-card[data-line-index="2"] [data-setting="fontSizeMm"]').fill("28");
@@ -1864,7 +1861,7 @@ test("preserves completed export-ready state when a pasted layout is unchanged",
   await page.locator('.line-control-card[data-line-index="1"] [data-setting="verticalScale"]').fill("1.18");
   await clickPresetAction(page, "Copy Layout");
 
-  await clickQueueAction(page, "Add Design");
+  await clickBatchAction(page, "Add Design");
   await page.locator("#textInput").fill("Taylor\nDNP");
   await page.locator("#presetInput").selectOption("preset-d9b4f2a6c731");
   await page.locator("#backingInput").fill("3.4");
@@ -1918,7 +1915,7 @@ test("restores complete and export state when pasted controls return to a previo
   await page.locator('.line-control-card[data-line-index="1"] [data-setting="verticalScale"]').fill("1.18");
   await clickPresetAction(page, "Copy Layout");
 
-  await clickQueueAction(page, "Add Design");
+  await clickBatchAction(page, "Add Design");
   await page.locator("#textInput").fill("Taylor\nDNP");
   await page.locator("#presetInput").selectOption("preset-d9b4f2a6c731");
   await page.locator("#backingInput").fill("3.4");
@@ -1966,7 +1963,7 @@ test("warns when a pasted layout cannot include extra source lines", async ({ pa
   await page.locator('.line-control-card[data-line-index="2"] [data-setting="horizontalScale"]').fill("1.77");
   await clickPresetAction(page, "Copy Layout");
 
-  await clickQueueAction(page, "Add Design");
+  await clickBatchAction(page, "Add Design");
   await page.locator("#textInput").fill("Savannah\nRN");
   await page.locator("#presetInput").selectOption("preset-a1f4c8e2b601");
   await page.locator('.line-control-card[data-line-index="0"] [data-setting="horizontalScale"]').fill("1.05");
@@ -2049,24 +2046,24 @@ test("downgrades an abandoned first-time in-flight analysis to a retryable draft
 test("clears stale saved geometry signatures that have no completed build after refresh", async ({ page }) => {
   await page.locator("#textInput").fill("Savannah\nRN");
   await page.evaluate(() => {
-    const raw = window.localStorage.getItem("thankfulforyou.designQueue");
+    const raw = window.localStorage.getItem("thankfulforyou.designBatch");
     if (!raw) {
       return;
     }
 
     const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed.orders) || !parsed.orders.length) {
+    if (!Array.isArray(parsed.orderItems) || !parsed.orderItems.length) {
       return;
     }
 
-    const [order] = parsed.orders;
+    const [order] = parsed.orderItems;
     order.savedSettingsSignature = JSON.stringify(order.settings);
     order.pendingAnalysisSignature = null;
     order.analysisBadge = null;
     order.cachedBuild = null;
     order.previousCompletedBuild = null;
     order.status = "in-progress";
-    window.localStorage.setItem("thankfulforyou.designQueue", JSON.stringify(parsed));
+    window.localStorage.setItem("thankfulforyou.designBatch", JSON.stringify(parsed));
   });
 
   await page.reload();
@@ -2334,7 +2331,7 @@ test("restores the previous completed geometry when a newer in-flight analysis i
   await expect(page.locator("#connectionStatusLabel")).toContainText("Single connected face piece");
   await expect(page.locator("#connectionStatus .order-analysis-indicator.ok")).toBeVisible();
 
-  await clickQueueAction(page, "Add Design");
+  await clickBatchAction(page, "Add Design");
   await page.locator("#orderList .order-row").filter({ hasText: "Design 1" }).locator(".order-item").click();
   await expect(page.locator("#connectionStatusLabel")).toContainText("Single connected face piece");
   await expect(exportDesignButton(page)).toBeEnabled();
@@ -2358,12 +2355,12 @@ test("shows guide overflow when a locked line prevents fit", async ({ page }) =>
 });
 
 test("deletes a single design from the queue", async ({ page }) => {
-  await clickQueueAction(page, "Add Design");
+  await clickBatchAction(page, "Add Design");
   await expect(page.locator("#orderCountOutput")).toHaveText("2");
 
   await page.getByRole("button", { name: "Delete Design 1" }).click();
   await expect(page.locator("#confirmationDialogDescription")).toContainText("Delete Design 1");
-  await confirmQueueDialog(page, "Delete Design?");
+  await confirmBatchDialog(page, "Delete Design?");
 
   await expect(page.locator("#orderCountOutput")).toHaveText("1");
   await expect(page.locator("#orderList .order-row")).toHaveCount(1);
@@ -2421,30 +2418,28 @@ test("skips already imported Etsy line items when importing another batch", asyn
   await clickButtonBySelector(page, "#importClipboardButton");
 
   await expect(page.locator("#orderCountOutput")).toHaveText("3");
-  await expect(page.locator(".queue-header .queue-tools-menu")).not.toHaveAttribute("open", "");
+  await expect(page.locator(".batch-header .batch-tools-menu")).not.toHaveAttribute("open", "");
   await expect(page.locator("#importStatus")).toBeVisible();
   await expect(page.locator("#importStatus")).toContainText("Imported 2 Etsy designs from the clipboard.");
   await expect.poll(async () => {
     return page.evaluate(() => {
       const alert = document.querySelector("#importStatus");
-      const topCard = document.querySelector(".editor-top-card");
-      if (!(alert instanceof HTMLElement) || !(topCard instanceof HTMLElement)) {
+      if (!(alert instanceof HTMLElement)) {
         return null;
       }
 
       const alertRect = alert.getBoundingClientRect();
-      const topCardRect = topCard.getBoundingClientRect();
       const style = window.getComputedStyle(alert);
       return {
         position: style.position,
-        aboveTopCard: alertRect.bottom <= topCardRect.top,
-        alignedWithTopCard: Math.abs(alertRect.left - topCardRect.left) <= 1,
+        horizontallyCentered: Math.abs(alertRect.left + alertRect.width / 2 - window.innerWidth / 2) <= 1,
+        nearViewportBottom: window.innerHeight - alertRect.bottom <= 24,
       };
     });
   }).toEqual({
-    position: "relative",
-    aboveTopCard: true,
-    alignedWithTopCard: true,
+    position: "fixed",
+    horizontallyCentered: true,
+    nearViewportBottom: true,
   });
   await expect(page.locator("#importStatus")).toBeHidden({ timeout: 8000 });
 
@@ -2460,9 +2455,9 @@ test("skips already imported Etsy line items when importing another batch", asyn
   await clickButtonBySelector(page, "#importClipboardButton");
 
   await expect(page.locator("#orderCountOutput")).toHaveText("4");
-  await expect(page.locator(".queue-header .queue-tools-menu")).not.toHaveAttribute("open", "");
+  await expect(page.locator(".batch-header .batch-tools-menu")).not.toHaveAttribute("open", "");
   await expect(page.locator("#importStatus")).toBeVisible();
-  await expect(page.locator("#importStatus")).toContainText("Imported 1 new Etsy design and skipped 1 already in the queue.");
+  await expect(page.locator("#importStatus")).toContainText("Imported 1 new Etsy design and skipped 1 already in the batch.");
   await expect(page.locator("#orderList .order-row")).toContainText([
     "#4057600528",
     "#4057629148",
@@ -2471,7 +2466,7 @@ test("skips already imported Etsy line items when importing another batch", asyn
   await expect(page.locator("#importStatus")).toBeHidden({ timeout: 8000 });
 });
 
-test("shows labeled buyer, listing, and emphasized personalization lines in queue rows", async ({ page }) => {
+test("shows labeled buyer, listing, and emphasized personalization lines in batch rows", async ({ page }) => {
   const payload = JSON.stringify({
     items: [
       {
@@ -2629,13 +2624,13 @@ test("shows batch color counts from the queue tools menu", async ({ page }) => {
   }, payload);
 
   await clickButtonBySelector(page, "#importClipboardButton");
-  await clickQueueAction(page, "View Color Counts");
+  await clickBatchAction(page, "View Color Counts");
 
   const dialog = page.locator("#colorCountsDialog");
   const rows = dialog.locator("tbody tr");
 
   await expect(dialog).toBeVisible();
-  await expect(page.locator(".queue-header .queue-tools-menu")).not.toHaveAttribute("open", "");
+  await expect(page.locator(".batch-header .batch-tools-menu")).not.toHaveAttribute("open", "");
   await expect(rows).toHaveCount(2);
   await expect(rows.nth(0).locator("td").nth(0)).toHaveText("Red");
   await expect(rows.nth(0).locator("td").nth(1)).toHaveText("4");
@@ -2699,7 +2694,7 @@ test("includes imported color and quantity in the export payload", async ({ page
   await page.unrouteAll({ behavior: "ignoreErrors" });
 });
 
-test("copies the current design and all queued designs to the clipboard", async ({ page }) => {
+test("copies the current design and all batched designs to the clipboard", async ({ page }) => {
   await page.evaluate(() => {
     window.__copiedSvgPayloads = [];
     window.ClipboardItem = class ClipboardItem {
@@ -2745,10 +2740,10 @@ test("copies the current design and all queued designs to the clipboard", async 
   await completeDesign(page, "Design 1");
   await clickEditorToolButton(page, "#copyButton");
 
-  await clickQueueAction(page, "Add Design");
+  await clickBatchAction(page, "Add Design");
   await setDesignText(page, "Beta");
   await completeDesign(page, "Design 2");
-  await clickQueueAction(page, "Copy All Designs");
+  await clickBatchAction(page, "Copy All Designs");
 
   await expect.poll(async () => {
     return page.evaluate(() => window.__copiedSvgPayloads);
@@ -2810,7 +2805,7 @@ test("keeps Complete button state independent from background analysis", async (
   });
 
   await page.locator("#textInput").fill("Alpha");
-  await clickQueueAction(page, "Add Design");
+  await clickBatchAction(page, "Add Design");
   await page.locator("#textInput").fill("Beta");
 
   await page.locator("#orderList .order-row").filter({ hasText: "Design 1" }).locator(".order-item").click();
@@ -2838,7 +2833,7 @@ test("Complete marks the active design finished without advancing to the next de
   });
 
   await page.locator("#textInput").fill("Alpha");
-  await clickQueueAction(page, "Add Design");
+  await clickBatchAction(page, "Add Design");
   await page.locator("#textInput").fill("Beta");
   await page.locator("#orderList .order-row").filter({ hasText: "Design 1" }).locator(".order-item").click();
 
@@ -2866,7 +2861,7 @@ test("Complete & Next marks the current design finished and advances to the next
   });
 
   await page.locator("#textInput").fill("Alpha");
-  await clickQueueAction(page, "Add Design");
+  await clickBatchAction(page, "Add Design");
   await page.locator("#textInput").fill("Beta");
   await page.locator("#orderList .order-row").filter({ hasText: "Design 1" }).locator(".order-item").click();
 
@@ -2894,9 +2889,9 @@ test("disables Complete & Next when every other design is already complete", asy
   });
 
   await page.locator("#textInput").fill("Alpha");
-  await clickQueueAction(page, "Add Design");
+  await clickBatchAction(page, "Add Design");
   await page.locator("#textInput").fill("Beta");
-  await clickQueueAction(page, "Add Design");
+  await clickBatchAction(page, "Add Design");
   await page.locator("#textInput").fill("Gamma");
 
   await page.locator("#orderList .order-row").filter({ hasText: "Design 1" }).locator(".order-item").click();
@@ -2949,7 +2944,7 @@ test("keeps Complete disabled when reselecting a design whose analysis is still 
   });
 
   await page.locator("#textInput").fill("Alpha");
-  await clickQueueAction(page, "Add Design");
+  await clickBatchAction(page, "Add Design");
   await page.locator("#textInput").fill("Beta");
 
   await page.locator("#orderList .order-row").filter({ hasText: "Design 1" }).locator(".order-item").click();
@@ -2987,7 +2982,7 @@ test("does not allow a second Complete run while the same design analysis is sti
   });
 
   await page.locator("#textInput").fill("Alpha");
-  await clickQueueAction(page, "Add Design");
+  await clickBatchAction(page, "Add Design");
   await page.locator("#textInput").fill("Beta");
 
   await page.locator("#orderList .order-row").filter({ hasText: "Design 1" }).locator(".order-item").click();
@@ -3037,7 +3032,7 @@ test("shows queue analysis indicators for running, connected, and multi-piece co
   await expect(page.locator("#orderList .order-row").filter({ hasText: "Design 1" }).locator(".order-analysis-indicator.ok")).toBeVisible({ timeout: 20000 });
   await expect(page.locator("#connectionStatus .order-analysis-indicator.ok")).toBeVisible();
 
-  await clickQueueAction(page, "Add Design");
+  await clickBatchAction(page, "Add Design");
   await page.locator("#textInput").fill("Beta");
   await completeDesign(page, "Design 2");
 
@@ -3064,22 +3059,22 @@ test("recovers queue analysis indicators from cached analysis when a stale runni
   await completeDesign(page, "Design 1");
 
   await page.evaluate(() => {
-    const raw = window.localStorage.getItem("thankfulforyou.designQueue");
+    const raw = window.localStorage.getItem("thankfulforyou.designBatch");
     if (!raw) {
       return;
     }
 
     const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed.orders) || !parsed.orders.length) {
+    if (!Array.isArray(parsed.orderItems) || !parsed.orderItems.length) {
       return;
     }
 
-    parsed.orders[0].analysisBadge = {
+    parsed.orderItems[0].analysisBadge = {
       state: "running",
       shortLabel: "",
       fullLabel: "Analysis running",
     };
-    window.localStorage.setItem("thankfulforyou.designQueue", JSON.stringify(parsed));
+    window.localStorage.setItem("thankfulforyou.designBatch", JSON.stringify(parsed));
   });
 
   await page.reload();
@@ -3121,10 +3116,10 @@ test("exports completed designs without re-running analysis", async ({ page }) =
 
   await page.locator("#textInput").fill("Alpha");
   await completeDesign(page, "Design 1");
-  await clickQueueAction(page, "Add Design");
+  await clickBatchAction(page, "Add Design");
   await page.locator("#textInput").fill("Beta");
   await completeDesign(page, "Design 2");
-  await clickQueueAction(page, "Export All Designs");
+  await clickBatchAction(page, "Export All Designs");
 
   await expect.poll(() => exportRequested, { timeout: 20000 }).toBe(true);
   expect(exportAnalyzeCounts).toEqual({

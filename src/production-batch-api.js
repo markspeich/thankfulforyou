@@ -1,7 +1,7 @@
-export class SharedQueueConflictError extends Error {
+export class ProductionBatchConflictError extends Error {
   constructor(message, details = null) {
     super(message);
-    this.name = "SharedQueueConflictError";
+    this.name = "ProductionBatchConflictError";
     this.details = details;
   }
 }
@@ -34,8 +34,8 @@ function normalizeConflictDetails(details) {
   }
 }
 
-export async function fetchSharedSession(accessToken = null) {
-  const response = await fetch("/api/shared-session", {
+export async function fetchBatchSession(accessToken = null) {
+  const response = await fetch("/api/batch-session", {
     headers: buildAuthHeaders(accessToken, {
       Accept: "application/json",
     }),
@@ -43,14 +43,14 @@ export async function fetchSharedSession(accessToken = null) {
   const payload = await readJsonOrFallback(response, {});
 
   if (!response.ok) {
-    throw new Error(payload.error || "Unable to load the shared queue session.");
+    throw new Error(payload.error || "Unable to load the production batch session.");
   }
 
   return payload;
 }
 
-export async function fetchSharedQueueSnapshot(queueId, accessToken = null) {
-  const response = await fetch(`/api/shared-queue?queueId=${encodeURIComponent(queueId)}`, {
+export async function fetchProductionBatchSnapshot(batchId, accessToken = null) {
+  const response = await fetch(`/api/production-batch?batchId=${encodeURIComponent(batchId)}`, {
     headers: buildAuthHeaders(accessToken, {
       Accept: "application/json",
     }),
@@ -58,15 +58,15 @@ export async function fetchSharedQueueSnapshot(queueId, accessToken = null) {
   const payload = await readJsonOrFallback(response, {});
 
   if (!response.ok) {
-    throw new Error(payload.error || "Unable to load the shared queue.");
+    throw new Error(payload.error || "Unable to load the production batch.");
   }
 
   return payload;
 }
 
-export async function saveSharedQueueSnapshot(snapshot, options = {}) {
+export async function saveProductionBatchSnapshot(snapshot, options = {}) {
   const { keepalive = false, accessToken = null } = options;
-  const response = await fetch("/api/shared-queue", {
+  const response = await fetch("/api/production-batch", {
     method: "PUT",
     headers: buildAuthHeaders(accessToken, {
       "Content-Type": "application/json",
@@ -78,14 +78,14 @@ export async function saveSharedQueueSnapshot(snapshot, options = {}) {
   const payload = await readJsonOrFallback(response, {});
 
   if (response.status === 409) {
-    throw new SharedQueueConflictError(
+    throw new ProductionBatchConflictError(
       payload.error || "Revision conflict",
       normalizeConflictDetails(payload.details),
     );
   }
 
   if (!response.ok) {
-    throw new Error(payload.error || "Unable to save the shared queue.");
+    throw new Error(payload.error || "Unable to save the production batch.");
   }
 
   return payload;

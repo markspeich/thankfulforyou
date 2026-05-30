@@ -1,0 +1,305 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const loadProductionBatchMock = vi.fn();
+const saveProductionBatchMock = vi.fn();
+const resolveProductionBatchAuthMock = vi.fn();
+
+vi.mock("../../api/_lib/production-batch-store.js", () => ({
+  loadProductionBatch: loadProductionBatchMock,
+  saveProductionBatch: saveProductionBatchMock,
+}));
+
+vi.mock("../../api/_lib/production-batch-auth.js", () => ({
+  resolveProductionBatchAuth: resolveProductionBatchAuthMock,
+}));
+
+function createResponseRecorder() {
+  return {
+    statusCode: 200,
+    headers: {},
+    body: null,
+    status(code) {
+      this.statusCode = code;
+      return this;
+    },
+    setHeader(name, value) {
+      this.headers[name] = value;
+    },
+    json(payload) {
+      this.body = payload;
+      return this;
+    },
+    end() {
+      return this;
+    },
+  };
+}
+
+beforeEach(() => {
+  vi.resetModules();
+  loadProductionBatchMock.mockReset();
+  saveProductionBatchMock.mockReset();
+  resolveProductionBatchAuthMock.mockReset();
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+describe("production batch api route", () => {
+  it("returns a production batch snapshot for a valid GET request", async () => {
+    resolveProductionBatchAuthMock.mockResolvedValue({
+      userId: "user-1",
+      workspaceId: "workspace-1",
+    });
+    loadProductionBatchMock.mockResolvedValue({
+      batch: { id: "batch-1", workspaceId: "workspace-1" },
+      activeOrderItemId: "order-1",
+      orderItems: [{ id: "order-1", revision: 3 }],
+    });
+
+    const { default: handler } = await import("../../api/production-batch.js");
+    const response = createResponseRecorder();
+
+    await handler({
+      method: "GET",
+      headers: { authorization: "Bearer token-1" },
+      query: { batchId: "batch-1" },
+    }, response);
+
+    expect(resolveProductionBatchAuthMock).toHaveBeenCalledWith(expect.objectContaining({
+      method: "GET",
+      headers: { authorization: "Bearer token-1" },
+      query: { batchId: "batch-1" },
+    }));
+    expect(loadProductionBatchMock).toHaveBeenCalledWith({
+      batchId: "batch-1",
+      workspaceId: "workspace-1",
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.body.batch.id).toBe("batch-1");
+  });
+
+  it("rejects PUT requests without batch metadata", async () => {
+    resolveProductionBatchAuthMock.mockResolvedValue({
+      userId: "user-1",
+      workspaceId: "workspace-1",
+    });
+    const { default: handler } = await import("../../api/production-batch.js");
+    const response = createResponseRecorder();
+
+    await handler({
+      method: "PUT",
+      headers: { authorization: "Bearer token-1" },
+      body: {
+        snapshot: { activeOrderItemId: null, orderItems: [] },
+      },
+    }, response);
+
+    expect(response.statusCode).toBe(400);
+    expect(response.body).toEqual({
+      error: "snapshot.batch.id and snapshot.batch.workspaceId are required.",
+    });
+  });
+
+  it("rejects PUT requests when the snapshot workspace does not match the auth workspace", async () => {
+    resolveProductionBatchAuthMock.mockResolvedValue({
+      userId: "user-1",
+      workspaceId: "workspace-1",
+    });
+    const { default: handler } = await import("../../api/production-batch.js");
+    const response = createResponseRecorder();
+
+    await handler({
+      method: "PUT",
+      headers: { authorization: "Bearer token-1" },
+      body: {
+        snapshot: {
+          batch: { id: "batch-1", workspaceId: "workspace-2" },
+          activeOrderItemId: null,
+          orderItems: [],
+        },
+      },
+    }, response);
+
+    expect(saveProductionBatchMock).not.toHaveBeenCalled();
+    expect(response.statusCode).toBe(403);
+    expect(response.body).toEqual({
+      error: "snapshot.batch.workspaceId must match the authenticated workspace.",
+    });
+  });
+
+  it("rejects PUT requests when snapshot.orderItems is not an array", async () => {
+    resolveProductionBatchAuthMock.mockResolvedValue({
+      userId: "user-1",
+      workspaceId: "workspace-1",
+    });
+    const { default: handler } = await import("../../api/production-batch.js");
+    const response = createResponseRecorder();
+
+    await handler({
+      method: "PUT",
+      headers: { authorization: "Bearer token-1" },
+      body: {
+        snapshot: {
+          batch: { id: "batch-1", workspaceId: "workspace-1" },
+          activeOrderItemId: null,
+          orderItems: { id: "order-1" },
+        },
+      },
+    }, response);
+
+    expect(saveProductionBatchMock).not.toHaveBeenCalled();
+    expect(response.statusCode).toBe(400);
+    expect(response.body).toEqual({
+      error: "snapshot.orderItems must be an array.",
+    });
+  });
+
+  it("returns a normalized production batch snapshot for a valid PUT request", async () => {
+    resolveProductionBatchAuthMock.mockResolvedValue({
+      userId: "user-1",
+      workspaceId: "workspace-1",
+    });
+    loadProductionBatchMock.mockResolvedValue({
+      batch: { id: "batch-1", workspaceId: "workspace-1" },
+      activeOrderItemId: "order-2",
+      orderItems: [{ id: "order-2", revision: 4 }],
+    });
+    saveProductionBatchMock.mockResolvedValue({
+      batch: { id: "batch-1", workspaceId: "workspace-1", updatedBy: "user-1" },
+      activeOrderItemId: "order-2",
+      orderItems: [{ id: "order-2", revision: 4 }],
+    });
+
+    const { default: handler } = await import("../../api/production-batch.js");
+    const response = createResponseRecorder();
+    const snapshot = {
+      batch: { id: "batch-1", workspaceId: "workspace-1" },
+      activeOrderItemId: "order-2",
+      orderItems: [{ id: "order-2", revision: 4 }],
+    };
+
+    await handler({
+      method: "PUT",
+      headers: { authorization: "Bearer token-1" },
+      body: { snapshot },
+    }, response);
+
+    expect(saveProductionBatchMock).toHaveBeenCalledWith({
+      snapshot,
+      userId: "user-1",
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toEqual({
+      batch: { id: "batch-1", workspaceId: "workspace-1", updatedBy: "user-1" },
+      activeOrderItemId: "order-2",
+      orderItems: [{ id: "order-2", revision: 4 }],
+    });
+  });
+
+  it("returns 409 before saving when the current production batch has a newer row revision", async () => {
+    resolveProductionBatchAuthMock.mockResolvedValue({
+      userId: "user-1",
+      workspaceId: "workspace-1",
+    });
+    loadProductionBatchMock.mockResolvedValue({
+      batch: { id: "batch-1", workspaceId: "workspace-1" },
+      activeOrderItemId: "order-1",
+      orderItems: [
+        {
+          id: "order-1",
+          revision: 4,
+          updatedAt: "2026-05-28T04:30:00.000Z",
+          updatedBy: { email: "first-browser@example.com" },
+        },
+      ],
+    });
+
+    const { default: handler } = await import("../../api/production-batch.js");
+    const response = createResponseRecorder();
+
+    await handler({
+      method: "PUT",
+      headers: { authorization: "Bearer token-1" },
+      body: {
+        snapshot: {
+          batch: { id: "batch-1", workspaceId: "workspace-1" },
+          activeOrderItemId: "order-1",
+          orderItems: [{ id: "order-1", revision: 3 }],
+        },
+      },
+    }, response);
+
+    expect(saveProductionBatchMock).not.toHaveBeenCalled();
+    expect(response.statusCode).toBe(409);
+    expect(response.body).toEqual({
+      error: "Revision conflict",
+      details: {
+        orderItemId: "order-1",
+        revision: 4,
+        updatedAt: "2026-05-28T04:30:00.000Z",
+        updatedBy: { email: "first-browser@example.com" },
+      },
+    });
+  });
+
+  it("returns 409 when a stale revision save is rejected", async () => {
+    resolveProductionBatchAuthMock.mockResolvedValue({
+      userId: "user-1",
+      workspaceId: "workspace-1",
+    });
+    loadProductionBatchMock.mockResolvedValue({
+      batch: { id: "batch-1", workspaceId: "workspace-1" },
+      activeOrderItemId: "order-1",
+      orderItems: [{ id: "order-1", revision: 2 }],
+    });
+    saveProductionBatchMock.mockRejectedValue(Object.assign(new Error("Revision conflict"), {
+      code: "REVISION_CONFLICT",
+      details: { orderItemId: "order-1" },
+    }));
+
+    const { default: handler } = await import("../../api/production-batch.js");
+    const response = createResponseRecorder();
+
+    await handler({
+      method: "PUT",
+      headers: { authorization: "Bearer token-1" },
+      body: {
+        snapshot: {
+          batch: { id: "batch-1", workspaceId: "workspace-1" },
+          activeOrderItemId: "order-1",
+          orderItems: [{ id: "order-1", revision: 2 }],
+        },
+      },
+    }, response);
+
+    expect(response.statusCode).toBe(409);
+    expect(response.body).toEqual({
+      error: "Revision conflict",
+      details: { orderItemId: "order-1" },
+    });
+  });
+
+  it("returns 401 when auth resolution fails before batch access", async () => {
+    resolveProductionBatchAuthMock.mockRejectedValue(Object.assign(new Error("Authentication required."), {
+      statusCode: 401,
+      expose: true,
+    }));
+
+    const { default: handler } = await import("../../api/production-batch.js");
+    const response = createResponseRecorder();
+
+    await handler({
+      method: "GET",
+      headers: {},
+      query: { batchId: "batch-1" },
+    }, response);
+
+    expect(loadProductionBatchMock).not.toHaveBeenCalled();
+    expect(response.statusCode).toBe(401);
+    expect(response.body).toEqual({
+      error: "Authentication required.",
+    });
+  });
+});

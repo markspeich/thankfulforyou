@@ -104,11 +104,11 @@ describe("etsy copy badge clipboard", () => {
       },
     ]);
 
-    await context.copyBadgeQueuePayload();
+    await context.copyBadgeBatchPayload();
 
     expect(clipboardWrites).toHaveLength(1);
     expect(warnings).toContainEqual([
-      "Skipped 1 Etsy order(s) while building the badge queue.",
+      "Skipped 1 Etsy order(s) while building the badge batch.",
       [
         {
           orderNumber: "2",
@@ -141,7 +141,7 @@ describe("etsy copy badge clipboard", () => {
       },
     ]);
 
-    await context.copyBadgeQueuePayload();
+    await context.copyBadgeBatchPayload();
 
     expect(clipboardWrites).toHaveLength(0);
     expect(warnings).toContainEqual([

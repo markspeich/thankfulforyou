@@ -9,12 +9,12 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("shared queue api client", () => {
-  it("loads the shared session payload", async () => {
+describe("production batch api client", () => {
+  it("loads the batch session payload", async () => {
     const payload = {
       operator: { id: "user-1", email: "mark@example.com" },
       workspace: { id: "workspace-1", name: "Thankful For You" },
-      queue: { id: "queue-1", workspaceId: "workspace-1" },
+      batch: { id: "batch-1", workspaceId: "workspace-1" },
     };
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
@@ -22,10 +22,10 @@ describe("shared queue api client", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    const { fetchSharedSession } = await import("../../src/shared-queue-api.js");
+    const { fetchBatchSession } = await import("../../src/production-batch-api.js");
 
-    await expect(fetchSharedSession()).resolves.toEqual(payload);
-    expect(fetchMock).toHaveBeenCalledWith("/api/shared-session", {
+    await expect(fetchBatchSession()).resolves.toEqual(payload);
+    expect(fetchMock).toHaveBeenCalledWith("/api/batch-session", {
       headers: { Accept: "application/json" },
     });
   });
@@ -34,7 +34,7 @@ describe("shared queue api client", () => {
     const payload = {
       operator: { id: "user-1", email: "mark@example.com" },
       workspace: { id: "workspace-1", name: "Thankful For You" },
-      queue: { id: "queue-1", workspaceId: "workspace-1" },
+      batch: { id: "batch-1", workspaceId: "workspace-1" },
     };
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
@@ -42,10 +42,10 @@ describe("shared queue api client", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    const { fetchSharedSession } = await import("../../src/shared-queue-api.js");
+    const { fetchBatchSession } = await import("../../src/production-batch-api.js");
 
-    await expect(fetchSharedSession("token-1")).resolves.toEqual(payload);
-    expect(fetchMock).toHaveBeenCalledWith("/api/shared-session", {
+    await expect(fetchBatchSession("token-1")).resolves.toEqual(payload);
+    expect(fetchMock).toHaveBeenCalledWith("/api/batch-session", {
       headers: {
         Accept: "application/json",
         Authorization: "Bearer token-1",
@@ -53,11 +53,11 @@ describe("shared queue api client", () => {
     });
   });
 
-  it("loads a queue and calls /api/shared-queue with the queue id", async () => {
+  it("loads a batch and calls /api/production-batch with the batch id", async () => {
     const snapshot = {
-      queue: { id: "queue-1", workspaceId: "workspace-1" },
-      activeOrderId: "order-1",
-      orders: [{ id: "order-1", revision: 1 }],
+      batch: { id: "batch-1", workspaceId: "workspace-1" },
+      activeOrderItemId: "order-1",
+      orderItems: [{ id: "order-1", revision: 1 }],
     };
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
@@ -65,38 +65,38 @@ describe("shared queue api client", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    const { fetchSharedQueueSnapshot } = await import("../../src/shared-queue-api.js");
+    const { fetchProductionBatchSnapshot } = await import("../../src/production-batch-api.js");
 
-    await expect(fetchSharedQueueSnapshot("queue-1")).resolves.toEqual(snapshot);
-    expect(fetchMock).toHaveBeenCalledWith("/api/shared-queue?queueId=queue-1", {
+    await expect(fetchProductionBatchSnapshot("batch-1")).resolves.toEqual(snapshot);
+    expect(fetchMock).toHaveBeenCalledWith("/api/production-batch?batchId=batch-1", {
       headers: { Accept: "application/json" },
     });
   });
 
-  it("throws SharedQueueConflictError with details on a 409 save response", async () => {
+  it("throws ProductionBatchConflictError with details on a 409 save response", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: false,
       status: 409,
       json: async () => ({
         error: "Revision conflict",
-        details: { orderId: "order-1", revision: 2 },
+        details: { orderItemId: "order-1", revision: 2 },
       }),
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    const { SharedQueueConflictError, saveSharedQueueSnapshot } = await import("../../src/shared-queue-api.js");
+    const { ProductionBatchConflictError, saveProductionBatchSnapshot } = await import("../../src/production-batch-api.js");
     const snapshot = {
-      queue: { id: "queue-1", workspaceId: "workspace-1" },
-      activeOrderId: "order-1",
-      orders: [{ id: "order-1", revision: 1 }],
+      batch: { id: "batch-1", workspaceId: "workspace-1" },
+      activeOrderItemId: "order-1",
+      orderItems: [{ id: "order-1", revision: 1 }],
     };
 
-    const error = await saveSharedQueueSnapshot(snapshot).catch((caughtError) => caughtError);
+    const error = await saveProductionBatchSnapshot(snapshot).catch((caughtError) => caughtError);
 
-    expect(error).toBeInstanceOf(SharedQueueConflictError);
+    expect(error).toBeInstanceOf(ProductionBatchConflictError);
     expect(error).toMatchObject({
-      name: "SharedQueueConflictError",
-      details: { orderId: "order-1", revision: 2 },
+      name: "ProductionBatchConflictError",
+      details: { orderItemId: "order-1", revision: 2 },
       message: "Revision conflict",
     });
   });
@@ -107,29 +107,29 @@ describe("shared queue api client", () => {
       status: 409,
       json: async () => ({
         error: "Revision conflict",
-        details: JSON.stringify({ orderId: "order-2", revision: 5 }),
+        details: JSON.stringify({ orderItemId: "order-2", revision: 5 }),
       }),
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    const { SharedQueueConflictError, saveSharedQueueSnapshot } = await import("../../src/shared-queue-api.js");
+    const { ProductionBatchConflictError, saveProductionBatchSnapshot } = await import("../../src/production-batch-api.js");
     const snapshot = {
-      queue: { id: "queue-1", workspaceId: "workspace-1" },
-      activeOrderId: "order-1",
-      orders: [{ id: "order-1", revision: 1 }],
+      batch: { id: "batch-1", workspaceId: "workspace-1" },
+      activeOrderItemId: "order-1",
+      orderItems: [{ id: "order-1", revision: 1 }],
     };
 
-    const error = await saveSharedQueueSnapshot(snapshot).catch((caughtError) => caughtError);
+    const error = await saveProductionBatchSnapshot(snapshot).catch((caughtError) => caughtError);
 
-    expect(error).toBeInstanceOf(SharedQueueConflictError);
-    expect(error.details).toEqual({ orderId: "order-2", revision: 5 });
+    expect(error).toBeInstanceOf(ProductionBatchConflictError);
+    expect(error.details).toEqual({ orderItemId: "order-2", revision: 5 });
   });
 
   it("passes keepalive through for unload-safe shared saves", async () => {
     const snapshot = {
-      queue: { id: "queue-1", workspaceId: "workspace-1" },
-      activeOrderId: "order-1",
-      orders: [{ id: "order-1", revision: 1 }],
+      batch: { id: "batch-1", workspaceId: "workspace-1" },
+      activeOrderItemId: "order-1",
+      orderItems: [{ id: "order-1", revision: 1 }],
     };
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
@@ -138,10 +138,10 @@ describe("shared queue api client", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    const { saveSharedQueueSnapshot } = await import("../../src/shared-queue-api.js");
+    const { saveProductionBatchSnapshot } = await import("../../src/production-batch-api.js");
 
-    await expect(saveSharedQueueSnapshot(snapshot, { keepalive: true, accessToken: "token-1" })).resolves.toEqual(snapshot);
-    expect(fetchMock).toHaveBeenCalledWith("/api/shared-queue", {
+    await expect(saveProductionBatchSnapshot(snapshot, { keepalive: true, accessToken: "token-1" })).resolves.toEqual(snapshot);
+    expect(fetchMock).toHaveBeenCalledWith("/api/production-batch", {
       method: "PUT",
       headers: {
         "Content-Type": "application/json",
@@ -191,7 +191,7 @@ describe("auth session helpers", () => {
     const { getBrowserSupabaseClient } = await import("../../src/auth-session.js");
 
     expect(() => getBrowserSupabaseClient()).toThrow(
-      "Supabase browser config is missing. Set window.__APP_CONFIG__.supabaseUrl and window.__APP_CONFIG__.supabaseAnonKey before loading shared sessions.",
+      "Supabase browser config is missing. Set window.__APP_CONFIG__.supabaseUrl and window.__APP_CONFIG__.supabaseAnonKey before loading batch sessions.",
     );
   });
 

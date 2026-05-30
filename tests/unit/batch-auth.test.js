@@ -15,9 +15,9 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("shared queue auth helper", () => {
+describe("production batch auth helper", () => {
   it("extracts a bearer token from the authorization header", async () => {
-    const { readBearerToken } = await import("../../api/_lib/shared-queue-auth.js");
+    const { readBearerToken } = await import("../../api/_lib/production-batch-auth.js");
 
     expect(readBearerToken({
       headers: {
@@ -27,7 +27,7 @@ describe("shared queue auth helper", () => {
   });
 
   it("returns null when the authorization header is missing or not bearer auth", async () => {
-    const { readBearerToken } = await import("../../api/_lib/shared-queue-auth.js");
+    const { readBearerToken } = await import("../../api/_lib/production-batch-auth.js");
 
     expect(readBearerToken({ headers: {} })).toBeNull();
     expect(readBearerToken({
@@ -59,9 +59,9 @@ describe("shared queue auth helper", () => {
       from: vi.fn(() => membershipQuery),
     });
 
-    const { resolveSharedQueueAuth } = await import("../../api/_lib/shared-queue-auth.js");
+    const { resolveProductionBatchAuth } = await import("../../api/_lib/production-batch-auth.js");
 
-    await expect(resolveSharedQueueAuth({
+    await expect(resolveProductionBatchAuth({
       headers: {
         authorization: "Bearer token-1",
       },
@@ -72,9 +72,9 @@ describe("shared queue auth helper", () => {
   });
 
   it("returns 401 when the request does not include a bearer token", async () => {
-    const { resolveSharedQueueAuth } = await import("../../api/_lib/shared-queue-auth.js");
+    const { resolveProductionBatchAuth } = await import("../../api/_lib/production-batch-auth.js");
 
-    await expect(resolveSharedQueueAuth({
+    await expect(resolveProductionBatchAuth({
       headers: {},
     })).rejects.toMatchObject({
       statusCode: 401,
@@ -94,9 +94,9 @@ describe("shared queue auth helper", () => {
       from: vi.fn(),
     });
 
-    const { resolveSharedQueueAuth } = await import("../../api/_lib/shared-queue-auth.js");
+    const { resolveProductionBatchAuth } = await import("../../api/_lib/production-batch-auth.js");
 
-    await expect(resolveSharedQueueAuth({
+    await expect(resolveProductionBatchAuth({
       headers: {
         authorization: "Bearer bad-token",
       },
@@ -120,9 +120,9 @@ describe("shared queue auth helper", () => {
       from: vi.fn(),
     });
 
-    const { resolveSharedQueueAuth } = await import("../../api/_lib/shared-queue-auth.js");
+    const { resolveProductionBatchAuth } = await import("../../api/_lib/production-batch-auth.js");
 
-    await expect(resolveSharedQueueAuth({
+    await expect(resolveProductionBatchAuth({
       headers: {
         authorization: "Bearer token-1",
       },
@@ -154,9 +154,9 @@ describe("shared queue auth helper", () => {
       })),
     });
 
-    const { resolveSharedQueueAuth } = await import("../../api/_lib/shared-queue-auth.js");
+    const { resolveProductionBatchAuth } = await import("../../api/_lib/production-batch-auth.js");
 
-    await expect(resolveSharedQueueAuth({
+    await expect(resolveProductionBatchAuth({
       headers: {
         authorization: "Bearer token-1",
       },
