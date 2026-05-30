@@ -1,5 +1,5 @@
-import { resolveSharedQueueAuth } from "./_lib/shared-queue-auth.js";
-import { getSessionContext } from "./_lib/shared-queue-store.js";
+import { resolveProductionBatchAuth } from "./_lib/production-batch-auth.js";
+import { getSessionContext } from "./_lib/production-batch-store.js";
 
 export default async function handler(req, res) {
   try {
@@ -9,7 +9,7 @@ export default async function handler(req, res) {
       return;
     }
 
-    req.auth = await resolveSharedQueueAuth(req);
+    req.auth = await resolveProductionBatchAuth(req);
     const context = await getSessionContext(req.auth);
     res.status(200).json(context);
   } catch (error) {
@@ -21,7 +21,7 @@ export default async function handler(req, res) {
     }
 
     res.status(500).json({
-      error: "Unable to load the shared queue session.",
+      error: "Unable to load the production batch session.",
     });
   }
 }

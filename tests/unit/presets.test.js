@@ -11,6 +11,7 @@ import {
   getPresetOptions,
   getPresetSnapshot,
   getPresetIdForListingId,
+  loadPresetRegistry,
   replacePresetDefinitionForTests,
   saveBoundingSizePresetDefinitionLocally,
   savePresetDefinitionLocally,
@@ -403,6 +404,64 @@ describe("presets", () => {
     expect(getPresetIdForListingId("unknown")).toBe("preset-a1f4c8e2b601");
   });
 
+  it("loads remote preset snapshots without consulting browser local storage", async () => {
+    const remoteSnapshot = {
+      version: 1,
+      defaultPresetId: "preset-remote",
+      sizePresets: [
+        {
+          id: "size-remote",
+          label: "Remote Size",
+          max: { widthIn: 2.5, heightIn: 1.5 },
+          min: { widthIn: 1.5, heightIn: 1 },
+        },
+      ],
+      presets: [
+        {
+          schemaVersion: 1,
+          id: "preset-remote",
+          name: "Remote Preset",
+          globalDefaults: {
+            boundingSizePresetId: "size-remote",
+            backingMm: 2.8,
+          },
+          lineDefaults: {
+            fontId: "skywalk",
+          },
+          lineRules: [{ match: { kind: "all" }, settings: { fontId: "skywalk" } }],
+          listingAssignments: [],
+        },
+      ],
+    };
+    const localStorageMock = {
+      getItem: vi.fn(() => {
+        throw new Error("localStorage should not be read");
+      }),
+      setItem: vi.fn(() => {
+        throw new Error("localStorage should not be written");
+      }),
+    };
+    vi.stubGlobal("localStorage", localStorageMock);
+    vi.stubGlobal("fetch", vi.fn(async (url) => {
+      if (String(url).startsWith("/api/preset-snapshot")) {
+        return {
+          status: 200,
+          ok: true,
+          json: async () => ({ snapshot: remoteSnapshot }),
+        };
+      }
+
+      throw new Error(`Unexpected fetch ${url}`);
+    }));
+
+    await loadPresetRegistry();
+
+    expect(getPresetOptions()).toEqual([{ id: "preset-remote", label: "Remote Preset" }]);
+    expect(getBoundingSizePresetDefinitionsForEditor()).toContainEqual(remoteSnapshot.sizePresets[0]);
+    expect(localStorageMock.getItem).not.toHaveBeenCalled();
+    expect(localStorageMock.setItem).not.toHaveBeenCalled();
+  });
+
   it("can save a preset definition locally and expose the full snapshot for remote sync", () => {
     const localStorageMock = {
       setItem: vi.fn(),
@@ -429,7 +488,7 @@ describe("presets", () => {
 
     expect(result.snapshot).toEqual(getPresetSnapshot());
     expect(getPresetDefinitionForEditor("preset-a1f4c8e2b601")?.name).toBe("All Candlepin Updated");
-    expect(localStorageMock.setItem).toHaveBeenCalledTimes(1);
+    expect(localStorageMock.setItem).not.toHaveBeenCalled();
   });
 
   it("can save custom size guides into the preset snapshot", () => {
@@ -455,7 +514,7 @@ describe("presets", () => {
     });
     expect(getBoundingSizePresetDefinitionsForEditor()).toContainEqual(result.preset);
     expect(getPresetSnapshot().sizePresets).toContainEqual(result.preset);
-    expect(localStorageMock.setItem).toHaveBeenCalledTimes(1);
+    expect(localStorageMock.setItem).not.toHaveBeenCalled();
   });
 
   it("can delete custom size guides but not the bundled default", () => {
@@ -486,7 +545,7 @@ describe("presets", () => {
     expect(getDefaultPresetId()).toBe("preset-b7d2e9f4c318");
     expect(getPresetOptions().map((preset) => preset.id)).not.toContain("preset-a1f4c8e2b601");
     expect(result.snapshot).toEqual(getPresetSnapshot());
-    expect(localStorageMock.setItem).toHaveBeenCalledTimes(1);
+    expect(localStorageMock.setItem).not.toHaveBeenCalled();
   });
 
   it("rejects deleting the final remaining preset", () => {

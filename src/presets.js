@@ -213,7 +213,6 @@ const FALLBACK_MANIFEST = {
 };
 
 const PRESET_MANIFEST_URL = "public/presets/manifest.json";
-const PRESET_STORAGE_KEY = "thankfulforyou.presetSnapshot";
 const PRESET_SNAPSHOT_VERSION = 1;
 const CURRENT_DEFAULT_BACKING_MM = 3.1;
 const LEGACY_DEFAULT_BACKING_MM = 2.2;
@@ -393,38 +392,6 @@ async function loadJson(url) {
   return response.json();
 }
 
-function readPersistedPresetSnapshot() {
-  if (typeof localStorage === "undefined") {
-    return null;
-  }
-
-  try {
-    const raw = localStorage.getItem(PRESET_STORAGE_KEY);
-    if (!raw) {
-      return null;
-    }
-
-    const parsed = JSON.parse(raw);
-    return parsed && parsed.version === PRESET_SNAPSHOT_VERSION && Array.isArray(parsed.presets)
-      ? parsed
-      : null;
-  } catch {
-    return null;
-  }
-}
-
-function persistPresetSnapshot(snapshot) {
-  if (typeof localStorage === "undefined") {
-    return;
-  }
-
-  try {
-    localStorage.setItem(PRESET_STORAGE_KEY, JSON.stringify(snapshot));
-  } catch {
-    // Ignore local storage failures and continue with the in-memory registry.
-  }
-}
-
 async function loadBundledPresetSnapshot(manifestUrl = PRESET_MANIFEST_URL) {
   const manifest = await loadJson(manifestUrl);
   const presetEntries = Array.isArray(manifest?.presets) ? manifest.presets : [];
@@ -449,15 +416,6 @@ async function loadBundledPresetSnapshot(manifestUrl = PRESET_MANIFEST_URL) {
 }
 
 export async function loadPresetRegistry(manifestUrl = PRESET_MANIFEST_URL) {
-  const persistedSnapshot = readPersistedPresetSnapshot();
-  const persistedRegistry = createPresetRegistryFromSnapshot(persistedSnapshot);
-
-  if (persistedRegistry?.options.length) {
-    presetRegistry = persistedRegistry;
-    setBoundingSizePresetDefinitions(presetRegistry.sizePresets);
-    return presetRegistry;
-  }
-
   try {
     const { fetchRemotePresetSnapshot } = await import("./preset-api.js");
     const remoteSnapshot = await fetchRemotePresetSnapshot();
@@ -466,7 +424,6 @@ export async function loadPresetRegistry(manifestUrl = PRESET_MANIFEST_URL) {
     if (remoteRegistry?.options.length) {
       presetRegistry = remoteRegistry;
       setBoundingSizePresetDefinitions(presetRegistry.sizePresets);
-      persistPresetSnapshot(remoteSnapshot);
       return presetRegistry;
     }
   } catch (error) {
@@ -634,7 +591,6 @@ export function savePresetDefinitionLocally({ preset, previousId = null }) {
 
   presetRegistry = nextRegistry;
   setBoundingSizePresetDefinitions(nextRegistry.sizePresets);
-  persistPresetSnapshot(snapshot);
 
   return {
     preset: normalizedPreset,
@@ -673,7 +629,6 @@ export function deletePresetDefinitionLocally(presetId) {
 
   presetRegistry = nextRegistry;
   setBoundingSizePresetDefinitions(nextRegistry.sizePresets);
-  persistPresetSnapshot(snapshot);
 
   return {
     deletedPresetId: normalizedPresetId,
@@ -697,7 +652,6 @@ function saveSizePresetSnapshot(sizePresets) {
 
   presetRegistry = nextRegistry;
   setBoundingSizePresetDefinitions(nextRegistry.sizePresets);
-  persistPresetSnapshot(snapshot);
 
   return snapshot;
 }

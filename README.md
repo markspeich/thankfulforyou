@@ -44,9 +44,9 @@ Or run both:
 npm test
 ```
 
-## Shared Queue Setup
+## Production Batch Setup
 
-The shared queue rollout uses Supabase for authenticated workspace access and shared queue persistence.
+The production batch rollout uses Supabase for authenticated workspace access and production batch persistence.
 
 Set these environment variables for local and hosted environments:
 
@@ -63,45 +63,52 @@ The browser session bootstrap reads:
 The app now populates `window.__APP_CONFIG__` from `/app-config.js`.
 
 - `npm start` loads `.env.local` when present, then serves `/app-config.js` dynamically from environment variables
-- `npm start` first prepares `.env.local` for Codex worktrees by merging missing shared-queue Supabase keys from the machine-local seed file at `C:\Users\Mark\CodexProjects\thankfulforyou\.env.local.shared`
+- `npm start` first prepares `.env.local` for Codex worktrees by merging missing production-batch Supabase keys from the machine-local seed file at `C:\Users\Mark\CodexProjects\thankfulforyou\.env.local.shared`
 - `npm run build` loads `.env.local` when present, then writes `dist/app-config.js` from the same environment variables
 - the browser key prefers `SUPABASE_PUBLISHABLE_KEY` and falls back to `SUPABASE_ANON_KEY`
 
-Operators sign in through the app with invite-only email-and-password Supabase Auth accounts. The app does not expose self-service sign-up for shared queue access.
+Operators sign in through the app with invite-only email-and-password Supabase Auth accounts. The app does not expose self-service sign-up for production batch access.
 
-If browser Supabase config is missing or the current shared queue session expires, the app shows a blocking sign-in or configuration state instead of falling back to local-only queue persistence.
+If browser Supabase config is missing or the current production batch session expires, the app shows a blocking sign-in or configuration state instead of falling back to local-only batch persistence.
 
-The server-side shared queue routes read:
+The server-side production batch routes read:
 
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
 
-Local shared-queue sign-in requires the dev server process to reach Supabase from Node. In restricted agent sandboxes, start `npm start` with network permission; otherwise token verification can fail even after the browser sign-in succeeds.
+Local production-batch sign-in requires the dev server process to reach Supabase from Node. In restricted agent sandboxes, start `npm start` with network permission; otherwise token verification can fail even after the browser sign-in succeeds.
 
-The shared queue implementation expects these Supabase resources:
+The production batch implementation expects these Supabase resources:
 
 - `workspaces`
 - `workspace_memberships`
-- `design_queues`
-- an RPC or equivalent transactional save path named `save_design_queue_snapshot`
+- `production_batches`
+- `batch_items`
+- `order_items`
+- `designs`
+- `design_lines`
+- `presets`
+- `preset_line_rules`
+- `preset_listing_assignments`
+- `size_guides`
 
 The first backend bootstrap for this repo uses a minimal production shape:
 
-- relational `workspaces`, `workspace_memberships`, and `design_queues`
+- relational `workspaces`, `workspace_memberships`, production batch, order item, design, preset, and size-guide tables
 - one seeded `Primary Workspace`
-- one seeded `Primary Queue`
-- canonical queue snapshots stored in `design_queues.queue_json` and `design_queues.orders_json`
+- one seeded `Primary Batch`
+- canonical batch, order item, design, and design line records stored in relational tables
 
 The seeded records currently use these identifiers:
 
 - workspace id: `11111111-1111-4111-8111-111111111111`
-- queue id: `22222222-2222-4222-8222-222222222222`
+- batch id: `22222222-2222-4222-8222-222222222222`
 
-The shared queue save path assumes the backend returns canonical queue snapshots with:
+The production batch save path assumes the backend returns canonical production batch snapshots with:
 
-- `queue`
-- `activeOrderId`
-- `orders`
+- `batch`
+- `activeOrderItemId`
+- `orderItems`
 
 Each shared design record should preserve audit and revision metadata so stale writes can be detected:
 
@@ -109,11 +116,11 @@ Each shared design record should preserve audit and revision metadata so stale w
 - `updatedAt`
 - `updatedBy`
 
-If the Supabase project has no auth users yet, create or invite an operator account first, then insert a `workspace_memberships` row for that user before testing the shared queue sign-in flow. A seeded workspace and queue alone are not enough to grant access.
+If the Supabase project has no auth users yet, create or invite an operator account first, then insert a `workspace_memberships` row for that user before testing the production batch sign-in flow. A seeded workspace and batch alone are not enough to grant access.
 
-For local verification of shared queue behavior, authenticate with a Supabase user that belongs to the target workspace before testing cross-browser restore, save conflicts, or recovery flows.
+For local verification of production batch behavior, authenticate with a Supabase user that belongs to the target workspace before testing cross-browser restore, save conflicts, or recovery flows.
 
-The local `npm start` dev server now serves the browser auth module graph directly from `node_modules` for the unbundled app shell, so shared queue sign-in and authenticated queue requests can be exercised locally against a real Supabase project.
+The local `npm start` dev server now serves the browser auth module graph directly from `node_modules` for the unbundled app shell, so production batch sign-in and authenticated batch requests can be exercised locally against a real Supabase project.
 
 ### Playwright Targeting
 
@@ -177,13 +184,13 @@ Recommended Vercel project settings:
 - Output Directory: `dist`
 - Install Command: `npm install`
 
-For preview deployments that exercise shared queue auth and persistence safely, use a non-production Supabase environment when possible. The preferred long-term setup is:
+For preview deployments that exercise production batch auth and persistence safely, use a non-production Supabase environment when possible. The preferred long-term setup is:
 
 - a Git branch deployed to a Vercel Preview deployment
 - a matching Supabase preview branch or separate staging project
 - preview-only Vercel environment variables pointing at that non-production Supabase environment
 
-For shared queue preview deployments, configure these Vercel environment variables at minimum:
+For production batch preview deployments, configure these Vercel environment variables at minimum:
 
 - `SUPABASE_URL`
 - `SUPABASE_PUBLISHABLE_KEY`
@@ -193,7 +200,7 @@ The preview deployment uses `SUPABASE_URL` plus `SUPABASE_PUBLISHABLE_KEY` to ge
 
 ## Supabase Branching Setup
 
-Supabase preview branches are the preferred way to test shared queue schema and auth changes remotely without pointing Vercel Preview at production data or production credentials.
+Supabase preview branches are the preferred way to test production batch schema and auth changes remotely without pointing Vercel Preview at production data or production credentials.
 
 This repo should keep its Supabase schema in `supabase/migrations`. Supabase branching depends on migration history to reproduce the backend shape reliably across preview branches and merges.
 
@@ -206,7 +213,7 @@ Recommended setup flow:
 5. Create or connect a Supabase preview branch for the Git branch you want to test.
 6. Point the Vercel Preview environment variables at that branch's `SUPABASE_URL`, publishable key, and service role key.
 
-If the repo has no migration history yet, create it before relying on Supabase preview branches for remote testing. Otherwise a new branch may not reproduce the current shared queue schema cleanly.
+If the repo has no migration history yet, create it before relying on Supabase preview branches for remote testing. Otherwise a new branch may not reproduce the current production batch schema cleanly.
 
 The hosted preview, analysis, and export all use these same real font files so layout decisions and SVG output stay consistent between local and Vercel environments.
 

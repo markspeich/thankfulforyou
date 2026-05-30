@@ -110,7 +110,7 @@ function buildClipboardItems() {
   return analyzeOrdersForClipboard().items;
 }
 
-async function copyBadgeQueuePayload() {
+async function copyBadgeBatchPayload() {
   const { items, skipped, totalOrders } = analyzeOrdersForClipboard();
 
   if (!items.length) {
@@ -129,7 +129,7 @@ async function copyBadgeQueuePayload() {
   console.info(`Copied ${items.length} Etsy design items to the clipboard.`);
 
   if (skipped.length) {
-    console.warn(`Skipped ${skipped.length} Etsy order(s) while building the badge queue.`, skipped);
+    console.warn(`Skipped ${skipped.length} Etsy order(s) while building the badge batch.`, skipped);
     return;
   }
 
@@ -146,7 +146,7 @@ function ensureCopyButton() {
   const button = document.createElement("button");
   button.type = "button";
   button.dataset.badgeClipboardCopy = "true";
-  button.textContent = "Copy Badge Queue";
+  button.textContent = "Copy Badge Batch";
   button.style.position = "fixed";
   button.style.right = "16px";
   button.style.bottom = "92px";
@@ -165,14 +165,14 @@ function ensureCopyButton() {
     button.textContent = "Copying...";
 
     try {
-      await copyBadgeQueuePayload();
+      await copyBadgeBatchPayload();
       button.textContent = "Copied";
       setTimeout(() => {
         button.disabled = false;
         button.textContent = originalLabel;
       }, 1200);
     } catch (error) {
-      console.error("Failed to copy badge queue payload.", error);
+      console.error("Failed to copy badge batch payload.", error);
       button.disabled = false;
       button.textContent = originalLabel;
     }

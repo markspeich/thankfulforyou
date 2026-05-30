@@ -66,10 +66,10 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Add a `Presets` dropdown directly below the `Order Text` field.
 - The `Preset` control card in the selected-order editor must expose its secondary actions from an ellipses menu in the card header rather than showing them as always-visible buttons.
 - The `Presets` dropdown must offer these production presets: `All Candlepin`, `Candlepin, Skywalk`, `Skywalk, Somekind`, and `Skywalk, Candlepin`.
-- The app should add a top-level left navigation bar with three items: `Design Queue`, `Presets`, and `Size Guides`.
+- The app should add a top-level left navigation bar with three items: `Production Batch`, `Presets`, and `Size Guides`.
 - The left navigation bar should be collapsible between an expanded icon-plus-label state and a collapsed icon-only state.
 - The left navigation bar should remember its expanded or collapsed state across browser refreshes.
-- `Design Queue` should open the existing production queue workspace with the design queue and selected-order editor.
+- `Production Batch` should open the existing production batch workspace with the production batch and selected-order editor.
 - `Presets` should open a dedicated preset editor workspace for viewing, editing, and creating presets.
 - `Size Guides` should open a dedicated size guide workspace for viewing, editing, and creating the named guide boxes used to constrain badge reel design sizes.
 - The `All Candlepin` preset must set every text line to the Candlepin font.
@@ -80,11 +80,10 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Selecting a preset must overwrite all current per-line settings for the order so every line resets to the preset's predefined values, including font, letter bridge, line bridge where applicable, horizontal offset, and text height.
 - Production preset definitions should move toward a schema-validated JSON source of truth instead of duplicating preset ids, labels, line rules, and listing-specific overrides across HTML and JavaScript.
 - A preset JSON definition should include the preset id, preset name, base line defaults, per-line rules, and any listing-specific overrides that belong to that preset.
-- Preset ids should remain stable once in use so saved queue data can continue resolving previously selected presets.
-- The app should allow editing an existing preset and saving changes back into that preset's JSON definition in place.
-- Live preset edits should save to browser local storage immediately and then sync the full preset snapshot to Neon so changes propagate across sessions.
-- When browser preset storage already has saved preset data, the app should prefer that local snapshot over remote Neon data during startup so local edits are not overwritten.
-- When browser preset storage is empty, the app should restore the preset snapshot from Neon before falling back to bundled preset defaults.
+- Preset ids should remain stable once in use so saved batch data can continue resolving previously selected presets.
+- The app should allow editing an existing preset and saving changes back into Supabase Postgres.
+- Live preset edits should save to Supabase Postgres so changes propagate across sessions and environments.
+- On startup, presets should load from Supabase Postgres before falling back to bundled defaults for an empty development database.
 - The app should allow creating a new preset from the current design-editor layout state.
 - The `Save as New Preset` flow should infer reusable preset structure instead of freezing a one-off order snapshot.
 - Shared values across every text line should become preset `lineDefaults`.
@@ -92,7 +91,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Shared differences across every line after the first should become a `remaining` line rule.
 - Remaining one-off line differences should become `index` line rules.
 - Preset creation and editing must not store order-specific text inside preset definitions.
-- Per-line preset and saved-order data must persist the `Lock Text Height` setting so reusable presets and restored queue items preserve which lines are protected from automatic fit resizing.
+- Per-line preset and saved-order data must persist the `Lock Text Height` setting so reusable presets and restored batch items preserve which lines are protected from automatic fit resizing.
 - Allow font selection per line of text.
 - Allow horizontal-only stretching per line of text so operators can make a line wider without making it taller.
 - Per-line `Horizontal Stretch` controls should allow values up to `200%`.
@@ -117,7 +116,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Each size guide must define both a maximum rectangle and a minimum rectangle so the preview can show the allowed size range for that badge reel design.
 - The size guide editor should live on its own `Size Guides` page rather than inside the preset editor.
 - The size guide editor should include a live preview of the max rectangle, min rectangle, dimension labels, and optional centered circle from the fields currently being edited.
-- The `Size Guides` page should follow the same two-pane production layout style as `Design Queue`: saved size guide rows in a left navigation panel, with the full size guide editor in a right editor panel on desktop-width screens. The editor panel should contain the number fields, preview, actions, and status.
+- The `Size Guides` page should follow the same two-pane production layout style as `Production Batch`: saved size guide rows in a left navigation panel, with the full size guide editor in a right editor panel on desktop-width screens. The editor panel should contain the number fields, preview, actions, and status.
 - Clicking a saved size guide row should load it into the editor directly; size guide rows should not include a separate `Edit` button.
 - The `New Guide` action should sit at the top of the left size-guide navigation panel. `Save Guide` and `Delete Guide` should sit at the top right of the size-guide editor panel.
 - Size guide editor fields should use compact spacing so production dimensions can be scanned and edited without excessive vertical spread.
@@ -138,7 +137,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - The live editing preview may use a faster browser-rendered path than the export pipeline, as long as it stays visually trustworthy for layout decisions.
 - The analyzed preview backing silhouette should render in `rgb(255, 0, 0)`.
 - Connectedness checks and other heavier geometry analysis should not run during routine typing or slider adjustments; they should run when the operator explicitly clicks `Complete`.
-- When a design's settings have not changed since the last save, the app should reuse its most recently saved analyzed export-ready geometry for queue revisit and SVG export instead of recomputing the same layout and paths again.
+- When a design's settings have not changed since the last save, the app should reuse its most recently saved analyzed export-ready geometry for batch revisit and SVG export instead of recomputing the same layout and paths again.
 - Add a `Weld Exported Design` checkbox directly below the order text field.
 - The `Weld Exported Design` checkbox must default to checked.
 - Add a global `Horizontal Stretch` slider in the Global controls box.
@@ -182,7 +181,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Prioritize automated test coverage for connectedness detection, neighboring glyph overlap behavior, multi-line overlap behavior, backing silhouette generation, explicit unit conversion, and SVG export path correctness.
 - Prefer deterministic test inputs and assertions so geometry regressions can be caught reliably across environments.
 - When a change affects the UI, the agent must verify the affected workflow in a browser before considering the work complete.
-- Browser-based UI verification is required for any user-facing layout, control, preview, queue, import, save, or export interaction that was changed.
+- Browser-based UI verification is required for any user-facing layout, control, preview, batch, import, save, or export interaction that was changed.
 - Browser UI verification should confirm both behavior and presentation, including control visibility, control state changes, preview updates, and basic usability of the modified flow.
 - Browser UI verification may be supported by automated browser tests, manual browser checks, or both, but some direct browser validation is required whenever UI changes are made.
 - If browser-based UI verification cannot be completed for a UI change, that limitation must be reported clearly along with the reason it could not be performed.
@@ -201,20 +200,20 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - The selected-order editor should focus on editable design text and layout settings rather than a separate editable design-label field.
 - Allow each order to store its own customer text and layout settings, including letter bridge, line bridge, text height, backing border, and guide visibility.
 - Provide a way to save the current preview and settings for the active order before moving to the next order.
-- Clicking `Save` should immediately save the active design text and layout settings, mark the queue item complete, and disable both primary save buttons until the design changes again.
+- Clicking `Save` should immediately save the active design text and layout settings, mark the batch item complete, and disable both primary save buttons until the design changes again.
 - Clicking `Save` should also start face analysis and cache the export-ready geometry tied to that completed state in the background without advancing to another design.
-- Clicking `Save & Next` should perform the same save, complete, and background-analysis work as `Save`, then advance immediately to the next queue item that is not already complete or exported when one exists while caching and shared-queue persistence continue in the background.
+- Clicking `Save & Next` should perform the same save, complete, and background-analysis work as `Save`, then advance immediately to the next batch item that is not already complete or exported when one exists while caching and production-batch persistence continue in the background.
 - The selected-order `Save` button state should depend only on whether the active design has unsaved text or layout changes, not on whether background analysis and export-geometry caching have finished.
 - Show which orders are not started, in progress, complete, or exported so a batch of orders can be completed without losing track.
-- The design queue should show a compact per-design face-analysis indicator: a small spinner while background analysis is running, a checkmark when the completed face layer is one connected piece, or a warning sign with the compact piece count when the completed face layer has multiple disconnected pieces.
+- The production batch should show a compact per-design face-analysis indicator: a small spinner while background analysis is running, a checkmark when the completed face layer is one connected piece, or a warning sign with the compact piece count when the completed face layer has multiple disconnected pieces.
 - Allow saved orders to be reopened for adjustment without losing their previously saved settings.
 - The active order editor should include a button for exporting the selected design as an SVG.
 - The active order editor should also include a button near `Export This Design` for copying the current design's generated SVG to the clipboard.
-- The left-side order navigation should include a button above the order list for exporting all queued designs that have text entered.
-- The left-side order navigation should also include a button near `Export All Designs` for copying the generated batch SVG for all queued designs with text to the clipboard.
+- The left-side order navigation should include a button above the order list for exporting all batched designs that have text entered.
+- The left-side order navigation should also include a button near `Export All Designs` for copying the generated batch SVG for all batched designs with text to the clipboard.
 - Export and copy actions should use the most recently saved analyzed geometry for each design rather than running fresh analysis implicitly.
 - Orders with unsaved layout changes should be completed again before they can be exported or copied.
-- Batch export should export every queued order that has text entered after each of those orders has been explicitly completed and analyzed.
+- Batch export should export every batched order that has text entered after each of those orders has been explicitly completed and analyzed.
 - Batch export should skip blank orders rather than producing empty geometry for them.
 - Export should treat imported Etsy quantity as the number of copies to place in the SVG output for that design.
 - When quantity is greater than `1`, the export should repeat that design the requested number of times, stacked vertically using the same production pitch as other exported designs.
@@ -238,50 +237,55 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Etsy listing ID `4439916732` must also apply a listing-specific per-line default of `44 mm` text height on line 1 while keeping the rest of the `Candlepin, Skywalk` preset defaults unchanged.
 - The current preset mapping must include Etsy listing ID `4465975709` to `Skywalk, Candlepin`.
 - Etsy listing ID `4465975709` must also apply a listing-specific per-line default of `21 mm` text height on line 2 while keeping the rest of the `Skywalk, Candlepin` preset defaults unchanged.
-- Imported Etsy data should create one queue row per personalized Etsy line item rather than one row per Etsy order.
-- Because one Etsy order may create multiple queue rows, user-facing queue and editor language should refer to designs or queue items rather than assuming one row always equals one Etsy order.
-- Imported Etsy queue rows should display as exactly four text lines: line 1 the Etsy order number, line 2 `Buyer: <buyer name>`, line 3 `Listing: <listing title>` truncated when needed, and line 4 `Personalization: <personalization>` using the same queue-row text styling as the other metadata lines except for a larger font size.
-- Re-importing a later Etsy batch must preserve any queue items already present in the current design queue instead of overwriting them.
-- During import, any Etsy line item that already exists in the current design queue should be skipped so the operator can import only newly arrived orders into the same working batch.
-- Imported queue items and subsequent design edits should persist across a browser refresh in local browser storage during the current batch workflow.
-- Queued designs must be automatically available across browsers and locations for authorized users without requiring a manual export or import handoff step.
-- Shared queue state should use a hosted backend as the source of truth instead of treating browser local storage as the primary saved record.
-- The hosted queue solution does not need to be Neon specifically; the production implementation should prefer a backend that can provide authentication, structured shared records, and a practical path to live multi-browser updates.
-- Queue ownership should belong to a shared workspace or operational batch context rather than to an individual user account.
-- Authenticated users should control access to shared queues and provide audit history, but user accounts should not own the queue data model.
-- The first shared-storage implementation should favor a Supabase-backed design with shared workspace queues, authenticated access, and room for future realtime updates.
-- Shared queue access should require authenticated operator sessions rather than anonymous browser access.
-- The first in-app shared-queue authentication flow should use Supabase Auth with invite-only operator accounts and email-plus-password sign-in.
-- The operator UI should not expose self-service sign-up for shared queue access.
-- Shared queue API requests should carry the browser's authenticated session token, and server routes should verify that token before loading or saving shared queue data.
-- Server-side shared queue authorization should resolve the signed-in operator's workspace membership and populate request auth context from verified identity rather than trusting browser-supplied workspace ids directly.
-- Browser local storage should remain only as a cache or temporary recovery mechanism and must not be treated as the primary source of truth when a shared hosted queue is available.
-- On startup, the app should load the current shared queue from the hosted backend first and use browser-local queue cache only for resilience or clearly surfaced recovery flows.
-- While the app is initially loading shared queue data, the production workspace should show an immediate visual loading state, such as skeleton placeholders, so operators can tell the shared queue is still being fetched.
-- The browser must not silently prefer stale local queue data over newer shared hosted queue data.
-- Ordinary local text and layout edits must not publish to the shared queue until the operator explicitly clicks `Save` or `Save & Next`.
-- After a shared-queue revision conflict, the operator workflow should present only two paths: save again from the current editor state to overwrite the shared version, or reload the shared version and discard the preserved local draft.
-- If required shared queue configuration is missing, the app should show a clear blocked configuration error state instead of silently falling back to local-only queue persistence.
-- If no valid authenticated shared-queue session is present, the app should show an operator sign-in state instead of attempting anonymous shared queue access or local-only fallback.
-- When a shared queue session is active, the app should provide a visible operator `Logout` action so the current browser can end its Supabase session without clearing local storage manually.
-- If a previously valid authenticated shared-queue session expires or is revoked, shared autosave should pause and the app should require sign-in again before shared queue writes resume.
-- Queue persistence should move from one serialized browser snapshot toward first-class shared records for workspaces, queues, and designs so collaboration and audit behavior can evolve cleanly.
-- The first Supabase shared-queue backend pass may keep `workspaces`, `workspace_memberships`, and `design_queues` as first-class relational records while storing the canonical queue snapshot in `design_queues.queue_json` and `design_queues.orders_json` so the current app contract can ship without a second storage-model rewrite.
-- The app should support saving the current queue batch to shared hosted storage so the current batch can be restored on another browser or after local storage is lost.
-- Persisted queue-item data should include enough information to restore the queue, the selected design, imported Etsy metadata, current text, current per-line settings, backing border, weld toggle, and saved/exported status after refresh.
-- Persisted shared-queue data should also include queue identity, queue membership in a workspace, `updatedAt`, `updatedBy`, and a revision or version field for each design so stale writes can be detected.
-- Shared queue editing should support one person creating a queue and another person opening and continuing that same queue later.
+- Imported Etsy data should create one order item per personalized Etsy line item rather than one order item per Etsy order.
+- Because one Etsy order may create multiple order items, user-facing batch and editor language should refer to designs, order items, or batch items rather than assuming one row always equals one Etsy order.
+- Imported batch items should display as exactly four text lines: line 1 the Etsy order number, line 2 `Buyer: <buyer name>`, line 3 `Listing: <listing title>` truncated when needed, and line 4 `Personalization: <personalization>` using the same row text styling as the other metadata lines except for a larger font size.
+- Re-importing a later Etsy batch must preserve any order items already present in the current production batch instead of overwriting them.
+- During import, any Etsy line item that already exists in the current production batch should be skipped so the operator can import only newly arrived orders into the same working batch.
+- Imported order items and subsequent design edits should persist across a browser refresh through Supabase Postgres during the current batch workflow.
+- Batched designs must be automatically available across browsers and locations for authorized users without requiring a manual export or import handoff step.
+- Shared batch state should use Supabase Postgres as the source of truth instead of treating browser local storage as a saved record.
+- The hosted batch solution should use Supabase Postgres for authentication-aware, structured shared records and a practical path to live multi-browser updates.
+- Batch ownership should belong to a shared workspace or operational batch context rather than to an individual user account.
+- Authenticated users should control access to shared production batches and provide audit history, but user accounts should not own the batch, order-item, design, preset, or size-guide data model.
+- Shared storage should use a Supabase-backed design with shared workspace batches, authenticated access, and room for future realtime updates.
+- Shared batch access should require authenticated operator sessions rather than anonymous browser access.
+- The first in-app production-batch authentication flow should use Supabase Auth with invite-only operator accounts and email-plus-password sign-in.
+- The operator UI should not expose self-service sign-up for production batch access.
+- Shared batch API requests should carry the browser's authenticated session token, and server routes should verify that token before loading or saving shared production data.
+- Server-side shared batch authorization should resolve the signed-in operator's workspace membership and populate request auth context from verified identity rather than trusting browser-supplied workspace ids directly.
+- On startup, the app should load the current production batch, order items, designs, presets, and size guides from Supabase Postgres. Browser local storage must not be used as a source of truth for production data.
+- While the app is initially loading shared production data, the production workspace should show an immediate visual loading state, such as skeleton placeholders, so operators can tell Supabase data is still being fetched.
+- The browser must not silently prefer stale local batch data over newer shared hosted batch data.
+- Ordinary local text and layout edits must not publish to Supabase until the operator explicitly clicks `Save` or `Save & Next`.
+- After a shared-batch revision conflict, the operator workflow should present only two paths: save again from the current editor state to overwrite the shared version, or reload the shared version and discard the preserved local draft.
+- If required Supabase batch configuration is missing, the app should show a clear blocked configuration error state instead of silently falling back to local-only persistence.
+- If no valid authenticated shared-batch session is present, the app should show an operator sign-in state instead of attempting anonymous batch access or local-only fallback.
+- When a shared batch session is active, the app should provide a visible operator `Logout` action so the current browser can end its Supabase session.
+- If a previously valid authenticated shared-batch session expires or is revoked, shared autosave should pause and the app should require sign-in again before shared writes resume.
+- Batch persistence should use first-class shared records for workspaces, production batches, batch items, order items, designs, and design lines so collaboration and audit behavior can evolve cleanly.
+- Production data must be stored relationally in Supabase Postgres rather than in browser local storage or JSON snapshot blobs.
+- The durable business object is an `order_item`. Each order item has one current `design` that stores its badge-reel artwork/layout state.
+- Operators should create a `production_batch` from a subset of order items, produce that batch, and then move on to a new batch.
+- A production batch should contain order items through `batch_items` so an order item can appear in later remake, rework, replacement, or test batches without losing its original order-item history.
+- Presets and size guides must be stored in Supabase Postgres and shared across environments for the authenticated workspace.
+- Presets should be stored as relational preset records plus line-rule records rather than one browser-local or remote JSON snapshot.
+- Size guides should be stored as relational size-guide records rather than inside a preset snapshot blob.
+- Storage and API contracts should use batch/order-item terminology directly; legacy batch-shaped snapshot contracts should be removed even when that requires recreating presets, size guides, or in-progress batch data from scratch.
+- The app should support saving the current production batch to Supabase so the current batch can be restored on another browser.
+- Persisted batch-item data should include enough information to restore the batch, the selected design, imported Etsy metadata, current text, current per-line settings, backing border, weld toggle, and saved/exported status after refresh.
+- Persisted shared-batch data should also include batch identity, batch membership in a workspace, `updatedAt`, `updatedBy`, and a revision or version field for each design so stale writes can be detected.
+- Shared batch editing should support one person creating a batch and another person opening and continuing that same batch later.
 - The collaboration model should support multiple authorized users in the future, but the first version may use lightweight edit ownership, presence, or stale-write detection instead of full simultaneous freeform co-editing.
 - The UI should show enough shared-state context for operators to avoid accidental overwrites, including at minimum who last updated a design and when.
 - Remote pre-production testing should support a Vercel preview deployment paired with a non-production Supabase environment such as a Supabase preview branch or staging project.
-- The repository should keep Supabase schema changes in versioned migration files so preview branches and future production promotions can reproduce the shared queue backend reliably.
+- The repository should keep Supabase schema changes in versioned migration files so preview branches and future production promotions can reproduce the production batch backend reliably.
 - In the selected-order editor, show the imported Etsy color as a read-only label directly below the `Design Text` field whenever imported color metadata is available.
 - In the selected-order editor, show the imported Etsy quantity as a read-only label directly below the `Color` label whenever imported quantity metadata is available.
 - If the imported color name contains the word `White`, highlight that displayed color name in the editor.
-- The app should provide a queue action to delete a single design without affecting the rest of the current batch.
-- The app should provide a batch-reset action to clear all queued and persisted designs when the operator is ready to start a new batch.
-- Clearing all designs should also clear the corresponding persisted browser storage for that batch data.
-- Clearing all designs should also clear the corresponding hosted saved batch when remote persistence is configured.
+- The app should provide a batch action to delete a single design without affecting the rest of the current batch.
+- The app should provide a batch-reset action to clear all batchd and persisted designs when the operator is ready to start a new batch.
+- Clearing all designs should also clear the corresponding hosted saved batch data in Supabase.
 - In the selected-order editor, when imported listing title and 75 by 75 image data are available, show the listing title above the listing image and place both above the main text-entry controls.
 - SVG export should place the face text layer and offset backing layer side by side, with the backing layer to the right of the text layer.
 - In batch export SVG output, each order's face and backing paths should appear below the previous order's paths in a single vertically stacked file.
@@ -292,7 +296,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Exported face-layer paths should also be welded/unioned so overlapping letters do not create internal cut lines.
 - Exported cut paths should be smooth enough for laser production and should avoid visibly pixelated/stair-stepped contours.
 - Exported cut paths should also avoid excessive vertex counts by applying conservative path simplification that reduces tiny traced stair-steps without materially changing the underlying outline shape.
-- Layout analysis and export should not fail when a queued text token contains more than one Unicode code point; when direct outline lookup cannot represent a token, the export pipeline should fall back to traced token geometry instead of crashing the design row.
+- Layout analysis and export should not fail when a batched text token contains more than one Unicode code point; when direct outline lookup cannot represent a token, the export pipeline should fall back to traced token geometry instead of crashing the design row.
 
 ## Later-Phase Workflow Enhancements
 
@@ -314,8 +318,8 @@ Future-facing product ideas and optional later-phase workflow enhancements are t
 - A production-safe minimum bridge width for 1/8 inch acrylic still needs explicit shop confirmation. Until confirmed otherwise, use 0.5 mm as the working default bridge target for Candlepin letter and line connections.
 - If direct Ruida support is pursued, prefer USB as the first transport path for this shop because the machine is currently USB-connected and because the current production workflow does not need to depend on Ruida Ethernet/UDP behavior.
 - The initial hosted deployment target is Vercel.
-- Vercel Deployment Protection may remain enabled as an outer deployment guard, but it must not substitute for in-app operator authentication on shared queue routes.
-- The first shared-backend bootstrap may seed one primary workspace and one primary queue so the first invited operator membership has an immediately usable shared batch to open.
+- Vercel Deployment Protection may remain enabled as an outer deployment guard, but it must not substitute for in-app operator authentication on production batch routes.
+- The first shared-backend bootstrap may seed one primary workspace and one primary batch so the first invited operator membership has an immediately usable shared batch to open.
 - A production deployment must include the real production font assets used for preview, analysis, and export. A deployment flow that omits those font files is not production-ready.
 - The production font assets are allowed to be included in the deployed app and served from the deployed `public/fonts` path.
 - Production deployment must preserve the geometry analysis and SVG export pipeline in a way that remains deterministic between local use and hosted use.
@@ -333,8 +337,8 @@ Future-facing product ideas and optional later-phase workflow enhancements are t
 - Vercel Python functions cannot assume CDN/static font assets are present on the function filesystem. If bundled font lookup fails, the geometry pipeline should fetch the same deployed `/public/fonts/...` asset from the request host and cache it in temporary function storage so hosted analysis and SVG export still use the production fonts.
 - When Vercel Deployment Protection is enabled, hosted analysis and export must preserve the request's protection context for any internal font asset fetches so the geometry pipeline does not fail with protected-preview 401 responses.
 - Deployment configuration should explicitly define the production install, build, and runtime behavior instead of relying on local-only defaults.
-- Production should have a smoke-test flow that verifies font loading, queue persistence, save-triggered analysis, and SVG export in the hosted environment before operators rely on it for Etsy batches.
-- Before processing real Etsy order data in production, the hosted app should require in-app authenticated operator access for shared queue features.
+- Production should have a smoke-test flow that verifies font loading, batch persistence, save-triggered analysis, and SVG export in the hosted environment before operators rely on it for Etsy batches.
+- Before processing real Etsy order data in production, the hosted app should require in-app authenticated operator access for production batch features.
 - For the current internal production rollout, enable in-app operator authentication before processing real Etsy order data, and keep Vercel Deployment Protection enabled if it remains operationally helpful.
 - Automated checks against a protected Vercel preview should use Vercel Protection Bypass for Automation so smoke tests can keep Deployment Protection enabled while still exercising the hosted UI and API routes.
 - Local development and browser automation should share one deterministic per-worktree port-resolution helper so multiple git worktrees can run in parallel without port collisions or hardcoded test URLs drifting from the local server.
@@ -363,16 +367,16 @@ The website should be a practical production tool rather than a marketing site. 
 - Export-ready output for production use.
 - A two-pane master-detail layout, with order navigation on the left and the selected order editor on the right.
 - On a standard 1920 by 1080 production monitor, the selected-order editor must keep the preview meaningfully visible while also keeping the first two line-control groups available without hiding the preview below the fold.
-- On desktop, the left queue should use roughly the leftmost quarter of the screen instead of the previous narrow column, so queue rows can show more order context without taking over the editor workspace.
-- The left queue should keep only `Complete` and `In Progress` summary counters visible in the main panel; `Not Started` does not need a visible counter in the desktop layout.
-- Queue batch actions should move behind a compact queue-tools affordance beside the `Design Queue` title instead of occupying a permanent full-width button block above the list.
-- The queue-tools menu should include a `View Color Counts` action that opens an in-app popup summarizing the entire queued batch's imported colors in a table, using imported quantity when available and otherwise counting each queued design as one.
-- After `Import Clipboard` runs, its status message should appear as a floating toast instead of only inside the queue-tools popup.
+- On desktop, the left batch panel should use roughly the leftmost quarter of the screen instead of the previous narrow column, so batch rows can show more order context without taking over the editor workspace.
+- The left batch panel should keep only `Complete` and `In Progress` summary counters visible in the main panel; `Not Started` does not need a visible counter in the desktop layout.
+- Batch actions should move behind a compact batch-tools affordance beside the `Production Batch` title instead of occupying a permanent full-width button block above the list.
+- The batch-tools menu should include a `View Color Counts` action that opens an in-app popup summarizing the entire batchd batch's imported colors in a table, using imported quantity when available and otherwise counting each batched design as one.
+- After `Import Clipboard` runs, its status message should appear as a floating toast instead of only inside the batch-tools popup.
 - All lightweight workflow alerts, confirmations, warnings, and errors should use a floating toast pattern so they do not insert cards into the editor layout or shift the page.
 - Layout-control copy and paste feedback should use that same floating toast pattern instead of introducing a separate notification style.
-- Future lightweight workflow confirmations and warnings of this kind should reuse the same floating toast technique so queue actions, copy/paste actions, save confirmations, and similar operator feedback stay visually consistent.
-- Shared queue stale-design conflicts and shared-sync warnings should use the same floating toast pattern. A stale-design alert should only show for the affected queue row and should say `A newer version of this design has been saved.` with a `Load Latest Design` action. The editor should not show a persistent shared-queue status card just to say the queue is connected.
-- Once a stale-design conflict is detected, the app must not send any further shared-queue saves, including background autosaves caused by row selection, until the operator clicks `Load Latest Design` or otherwise reloads the latest shared queue state.
+- Future lightweight workflow confirmations and warnings of this kind should reuse the same floating toast technique so batch actions, copy/paste actions, save confirmations, and similar operator feedback stay visually consistent.
+- Production batch stale-design conflicts and shared-sync warnings should use the same floating toast pattern. A stale-design alert should only show for the affected batch row and should say `A newer version of this design has been saved.` with a `Load Latest Design` action. The editor should not show a persistent production-batch status card just to say the batch is connected.
+- Once a stale-design conflict is detected, the app must not send any further production-batch saves, including background autosaves caused by row selection, until the operator clicks `Load Latest Design` or otherwise reloads the latest production batch state.
 - Under the selected-order header action row on desktop, the content area should split into two main columns.
 - The left editor column should contain the imported listing details, imported color and quantity, the `Design Text` field, and the preview with connectedness status.
 - In the selected-order editor, the `Design Text` title and textarea should use slightly larger type than the surrounding compact controls so entered personalization is easier to read while editing.
@@ -389,12 +393,12 @@ The website should be a practical production tool rather than a marketing site. 
 - After `Assign Preset to Listing` succeeds, the app should open a confirmation dialog that clearly states which preset was assigned to which Etsy listing so operators do not need to infer success from subtle status text alone.
 - The preset-assignment confirmation dialog should present as an explicit success state, including a green treatment and a visible checkmark.
 - In the selected-order workspace, the preview should remain the dominant element in the left column, with connectedness status directly below the preview instead of in a separate full-width row above it.
-- The connectedness status card below the preview should show the same left-side face-analysis indicators used in the queue row: spinner while completed-layout analysis is running, checkmark for one connected face piece, and warning plus compact piece count for multiple disconnected face pieces.
+- The connectedness status card below the preview should show the same left-side face-analysis indicators used in the batch row: spinner while completed-layout analysis is running, checkmark for one connected face piece, and warning plus compact piece count for multiple disconnected face pieces.
 - In the selected-order workspace, the per-line controls should sit in a narrower right-side rail and should stack one line card per row instead of showing line cards side by side.
 - The right-side control rail should own its own vertical scrolling so additional line-control groups remain reachable as operators add more text lines.
 - Each per-line control group should clearly map to a specific entered text line and should appear or disappear as the number of entered lines changes.
 - The first text line should not show a `Line Bridge` control because there is no line above it to connect to.
-- The left-side order queue should not show browser-storage sync notifications such as `Saved in this browser`, `Restored from browser`, or `No saved batch`; only meaningful remote Neon sync statuses should appear there.
+- The left-side production batch should show only meaningful Supabase sync statuses.
 - The selected-order header should hold the primary order actions in this order: `Save`, `Save & Next`, and `Cancel`.
 - The selected-order header should place `Copy This Design` and `Export This Design` behind a compact ellipsis tools menu instead of keeping them as always-visible primary actions.
 - The selected-order header should not hold the layout-copy utility actions; those actions should live in the right controls column above the `Presets` card so they read as layout tools rather than primary order actions.
@@ -417,31 +421,31 @@ The website should be a practical production tool rather than a marketing site. 
 - Deleting a preset must require an explicit in-app confirmation dialog before the preset is removed.
 - The selected-order header action buttons should remain visibly smaller than the preview and top-card content so they do not dominate the editor visually on desktop.
 - The app favicon should use bold enlarged white `TFU` lettering with a red outline around the letters themselves, prioritizing legibility in a browser tab at favicon size over decorative detail.
-- Command buttons should use one shared enabled color, one shared disabled color, and one shared enabled-hover color across queue tools, editor actions, export/copy/save/complete actions, and destructive actions. Non-command row-selection buttons may remain visually neutral.
-- Command buttons should share the same pill-shaped radius as the queue header `Paste` button so the action language stays visually consistent.
+- Command buttons should use one shared enabled color, one shared disabled color, and one shared enabled-hover color across batch tools, editor actions, export/copy/save/complete actions, and destructive actions. Non-command row-selection buttons may remain visually neutral.
+- Command buttons should share the same pill-shaped radius as the batch header `Paste` button so the action language stays visually consistent.
 - Command buttons should also provide a visible pressed state when clicked or tapped so operators get immediate tactile confirmation that the action was engaged.
-- The pressed state should follow the same shared interaction language across queue tools, editor actions, export/copy/save/complete actions, and destructive actions rather than being tuned separately per button family.
+- The pressed state should follow the same shared interaction language across batch tools, editor actions, export/copy/save/complete actions, and destructive actions rather than being tuned separately per button family.
 - The pressed-state feedback should stay practical and restrained for the production-workspace tone: a darker pressed color, slightly stronger border or inset feel, and a subtle downward movement are preferred over flashy animation.
 - Keyboard focus-visible styling should remain distinct from the pressed state so accessibility feedback is not weakened while adding pointer/touch feedback.
-- Destructive confirmations such as deleting one queued design or clearing the full batch should use a styled in-app confirmation dialog rather than browser-default confirm popups.
+- Destructive confirmations such as deleting one batched design or clearing the full batch should use a styled in-app confirmation dialog rather than browser-default confirm popups.
 
-The selected UI direction is the refined B1 Production Queue layout. Use `docs/mockups/layout-option-b-refined.html` as the primary visual reference for the current desktop implementation pass. The mockup intent is a left-side order queue with compact queue tools and a right-side two-column editor where the left column holds listing details, design text, and preview while the right column holds global controls plus stacked line controls. Sample renders should use a white raised text layer over a red backing silhouette.
+The selected UI direction is the refined B1 Production Batch layout. Use `docs/mockups/layout-option-b-refined.html` as the primary visual reference for the current desktop implementation pass. The mockup intent is a left-side order-item batch panel with compact batch tools and a right-side two-column editor where the left column holds listing details, design text, and preview while the right column holds global controls plus stacked line controls. Sample renders should use a white raised text layer over a red backing silhouette.
 
 For batch Etsy order sessions, the preferred workflow is:
 
-1. Click Add Order to create a new blank order row in the order queue.
+1. Click Add Order to create a new blank order row in the order-item batch panel.
 2. Enter or paste the customer text in the selected-order editor. The order text may contain multiple lines.
 3. Adjust the text layout using the existing preview and sliders.
 4. Save the layout for that order, saving both text and slider settings while analysis continues in the background.
 5. Automatically advance to the next unsaved order.
 6. Review the order list before export.
 7. Export the active order SVG from the editor.
-8. Export all queued orders with text from the order navigation when a batch SVG is needed.
-9. Delete a single queue item when it should be excluded from the batch.
-10. Clear the full queue and its saved local batch state when starting a new batch.
+8. Export all batched orders with text from the order navigation when a batch SVG is needed.
+9. Delete a single batch item when it should be excluded from the batch.
+10. Clear the full batch and its saved local batch state when starting a new batch.
 
 - Clicking `Save` should immediately mark the current design as finished for editing, even if connectedness analysis is still running in the background.
 - After clicking `Save`, both `Save` and `Save & Next` should stay disabled for that design until the operator changes the text or layout settings again.
 - The selected-order `Cancel` button should stay disabled until the active design has unsaved changes relative to its last saved shared design state.
-- Clicking `Cancel` should restore the active design text and layout settings to the last saved shared design state without publishing a new shared queue revision.
-- The `Save & Next` button should be disabled whenever there are no other queued designs that are still incomplete.
+- Clicking `Cancel` should restore the active design text and layout settings to the last saved shared design state without publishing a new production batch revision.
+- The `Save & Next` button should be disabled whenever there are no other batched designs that are still incomplete.

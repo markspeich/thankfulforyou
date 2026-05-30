@@ -27,7 +27,6 @@ const contentTypes = {
   ".svg": "image/svg+xml; charset=utf-8",
   ".ttf": "font/ttf",
 };
-const queueSnapshots = new Map();
 const presetSnapshots = new Map();
 
 function sendJson(response, statusCode, payload) {
@@ -114,7 +113,7 @@ const server = createServer(async (request, response) => {
     return;
   }
 
-  if (requestUrl.pathname === "/api/shared-session" || requestUrl.pathname === "/api/shared-queue") {
+  if (requestUrl.pathname === "/api/batch-session" || requestUrl.pathname === "/api/production-batch") {
     const bodyText = request.method === "PUT" ? await readRequestBody(request) : "";
     let payload = undefined;
 
@@ -122,15 +121,15 @@ const server = createServer(async (request, response) => {
       try {
         payload = JSON.parse(bodyText);
       } catch {
-        sendJson(response, 400, { error: "Shared queue payload must be valid JSON." });
+        sendJson(response, 400, { error: "Production batch payload must be valid JSON." });
         return;
       }
     }
 
     try {
-      const modulePath = requestUrl.pathname === "/api/shared-session"
-        ? "../api/shared-session.js"
-        : "../api/shared-queue.js";
+      const modulePath = requestUrl.pathname === "/api/batch-session"
+        ? "../api/batch-session.js"
+        : "../api/production-batch.js";
       const { default: handler } = await import(modulePath);
       const req = {
         method: request.method,
@@ -157,59 +156,9 @@ const server = createServer(async (request, response) => {
       await handler(req, res);
     } catch (error) {
       sendJson(response, 500, {
-        error: error instanceof Error ? error.message : "Unable to process shared queue request.",
+        error: error instanceof Error ? error.message : "Unable to process production batch request.",
       });
     }
-    return;
-  }
-
-  if (requestUrl.pathname === "/api/queue-snapshot") {
-    const workspaceKey = requestUrl.searchParams.get("workspaceKey") || "primary";
-
-    if (request.method === "GET") {
-      const snapshot = queueSnapshots.get(workspaceKey);
-      if (!snapshot) {
-        sendJson(response, 404, { error: "Queue snapshot not found." });
-        return;
-      }
-
-      sendJson(response, 200, { workspaceKey, snapshot });
-      return;
-    }
-
-    if (request.method === "DELETE") {
-      queueSnapshots.delete(workspaceKey);
-      response.writeHead(204);
-      response.end();
-      return;
-    }
-
-    if (request.method === "PUT") {
-      readRequestBody(request).then((body) => {
-        let payload = null;
-
-        try {
-          payload = JSON.parse(body);
-        } catch {
-          sendJson(response, 400, { error: "Queue snapshot payload must be valid JSON." });
-          return;
-        }
-
-        if (!payload || typeof payload !== "object" || typeof payload.workspaceKey !== "string") {
-          sendJson(response, 400, { error: "Queue snapshot payload must include a workspaceKey." });
-          return;
-        }
-
-        queueSnapshots.set(payload.workspaceKey, payload.snapshot ?? null);
-        sendJson(response, 200, {
-          workspaceKey: payload.workspaceKey,
-          snapshot: payload.snapshot ?? null,
-        });
-      });
-      return;
-    }
-
-    sendJson(response, 405, { error: "Method not allowed." });
     return;
   }
 

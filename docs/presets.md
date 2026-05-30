@@ -97,7 +97,7 @@ At minimum, update:
 - `lineRules`
 - `listingAssignments` if the preset should auto-apply for imported Etsy listing ids
 
-Keep `id` stable once the preset is in use. Saved queue data stores the preset id, so changing it later can break old saved state.
+Keep `id` stable once the preset is in use. Saved batch data stores the preset id, so changing it later can break old saved state.
 
 ### 3. Add The Preset To The Manifest
 

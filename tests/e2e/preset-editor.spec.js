@@ -163,18 +163,18 @@ async function installDelayedAnalysisRoute(page) {
   return pendingRequests;
 }
 
-async function openQueueTools(page) {
-  const menu = page.locator(".queue-header .queue-tools-menu");
+async function openBatchTools(page) {
+  const menu = page.locator(".batch-header .batch-tools-menu");
   if (await menu.evaluate((node) => node.hasAttribute("open"))) {
     return;
   }
 
-  await page.locator(".queue-header .queue-tools-toggle").click();
+  await page.locator(".batch-header .batch-tools-toggle").click();
   await expect(menu).toHaveAttribute("open", "");
 }
 
-async function clickQueueAction(page, name) {
-  await openQueueTools(page);
+async function clickBatchAction(page, name) {
+  await openBatchTools(page);
   await page.getByRole("button", { name }).click();
 }
 
@@ -231,7 +231,7 @@ function installSupabaseSession(page) {
       supabaseUrl: "https://example.supabase.co",
       supabaseAnonKey: "anon-key",
     };
-    window.__TFU_TEST_SHARED_QUEUE_ACCESS_TOKEN__ = providedSession.access_token;
+    window.__TFU_TEST_PRODUCTION_BATCH_ACCESS_TOKEN__ = providedSession.access_token;
     window.__TFU_TEST_SUPABASE_CLIENT__ = {
       auth: {
         getSession: async () => ({
@@ -265,30 +265,30 @@ function installSupabaseSession(page) {
   });
 }
 
-async function installDefaultSharedQueueRoutes(page) {
-  await page.route("**/api/shared-session", async (route) => {
+async function installDefaultProductionBatchRoutes(page) {
+  await page.route("**/api/batch-session", async (route) => {
     await route.fulfill({
       status: 200,
       contentType: "application/json; charset=utf-8",
       body: JSON.stringify({
         operator: { id: "user-1", email: "mark@example.com" },
         workspace: { id: "workspace-1", name: "Thankful For You" },
-        queue: { id: "queue-1", workspaceId: "workspace-1" },
+        batch: { id: "batch-1", workspaceId: "workspace-1" },
       }),
     });
   });
-  await page.route("**/api/shared-queue?queueId=queue-1", async (route) => {
+  await page.route("**/api/production-batch?batchId=batch-1", async (route) => {
     await route.fulfill({
       status: 200,
       contentType: "application/json; charset=utf-8",
       body: JSON.stringify({
-        queue: { id: "queue-1", workspaceId: "workspace-1" },
-        activeOrderId: null,
-        orders: [],
+        batch: { id: "batch-1", workspaceId: "workspace-1" },
+        activeOrderItemId: null,
+        orderItems: [],
       }),
     });
   });
-  await page.route("**/api/shared-queue", async (route) => {
+  await page.route("**/api/production-batch", async (route) => {
     if (route.request().method() !== "PUT") {
       await route.fallback();
       return;
@@ -305,10 +305,10 @@ async function installDefaultSharedQueueRoutes(page) {
 
 test.beforeEach(async ({ page, request }) => {
   await installSupabaseSession(page);
-  await installDefaultSharedQueueRoutes(page);
-  await request.delete("/api/queue-snapshot?workspaceKey=primary").catch(() => null);
+  await installDefaultProductionBatchRoutes(page);
+  await request.delete("/api/batch-snapshot?workspaceKey=primary").catch(() => null);
   await page.addInitScript(() => {
-    window.localStorage.removeItem("thankfulforyou.designQueue");
+    window.localStorage.removeItem("thankfulforyou.designBatch");
   });
 });
 
@@ -321,7 +321,7 @@ test("switches between order items, presets, and size guides from the left nav",
   const sizeGuideWorkspace = page.locator("#sizeGuideWorkspace");
   const editorPanel = page.getByLabel("Selected design editor");
 
-  await expect(page.getByRole("button", { name: "Design Queue" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Production Batch" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Presets" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Size Guides" })).toBeVisible();
   await expect(ordersWorkspace).toBeVisible();
@@ -341,7 +341,7 @@ test("switches between order items, presets, and size guides from the left nav",
   await expect(sizeGuideWorkspace).toBeVisible();
   await expect(page.getByRole("region", { name: "Size guides workspace" })).toBeVisible();
 
-  await page.getByRole("button", { name: "Design Queue" }).click();
+  await page.getByRole("button", { name: "Production Batch" }).click();
   await expect(page.getByRole("region", { name: "Order items workspace" })).toBeVisible();
   await expect(page.getByRole("region", { name: "Preset editor workspace" })).toBeHidden();
   await expect(sizeGuideWorkspace).toBeHidden();
@@ -362,7 +362,7 @@ test("shows size guides in the Size Guides workspace", async ({ page }) => {
   await expect(sizeGuide.getByText("Max 2.2 x 1.5 in")).toBeVisible();
   await expect(sizeGuide.getByText("Min 1.6 x 1.1 in")).toBeVisible();
   await expect(sizeGuide.locator(".size-preset-select-button")).toHaveCount(0);
-  await expect(sizeGuide.locator(".size-guide-panel .queue-header").getByRole("button", { name: "New Guide" })).toBeVisible();
+  await expect(sizeGuide.locator(".size-guide-panel .batch-header").getByRole("button", { name: "New Guide" })).toBeVisible();
   await expect(sizeGuide.locator(".size-guide-editor-panel .editor-header").getByRole("button", { name: "Save Guide" })).toBeVisible();
   await expect(sizeGuide.locator(".size-guide-editor-panel .editor-header").getByRole("button", { name: "Delete Guide" })).toBeVisible();
   await expect(sizeGuide.locator(".production-workspace")).toBeVisible();
@@ -515,7 +515,7 @@ test("shows a live preview while editing a size guide", async ({ page }) => {
 
 test("preserves the size guide when saving and reloading a layout preset", async ({ page }) => {
   await page.goto("/");
-  await clickQueueAction(page, "Add Design");
+  await clickBatchAction(page, "Add Design");
 
   await page.locator("#boundingSizePresetInput").selectOption("size-2-2x1-5");
   await clickPresetAction(page, "Save as New Preset");
@@ -538,8 +538,8 @@ test("creates a custom size guide and uses it in the order editor preview", asyn
   await expect(page.locator("#sizePresetEditorStatus")).toContainText("Saved Test Box");
   await expect(page.getByLabel("Size Guides").getByText("Test Box", { exact: true })).toBeVisible();
 
-  await page.getByRole("button", { name: "Design Queue" }).click();
-  await clickQueueAction(page, "Add Design");
+  await page.getByRole("button", { name: "Production Batch" }).click();
+  await clickBatchAction(page, "Add Design");
   await page.locator("#boundingSizePresetInput").selectOption({ label: "Test Box" });
 
   await expect(page.locator("#boundingSizePresetInput")).toHaveValue(/size-/);
@@ -557,7 +557,7 @@ test("creates a custom size guide and uses it in the order editor preview", asyn
   await page.locator("#sizePresetCircleDiameterInput").fill("1.75");
   await page.getByRole("button", { name: "Save Guide" }).click();
 
-  await page.getByRole("button", { name: "Design Queue" }).click();
+  await page.getByRole("button", { name: "Production Batch" }).click();
   await page.locator("#boundingSizePresetInput").selectOption({ label: "Circle Box" });
 
   await expect(page.locator("#preview circle.preview-guide-box")).toHaveCount(1);
@@ -625,7 +625,7 @@ test("can create a new preset from order settings and update an existing preset"
 
   await page.goto("/");
 
-  await clickQueueAction(page, "Add Design");
+  await clickBatchAction(page, "Add Design");
   await page.locator("#textInput").fill("Morgan\nRN");
   await page.locator('[data-line-index="0"] [data-setting="fontId"]').selectOption("skywalk");
   await page.locator('[data-line-index="1"] [data-setting="fontId"]').selectOption("somekind");
@@ -653,7 +653,7 @@ test("can create a new preset from order settings and update an existing preset"
   await expect(page.locator("#presetEditorSelect")).toHaveValue(createdPresetId);
   await expect(page.locator("#presetEditorSelect")).toContainText(createdPresetName);
 
-  await page.getByRole("button", { name: "Design Queue" }).click();
+  await page.getByRole("button", { name: "Production Batch" }).click();
   await page.locator("#presetInput").selectOption(createdPresetId);
   await expect(page.locator("#presetInput")).toHaveValue(createdPresetId);
   await expect(page.locator('[data-line-index="0"] [data-setting="fontId"]')).toHaveValue("skywalk");
@@ -664,7 +664,7 @@ test("can create a new preset from order settings and update an existing preset"
   await completeDesign(page, "Design 1");
   await expect(page.locator("#downloadButton")).toBeEnabled();
 
-  await clickQueueAction(page, "Add Design");
+  await clickBatchAction(page, "Add Design");
   await page.locator("#textInput").fill("Taylor\nRN");
   await page.locator("#presetInput").selectOption(createdPresetId);
   await expect(page.locator("#presetInput")).toHaveValue(createdPresetId);
@@ -694,7 +694,7 @@ test("can create a new preset from order settings and update an existing preset"
   await expect(page.locator("#presetEditorSelect")).toHaveValue(createdPresetId);
   await expect(page.locator("#presetEditorSelect")).toContainText(renamedPresetName);
 
-  await page.getByRole("button", { name: "Design Queue" }).click();
+  await page.getByRole("button", { name: "Production Batch" }).click();
   await page.locator("#orderList .order-row").filter({ hasText: "Design 1" }).click();
   await expect(page.locator("#presetInput")).toHaveValue(createdPresetId);
   await expect(page.locator("#downloadButton")).toBeEnabled();
@@ -717,8 +717,8 @@ test("can create a new preset from order settings and update an existing preset"
   await clickPresetAction(page, "Assign Preset to Listing");
   const assignmentDialog = page.locator("#presetAssignmentDialog");
   await expect(assignmentDialog).toBeVisible();
-  await expect(assignmentDialog.locator(".queue-summary-card")).toHaveClass(/queue-summary-card-success/);
-  await expect(assignmentDialog.locator(".queue-summary-success-icon")).toBeVisible();
+  await expect(assignmentDialog.locator(".batch-summary-card")).toHaveClass(/batch-summary-card-success/);
+  await expect(assignmentDialog.locator(".batch-summary-success-icon")).toBeVisible();
   await expect(assignmentDialog).toContainText(renamedPresetName);
   await expect(assignmentDialog).toContainText(listingId);
   await page.getByRole("button", { name: "Close assignment confirmation" }).click();
@@ -758,7 +758,7 @@ test("assigning a preset to a completed imported order clears stale batch-export
 
   await page.goto("/");
 
-  await clickQueueAction(page, "Add Design");
+  await clickBatchAction(page, "Add Design");
   await page.locator("#textInput").fill("Avery\nRN");
   await page.locator('[data-line-index="0"] [data-setting="fontId"]').selectOption("skywalk");
   await page.locator('[data-line-index="1"] [data-setting="fontId"]').selectOption("somekind");
@@ -775,7 +775,7 @@ test("assigning a preset to a completed imported order clears stale batch-export
   }, { timeout: 10000 }).toBe(true);
   await expect(page.locator("#presetEditorStatus")).toContainText("Saved");
 
-  await page.getByRole("button", { name: "Design Queue" }).click();
+  await page.getByRole("button", { name: "Production Batch" }).click();
   await completeDesign(page, "Design 1");
 
   await setClipboardPayload(page, importPayload);
@@ -800,7 +800,7 @@ test("assigning a preset to a completed imported order clears stale batch-export
   await expect(page.locator("#downloadButton")).toBeDisabled();
 
   await page.locator("#orderList .order-row").filter({ hasText: "Design 1" }).click();
-  await openQueueTools(page);
+  await openBatchTools(page);
   await expect(page.getByRole("button", { name: "Export All Designs" })).toBeDisabled();
 });
 
@@ -814,7 +814,7 @@ test("renaming a preset while analysis is running still restores export readines
 
   await page.goto("/");
 
-  await clickQueueAction(page, "Add Design");
+  await clickBatchAction(page, "Add Design");
   await page.locator("#textInput").fill("Jordan\nRN");
   await page.locator('[data-line-index="0"] [data-setting="fontId"]').selectOption("skywalk");
   await page.locator('[data-line-index="1"] [data-setting="fontId"]').selectOption("somekind");
@@ -831,7 +831,7 @@ test("renaming a preset while analysis is running still restores export readines
   }, { timeout: 10000 }).toBe(true);
   await expect(page.locator("#presetEditorStatus")).toContainText("Saved");
 
-  await page.getByRole("button", { name: "Design Queue" }).click();
+  await page.getByRole("button", { name: "Production Batch" }).click();
   await page.locator("#presetInput").selectOption(createdPresetId);
   await page.locator("#captureButton").click();
 
@@ -848,7 +848,7 @@ test("renaming a preset while analysis is running still restores export readines
   const pendingAnalysis = pendingAnalyses.shift();
   await pendingAnalysis.fulfill();
 
-  await page.getByRole("button", { name: "Design Queue" }).click();
+  await page.getByRole("button", { name: "Production Batch" }).click();
   await expect(page.locator("#presetInput")).toHaveValue(createdPresetId);
   await expect.poll(async () => page.locator("#downloadButton").isEnabled(), { timeout: 20000 }).toBe(true);
   await expect(page.locator("#orderList .order-row").filter({ hasText: "Design 1" })).toContainText("Complete");
@@ -909,7 +909,7 @@ test("shows assigned listings for a preset and lets operators unassign them", as
   await expect(page.locator(".preset-assignment-row")).toHaveCount(0);
   await expect(page.locator("#presetAssignmentsEmptyState")).toContainText("No Etsy listings are currently assigned to this preset.");
 
-  await page.getByRole("button", { name: "Design Queue" }).click();
+  await page.getByRole("button", { name: "Production Batch" }).click();
   await expect(page.locator("#presetInput")).not.toHaveValue("preset-c3e8a1d7f520");
   await expect(page.locator("#downloadButton")).toBeDisabled();
 
@@ -968,7 +968,7 @@ test("deletes a saved preset only after confirmation and migrates active uses aw
 
   await page.goto("/");
 
-  await clickQueueAction(page, "Add Design");
+  await clickBatchAction(page, "Add Design");
   await page.locator("#textInput").fill("Morgan\nRN");
   await page.locator('[data-line-index="0"] [data-setting="fontId"]').selectOption("skywalk");
   await page.locator('[data-line-index="1"] [data-setting="fontId"]').selectOption("somekind");
@@ -984,7 +984,7 @@ test("deletes a saved preset only after confirmation and migrates active uses aw
   }, { timeout: 10000 }).toBe(true);
   await expect(page.locator("#presetEditorStatus")).toContainText("Saved");
 
-  await page.getByRole("button", { name: "Design Queue" }).click();
+  await page.getByRole("button", { name: "Production Batch" }).click();
   await page.locator("#presetInput").selectOption(createdPresetId);
   await expect(page.locator("#presetInput")).toHaveValue(createdPresetId);
 
@@ -1007,7 +1007,7 @@ test("deletes a saved preset only after confirmation and migrates active uses aw
   await expect(page.locator("#presetEditorStatus")).toContainText("Deleted");
   await expect(page.locator(`#presetEditorSelect option[value="${createdPresetId}"]`)).toHaveCount(0);
 
-  await page.getByRole("button", { name: "Design Queue" }).click();
+  await page.getByRole("button", { name: "Production Batch" }).click();
   await expect(page.locator("#presetInput")).not.toHaveValue(createdPresetId);
   await expect(page.locator(`#presetInput option[value="${createdPresetId}"]`)).toHaveCount(0);
 });

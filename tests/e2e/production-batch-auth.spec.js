@@ -86,13 +86,13 @@ function installSupabaseSessionWithLogoutTracking(page, session) {
   }, { providedSession: session });
 }
 
-test("shows an operator sign-in screen when no shared session exists", async ({ page }) => {
+test("shows an operator sign-in screen when no batch session exists", async ({ page }) => {
   await installSupabaseSession(page, null);
 
   await page.goto("/");
 
-  await expect(page.getByRole("heading", { name: "Sign in to shared queue" })).toBeVisible();
-  await expect(page.locator("#sharedQueueSignInForm")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Sign in to production batch" })).toBeVisible();
+  await expect(page.locator("#productionBatchSignInForm")).toBeVisible();
 });
 
 test("shows a blocked configuration error when Supabase config is missing", async ({ page }) => {
@@ -101,7 +101,7 @@ test("shows a blocked configuration error when Supabase config is missing", asyn
       auth: {
         getSession: async () => {
           throw new Error(
-            "Supabase browser config is missing. Set window.__APP_CONFIG__.supabaseUrl and window.__APP_CONFIG__.supabaseAnonKey before loading shared sessions.",
+            "Supabase browser config is missing. Set window.__APP_CONFIG__.supabaseUrl and window.__APP_CONFIG__.supabaseAnonKey before loading batch sessions.",
           );
         },
       },
@@ -110,11 +110,11 @@ test("shows a blocked configuration error when Supabase config is missing", asyn
 
   await page.goto("/");
 
-  await expect(page.locator("#sharedQueueSignInForm")).toBeHidden();
-  await expect(page.locator("#sharedQueueAuthError")).toContainText("Supabase browser config is missing.");
+  await expect(page.locator("#productionBatchSignInForm")).toBeHidden();
+  await expect(page.locator("#productionBatchAuthError")).toContainText("Supabase browser config is missing.");
 });
 
-test("returns to the sign-in state when a shared queue save gets a 401", async ({ page }) => {
+test("returns to the sign-in state when a production batch save gets a 401", async ({ page }) => {
   await installSupabaseSession(page, {
     access_token: "token-1",
     user: {
@@ -123,25 +123,25 @@ test("returns to the sign-in state when a shared queue save gets a 401", async (
     },
   });
 
-  await page.route("**/api/shared-session", async (route) => {
+  await page.route("**/api/batch-session", async (route) => {
     await route.fulfill({
       status: 200,
       contentType: "application/json; charset=utf-8",
       body: JSON.stringify({
         operator: { id: "user-1", email: "mark@example.com" },
         workspace: { id: "workspace-1", name: "Thankful For You" },
-        queue: { id: "queue-1", workspaceId: "workspace-1" },
+        batch: { id: "batch-1", workspaceId: "workspace-1" },
       }),
     });
   });
-  await page.route("**/api/shared-queue?queueId=queue-1", async (route) => {
+  await page.route("**/api/production-batch?batchId=batch-1", async (route) => {
     await route.fulfill({
       status: 200,
       contentType: "application/json; charset=utf-8",
       body: JSON.stringify({
-        queue: { id: "queue-1", workspaceId: "workspace-1" },
-        activeOrderId: "remote-order-1",
-        orders: [
+        batch: { id: "batch-1", workspaceId: "workspace-1" },
+        activeOrderItemId: "remote-order-1",
+        orderItems: [
           {
             id: "remote-order-1",
             revision: 1,
@@ -170,7 +170,7 @@ test("returns to the sign-in state when a shared queue save gets a 401", async (
       }),
     });
   });
-  await page.route("**/api/shared-queue", async (route) => {
+  await page.route("**/api/production-batch", async (route) => {
     if (route.request().method() !== "PUT") {
       await route.fallback();
       return;
@@ -210,8 +210,8 @@ test("returns to the sign-in state when a shared queue save gets a 401", async (
   await page.locator("#textInput").fill("Expired Session");
   await page.getByRole("button", { name: "Save", exact: true }).click();
 
-  await expect(page.getByRole("heading", { name: "Sign in to shared queue" })).toBeVisible();
-  await expect(page.locator("#sharedQueueAuthError")).toContainText("Shared queue session expired");
+  await expect(page.getByRole("heading", { name: "Sign in to production batch" })).toBeVisible();
+  await expect(page.locator("#productionBatchAuthError")).toContainText("Production batch session expired");
 });
 
 test("logs out from the left nav and returns to the sign-in gate", async ({ page }) => {
@@ -223,25 +223,25 @@ test("logs out from the left nav and returns to the sign-in gate", async ({ page
     },
   });
 
-  await page.route("**/api/shared-session", async (route) => {
+  await page.route("**/api/batch-session", async (route) => {
     await route.fulfill({
       status: 200,
       contentType: "application/json; charset=utf-8",
       body: JSON.stringify({
         operator: { id: "user-1", email: "mark@example.com" },
         workspace: { id: "workspace-1", name: "Thankful For You" },
-        queue: { id: "queue-1", workspaceId: "workspace-1" },
+        batch: { id: "batch-1", workspaceId: "workspace-1" },
       }),
     });
   });
-  await page.route("**/api/shared-queue?queueId=queue-1", async (route) => {
+  await page.route("**/api/production-batch?batchId=batch-1", async (route) => {
     await route.fulfill({
       status: 200,
       contentType: "application/json; charset=utf-8",
       body: JSON.stringify({
-        queue: { id: "queue-1", workspaceId: "workspace-1" },
-        activeOrderId: "remote-order-1",
-        orders: [
+        batch: { id: "batch-1", workspaceId: "workspace-1" },
+        activeOrderItemId: "remote-order-1",
+        orderItems: [
           {
             id: "remote-order-1",
             revision: 1,
@@ -272,11 +272,11 @@ test("logs out from the left nav and returns to the sign-in gate", async ({ page
   });
 
   await page.goto("/");
-  await expect(page.locator("#sharedQueueLogoutButton")).toBeVisible();
+  await expect(page.locator("#productionBatchLogoutButton")).toBeVisible();
 
-  await page.locator("#sharedQueueLogoutButton").click();
+  await page.locator("#productionBatchLogoutButton").click();
 
-  await expect(page.getByRole("heading", { name: "Sign in to shared queue" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Sign in to production batch" })).toBeVisible();
   await expect.poll(async () => page.evaluate(() => window.__TFU_SIGN_OUT_CALLS__)).toBe(1);
 });
 
@@ -289,25 +289,25 @@ test("switches to the presets workspace from the left nav", async ({ page }) => 
     },
   });
 
-  await page.route("**/api/shared-session", async (route) => {
+  await page.route("**/api/batch-session", async (route) => {
     await route.fulfill({
       status: 200,
       contentType: "application/json; charset=utf-8",
       body: JSON.stringify({
         operator: { id: "user-1", email: "mark@example.com" },
         workspace: { id: "workspace-1", name: "Thankful For You" },
-        queue: { id: "queue-1", workspaceId: "workspace-1" },
+        batch: { id: "batch-1", workspaceId: "workspace-1" },
       }),
     });
   });
-  await page.route("**/api/shared-queue?queueId=queue-1", async (route) => {
+  await page.route("**/api/production-batch?batchId=batch-1", async (route) => {
     await route.fulfill({
       status: 200,
       contentType: "application/json; charset=utf-8",
       body: JSON.stringify({
-        queue: { id: "queue-1", workspaceId: "workspace-1" },
-        activeOrderId: "remote-order-1",
-        orders: [],
+        batch: { id: "batch-1", workspaceId: "workspace-1" },
+        activeOrderItemId: "remote-order-1",
+        orderItems: [],
       }),
     });
   });
@@ -326,7 +326,7 @@ test("switches to the presets workspace from the left nav", async ({ page }) => 
   await expect(page.locator("#sizeGuideWorkspace")).toBeVisible();
 });
 
-test("shows a loading skeleton while the initial shared queue loads", async ({ page }) => {
+test("shows a loading skeleton while the initial production batch loads", async ({ page }) => {
   await installSupabaseSession(page, {
     access_token: "token-1",
     user: {
@@ -336,41 +336,41 @@ test("shows a loading skeleton while the initial shared queue loads", async ({ p
   });
 
   let releaseSharedSession;
-  const sharedSessionReady = new Promise((resolve) => {
+  const batchSessionReady = new Promise((resolve) => {
     releaseSharedSession = resolve;
   });
 
-  await page.route("**/api/shared-session", async (route) => {
-    await sharedSessionReady;
+  await page.route("**/api/batch-session", async (route) => {
+    await batchSessionReady;
     await route.fulfill({
       status: 200,
       contentType: "application/json; charset=utf-8",
       body: JSON.stringify({
         operator: { id: "user-1", email: "mark@example.com" },
         workspace: { id: "workspace-1", name: "Thankful For You" },
-        queue: { id: "queue-1", workspaceId: "workspace-1" },
+        batch: { id: "batch-1", workspaceId: "workspace-1" },
       }),
     });
   });
-  await page.route("**/api/shared-queue?queueId=queue-1", async (route) => {
+  await page.route("**/api/production-batch?batchId=batch-1", async (route) => {
     await route.fulfill({
       status: 200,
       contentType: "application/json; charset=utf-8",
       body: JSON.stringify({
-        queue: { id: "queue-1", workspaceId: "workspace-1" },
-        activeOrderId: "remote-order-1",
-        orders: [],
+        batch: { id: "batch-1", workspaceId: "workspace-1" },
+        activeOrderItemId: "remote-order-1",
+        orderItems: [],
       }),
     });
   });
 
   await page.goto("/");
 
-  await expect(page.locator("#initialQueueLoading")).toBeVisible();
-  await expect(page.locator("#initialQueueLoading")).toContainText("Loading shared queue");
-  await expect(page.locator(".initial-queue-loading .order-skeleton-row")).toHaveCount(4);
+  await expect(page.locator("#initialBatchLoading")).toBeVisible();
+  await expect(page.locator("#initialBatchLoading")).toContainText("Loading production batch");
+  await expect(page.locator(".initial-batch-loading .order-skeleton-row")).toHaveCount(4);
 
   releaseSharedSession();
 
-  await expect(page.locator("#initialQueueLoading")).toBeHidden();
+  await expect(page.locator("#initialBatchLoading")).toBeHidden();
 });

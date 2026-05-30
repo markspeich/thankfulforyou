@@ -1,14 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const getSessionContextMock = vi.fn();
-const resolveSharedQueueAuthMock = vi.fn();
+const resolveProductionBatchAuthMock = vi.fn();
 
-vi.mock("../../api/_lib/shared-queue-store.js", () => ({
+vi.mock("../../api/_lib/production-batch-store.js", () => ({
   getSessionContext: getSessionContextMock,
 }));
 
-vi.mock("../../api/_lib/shared-queue-auth.js", () => ({
-  resolveSharedQueueAuth: resolveSharedQueueAuthMock,
+vi.mock("../../api/_lib/production-batch-auth.js", () => ({
+  resolveProductionBatchAuth: resolveProductionBatchAuthMock,
 }));
 
 function createResponseRecorder() {
@@ -33,26 +33,26 @@ function createResponseRecorder() {
 beforeEach(() => {
   vi.resetModules();
   getSessionContextMock.mockReset();
-  resolveSharedQueueAuthMock.mockReset();
+  resolveProductionBatchAuthMock.mockReset();
 });
 
 afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("shared session api", () => {
-  it("returns the current operator, workspace, and queue context for an authenticated request", async () => {
-    resolveSharedQueueAuthMock.mockResolvedValue({
+describe("batch session api", () => {
+  it("returns the current operator, workspace, and batch context for an authenticated request", async () => {
+    resolveProductionBatchAuthMock.mockResolvedValue({
       userId: "user-1",
       workspaceId: "workspace-1",
     });
     getSessionContextMock.mockResolvedValue({
       operator: { id: "user-1", email: "mark@example.com" },
       workspace: { id: "workspace-1", name: "Thankful For You" },
-      queue: { id: "queue-1", workspaceId: "workspace-1" },
+      batch: { id: "batch-1", workspaceId: "workspace-1" },
     });
 
-    const { default: handler } = await import("../../api/shared-session.js");
+    const { default: handler } = await import("../../api/batch-session.js");
     const response = createResponseRecorder();
 
     await handler({
@@ -60,7 +60,7 @@ describe("shared session api", () => {
       headers: { authorization: "Bearer token-1" },
     }, response);
 
-    expect(resolveSharedQueueAuthMock).toHaveBeenCalledWith(expect.objectContaining({
+    expect(resolveProductionBatchAuthMock).toHaveBeenCalledWith(expect.objectContaining({
       method: "GET",
       headers: { authorization: "Bearer token-1" },
     }));
@@ -72,17 +72,17 @@ describe("shared session api", () => {
     expect(response.body).toEqual({
       operator: { id: "user-1", email: "mark@example.com" },
       workspace: { id: "workspace-1", name: "Thankful For You" },
-      queue: { id: "queue-1", workspaceId: "workspace-1" },
+      batch: { id: "batch-1", workspaceId: "workspace-1" },
     });
   });
 
   it("returns 403 for authenticated requests without shared workspace access", async () => {
-    resolveSharedQueueAuthMock.mockRejectedValue(Object.assign(new Error("Shared workspace access denied."), {
+    resolveProductionBatchAuthMock.mockRejectedValue(Object.assign(new Error("Shared workspace access denied."), {
       statusCode: 403,
       expose: true,
     }));
 
-    const { default: handler } = await import("../../api/shared-session.js");
+    const { default: handler } = await import("../../api/batch-session.js");
     const response = createResponseRecorder();
 
     await handler({
@@ -94,14 +94,14 @@ describe("shared session api", () => {
     expect(response.body).toEqual({ error: "Shared workspace access denied." });
   });
 
-  it("returns a generic 500 message for unexpected shared session errors", async () => {
-    resolveSharedQueueAuthMock.mockResolvedValue({
+  it("returns a generic 500 message for unexpected batch session errors", async () => {
+    resolveProductionBatchAuthMock.mockResolvedValue({
       userId: "user-1",
       workspaceId: "workspace-1",
     });
     getSessionContextMock.mockRejectedValue(new Error("Raw database failure"));
 
-    const { default: handler } = await import("../../api/shared-session.js");
+    const { default: handler } = await import("../../api/batch-session.js");
     const response = createResponseRecorder();
 
     await handler({
@@ -110,15 +110,15 @@ describe("shared session api", () => {
     }, response);
 
     expect(response.statusCode).toBe(500);
-    expect(response.body).toEqual({ error: "Unable to load the shared queue session." });
+    expect(response.body).toEqual({ error: "Unable to load the production batch session." });
   });
 
-  it("requires authentication before loading the shared session context", async () => {
-    resolveSharedQueueAuthMock.mockRejectedValue(Object.assign(new Error("Authentication required."), {
+  it("requires authentication before loading the batch session context", async () => {
+    resolveProductionBatchAuthMock.mockRejectedValue(Object.assign(new Error("Authentication required."), {
       statusCode: 401,
       expose: true,
     }));
-    const { default: handler } = await import("../../api/shared-session.js");
+    const { default: handler } = await import("../../api/batch-session.js");
     const response = createResponseRecorder();
 
     await handler({ method: "GET", headers: {} }, response);

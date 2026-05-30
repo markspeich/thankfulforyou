@@ -28,7 +28,7 @@ export function readBearerToken(req) {
   return token || null;
 }
 
-export async function resolveSharedQueueAuth(req) {
+export async function resolveProductionBatchAuth(req) {
   const accessToken = readBearerToken(req);
 
   if (!accessToken) {

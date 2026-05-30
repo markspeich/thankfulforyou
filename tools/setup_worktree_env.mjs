@@ -94,7 +94,7 @@ async function main() {
   const result = await setupWorktreeEnv({ write: !checkOnly });
 
   if (!result.valid) {
-    console.error("Shared queue environment is incomplete.");
+    console.error("Production batch environment is incomplete.");
     console.error(`Missing required keys: ${result.missingKeys.join(", ")}`);
     console.error(`Add them to .env.local or to the machine-local seed file: ${result.seedPath}`);
     process.exitCode = 1;

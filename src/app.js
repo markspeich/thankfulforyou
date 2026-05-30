@@ -42,20 +42,20 @@ import {
   getSettingsSignatureCandidates,
 } from "./order-signatures.js";
 import {
-  isQueueSnapshotEmpty,
-} from "./queue-sync.js";
-import { buildQueueSyncStatus } from "./queue-sync-status.js";
+  isBatchSnapshotEmpty,
+} from "./production-batch-sync.js";
+import { buildBatchSyncStatus } from "./production-batch-sync-status.js";
 import {
   applyLayoutControlsSnapshot,
   buildLayoutControlsSnapshot,
 } from "./layout-controls-clipboard.js";
 import { buildReloadedPresetSettings } from "./preset-selection.js";
 import {
-  fetchSharedQueueSnapshot,
-  fetchSharedSession,
-  SharedQueueConflictError,
-  saveSharedQueueSnapshot,
-} from "./shared-queue-api.js";
+  fetchProductionBatchSnapshot,
+  fetchBatchSession,
+  ProductionBatchConflictError,
+  saveProductionBatchSnapshot,
+} from "./production-batch-api.js";
 import {
   getAccessToken,
   getSignedInSession,
@@ -63,9 +63,9 @@ import {
   signInWithPassword as signInOperatorWithPassword,
 } from "./auth-session.js";
 import {
-  chooseSharedQueueStartupState,
-  createSharedQueueSnapshot,
-} from "./shared-queue-model.js";
+  chooseProductionBatchStartupState,
+  createProductionBatchSnapshot,
+} from "./production-batch-model.js";
 import {
   DEFAULT_BOUNDING_SIZE_PRESET_ID,
   getBoundingSizePresetOptions,
@@ -135,42 +135,42 @@ const PRESET_SYNC_LINE_SETTING_KEYS = Object.freeze([
 
 const appShell = document.querySelector(".app-shell");
 const workspaceStage = document.querySelector("#workspaceStage");
-const initialQueueLoading = document.querySelector("#initialQueueLoading");
-const sharedQueueAuthGate = document.querySelector("#sharedQueueAuthGate");
-const sharedQueueAuthTitle = document.querySelector("#sharedQueueAuthTitle");
-const sharedQueueAuthMessage = document.querySelector("#sharedQueueAuthMessage");
-const sharedQueueSignInForm = document.querySelector("#sharedQueueSignInForm");
-const sharedQueueEmailInput = document.querySelector("#sharedQueueEmail");
-const sharedQueuePasswordInput = document.querySelector("#sharedQueuePassword");
-const sharedQueueSignInButton = document.querySelector("#sharedQueueSignInButton");
-const sharedQueueAuthError = document.querySelector("#sharedQueueAuthError");
+const initialBatchLoading = document.querySelector("#initialBatchLoading");
+const productionBatchAuthGate = document.querySelector("#productionBatchAuthGate");
+const productionBatchAuthTitle = document.querySelector("#productionBatchAuthTitle");
+const productionBatchAuthMessage = document.querySelector("#productionBatchAuthMessage");
+const productionBatchSignInForm = document.querySelector("#productionBatchSignInForm");
+const productionBatchEmailInput = document.querySelector("#productionBatchEmail");
+const productionBatchPasswordInput = document.querySelector("#productionBatchPassword");
+const productionBatchSignInButton = document.querySelector("#productionBatchSignInButton");
+const productionBatchAuthError = document.querySelector("#productionBatchAuthError");
 const ordersWorkspace = document.querySelector("#ordersWorkspace");
 const presetsWorkspace = document.querySelector("#presetsWorkspace");
 const sizeGuideWorkspace = document.querySelector("#sizeGuideWorkspace");
 const orderWorkspaceButton = document.querySelector("#orderWorkspaceButton");
 const presetWorkspaceButton = document.querySelector("#presetWorkspaceButton");
 const sizeGuideWorkspaceButton = document.querySelector("#sizeGuideWorkspaceButton");
-const sharedQueueLogoutButton = document.querySelector("#sharedQueueLogoutButton");
+const productionBatchLogoutButton = document.querySelector("#productionBatchLogoutButton");
 const navCollapseButton = document.querySelector("#navCollapseButton");
 const addOrderButton = document.querySelector("#addOrderButton");
 const importClipboardButton = document.querySelector("#importClipboardButton");
-const clearQueueButton = document.querySelector("#clearQueueButton");
+const clearBatchButton = document.querySelector("#clearBatchButton");
 const workflowAlert = document.querySelector("#importStatus");
 const workflowAlertText = document.querySelector("#workflowAlertText");
 const workflowAlertActionButton = document.querySelector("#workflowAlertActionButton");
-const queueSyncStatus = document.querySelector("#queueSyncStatus");
-const queueSyncStatusLabel = document.querySelector("#queueSyncStatusLabel");
-const queueSyncStatusDetail = document.querySelector("#queueSyncStatusDetail");
+const batchSyncStatus = document.querySelector("#batchSyncStatus");
+const batchSyncStatusLabel = document.querySelector("#batchSyncStatusLabel");
+const batchSyncStatusDetail = document.querySelector("#batchSyncStatusDetail");
 const exportCompletedButton = document.querySelector("#exportCompletedButton");
 const showColorCountsButton = document.querySelector("#showColorCountsButton");
 const copyCompletedButton = document.querySelector("#copyCompletedButton");
-const queueToolsMenu = document.querySelector(".queue-tools-menu");
+const batchToolsMenu = document.querySelector(".batch-tools-menu");
 const editorToolsMenu = document.querySelector(".editor-tools-menu");
 const presetToolsMenu = document.querySelector(".preset-tools-menu");
-const queueActionLabelByButton = new Map(
-  [addOrderButton, importClipboardButton, clearQueueButton, showColorCountsButton, exportCompletedButton, copyCompletedButton]
+const batchActionLabelByButton = new Map(
+  [addOrderButton, importClipboardButton, clearBatchButton, showColorCountsButton, exportCompletedButton, copyCompletedButton]
     .filter(Boolean)
-    .map((button) => [button, button.querySelector(".queue-tool-label")]),
+    .map((button) => [button, button.querySelector(".batch-tool-label")]),
 );
 const colorCountsDialog = document.querySelector("#colorCountsDialog");
 const closeColorCountsButton = document.querySelector("#closeColorCountsButton");
@@ -270,7 +270,6 @@ let workflowAlertHideTimer = null;
 let workflowAlertToken = 0;
 let selectedSizePresetId = null;
 
-const NAV_COLLAPSED_STORAGE_KEY = "thankfulforyou.workspaceNavCollapsed";
 const canvas = document.createElement("canvas");
 const ctx = canvas.getContext("2d");
 const MASK_SCALE = 3;
@@ -280,112 +279,112 @@ let lastLayout = null;
 let zoom = DEFAULT_ZOOM;
 let previewMiddlePan = null;
 let orderSequence = 1;
-let activeOrderId = null;
+let activeOrderItemId = null;
 const orders = [];
-let queuePersistenceTimeoutId = null;
+let batchPersistenceTimeoutId = null;
 let orderListRenderFrameId = null;
 let deferredPreviewRenderToken = 0;
-let suppressQueueSyncLocalNotice = false;
+let suppressBatchSyncLocalNotice = false;
 let copiedLayoutControlsSnapshot = null;
 let activeWorkspace = "orders";
 let navCollapsed = readNavCollapsedPreference();
 let presetEditorDraft = null;
 let activeConfirmationRequest = null;
 let confirmationDialogRestoreFocusTarget = null;
-let sharedSessionContext = null;
-let sharedQueueContext = null;
-let sharedQueueAutosaveTimeoutId = null;
-let sharedQueueAutosaveInFlight = false;
-let sharedQueueAutosavePending = false;
-let suppressSharedQueueAutosave = false;
-let lastSharedQueueSaveKey = null;
-let sharedQueueSyncState = "disabled";
-let sharedQueueSyncDetail = "";
-let sharedQueueConflictState = null;
-let sharedQueueAccessToken = null;
+let batchSessionContext = null;
+let productionBatchContext = null;
+let productionBatchAutosaveTimeoutId = null;
+let productionBatchAutosaveInFlight = false;
+let productionBatchAutosavePending = false;
+let suppressProductionBatchAutosave = false;
+let lastProductionBatchSaveKey = null;
+let productionBatchSyncState = "disabled";
+let productionBatchSyncDetail = "";
+let productionBatchConflictState = null;
+let productionBatchAccessToken = null;
 let workflowAlertActionHandler = null;
 
-function readSharedQueueAccessTokenOverride() {
-  return globalThis.__TFU_TEST_SHARED_QUEUE_ACCESS_TOKEN__ ?? null;
+function readProductionBatchAccessTokenOverride() {
+  return globalThis.__TFU_TEST_PRODUCTION_BATCH_ACCESS_TOKEN__ ?? null;
 }
 
-function setSharedQueueAuthError(message) {
-  if (!sharedQueueAuthError) {
+function setProductionBatchAuthError(message) {
+  if (!productionBatchAuthError) {
     return;
   }
 
   const normalized = typeof message === "string" ? message.trim() : "";
-  sharedQueueAuthError.textContent = normalized;
-  sharedQueueAuthError.hidden = !normalized;
+  productionBatchAuthError.textContent = normalized;
+  productionBatchAuthError.hidden = !normalized;
 }
 
-function renderSharedQueueLogoutButton() {
-  if (!sharedQueueLogoutButton) {
+function renderProductionBatchLogoutButton() {
+  if (!productionBatchLogoutButton) {
     return;
   }
 
-  const hasSharedQueueSession = typeof sharedQueueAccessToken === "string" && sharedQueueAccessToken.trim().length > 0;
-  sharedQueueLogoutButton.hidden = !hasSharedQueueSession;
-  sharedQueueLogoutButton.disabled = !hasSharedQueueSession;
+  const hasProductionBatchSession = typeof productionBatchAccessToken === "string" && productionBatchAccessToken.trim().length > 0;
+  productionBatchLogoutButton.hidden = !hasProductionBatchSession;
+  productionBatchLogoutButton.disabled = !hasProductionBatchSession;
 }
 
-function showSharedQueueAuthGate({ title, message, error = "", allowSignIn = true }) {
-  sharedQueueAccessToken = null;
-  if (sharedQueueAuthTitle) {
-    sharedQueueAuthTitle.textContent = title;
+function showProductionBatchAuthGate({ title, message, error = "", allowSignIn = true }) {
+  productionBatchAccessToken = null;
+  if (productionBatchAuthTitle) {
+    productionBatchAuthTitle.textContent = title;
   }
-  if (sharedQueueAuthMessage) {
-    sharedQueueAuthMessage.textContent = message;
+  if (productionBatchAuthMessage) {
+    productionBatchAuthMessage.textContent = message;
   }
-  if (sharedQueueSignInForm) {
-    sharedQueueSignInForm.hidden = !allowSignIn;
+  if (productionBatchSignInForm) {
+    productionBatchSignInForm.hidden = !allowSignIn;
   }
-  if (sharedQueueSignInButton) {
-    sharedQueueSignInButton.disabled = !allowSignIn;
+  if (productionBatchSignInButton) {
+    productionBatchSignInButton.disabled = !allowSignIn;
   }
   if (workspaceStage) {
     workspaceStage.hidden = true;
   }
-  if (sharedQueueAuthGate) {
-    sharedQueueAuthGate.hidden = false;
+  if (productionBatchAuthGate) {
+    productionBatchAuthGate.hidden = false;
   }
-  setSharedQueueAuthError(error);
-  renderSharedQueueLogoutButton();
+  setProductionBatchAuthError(error);
+  renderProductionBatchLogoutButton();
 }
 
-function hideSharedQueueAuthGate() {
-  if (sharedQueueAuthGate) {
-    sharedQueueAuthGate.hidden = true;
+function hideProductionBatchAuthGate() {
+  if (productionBatchAuthGate) {
+    productionBatchAuthGate.hidden = true;
   }
   if (workspaceStage) {
     workspaceStage.hidden = false;
   }
-  setSharedQueueAuthError("");
-  renderSharedQueueLogoutButton();
+  setProductionBatchAuthError("");
+  renderProductionBatchLogoutButton();
 }
 
-function showSharedQueueConfigError(error) {
+function showProductionBatchConfigError(error) {
   const detail = error instanceof Error && error.message
     ? error.message
-    : "Shared queue configuration is missing.";
-  showSharedQueueAuthGate({
-    title: "Shared queue configuration is missing.",
+    : "Production batch configuration is missing.";
+  showProductionBatchAuthGate({
+    title: "Production batch configuration is missing.",
     message: "This app cannot load or save shared designs until Supabase browser settings are configured.",
     error: detail,
     allowSignIn: false,
   });
 }
 
-function showSharedQueueSignIn(error = "") {
-  showSharedQueueAuthGate({
-    title: "Sign in to shared queue",
+function showProductionBatchSignIn(error = "") {
+  showProductionBatchAuthGate({
+    title: "Sign in to production batch",
     message: "Use your invited operator account to continue. Contact your admin if you still need access.",
     error,
     allowSignIn: true,
   });
 }
 
-function isSharedQueueAuthenticationError(error) {
+function isProductionBatchAuthenticationError(error) {
   return Boolean(
     error instanceof Error
       && typeof error.message === "string"
@@ -393,24 +392,24 @@ function isSharedQueueAuthenticationError(error) {
   );
 }
 
-function handleSharedQueueAuthenticationRequired(detail = "Shared queue session expired. Sign in again to continue.") {
-  sharedSessionContext = null;
-  sharedQueueAccessToken = null;
-  disableSharedQueueSync(detail);
-  showSharedQueueSignIn(detail);
-  renderSharedQueueToast();
+function handleProductionBatchAuthenticationRequired(detail = "Production batch session expired. Sign in again to continue.") {
+  batchSessionContext = null;
+  productionBatchAccessToken = null;
+  disableProductionBatchSync(detail);
+  showProductionBatchSignIn(detail);
+  renderProductionBatchToast();
 }
 
-async function bootstrapSharedQueueAccess() {
+async function bootstrapProductionBatchAccess() {
   await new Promise((resolve) => {
     window.setTimeout(resolve, 0);
   });
 
-  const accessTokenOverride = readSharedQueueAccessTokenOverride();
+  const accessTokenOverride = readProductionBatchAccessTokenOverride();
   if (accessTokenOverride) {
-    sharedQueueAccessToken = accessTokenOverride;
-    hideSharedQueueAuthGate();
-    return sharedQueueAccessToken;
+    productionBatchAccessToken = accessTokenOverride;
+    hideProductionBatchAuthGate();
+    return productionBatchAccessToken;
   }
 
   let session = null;
@@ -418,82 +417,82 @@ async function bootstrapSharedQueueAccess() {
   try {
     session = await getSignedInSession();
   } catch (error) {
-    showSharedQueueConfigError(error);
+    showProductionBatchConfigError(error);
     return null;
   }
 
   if (!session?.access_token) {
-    showSharedQueueSignIn();
+    showProductionBatchSignIn();
     return null;
   }
 
-  sharedQueueAccessToken = session.access_token;
-  hideSharedQueueAuthGate();
-  return sharedQueueAccessToken;
+  productionBatchAccessToken = session.access_token;
+  hideProductionBatchAuthGate();
+  return productionBatchAccessToken;
 }
 
-async function handleSharedQueueSignInSubmit(event) {
+async function handleProductionBatchSignInSubmit(event) {
   event.preventDefault();
 
-  const email = typeof sharedQueueEmailInput?.value === "string" ? sharedQueueEmailInput.value.trim() : "";
-  const password = typeof sharedQueuePasswordInput?.value === "string" ? sharedQueuePasswordInput.value : "";
+  const email = typeof productionBatchEmailInput?.value === "string" ? productionBatchEmailInput.value.trim() : "";
+  const password = typeof productionBatchPasswordInput?.value === "string" ? productionBatchPasswordInput.value : "";
 
   if (!email || !password) {
-    showSharedQueueSignIn("Enter your email and password to continue.");
+    showProductionBatchSignIn("Enter your email and password to continue.");
     return;
   }
 
-  if (sharedQueueSignInButton) {
-    sharedQueueSignInButton.disabled = true;
+  if (productionBatchSignInButton) {
+    productionBatchSignInButton.disabled = true;
   }
-  setSharedQueueAuthError("");
+  setProductionBatchAuthError("");
 
   try {
     const session = await signInOperatorWithPassword(email, password);
-    sharedQueueAccessToken = session?.access_token ?? null;
-    if (!sharedQueueAccessToken) {
-      throw new Error("Sign-in succeeded, but no shared queue session is available yet.");
+    productionBatchAccessToken = session?.access_token ?? null;
+    if (!productionBatchAccessToken) {
+      throw new Error("Sign-in succeeded, but no production batch session is available yet.");
     }
-    hideSharedQueueAuthGate();
+    hideProductionBatchAuthGate();
     window.location.reload();
   } catch (error) {
-    showSharedQueueSignIn(
+    showProductionBatchSignIn(
       error instanceof Error && error.message
         ? error.message
-        : "Unable to sign in to the shared queue.",
+        : "Unable to sign in to the production batch.",
     );
   } finally {
-    if (sharedQueueSignInButton) {
-      sharedQueueSignInButton.disabled = false;
+    if (productionBatchSignInButton) {
+      productionBatchSignInButton.disabled = false;
     }
   }
 }
 
-async function handleSharedQueueSignOut() {
-  if (sharedQueueLogoutButton) {
-    sharedQueueLogoutButton.disabled = true;
+async function handleProductionBatchSignOut() {
+  if (productionBatchLogoutButton) {
+    productionBatchLogoutButton.disabled = true;
   }
 
   try {
     await signOutBrowserSession();
-    sharedSessionContext = null;
-    sharedQueueAccessToken = null;
-    if (sharedQueueEmailInput) {
-      sharedQueueEmailInput.value = "";
+    batchSessionContext = null;
+    productionBatchAccessToken = null;
+    if (productionBatchEmailInput) {
+      productionBatchEmailInput.value = "";
     }
-    if (sharedQueuePasswordInput) {
-      sharedQueuePasswordInput.value = "";
+    if (productionBatchPasswordInput) {
+      productionBatchPasswordInput.value = "";
     }
-    disableSharedQueueSync("You signed out of the shared queue.");
+    disableProductionBatchSync("You signed out of the production batch.");
     window.location.reload();
   } catch (error) {
-    showSharedQueueSignIn(
+    showProductionBatchSignIn(
       error instanceof Error && error.message
         ? error.message
-        : "Unable to sign out of the shared queue.",
+        : "Unable to sign out of the production batch.",
     );
   } finally {
-    renderSharedQueueLogoutButton();
+    renderProductionBatchLogoutButton();
   }
 }
 
@@ -505,9 +504,6 @@ const statusLabels = {
 };
 const IMPORT_SOURCE_TAG = "thankfulforyou-etsy-clipboard";
 const IMPORT_MOJIBAKE_PATTERN = /[ÂÃâ]/;
-const STORAGE_KEY = "thankfulforyou.designQueue";
-const STORAGE_VERSION = 1;
-
 function getFontOption(fontId) {
   return FONT_BY_ID.get(fontId) || FONT_OPTIONS[0];
 }
@@ -1413,7 +1409,7 @@ function migratePresetReferences(previousId, nextId) {
   let activeOrderChanged = false;
 
   orders.forEach((order) => {
-    if (migrateOrderPresetReference(order, previousId, nextId) && order.id === activeOrderId) {
+    if (migrateOrderPresetReference(order, previousId, nextId) && order.id === activeOrderItemId) {
       activeOrderChanged = true;
     }
   });
@@ -1534,7 +1530,7 @@ async function overwriteSelectedPresetFromActiveOrder() {
       presetEditorDraft = createPresetEditorDraft(overwrittenPreset, { previousId: overwrittenPreset.id });
       renderPresetEditorDraft();
     }
-    persistQueueState();
+    persistBatchState();
     render();
     try {
       await savePresetSnapshot(getPresetSnapshot());
@@ -1542,8 +1538,8 @@ async function overwriteSelectedPresetFromActiveOrder() {
     } catch (error) {
       updateWorkflowAlert(
         error instanceof Error
-          ? `Overwrote ${overwrittenPreset.name} locally. Neon sync failed: ${error.message}`
-          : `Overwrote ${overwrittenPreset.name} locally, but Neon sync failed.`,
+          ? `Could not save ${overwrittenPreset.name} to Supabase: ${error.message}`
+          : `Could not save ${overwrittenPreset.name} to Supabase.`,
         "error",
       );
     }
@@ -1597,7 +1593,7 @@ async function persistPresetEditorDraft({ syncInputs = false, successMessage } =
       }
     }
     renderOrderList();
-    persistQueueState();
+    persistBatchState();
     render();
     try {
       await savePresetSnapshot(getPresetSnapshot());
@@ -1605,8 +1601,8 @@ async function persistPresetEditorDraft({ syncInputs = false, successMessage } =
     } catch (error) {
       setPresetEditorStatus(
         error instanceof Error
-          ? `Saved locally. Neon sync failed: ${error.message}`
-          : "Saved locally, but Neon sync failed.",
+          ? `Supabase save failed: ${error.message}`
+          : "Supabase save failed.",
         "error",
       );
     }
@@ -1656,7 +1652,7 @@ async function deletePresetEditorDraft() {
     presetEditorDraft = createPresetEditorDraft(replacementPreset, { previousId: replacementPresetId });
     renderPresetEditorDraft();
     renderOrderList();
-    persistQueueState();
+    persistBatchState();
     render();
     try {
       await savePresetSnapshot(result.snapshot);
@@ -1664,8 +1660,8 @@ async function deletePresetEditorDraft() {
     } catch (error) {
       setPresetEditorStatus(
         error instanceof Error
-          ? `Deleted locally. Neon sync failed: ${error.message}`
-          : "Deleted locally, but Neon sync failed.",
+          ? `Supabase delete failed: ${error.message}`
+          : "Supabase delete failed.",
         "error",
       );
     }
@@ -1705,7 +1701,7 @@ async function unassignListingFromPreset(listingId) {
 
   if (syncOrdersForListingAssignmentChange(listingId)) {
     renderOrderList();
-    persistQueueState();
+    persistBatchState();
     render();
   }
 }
@@ -1765,8 +1761,8 @@ async function assignSelectedPresetToActiveListing() {
     } catch (error) {
       updateWorkflowAlert(
         error instanceof Error
-          ? `Assigned ${assignedPreset.name} locally. Neon sync failed: ${error.message}`
-          : `Assigned ${assignedPreset.name} locally, but Neon sync failed.`,
+          ? `Could not save ${assignedPreset.name} assignment to Supabase: ${error.message}`
+          : `Could not save ${assignedPreset.name} assignment to Supabase.`,
         "error",
       );
     }
@@ -1821,28 +1817,28 @@ function buildLastUpdatedText(source) {
   return "";
 }
 
-function getSharedQueueAuditSource(order = getActiveOrder()) {
+function getProductionBatchAuditSource(order = getActiveOrder()) {
   if (order && (order.updatedBy || order.updatedAt)) {
     return order;
   }
 
-  if (sharedQueueContext && (sharedQueueContext.updatedBy || sharedQueueContext.updatedAt)) {
-    return sharedQueueContext;
+  if (productionBatchContext && (productionBatchContext.updatedBy || productionBatchContext.updatedAt)) {
+    return productionBatchContext;
   }
 
   return null;
 }
 
-function resolveSharedQueueBannerOrderId() {
-  if (sharedQueueConflictState?.orderId) {
-    return sharedQueueConflictState.orderId;
+function resolveProductionBatchBannerOrderId() {
+  if (productionBatchConflictState?.orderId) {
+    return productionBatchConflictState.orderId;
   }
 
   return null;
 }
 
-function isSharedQueueBannerRelevantToOrder(order = getActiveOrder()) {
-  const affectedOrderId = resolveSharedQueueBannerOrderId();
+function isProductionBatchBannerRelevantToOrder(order = getActiveOrder()) {
+  const affectedOrderId = resolveProductionBatchBannerOrderId();
   if (!affectedOrderId) {
     return true;
   }
@@ -1872,15 +1868,15 @@ function buildActiveMeta(order) {
     metaParts.push(buyerName);
   }
 
-  return metaParts.join(" · ") || "Manual queue item";
+  return metaParts.join(" · ") || "Manual batch item";
 }
 
-function buildQueueOrderNumber(order) {
+function buildBatchOrderNumber(order) {
   const orderNumber = order?.source?.orderNumber;
   return orderNumber ? `#${orderNumber}` : buildManualDesignName(order);
 }
 
-function buildQueueRecipient(order) {
+function buildBatchRecipient(order) {
   const buyerName = order?.source?.buyerName?.trim();
   if (buyerName) {
     return buyerName;
@@ -1889,7 +1885,7 @@ function buildQueueRecipient(order) {
   return "Manual design";
 }
 
-function buildQueueListing(order) {
+function buildBatchListing(order) {
   const listingTitle = order?.source?.listingTitle?.trim();
   if (listingTitle) {
     return listingTitle;
@@ -1899,7 +1895,7 @@ function buildQueueListing(order) {
   return listingId ? `Listing ${listingId}` : buildActiveMeta(order);
 }
 
-function buildQueuePersonalization(order) {
+function buildBatchPersonalization(order) {
   const personalization = summarizeOrderText(order?.text || "");
   return personalization && personalization !== "No text entered"
     ? personalization
@@ -1951,7 +1947,7 @@ function renderBatchColorCountsDialog() {
 
     colorCell.textContent = colorName;
     countCell.textContent = String(count);
-    countCell.className = "queue-summary-count";
+    countCell.className = "batch-summary-count";
 
     row.append(colorCell, countCell);
     colorCountsTableBody.append(row);
@@ -2264,30 +2260,30 @@ function hydrateStoredOrder(order, index) {
   return normalizedOrder;
 }
 
-function normalizeSharedQueueContext(queue) {
-  if (!queue || typeof queue !== "object") {
+function normalizeProductionBatchContext(batch) {
+  if (!batch || typeof batch !== "object") {
     return null;
   }
 
-  const id = typeof queue.id === "string" ? queue.id.trim() : "";
-  const workspaceId = typeof queue.workspaceId === "string" ? queue.workspaceId.trim() : "";
+  const id = typeof batch.id === "string" ? batch.id.trim() : "";
+  const workspaceId = typeof batch.workspaceId === "string" ? batch.workspaceId.trim() : "";
 
   if (!id || !workspaceId) {
     return null;
   }
 
   return {
-    ...structuredClone(queue),
+    ...structuredClone(batch),
     id,
     workspaceId,
   };
 }
 
-function setSharedQueueContext(queue) {
-  sharedQueueContext = normalizeSharedQueueContext(queue);
+function setProductionBatchContext(batch) {
+  productionBatchContext = normalizeProductionBatchContext(batch);
 }
 
-function buildSerializedQueueOrder(order, options = {}) {
+function buildSerializedBatchOrder(order, options = {}) {
   const { includePublishedSnapshot = false } = options;
   const serializedOrder = {
     id: order.id,
@@ -2315,17 +2311,16 @@ function buildSerializedQueueOrder(order, options = {}) {
   return serializedOrder;
 }
 
-function buildSerializedQueueOrders(options = {}) {
-  return orders.map((order) => buildSerializedQueueOrder(order, options));
+function buildSerializedBatchOrders(options = {}) {
+  return orders.map((order) => buildSerializedBatchOrder(order, options));
 }
 
-function buildPersistedQueueState() {
+function buildPersistedBatchState() {
   return {
-    version: STORAGE_VERSION,
     orderSequence,
-    queue: sharedQueueContext ? structuredClone(sharedQueueContext) : null,
-    activeOrderId,
-    orders: buildSerializedQueueOrders({ includePublishedSnapshot: true }),
+    batch: productionBatchContext ? structuredClone(productionBatchContext) : null,
+    activeOrderItemId,
+    orderItems: buildSerializedBatchOrders({ includePublishedSnapshot: true }),
   };
 }
 
@@ -2341,7 +2336,7 @@ function isOrderAwaitingPublishedSave(order) {
   );
 }
 
-function shouldUsePublishedSharedQueueOrder(order) {
+function shouldUsePublishedProductionBatchOrder(order) {
   if (!order?.publishedSnapshot) {
     return false;
   }
@@ -2349,29 +2344,29 @@ function shouldUsePublishedSharedQueueOrder(order) {
   return hasUnsavedPublishedSnapshotChanges(order) || isOrderAwaitingPublishedSave(order);
 }
 
-function buildSharedQueueSnapshot(options = {}) {
+function buildProductionBatchSnapshot(options = {}) {
   const publishOrderIds = Array.isArray(options.publishOrderIds)
     ? new Set(options.publishOrderIds.filter((value) => typeof value === "string" && value))
     : null;
 
-  return createSharedQueueSnapshot({
-    queue: sharedQueueContext ? structuredClone(sharedQueueContext) : null,
-    activeOrderId,
-    orders: orders.map((order) => {
+  return createProductionBatchSnapshot({
+    batch: productionBatchContext ? structuredClone(productionBatchContext) : null,
+    activeOrderItemId,
+    orderItems: orders.map((order) => {
       if (publishOrderIds?.has(order.id)) {
-        return buildSerializedQueueOrder(order);
+        return buildSerializedBatchOrder(order);
       }
 
-      if (shouldUsePublishedSharedQueueOrder(order)) {
+      if (shouldUsePublishedProductionBatchOrder(order)) {
         return structuredClone(order.publishedSnapshot);
       }
 
-      return buildSerializedQueueOrder(order);
+      return buildSerializedBatchOrder(order);
     }),
   });
 }
 
-function applySharedQueueAuditToOrder(order, auditSource) {
+function applyProductionBatchAuditToOrder(order, auditSource) {
   if (!order || !auditSource || typeof auditSource !== "object") {
     return;
   }
@@ -2381,12 +2376,12 @@ function applySharedQueueAuditToOrder(order, auditSource) {
   order.updatedBy = normalizeStoredAuditActor(auditSource.updatedBy);
 }
 
-function mergeSharedQueuePublishedStateFromSnapshot(snapshot) {
-  if (!snapshot || !Array.isArray(snapshot.orders)) {
+function mergeProductionBatchPublishedStateFromSnapshot(snapshot) {
+  if (!snapshot || !Array.isArray(snapshot.orderItems)) {
     return;
   }
 
-  for (const remoteOrder of snapshot.orders) {
+  for (const remoteOrder of snapshot.orderItems) {
     const localOrder = orders.find((order) => order.id === remoteOrder?.id);
     if (!localOrder) {
       continue;
@@ -2396,62 +2391,62 @@ function mergeSharedQueuePublishedStateFromSnapshot(snapshot) {
   }
 }
 
-function mergeSharedQueueAuditFromSnapshot(snapshot) {
-  if (!snapshot || !Array.isArray(snapshot.orders)) {
+function mergeProductionBatchAuditFromSnapshot(snapshot) {
+  if (!snapshot || !Array.isArray(snapshot.orderItems)) {
     return;
   }
 
-  for (const remoteOrder of snapshot.orders) {
+  for (const remoteOrder of snapshot.orderItems) {
     const localOrder = orders.find((order) => order.id === remoteOrder?.id);
     if (!localOrder) {
       continue;
     }
 
-    applySharedQueueAuditToOrder(localOrder, remoteOrder);
+    applyProductionBatchAuditToOrder(localOrder, remoteOrder);
   }
 }
 
-function setSharedQueueSyncState(mode, detail = "") {
-  sharedQueueSyncState = mode;
-  sharedQueueSyncDetail = typeof detail === "string" ? detail.trim() : "";
+function setProductionBatchSyncState(mode, detail = "") {
+  productionBatchSyncState = mode;
+  productionBatchSyncDetail = typeof detail === "string" ? detail.trim() : "";
 
   if (mode !== "enabled") {
-    clearSharedQueueAutosaveTimeout();
-    sharedQueueAutosavePending = false;
+    clearProductionBatchAutosaveTimeout();
+    productionBatchAutosavePending = false;
   }
 }
 
-function enableSharedQueueSync(queue = sharedQueueContext) {
-  if (queue) {
-    setSharedQueueContext(queue);
+function enableProductionBatchSync(batch = productionBatchContext) {
+  if (batch) {
+    setProductionBatchContext(batch);
   }
 
-  if (hasSharedQueueSyncContext()) {
-    setSharedQueueSyncState("enabled");
+  if (hasProductionBatchSyncContext()) {
+    setProductionBatchSyncState("enabled");
     return true;
   }
 
-  setSharedQueueSyncState("disabled");
+  setProductionBatchSyncState("disabled");
   return false;
 }
 
-function disableSharedQueueSync(detail = "Shared queue sync is unavailable.") {
-  setSharedQueueSyncState("local-recovery", detail);
+function disableProductionBatchSync(detail = "Production batch sync is unavailable.") {
+  setProductionBatchSyncState("disabled", detail);
 }
 
-function isSharedQueueSyncEnabled() {
-  return sharedQueueSyncState === "enabled" && hasSharedQueueSyncContext();
+function isProductionBatchSyncEnabled() {
+  return productionBatchSyncState === "enabled" && hasProductionBatchSyncContext();
 }
 
-function canAttemptSharedQueueSave() {
-  return hasSharedQueueSyncContext() && sharedQueueSyncState === "enabled";
+function canAttemptProductionBatchSave() {
+  return hasProductionBatchSyncContext() && productionBatchSyncState === "enabled";
 }
 
-function hasSharedQueueSyncContext() {
-  return Boolean(sharedQueueContext?.id && sharedQueueContext?.workspaceId);
+function hasProductionBatchSyncContext() {
+  return Boolean(productionBatchContext?.id && productionBatchContext?.workspaceId);
 }
 
-function buildSharedQueueSaveKey(snapshot) {
+function buildProductionBatchSaveKey(snapshot) {
   if (!snapshot) {
     return null;
   }
@@ -2463,16 +2458,16 @@ function buildSharedQueueSaveKey(snapshot) {
   }
 }
 
-function hasPendingSharedQueueChanges() {
-  if (!isSharedQueueSyncEnabled()) {
+function hasPendingProductionBatchChanges() {
+  if (!isProductionBatchSyncEnabled()) {
     return false;
   }
 
-  const snapshotKey = buildSharedQueueSaveKey(buildSharedQueueSnapshot());
-  return Boolean(snapshotKey && snapshotKey !== lastSharedQueueSaveKey);
+  const snapshotKey = buildProductionBatchSaveKey(buildProductionBatchSnapshot());
+  return Boolean(snapshotKey && snapshotKey !== lastProductionBatchSaveKey);
 }
 
-function resolveSharedQueueSaveOrderIds(publishOrderIds) {
+function resolveProductionBatchSaveOrderIds(publishOrderIds) {
   if (Array.isArray(publishOrderIds)) {
     return publishOrderIds.filter((value) => typeof value === "string" && value);
   }
@@ -2786,8 +2781,8 @@ async function saveSizePresetFromEditor() {
     } catch (error) {
       setSizePresetEditorStatus(
         error instanceof Error
-          ? `Saved locally. Neon sync failed: ${error.message}`
-          : "Saved locally, but Neon sync failed.",
+          ? `Supabase save failed: ${error.message}`
+          : "Supabase save failed.",
         "warning",
       );
     }
@@ -2815,8 +2810,8 @@ async function deleteSelectedSizePreset() {
     } catch (error) {
       setSizePresetEditorStatus(
         error instanceof Error
-          ? `Deleted locally. Neon sync failed: ${error.message}`
-          : "Deleted locally, but Neon sync failed.",
+          ? `Supabase delete failed: ${error.message}`
+          : "Supabase delete failed.",
         "warning",
       );
     }
@@ -2825,44 +2820,44 @@ async function deleteSelectedSizePreset() {
   }
 }
 
-function canSaveThroughSharedQueueConflict(publishOrderIds) {
-  if (!sharedQueueConflictState?.orderId) {
+function canSaveThroughProductionBatchConflict(publishOrderIds) {
+  if (!productionBatchConflictState?.orderId) {
     return true;
   }
 
   return Array.isArray(publishOrderIds)
-    && resolveSharedQueueSaveOrderIds(publishOrderIds).includes(sharedQueueConflictState.orderId);
+    && resolveProductionBatchSaveOrderIds(publishOrderIds).includes(productionBatchConflictState.orderId);
 }
 
-function clearSharedQueueAutosaveTimeout() {
-  if (sharedQueueAutosaveTimeoutId != null) {
-    window.clearTimeout(sharedQueueAutosaveTimeoutId);
-    sharedQueueAutosaveTimeoutId = null;
+function clearProductionBatchAutosaveTimeout() {
+  if (productionBatchAutosaveTimeoutId != null) {
+    window.clearTimeout(productionBatchAutosaveTimeoutId);
+    productionBatchAutosaveTimeoutId = null;
   }
 }
 
-async function flushSharedQueueAutosave(options = {}) {
+async function flushProductionBatchAutosave(options = {}) {
   const { force = false, keepalive = false } = options;
   const allowConcurrentKeepalive = force && keepalive;
-  clearSharedQueueAutosaveTimeout();
+  clearProductionBatchAutosaveTimeout();
 
   if (
-    ((!sharedQueueAutosavePending && !force) || (sharedQueueAutosaveInFlight && !allowConcurrentKeepalive) || suppressSharedQueueAutosave || !isSharedQueueSyncEnabled())
+    ((!productionBatchAutosavePending && !force) || (productionBatchAutosaveInFlight && !allowConcurrentKeepalive) || suppressProductionBatchAutosave || !isProductionBatchSyncEnabled())
   ) {
-    if (!sharedQueueAutosaveInFlight) {
-      sharedQueueAutosavePending = false;
+    if (!productionBatchAutosaveInFlight) {
+      productionBatchAutosavePending = false;
     }
     return;
   }
 
-  sharedQueueAutosavePending = false;
-  const autosaveWasAlreadyInFlight = sharedQueueAutosaveInFlight;
+  productionBatchAutosavePending = false;
+  const autosaveWasAlreadyInFlight = productionBatchAutosaveInFlight;
   if (!autosaveWasAlreadyInFlight) {
-    sharedQueueAutosaveInFlight = true;
+    productionBatchAutosaveInFlight = true;
   }
 
   try {
-    await saveQueueSnapshotToRemote({
+    await saveBatchSnapshotToRemote({
       persistActiveDraft: false,
       successMessage: false,
       keepalive,
@@ -2870,66 +2865,66 @@ async function flushSharedQueueAutosave(options = {}) {
     });
   } finally {
     if (!autosaveWasAlreadyInFlight) {
-      sharedQueueAutosaveInFlight = false;
+      productionBatchAutosaveInFlight = false;
     }
-    if (sharedQueueAutosavePending && !autosaveWasAlreadyInFlight) {
-      triggerSharedQueueAutosave();
+    if (productionBatchAutosavePending && !autosaveWasAlreadyInFlight) {
+      triggerProductionBatchAutosave();
     }
   }
 }
 
-function triggerSharedQueueAutosave(options = {}) {
+function triggerProductionBatchAutosave(options = {}) {
   const { immediate = false } = options;
 
-  if (suppressSharedQueueAutosave || !isSharedQueueSyncEnabled()) {
+  if (suppressProductionBatchAutosave || !isProductionBatchSyncEnabled()) {
     return;
   }
 
-  sharedQueueAutosavePending = true;
+  productionBatchAutosavePending = true;
 
-  if (sharedQueueAutosaveInFlight) {
+  if (productionBatchAutosaveInFlight) {
     return;
   }
 
-  clearSharedQueueAutosaveTimeout();
+  clearProductionBatchAutosaveTimeout();
 
   if (immediate) {
-    void flushSharedQueueAutosave();
+    void flushProductionBatchAutosave();
     return;
   }
 
-  sharedQueueAutosaveTimeoutId = window.setTimeout(() => {
-    sharedQueueAutosaveTimeoutId = null;
-    void flushSharedQueueAutosave();
+  productionBatchAutosaveTimeoutId = window.setTimeout(() => {
+    productionBatchAutosaveTimeoutId = null;
+    void flushProductionBatchAutosave();
   }, 150);
 }
 
-function updateQueueSyncStatus(kind, options = {}) {
-  if (!queueSyncStatus || !queueSyncStatusLabel || !queueSyncStatusDetail) {
+function updateBatchSyncStatus(kind, options = {}) {
+  if (!batchSyncStatus || !batchSyncStatusLabel || !batchSyncStatusDetail) {
     return;
   }
 
-  const status = buildQueueSyncStatus(kind, options);
+  const status = buildBatchSyncStatus(kind, options);
   if (!status) {
-    queueSyncStatus.hidden = true;
-    queueSyncStatusLabel.textContent = "";
-    queueSyncStatusDetail.textContent = "";
-    queueSyncStatus.classList.remove("status-ok", "status-warning", "status-pending");
+    batchSyncStatus.hidden = true;
+    batchSyncStatusLabel.textContent = "";
+    batchSyncStatusDetail.textContent = "";
+    batchSyncStatus.classList.remove("status-ok", "status-warning", "status-pending");
     return;
   }
 
-  queueSyncStatus.hidden = false;
-  queueSyncStatus.classList.remove("status-ok", "status-warning", "status-pending");
-  queueSyncStatus.classList.add(`status-${status.tone}`);
-  queueSyncStatusLabel.textContent = status.label;
-  queueSyncStatusDetail.textContent = status.detail;
+  batchSyncStatus.hidden = false;
+  batchSyncStatus.classList.remove("status-ok", "status-warning", "status-pending");
+  batchSyncStatus.classList.add(`status-${status.tone}`);
+  batchSyncStatusLabel.textContent = status.label;
+  batchSyncStatusDetail.textContent = status.detail;
 }
 
-function renderSharedQueueToast(activeOrder = getActiveOrder()) {
-  const isOrderRelevant = isSharedQueueBannerRelevantToOrder(activeOrder);
-  const auditSource = isOrderRelevant && sharedQueueConflictState?.auditSource
-    ? sharedQueueConflictState.auditSource
-    : getSharedQueueAuditSource(activeOrder);
+function renderProductionBatchToast(activeOrder = getActiveOrder()) {
+  const isOrderRelevant = isProductionBatchBannerRelevantToOrder(activeOrder);
+  const auditSource = isOrderRelevant && productionBatchConflictState?.auditSource
+    ? productionBatchConflictState.auditSource
+    : getProductionBatchAuditSource(activeOrder);
   const auditText = buildLastUpdatedText(auditSource);
   let tone = "error";
   let label = "";
@@ -2938,16 +2933,16 @@ function renderSharedQueueToast(activeOrder = getActiveOrder()) {
   let actionHandler = null;
   let includeAuditText = Boolean(auditText);
 
-  if (sharedQueueConflictState && isOrderRelevant) {
+  if (productionBatchConflictState && isOrderRelevant) {
     label = "A newer version of this design has been saved";
     actionLabel = "Load Latest Design";
-    actionHandler = reloadSharedQueueFromToast;
+    actionHandler = reloadProductionBatchFromToast;
     includeAuditText = false;
-  } else if (sharedQueueSyncState === "local-recovery") {
-    label = "Local recovery only";
-    detail = sharedQueueSyncDetail || "Shared queue sync is unavailable in this browser right now.";
+  } else if (productionBatchSyncState === "disabled" && productionBatchSyncDetail) {
+    label = "Supabase sync unavailable";
+    detail = productionBatchSyncDetail;
   } else {
-    clearSharedQueueToast();
+    clearProductionBatchToast();
     return;
   }
 
@@ -2956,23 +2951,23 @@ function renderSharedQueueToast(activeOrder = getActiveOrder()) {
     actionLabel,
     onAction: actionHandler,
     autoHideMs: 0,
-    source: "shared-queue",
+    source: "production-batch",
   });
 }
 
-function clearSharedQueueToast() {
-  if (workflowAlert?.dataset.source === "shared-queue") {
+function clearProductionBatchToast() {
+  if (workflowAlert?.dataset.source === "production-batch") {
     updateWorkflowAlert("", "pending", { autoHideMs: 0 });
   }
 }
 
-function applyPersistedQueueState(parsed) {
-  if (!parsed || !Array.isArray(parsed.orders)) {
+function applyPersistedBatchState(parsed) {
+  if (!parsed || !Array.isArray(parsed.orderItems)) {
     return false;
   }
 
-  setSharedQueueContext(parsed.queue || sharedQueueContext || sharedSessionContext?.queue || null);
-  const restoredOrders = parsed.orders
+  setProductionBatchContext(parsed.batch || productionBatchContext || batchSessionContext?.batch || null);
+  const restoredOrders = parsed.orderItems
     .map((order, index) => hydrateStoredOrder(order, index))
     .filter(Boolean);
 
@@ -2981,93 +2976,77 @@ function applyPersistedQueueState(parsed) {
     Number.isInteger(parsed.orderSequence) ? parsed.orderSequence : 1,
     restoredOrders.length + 1,
   );
-  activeOrderId = restoredOrders.some((order) => order.id === parsed.activeOrderId)
-    ? parsed.activeOrderId
+  activeOrderItemId = restoredOrders.some((order) => order.id === parsed.activeOrderItemId)
+    ? parsed.activeOrderItemId
     : restoredOrders[0]?.id || null;
   return restoredOrders.length > 0;
 }
 
-function persistQueueState(options = {}) {
+function persistBatchState(options = {}) {
   const { skipRemoteSave = false } = options;
 
-  try {
-    if (!orders.length) {
-      localStorage.removeItem(STORAGE_KEY);
-      if (!suppressQueueSyncLocalNotice) {
-        updateQueueSyncStatus("empty");
-      }
-    } else {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(buildPersistedQueueState()));
-      if (!suppressQueueSyncLocalNotice) {
-        if (sharedQueueSyncState === "local-recovery") {
-          updateQueueSyncStatus("local-recovery", { count: orders.length, detail: sharedQueueSyncDetail });
-        } else if (!isSharedQueueSyncEnabled()) {
-          updateQueueSyncStatus("local-only", { count: orders.length });
-        }
-      }
-    }
-  } catch {
-    // Ignore storage failures and continue with in-memory editing.
+  if (!orders.length && !suppressBatchSyncLocalNotice) {
+    updateBatchSyncStatus("empty");
   }
 
   if (!skipRemoteSave) {
-    triggerSharedQueueAutosave();
+    triggerProductionBatchAutosave();
   }
 }
 
-function schedulePersistQueueState(options = {}) {
-  if (queuePersistenceTimeoutId != null) {
-    window.clearTimeout(queuePersistenceTimeoutId);
+function schedulePersistBatchState(options = {}) {
+  if (batchPersistenceTimeoutId != null) {
+    window.clearTimeout(batchPersistenceTimeoutId);
   }
 
-  queuePersistenceTimeoutId = window.setTimeout(() => {
-    queuePersistenceTimeoutId = null;
-    persistQueueState(options);
+  batchPersistenceTimeoutId = window.setTimeout(() => {
+    batchPersistenceTimeoutId = null;
+    persistBatchState(options);
   }, 150);
 }
 
-function flushPersistQueueState(options = {}) {
+function flushPersistBatchState(options = {}) {
   const { keepalive = false } = options;
 
-  if (queuePersistenceTimeoutId != null) {
-    window.clearTimeout(queuePersistenceTimeoutId);
-    queuePersistenceTimeoutId = null;
+  if (batchPersistenceTimeoutId != null) {
+    window.clearTimeout(batchPersistenceTimeoutId);
+    batchPersistenceTimeoutId = null;
   }
 
-  persistQueueState({ skipRemoteSave: true });
-  if (keepalive && hasPendingSharedQueueChanges()) {
-    void flushSharedQueueAutosave({ force: true, keepalive: true });
+  persistBatchState({ skipRemoteSave: true });
+  if (keepalive && hasPendingProductionBatchChanges()) {
+    void flushProductionBatchAutosave({ force: true, keepalive: true });
     return;
   }
 
-  triggerSharedQueueAutosave({ immediate: true });
+  triggerProductionBatchAutosave({ immediate: true });
 }
 
-function flushLocalQueuePersistence() {
-  if (queuePersistenceTimeoutId != null) {
-    window.clearTimeout(queuePersistenceTimeoutId);
-    queuePersistenceTimeoutId = null;
+function flushLocalBatchPersistence() {
+  if (batchPersistenceTimeoutId != null) {
+    window.clearTimeout(batchPersistenceTimeoutId);
+    batchPersistenceTimeoutId = null;
   }
 
-  persistQueueState({ skipRemoteSave: true });
+  persistBatchState({ skipRemoteSave: true });
 }
 
-function clearSharedQueueConflict() {
-  sharedQueueConflictState = null;
-  suppressQueueSyncLocalNotice = true;
-  persistQueueState({ skipRemoteSave: true });
-  suppressQueueSyncLocalNotice = false;
+function clearProductionBatchConflict() {
+  productionBatchConflictState = null;
+  suppressBatchSyncLocalNotice = true;
+  persistBatchState({ skipRemoteSave: true });
+  suppressBatchSyncLocalNotice = false;
 }
 
-function reloadSharedQueueFromToast() {
-  if (sharedQueueConflictState) {
-    clearSharedQueueConflict();
+function reloadProductionBatchFromToast() {
+  if (productionBatchConflictState) {
+    clearProductionBatchConflict();
   }
 
   saveActiveOrderDraft();
-  clearSharedQueueAutosaveTimeout();
-  sharedQueueAutosavePending = false;
-  flushLocalQueuePersistence();
+  clearProductionBatchAutosaveTimeout();
+  productionBatchAutosavePending = false;
+  flushLocalBatchPersistence();
   window.location.reload();
 }
 
@@ -3095,45 +3074,7 @@ function scheduleDeferredPreviewRender() {
   });
 }
 
-function clearPersistedQueueState() {
-  if (queuePersistenceTimeoutId != null) {
-    window.clearTimeout(queuePersistenceTimeoutId);
-    queuePersistenceTimeoutId = null;
-  }
-  clearSharedQueueAutosaveTimeout();
-  sharedQueueAutosavePending = false;
-  try {
-    localStorage.removeItem(STORAGE_KEY);
-  } catch {
-    // Ignore storage failures and continue with in-memory editing.
-  }
-}
-
-function readPersistedQueueState() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) {
-      return null;
-    }
-
-    const parsed = JSON.parse(raw);
-    if (!parsed || parsed.version !== STORAGE_VERSION || !Array.isArray(parsed.orders)) {
-      clearPersistedQueueState();
-      return null;
-    }
-
-    return parsed;
-  } catch {
-    clearPersistedQueueState();
-    return null;
-  }
-}
-
-function loadPersistedQueueState() {
-  return applyPersistedQueueState(readPersistedQueueState());
-}
-
-async function saveQueueSnapshotToRemote(options = {}) {
+async function saveBatchSnapshotToRemote(options = {}) {
   const {
     persistActiveDraft = true,
     publishOrderIds = undefined,
@@ -3148,20 +3089,20 @@ async function saveQueueSnapshotToRemote(options = {}) {
     saveActiveOrderDraft();
   }
 
-  if (!canSaveThroughSharedQueueConflict(publishOrderIds)) {
-    renderSharedQueueToast();
+  if (!canSaveThroughProductionBatchConflict(publishOrderIds)) {
+    renderProductionBatchToast();
     return;
   }
 
   try {
-    snapshot = buildSharedQueueSnapshot({ publishOrderIds });
-    const snapshotKey = buildSharedQueueSaveKey(snapshot);
+    snapshot = buildProductionBatchSnapshot({ publishOrderIds });
+    const snapshotKey = buildProductionBatchSaveKey(snapshot);
 
-    if (!canAttemptSharedQueueSave() || !snapshot.queue?.id || !snapshot.queue?.workspaceId) {
+    if (!canAttemptProductionBatchSave() || !snapshot.batch?.id || !snapshot.batch?.workspaceId) {
       return;
     }
 
-    if (snapshotKey && snapshotKey === lastSharedQueueSaveKey) {
+    if (snapshotKey && snapshotKey === lastProductionBatchSaveKey) {
       return;
     }
 
@@ -3169,27 +3110,27 @@ async function saveQueueSnapshotToRemote(options = {}) {
     if (!accessToken) {
       throw new Error("Authentication required.");
     }
-    sharedQueueAccessToken = accessToken;
+    productionBatchAccessToken = accessToken;
 
-    const savedSnapshot = await saveSharedQueueSnapshot(snapshot, { keepalive, accessToken });
-    if (sharedQueueConflictState) {
-      renderSharedQueueToast();
+    const savedSnapshot = await saveProductionBatchSnapshot(snapshot, { keepalive, accessToken });
+    if (productionBatchConflictState) {
+      renderProductionBatchToast();
       return;
     }
-    if (savedSnapshot?.queue) {
-      enableSharedQueueSync(savedSnapshot.queue);
+    if (savedSnapshot?.batch) {
+      enableProductionBatchSync(savedSnapshot.batch);
     }
-    mergeSharedQueuePublishedStateFromSnapshot(savedSnapshot || snapshot);
-    mergeSharedQueueAuditFromSnapshot(savedSnapshot);
-    lastSharedQueueSaveKey = buildSharedQueueSaveKey(buildSharedQueueSnapshot());
-    suppressQueueSyncLocalNotice = true;
-    suppressSharedQueueAutosave = true;
-    persistQueueState({ skipRemoteSave: true });
-    suppressSharedQueueAutosave = false;
-    suppressQueueSyncLocalNotice = false;
+    mergeProductionBatchPublishedStateFromSnapshot(savedSnapshot || snapshot);
+    mergeProductionBatchAuditFromSnapshot(savedSnapshot);
+    lastProductionBatchSaveKey = buildProductionBatchSaveKey(buildProductionBatchSnapshot());
+    suppressBatchSyncLocalNotice = true;
+    suppressProductionBatchAutosave = true;
+    persistBatchState({ skipRemoteSave: true });
+    suppressProductionBatchAutosave = false;
+    suppressBatchSyncLocalNotice = false;
 
-    if (isQueueSnapshotEmpty(savedSnapshot || snapshot)) {
-      updateQueueSyncStatus("empty");
+    if (isBatchSnapshotEmpty(savedSnapshot || snapshot)) {
+      updateBatchSyncStatus("empty");
       return;
     }
 
@@ -3198,154 +3139,149 @@ async function saveQueueSnapshotToRemote(options = {}) {
         autoHideMs: successAlertAutoHideMs,
       });
     }
-    updateQueueSyncStatus("saved-remote", { count: (savedSnapshot || snapshot).orders.length });
+    updateBatchSyncStatus("saved-remote", { count: (savedSnapshot || snapshot).orderItems.length });
   } catch (error) {
-    suppressSharedQueueAutosave = false;
-    suppressQueueSyncLocalNotice = false;
-    const isConflictError = error instanceof SharedQueueConflictError;
+    suppressProductionBatchAutosave = false;
+    suppressBatchSyncLocalNotice = false;
+    const isConflictError = error instanceof ProductionBatchConflictError;
     if (isConflictError) {
-      const fallbackConflictOrderId = resolveSharedQueueSaveOrderIds(publishOrderIds)[0] || "";
-      const conflictingOrder = orders.find((order) => order.id === error.details?.orderId)
+      const fallbackConflictOrderId = resolveProductionBatchSaveOrderIds(publishOrderIds)[0] || "";
+      const conflictingOrder = orders.find((order) => order.id === error.details?.orderItemId)
         || orders.find((order) => order.id === fallbackConflictOrderId)
         || getActiveOrder();
-      const conflictingOrderId = typeof error.details?.orderId === "string" && error.details.orderId
-        ? error.details.orderId
+      const conflictingOrderId = typeof error.details?.orderItemId === "string" && error.details.orderItemId
+        ? error.details.orderItemId
         : conflictingOrder?.id || "";
       if (conflictingOrder) {
-        applySharedQueueAuditToOrder(conflictingOrder, error.details);
+        applyProductionBatchAuditToOrder(conflictingOrder, error.details);
       }
-      sharedQueueConflictState = {
+      productionBatchConflictState = {
         orderId: conflictingOrderId,
         detail: "",
         auditSource: error.details && typeof error.details === "object" ? structuredClone(error.details) : null,
       };
-      persistQueueState({ skipRemoteSave: true });
-      renderSharedQueueToast();
+      persistBatchState({ skipRemoteSave: true });
+      renderProductionBatchToast();
       return;
     }
 
-    if (isSharedQueueAuthenticationError(error)) {
-      const detail = "Shared queue session expired. Sign in again to continue saving this batch.";
-      handleSharedQueueAuthenticationRequired(detail);
-      persistQueueState({ skipRemoteSave: true });
+    if (isProductionBatchAuthenticationError(error)) {
+      const detail = "Production batch session expired. Sign in again to continue saving this batch.";
+      handleProductionBatchAuthenticationRequired(detail);
+      persistBatchState({ skipRemoteSave: true });
       updateWorkflowAlert(detail, "pending");
       return;
     }
 
     if (degradeOnFailure && !isConflictError) {
-      disableSharedQueueSync(
+      disableProductionBatchSync(
         error instanceof Error && error.message
-          ? `Shared queue sync is unavailable. ${error.message}`
-          : "Shared queue sync is unavailable.",
+          ? `Production batch sync is unavailable. ${error.message}`
+          : "Production batch sync is unavailable.",
       );
-      persistQueueState({ skipRemoteSave: true });
+      persistBatchState({ skipRemoteSave: true });
     }
-    sharedQueueConflictState = null;
-    renderSharedQueueToast();
+    productionBatchConflictState = null;
+    renderProductionBatchToast();
     updateWorkflowAlert(
-      error instanceof Error ? error.message : "Unable to save the shared queue.",
+      error instanceof Error ? error.message : "Unable to save the production batch.",
       "error",
     );
   }
 }
 
-async function restoreInitialQueueState(accessToken) {
-  const localSnapshot = readPersistedQueueState();
-  let sharedSession = null;
+async function restoreInitialBatchState(accessToken) {
+  let batchSession = null;
   let remoteSnapshot = null;
   let sharedSyncUnavailable = false;
-  sharedQueueConflictState = null;
+  productionBatchConflictState = null;
 
   try {
-    sharedSession = await fetchSharedSession(accessToken);
-    sharedSessionContext = sharedSession;
-    if (sharedSession?.queue) {
-      enableSharedQueueSync(sharedSession.queue);
+    batchSession = await fetchBatchSession(accessToken);
+    batchSessionContext = batchSession;
+    if (batchSession?.batch) {
+      enableProductionBatchSync(batchSession.batch);
     } else {
-      setSharedQueueContext(localSnapshot?.queue || null);
-      setSharedQueueSyncState("disabled");
+      setProductionBatchContext(null);
+      setProductionBatchSyncState("disabled");
     }
   } catch (error) {
-    if (isSharedQueueAuthenticationError(error)) {
-      sharedSessionContext = null;
-      setSharedQueueContext(localSnapshot?.queue || null);
-      handleSharedQueueAuthenticationRequired("Shared queue session expired. Sign in again to reopen the shared queue.");
+    if (isProductionBatchAuthenticationError(error)) {
+      batchSessionContext = null;
+      setProductionBatchContext(null);
+      handleProductionBatchAuthenticationRequired("Production batch session expired. Sign in again to reopen the production batch.");
       return {
         source: null,
         count: 0,
       };
     }
 
-    sharedSessionContext = null;
-    setSharedQueueContext(localSnapshot?.queue || null);
-    disableSharedQueueSync(
+    batchSessionContext = null;
+    setProductionBatchContext(null);
+    disableProductionBatchSync(
       error instanceof Error && error.message
-        ? `Shared queue sync is unavailable. ${error.message}`
-        : "Shared queue sync is unavailable.",
+        ? `Production batch sync is unavailable. ${error.message}`
+        : "Production batch sync is unavailable.",
     );
     sharedSyncUnavailable = true;
   }
 
-  if (sharedSession?.queue?.id) {
+  if (batchSession?.batch?.id) {
     try {
-      remoteSnapshot = await fetchSharedQueueSnapshot(sharedSession.queue.id, accessToken);
+      remoteSnapshot = await fetchProductionBatchSnapshot(batchSession.batch.id, accessToken);
     } catch (error) {
-      if (isSharedQueueAuthenticationError(error)) {
-        handleSharedQueueAuthenticationRequired("Shared queue session expired. Sign in again to reopen the shared queue.");
+      if (isProductionBatchAuthenticationError(error)) {
+        handleProductionBatchAuthenticationRequired("Production batch session expired. Sign in again to reopen the production batch.");
         return {
           source: null,
           count: 0,
         };
       }
 
-      disableSharedQueueSync(
+      disableProductionBatchSync(
         error instanceof Error && error.message
-          ? `Shared queue sync is unavailable. ${error.message}`
-          : "Shared queue sync is unavailable.",
+          ? `Production batch sync is unavailable. ${error.message}`
+          : "Production batch sync is unavailable.",
       );
       sharedSyncUnavailable = true;
     }
   }
 
-  const startupState = chooseSharedQueueStartupState({
+  const startupState = chooseProductionBatchStartupState({
     remoteSnapshot,
-    localCache: localSnapshot,
+    localCache: null,
   });
   const initialSnapshot = startupState.snapshot;
 
-  if (initialSnapshot?.queue) {
-    setSharedQueueContext(initialSnapshot.queue);
+  if (initialSnapshot?.batch) {
+    setProductionBatchContext(initialSnapshot.batch);
   }
 
-  if (!initialSnapshot || !applyPersistedQueueState(initialSnapshot)) {
-    suppressQueueSyncLocalNotice = true;
-    persistQueueState({ skipRemoteSave: true });
-    suppressQueueSyncLocalNotice = false;
-    lastSharedQueueSaveKey = null;
-    updateQueueSyncStatus("empty");
+  if (!initialSnapshot || !applyPersistedBatchState(initialSnapshot)) {
+    suppressBatchSyncLocalNotice = true;
+    persistBatchState({ skipRemoteSave: true });
+    suppressBatchSyncLocalNotice = false;
+    lastProductionBatchSaveKey = null;
+    updateBatchSyncStatus("empty");
     return {
       source: startupState.source,
       count: 0,
     };
   }
 
-  suppressQueueSyncLocalNotice = true;
-  persistQueueState({ skipRemoteSave: true });
-  suppressQueueSyncLocalNotice = false;
-  lastSharedQueueSaveKey = startupState.source === "remote"
-    ? buildSharedQueueSaveKey(buildSharedQueueSnapshot())
+  suppressBatchSyncLocalNotice = true;
+  persistBatchState({ skipRemoteSave: true });
+  suppressBatchSyncLocalNotice = false;
+  lastProductionBatchSaveKey = startupState.source === "remote"
+    ? buildProductionBatchSaveKey(buildProductionBatchSnapshot())
     : null;
 
   if (startupState.source === "remote") {
-    updateQueueSyncStatus("restored-remote", { count: orders.length });
-  } else if (sharedQueueSyncState === "local-recovery") {
-    updateQueueSyncStatus("local-recovery", { count: orders.length });
-  } else if (startupState.source === "local-cache") {
-    updateQueueSyncStatus("restored-local", { count: orders.length });
+    updateBatchSyncStatus("restored-remote", { count: orders.length });
   }
 
   if (sharedSyncUnavailable && !orders.length) {
-    updateWorkflowAlert("Shared queue sync is unavailable. Local recovery mode is ready if you make changes.", "pending");
+    updateWorkflowAlert("Supabase sync is unavailable. Production data was not loaded.", "error");
   }
 
   return {
@@ -3389,7 +3325,7 @@ function normalizeImportedText(value) {
   return repairImportedMojibake(decodeHtmlEntities(value).trim());
 }
 
-function createQueueItem({
+function createBatchItem({
   text = "",
   status = "in-progress",
   presetId = null,
@@ -3504,7 +3440,7 @@ function syncOrdersForListingAssignmentChange(listingId) {
   }
 
   let activeOrderChanged = false;
-  let queueChanged = false;
+  let batchChanged = false;
 
   orders.forEach((order) => {
     if (
@@ -3524,8 +3460,8 @@ function syncOrdersForListingAssignmentChange(listingId) {
     }
 
     clearOrderCompletionState(order, nextSettings);
-    queueChanged = true;
-    activeOrderChanged = activeOrderChanged || order.id === activeOrderId;
+    batchChanged = true;
+    activeOrderChanged = activeOrderChanged || order.id === activeOrderItemId;
   });
 
   if (activeOrderChanged) {
@@ -3535,7 +3471,7 @@ function syncOrdersForListingAssignmentChange(listingId) {
     }
   }
 
-  return queueChanged;
+  return batchChanged;
 }
 
 function normalizeImportedEntry(entry) {
@@ -3580,7 +3516,7 @@ function normalizeImportedEntry(entry) {
   };
 }
 
-function buildImportedQueueIdentity(source, text = "") {
+function buildImportedBatchIdentity(source, text = "") {
   if (!source || typeof source !== "object") {
     return "";
   }
@@ -3733,7 +3669,7 @@ function captureSelectionScrollState() {
   return {
     pageLeft: window.scrollX,
     pageTop: window.scrollY,
-    queue: captureElementScrollState(orderList),
+    batch: captureElementScrollState(orderList),
   };
 }
 
@@ -3742,7 +3678,7 @@ function restoreSelectionScrollState(state) {
     return;
   }
 
-  restoreElementScrollState(orderList, state.queue);
+  restoreElementScrollState(orderList, state.batch);
   window.scrollTo(state.pageLeft, state.pageTop);
 }
 
@@ -4068,8 +4004,8 @@ function updateGlobalVerticalScaleControl(settings = getCurrentSettings()) {
   globalVerticalScaleOutput.textContent = mixed ? "Mixed" : lineValueText("verticalScale", value);
 }
 
-function setQueueActionLabel(button, label) {
-  const labelNode = queueActionLabelByButton.get(button);
+function setBatchActionLabel(button, label) {
+  const labelNode = batchActionLabelByButton.get(button);
   if (labelNode) {
     labelNode.textContent = label;
     return;
@@ -4289,7 +4225,7 @@ function applyPresetSelection(presetId) {
 }
 
 function getActiveOrder() {
-  return orders.find((order) => order.id === activeOrderId) || null;
+  return orders.find((order) => order.id === activeOrderItemId) || null;
 }
 
 function getNextIncompleteOrder(orderId) {
@@ -4385,7 +4321,7 @@ function saveActiveOrderDraft() {
     order.status = "in-progress";
     order.analysisBadge = null;
   }
-  schedulePersistQueueState();
+  schedulePersistBatchState();
 }
 
 function restoreOrderFromPublishedSnapshot(order) {
@@ -4429,9 +4365,9 @@ function cancelActiveOrderChanges() {
   }
 
   applySettings(order.settings);
-  suppressQueueSyncLocalNotice = true;
-  persistQueueState({ skipRemoteSave: true });
-  suppressQueueSyncLocalNotice = false;
+  suppressBatchSyncLocalNotice = true;
+  persistBatchState({ skipRemoteSave: true });
+  suppressBatchSyncLocalNotice = false;
   renderOrderList();
   scheduleDeferredPreviewRender();
   updateWorkflowAlert("Reverted to the last saved design.", "success");
@@ -4478,10 +4414,10 @@ function copyActiveLayoutControls() {
   order.settings = normalizeSettings(getCurrentSettings());
   copiedLayoutControlsSnapshot = buildLayoutControlsSnapshot({
     id: order.id,
-    label: buildQueueOrderNumber(order),
+    label: buildBatchOrderNumber(order),
     settings: order.settings,
   });
-  updateWorkflowAlert(`Copied layout controls from ${buildQueueOrderNumber(order)}.`, "success");
+  updateWorkflowAlert(`Copied layout controls from ${buildBatchOrderNumber(order)}.`, "success");
   renderOrderList();
 }
 
@@ -4502,7 +4438,7 @@ function pasteLayoutControlsIntoActiveOrder() {
   const alertMessage = buildLayoutControlsPasteAlert({
     changed,
     sourceLabel,
-    targetLabel: buildQueueOrderNumber(order),
+    targetLabel: buildBatchOrderNumber(order),
     sourceLineCount,
     targetLineCount,
     appliedLineCount,
@@ -4574,7 +4510,7 @@ function updateActiveOrderFromControls() {
       order.analysisState = "idle";
     }
   }
-  schedulePersistQueueState();
+  schedulePersistBatchState();
   scheduleRenderOrderList();
 }
 
@@ -4653,7 +4589,7 @@ function isOrderReadyForExport(order) {
     return false;
   }
 
-  if (order?.id === activeOrderId && hasUnsavedRenderChanges(order)) {
+  if (order?.id === activeOrderItemId && hasUnsavedRenderChanges(order)) {
     return false;
   }
 
@@ -4716,7 +4652,7 @@ function buildCompletedAnalysisBadge(analysis) {
   };
 }
 
-function getQueueAnalysisSummary(order) {
+function getBatchAnalysisSummary(order) {
   if (!order) {
     return null;
   }
@@ -4772,7 +4708,7 @@ function renderOrderList() {
       return true;
     }
 
-    return `${buildQueueOrderNumber(order)} ${order.text} ${order.source?.orderNumber || ""} ${order.source?.listingId || ""} ${order.source?.buyerName || ""}`
+    return `${buildBatchOrderNumber(order)} ${order.text} ${order.source?.orderNumber || ""} ${order.source?.listingId || ""} ${order.source?.buyerName || ""}`
       .toLowerCase()
       .includes(searchTerm);
   });
@@ -4789,7 +4725,7 @@ function renderOrderList() {
   if (notStartedCountOutput) {
     notStartedCountOutput.textContent = String(notStartedCount);
   }
-  clearQueueButton.disabled = orders.length === 0;
+  clearBatchButton.disabled = orders.length === 0;
   if (showColorCountsButton) {
     showColorCountsButton.disabled = orders.length === 0;
   }
@@ -4800,7 +4736,7 @@ function renderOrderList() {
   if (!orders.length) {
     const empty = document.createElement("p");
     empty.className = "order-empty";
-    empty.textContent = "Add a design manually or import Etsy clipboard data. Each personalized line item becomes its own queue row.";
+    empty.textContent = "Add a design manually or import Etsy clipboard data. Each personalized line item becomes its own batch row.";
     orderList.append(empty);
   }
 
@@ -4813,7 +4749,7 @@ function renderOrderList() {
 
   visibleOrders.forEach((order) => {
     const row = document.createElement("div");
-    row.className = `order-row${order.id === activeOrderId ? " active" : ""}`;
+    row.className = `order-row${order.id === activeOrderItemId ? " active" : ""}`;
 
     const item = document.createElement("button");
     item.type = "button";
@@ -4825,9 +4761,9 @@ function renderOrderList() {
 
     const title = document.createElement("div");
     title.className = "order-item-title";
-    title.textContent = buildQueueOrderNumber(order);
+    title.textContent = buildBatchOrderNumber(order);
 
-    const analysisSummary = getQueueAnalysisSummary(order);
+    const analysisSummary = getBatchAnalysisSummary(order);
     const analysisIndicator = document.createElement("span");
     renderAnalysisIndicator(analysisIndicator, analysisSummary);
 
@@ -4840,18 +4776,18 @@ function renderOrderList() {
 
     const recipientText = document.createElement("div");
     recipientText.className = "order-item-recipient";
-    recipientText.textContent = `Buyer: ${buildQueueRecipient(order)}`;
-    recipientText.title = buildQueueRecipient(order);
+    recipientText.textContent = `Buyer: ${buildBatchRecipient(order)}`;
+    recipientText.title = buildBatchRecipient(order);
 
     const listingText = document.createElement("div");
     listingText.className = "order-item-listing";
-    listingText.textContent = `Listing: ${buildQueueListing(order)}`;
-    listingText.title = buildQueueListing(order);
+    listingText.textContent = `Listing: ${buildBatchListing(order)}`;
+    listingText.title = buildBatchListing(order);
 
     const personalizationText = document.createElement("div");
     personalizationText.className = "order-item-personalization";
-    personalizationText.textContent = `Personalization: ${buildQueuePersonalization(order)}`;
-    personalizationText.title = buildQueuePersonalization(order);
+    personalizationText.textContent = `Personalization: ${buildBatchPersonalization(order)}`;
+    personalizationText.title = buildBatchPersonalization(order);
 
     header.append(title, analysisIndicator, status);
     body.append(recipientText, listingText, personalizationText);
@@ -4866,7 +4802,7 @@ function renderOrderList() {
         <path d="M9 3h6l1 2h4v2H4V5h4l1-2Zm1 7h2v8h-2v-8Zm4 0h2v8h-2v-8ZM7 10h2v8H7v-8Zm-1 11V8h12v13H6Z" />
       </svg>
     `;
-    deleteButton.setAttribute("aria-label", `Delete ${buildQueueOrderNumber(order)}`);
+    deleteButton.setAttribute("aria-label", `Delete ${buildBatchOrderNumber(order)}`);
     deleteButton.addEventListener("click", (event) => {
       event.stopPropagation();
       void deleteOrder(order.id);
@@ -4881,9 +4817,9 @@ function renderOrderList() {
   renderListingReference(activeOrder);
   renderImportedColor(activeOrder);
   renderPresetListingIndicator(activeOrder);
-  activeOrderName.textContent = activeOrder ? buildQueueOrderNumber(activeOrder) : "No design selected";
+  activeOrderName.textContent = activeOrder ? buildBatchOrderNumber(activeOrder) : "No design selected";
   activeOrderMeta.textContent = buildActiveMeta(activeOrder);
-  renderSharedQueueToast(activeOrder);
+  renderProductionBatchToast(activeOrder);
   updateCaptureButtonState(activeOrder);
   downloadButton.disabled = !activeOrder || !isOrderReadyForExport(activeOrder);
   copyButton.disabled = !activeOrder || !isOrderReadyForExport(activeOrder) || !canCopySvgToClipboard();
@@ -4895,12 +4831,12 @@ function renderOrderList() {
   reloadPresetButton.disabled = !activeOrder;
 }
 
-function hideInitialQueueLoading() {
-  if (!initialQueueLoading) {
+function hideInitialBatchLoading() {
+  if (!initialBatchLoading) {
     return;
   }
 
-  initialQueueLoading.hidden = true;
+  initialBatchLoading.hidden = true;
 }
 
 function setActiveWorkspace(workspace) {
@@ -4921,19 +4857,11 @@ function setActiveWorkspace(workspace) {
 }
 
 function readNavCollapsedPreference() {
-  try {
-    return localStorage.getItem(NAV_COLLAPSED_STORAGE_KEY) === "true";
-  } catch {
-    return false;
-  }
+  return false;
 }
 
 function persistNavCollapsedPreference(nextCollapsed) {
-  try {
-    localStorage.setItem(NAV_COLLAPSED_STORAGE_KEY, String(Boolean(nextCollapsed)));
-  } catch {
-    // Navigation preference persistence should never block the production workspace.
-  }
+  navCollapsed = Boolean(nextCollapsed);
 }
 
 function setNavCollapsed(nextCollapsed, options = {}) {
@@ -4954,14 +4882,14 @@ function selectOrder(orderId) {
     return;
   }
 
-  activeOrderId = order.id;
+  activeOrderItemId = order.id;
   if (order.status === "not-started") {
     order.status = "in-progress";
   }
 
   syncOrderPresetFromListing(order);
   applySettings(order.settings);
-  persistQueueState();
+  persistBatchState();
   renderOrderList();
   restoreSelectionScrollState(selectionScrollState);
   scheduleDeferredPreviewRender();
@@ -4971,7 +4899,7 @@ function selectOrder(orderId) {
 }
 
 function addOrder() {
-  const order = createQueueItem({
+  const order = createBatchItem({
     text: "",
     status: "in-progress",
     presetId: getDefaultPresetId(),
@@ -5008,7 +4936,7 @@ async function deleteOrder(orderId) {
 
   const confirmed = await showConfirmationDialog({
     title: "Delete Design?",
-    description: `Delete ${buildQueueOrderNumber(order)} from the current batch?`,
+    description: `Delete ${buildBatchOrderNumber(order)} from the current batch?`,
     confirmLabel: "Confirm",
     cancelLabel: "Keep Design",
     isDanger: true,
@@ -5024,9 +4952,9 @@ async function deleteOrder(orderId) {
 
   orders.splice(orderIndex, 1);
 
-  if (activeOrderId === orderId) {
-    activeOrderId = orders[orderIndex]?.id || orders[orderIndex - 1]?.id || null;
-    if (activeOrderId) {
+  if (activeOrderItemId === orderId) {
+    activeOrderItemId = orders[orderIndex]?.id || orders[orderIndex - 1]?.id || null;
+    if (activeOrderItemId) {
       const nextOrder = getActiveOrder();
       applySettings(nextOrder.settings);
     } else {
@@ -5036,16 +4964,16 @@ async function deleteOrder(orderId) {
   }
 
   if (!orders.length) {
-    activeOrderId = null;
+    activeOrderItemId = null;
     orderSequence = 1;
-    persistQueueState();
-    updateWorkflowAlert(isSharedQueueSyncEnabled() ? "Shared queue cleared." : "Queue cleared.", "pending");
+    persistBatchState();
+    updateWorkflowAlert(isProductionBatchSyncEnabled() ? "Production batch cleared." : "Batch cleared.", "pending");
   } else {
-    persistQueueState();
+    persistBatchState();
   }
 
   renderOrderList();
-  if (activeOrderId) {
+  if (activeOrderItemId) {
     render();
   }
 }
@@ -5058,9 +4986,9 @@ async function clearAllOrders() {
 
   const confirmed = await showConfirmationDialog({
     title: "Clear Batch?",
-    description: isSharedQueueSyncEnabled()
-      ? "Clear the shared queue and refresh the local recovery cache?"
-      : "Clear the current batch and delete all saved local designs?",
+    description: isProductionBatchSyncEnabled()
+      ? "Clear the current production batch in Supabase?"
+      : "Clear the current in-memory batch?",
     confirmLabel: "Confirm",
     cancelLabel: "Keep Batch",
     isDanger: true,
@@ -5070,14 +4998,14 @@ async function clearAllOrders() {
   }
 
   orders.splice(0, orders.length);
-  activeOrderId = null;
+  activeOrderItemId = null;
   orderSequence = 1;
   resetEditorToEmptyState();
-  persistQueueState();
+  persistBatchState();
   updateWorkflowAlert(
-    isSharedQueueSyncEnabled()
-      ? "Batch cleared from the shared queue and local recovery cache updated."
-      : "Batch cleared locally.",
+    isProductionBatchSyncEnabled()
+      ? "Production batch cleared in Supabase."
+      : "Batch cleared.",
     "pending",
   );
   renderOrderList();
@@ -5090,21 +5018,21 @@ async function importFromClipboard() {
   }
 
   importClipboardButton.disabled = true;
-  setQueueActionLabel(importClipboardButton, "Pasting...");
+  setBatchActionLabel(importClipboardButton, "Pasting...");
 
   try {
     const clipboardText = await navigator.clipboard.readText();
     const importedItems = parseImportedItems(clipboardText);
     const existingImportedIdentities = new Set(
       orders
-        .map((order) => buildImportedQueueIdentity(order?.source, order?.text))
+        .map((order) => buildImportedBatchIdentity(order?.source, order?.text))
         .filter(Boolean),
     );
     const dedupedItems = [];
     let skippedCount = 0;
 
     for (const entry of importedItems) {
-      const identity = buildImportedQueueIdentity(entry.source, entry.text);
+      const identity = buildImportedBatchIdentity(entry.source, entry.text);
 
       if (identity && existingImportedIdentities.has(identity)) {
         skippedCount += 1;
@@ -5119,7 +5047,7 @@ async function importFromClipboard() {
     }
 
     const createdItems = dedupedItems.map((entry) => {
-      return createQueueItem({
+      return createBatchItem({
         text: entry.text,
         status: "in-progress",
         presetId: entry.presetId,
@@ -5138,11 +5066,11 @@ async function importFromClipboard() {
     }
 
     if (createdItems.length && skippedCount) {
-      updateWorkflowAlert(`Imported ${createdItems.length} new Etsy design${createdItems.length === 1 ? "" : "s"} and skipped ${skippedCount} already in the queue.`, "success");
+      updateWorkflowAlert(`Imported ${createdItems.length} new Etsy design${createdItems.length === 1 ? "" : "s"} and skipped ${skippedCount} already in the batch.`, "success");
     } else if (createdItems.length) {
       updateWorkflowAlert(`Imported ${createdItems.length} Etsy design${createdItems.length === 1 ? "" : "s"} from the clipboard.`, "success");
     } else if (skippedCount) {
-      updateWorkflowAlert(`Skipped ${skippedCount} Etsy design${skippedCount === 1 ? "" : "s"} already in the queue. No new designs were added.`, "success");
+      updateWorkflowAlert(`Skipped ${skippedCount} Etsy design${skippedCount === 1 ? "" : "s"} already in the batch. No new designs were added.`, "success");
     } else {
       updateWorkflowAlert("Clipboard data did not include any importable Etsy designs.", "error");
     }
@@ -5151,7 +5079,7 @@ async function importFromClipboard() {
     updateWorkflowAlert(message, "error");
   } finally {
     importClipboardButton.disabled = false;
-    setQueueActionLabel(importClipboardButton, "Paste");
+    setBatchActionLabel(importClipboardButton, "Paste");
   }
 }
 
@@ -5180,7 +5108,7 @@ async function captureActiveOrder({ advanceToNext = false } = {}) {
     fullLabel: "Analysis running",
   };
   order.status = "captured";
-  persistQueueState();
+  persistBatchState();
   renderOrderList();
 
   updateConnectionStatus(
@@ -5227,10 +5155,10 @@ async function captureActiveOrder({ advanceToNext = false } = {}) {
         order.previousCompletedBuild = null;
       }
 
-      await saveQueueSnapshotToRemote({
+      await saveBatchSnapshotToRemote({
         persistActiveDraft: false,
         publishOrderIds: [order.id],
-        successMessage: `Shared queue saved at ${new Date().toLocaleTimeString([], {
+        successMessage: `Production batch saved at ${new Date().toLocaleTimeString([], {
           hour: "numeric",
           minute: "2-digit",
         })}.`,
@@ -5238,11 +5166,11 @@ async function captureActiveOrder({ advanceToNext = false } = {}) {
       });
     }
 
-    persistQueueState();
+    persistBatchState();
 
     if (
       shouldApplyCompletedAnalysis
-      && activeOrderId === order.id
+      && activeOrderItemId === order.id
       && settingsSignatureMatches(getCurrentSettings(), completionSignature)
     ) {
       renderPreviewFromLayout({
@@ -5272,20 +5200,20 @@ async function captureActiveOrder({ advanceToNext = false } = {}) {
         order.completedSettingsSignature = getBuildForSignature(order, completionSignature)?.signature || null;
       }
     }
-    if (shouldApplyFailedAnalysis && activeOrderId === order.id) {
+    if (shouldApplyFailedAnalysis && activeOrderItemId === order.id) {
       updateConnectionStatus(
         "warning",
         "Analysis failed",
         `Face analysis could not complete, so this completed design is not ready for export yet.${detail}`,
       );
     }
-    persistQueueState();
+    persistBatchState();
     renderOrderList();
   } finally {
     if (order.pendingAnalysisRequestId === requestId || order.pendingAnalysisRequestId == null) {
       order.analysisState = order.pendingAnalysisRequestId ? "running" : "idle";
     }
-    persistQueueState();
+    persistBatchState();
     renderOrderList();
   }
 }
@@ -5821,13 +5749,13 @@ async function analyzeLayout(layout) {
 function fillBackingHoles(imageData, width, height) {
   const data = imageData.data;
   const visited = new Uint8Array(width * height);
-  const queue = [];
+  const frontier = [];
 
   function isTransparent(index) {
     return data[index * 4 + 3] <= 32;
   }
 
-  function enqueue(x, y) {
+  function addFrontierPixel(x, y) {
     if (x < 0 || y < 0 || x >= width || y >= height) {
       return;
     }
@@ -5838,28 +5766,28 @@ function fillBackingHoles(imageData, width, height) {
     }
 
     visited[index] = 1;
-    queue.push(index);
+    frontier.push(index);
   }
 
   for (let x = 0; x < width; x += 1) {
-    enqueue(x, 0);
-    enqueue(x, height - 1);
+    addFrontierPixel(x, 0);
+    addFrontierPixel(x, height - 1);
   }
 
   for (let y = 0; y < height; y += 1) {
-    enqueue(0, y);
-    enqueue(width - 1, y);
+    addFrontierPixel(0, y);
+    addFrontierPixel(width - 1, y);
   }
 
-  while (queue.length) {
-    const index = queue.pop();
+  while (frontier.length) {
+    const index = frontier.pop();
     const x = index % width;
     const y = Math.floor(index / width);
 
-    enqueue(x + 1, y);
-    enqueue(x - 1, y);
-    enqueue(x, y + 1);
-    enqueue(x, y - 1);
+    addFrontierPixel(x + 1, y);
+    addFrontierPixel(x - 1, y);
+    addFrontierPixel(x, y + 1);
+    addFrontierPixel(x, y - 1);
   }
 
   for (let index = 0; index < width * height; index += 1) {
@@ -6145,7 +6073,7 @@ async function downloadSvg() {
       ...cachedBuild.layout,
       analysis: cachedBuild.analysis,
     });
-    persistQueueState();
+    persistBatchState();
     renderOrderList();
   } catch {
   } finally {
@@ -6265,7 +6193,7 @@ async function exportAllOrders() {
   }
 
   exportCompletedButton.disabled = true;
-  setQueueActionLabel(exportCompletedButton, "Exporting...");
+  setBatchActionLabel(exportCompletedButton, "Exporting...");
   exportCompletedButton.setAttribute("aria-busy", "true");
 
   try {
@@ -6287,11 +6215,11 @@ async function exportAllOrders() {
       order.status = "exported";
       order.capturedLayout = structuredClone(analysis ? { ...layout, analysis } : layout);
     });
-    persistQueueState();
+    persistBatchState();
   } catch {
   } finally {
     exportCompletedButton.disabled = false;
-    setQueueActionLabel(exportCompletedButton, "Export All Designs");
+    setBatchActionLabel(exportCompletedButton, "Export All Designs");
     exportCompletedButton.removeAttribute("aria-busy");
     renderOrderList();
   }
@@ -6317,7 +6245,7 @@ async function copyAllOrders() {
   }
 
   copyCompletedButton.disabled = true;
-  setQueueActionLabel(copyCompletedButton, "Copying...");
+  setBatchActionLabel(copyCompletedButton, "Copying...");
   copyCompletedButton.setAttribute("aria-busy", "true");
 
   try {
@@ -6337,7 +6265,7 @@ async function copyAllOrders() {
   } catch {
   } finally {
     copyCompletedButton.disabled = exportableOrders.length === 0 || !canCopySvgToClipboard();
-    setQueueActionLabel(copyCompletedButton, "Copy All Designs");
+    setBatchActionLabel(copyCompletedButton, "Copy All Designs");
     copyCompletedButton.removeAttribute("aria-busy");
     renderOrderList();
   }
@@ -6562,8 +6490,8 @@ presetWorkspaceButton.addEventListener("click", () => {
 sizeGuideWorkspaceButton.addEventListener("click", () => {
   setActiveWorkspace("sizeGuides");
 });
-sharedQueueLogoutButton?.addEventListener("click", () => {
-  void handleSharedQueueSignOut();
+productionBatchLogoutButton?.addEventListener("click", () => {
+  void handleProductionBatchSignOut();
 });
 presetEditorSelect?.addEventListener("change", () => {
   if (!presetEditorSelect.value) {
@@ -6623,7 +6551,7 @@ navCollapseButton.addEventListener("click", () => {
 
 addOrderButton.addEventListener("click", addOrder);
 importClipboardButton.addEventListener("click", importFromClipboard);
-clearQueueButton.addEventListener("click", clearAllOrders);
+clearBatchButton.addEventListener("click", clearAllOrders);
 showColorCountsButton?.addEventListener("click", openBatchColorCountsDialog);
 exportCompletedButton.addEventListener("click", exportAllOrders);
 copyCompletedButton.addEventListener("click", copyAllOrders);
@@ -6634,11 +6562,11 @@ overwritePresetButton?.addEventListener("click", () => {
 assignPresetToListingButton?.addEventListener("click", () => {
   void assignSelectedPresetToActiveListing();
 });
-[addOrderButton, importClipboardButton, clearQueueButton, showColorCountsButton, exportCompletedButton, copyCompletedButton]
+[addOrderButton, importClipboardButton, clearBatchButton, showColorCountsButton, exportCompletedButton, copyCompletedButton]
   .filter(Boolean)
   .forEach((button) => {
     button.addEventListener("click", () => {
-      queueToolsMenu?.removeAttribute("open");
+      batchToolsMenu?.removeAttribute("open");
     });
   });
 [copyButton, downloadButton]
@@ -6655,7 +6583,7 @@ assignPresetToListingButton?.addEventListener("click", () => {
       presetToolsMenu?.removeAttribute("open");
     });
   });
-registerOutsideDismissableDetailsMenu(queueToolsMenu);
+registerOutsideDismissableDetailsMenu(batchToolsMenu);
 registerOutsideDismissableDetailsMenu(presetToolsMenu);
 closeColorCountsButton?.addEventListener("click", closeBatchColorCountsDialog);
 colorCountsDialog?.addEventListener("click", (event) => {
@@ -6695,13 +6623,13 @@ presetAssignmentDialog?.addEventListener("click", (event) => {
   }
 });
 document.addEventListener("pointerdown", (event) => {
-  if (!queueToolsMenu?.hasAttribute("open")) {
+  if (!batchToolsMenu?.hasAttribute("open")) {
     if (!editorToolsMenu?.hasAttribute("open")) {
       return;
     }
   }
 
-  if (event.target instanceof Node && queueToolsMenu?.hasAttribute("open") && queueToolsMenu.contains(event.target)) {
+  if (event.target instanceof Node && batchToolsMenu?.hasAttribute("open") && batchToolsMenu.contains(event.target)) {
     return;
   }
 
@@ -6709,7 +6637,7 @@ document.addEventListener("pointerdown", (event) => {
     return;
   }
 
-  queueToolsMenu?.removeAttribute("open");
+  batchToolsMenu?.removeAttribute("open");
   editorToolsMenu?.removeAttribute("open");
 });
 orderSearchInput.addEventListener("input", renderOrderList);
@@ -6729,8 +6657,8 @@ workflowAlertActionButton?.addEventListener("click", () => {
     workflowAlertActionHandler();
   }
 });
-sharedQueueSignInForm?.addEventListener("submit", (event) => {
-  void handleSharedQueueSignInSubmit(event);
+productionBatchSignInForm?.addEventListener("submit", (event) => {
+  void handleProductionBatchSignInSubmit(event);
 });
 previewPanel.addEventListener("mousedown", startPreviewMiddlePan);
 previewPanel.addEventListener("auxclick", (event) => {
@@ -6756,12 +6684,12 @@ window.addEventListener("mouseup", (event) => {
 });
 window.addEventListener("blur", endPreviewMiddlePan);
 window.addEventListener("pagehide", () => {
-  flushPersistQueueState({ keepalive: true });
+  flushPersistBatchState({ keepalive: true });
 });
 
 setActiveWorkspace(activeWorkspace);
 setNavCollapsed(navCollapsed);
-renderSharedQueueLogoutButton();
+renderProductionBatchLogoutButton();
 await checkFonts();
 await loadPresetRegistry();
 renderPresetOptions();
@@ -6771,11 +6699,11 @@ renderSizePresetList();
 renderSizePresetEditorPreview();
 renderPresetEditorDraft();
 updateBackingOutput();
-sharedQueueAccessToken = await bootstrapSharedQueueAccess();
-const restoredQueue = sharedQueueAccessToken
-  ? await restoreInitialQueueState(sharedQueueAccessToken)
+productionBatchAccessToken = await bootstrapProductionBatchAccess();
+const restoredBatch = productionBatchAccessToken
+  ? await restoreInitialBatchState(productionBatchAccessToken)
   : { source: null, count: 0 };
-if ((!restoredQueue.source || restoredQueue.count === 0) && workflowAlert.dataset.state !== "error") {
+if ((!restoredBatch.source || restoredBatch.count === 0) && workflowAlert.dataset.state !== "error") {
   updateWorkflowAlert("", "pending");
 }
 const defaultPresetId = getDefaultPresetId();
@@ -6802,7 +6730,7 @@ updateGlobalVerticalScaleControl(normalizeSettings({
   weldExportedDesign: defaultPresetBaseSettings.weldExportedDesign,
   lines: [],
 }));
-if (activeOrderId) {
+if (activeOrderItemId) {
   const activeOrder = getActiveOrder();
   if (activeOrder) {
     applySettings(activeOrder.settings);
@@ -6811,4 +6739,4 @@ if (activeOrderId) {
 renderPreviewGuideOnly();
 render();
 renderOrderList();
-hideInitialQueueLoading();
+hideInitialBatchLoading();
