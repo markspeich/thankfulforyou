@@ -190,6 +190,16 @@ export async function saveProductionBatch({ snapshot, userId }) {
     updated_at: savedAt,
   }));
 
+  if (nextOrderItems.length) {
+    const { error: orderItemsError } = await supabase
+      .from("order_items")
+      .upsert(nextOrderItems, { onConflict: "id" });
+
+    if (orderItemsError) {
+      throw orderItemsError;
+    }
+  }
+
   const { error: batchError } = await supabase
     .from("production_batches")
     .upsert({
@@ -200,16 +210,6 @@ export async function saveProductionBatch({ snapshot, userId }) {
 
   if (batchError) {
     throw batchError;
-  }
-
-  if (nextOrderItems.length) {
-    const { error: orderItemsError } = await supabase
-      .from("order_items")
-      .upsert(nextOrderItems, { onConflict: "id" });
-
-    if (orderItemsError) {
-      throw orderItemsError;
-    }
   }
 
   const { error: deleteBatchItemsError } = await supabase
