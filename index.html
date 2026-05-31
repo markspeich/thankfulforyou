@@ -9,6 +9,15 @@
   </head>
   <body>
     <main class="app-shell" data-workspace="orders" data-nav-collapsed="false">
+      <script>
+        (() => {
+          try {
+            document.currentScript.parentElement.dataset.navCollapsed =
+              String(window.localStorage.getItem("thankfulforyou.workspaceNavCollapsed") === "true");
+          } catch {
+          }
+        })();
+      </script>
       <section id="productionBatchAuthGate" class="shared-auth-gate" hidden>
         <div class="shared-auth-card">
           <p class="shared-auth-eyebrow">Shared Batch Access</p>
@@ -495,38 +504,26 @@
         </section>
 
         <section id="presetsWorkspace" class="workspace-view" aria-label="Preset editor workspace" hidden>
-          <section class="preset-workspace">
-            <header class="editor-header">
-              <div>
-                <p class="eyebrow">Preset Library</p>
-                <h2>Presets</h2>
-                <p class="editor-meta">Create a draft from the order editor, choose saved presets from the library, then rename and save updates back into the preset set.</p>
+          <section class="production-workspace preset-workspace">
+            <aside class="orders-panel preset-library-panel" aria-label="Preset library navigation">
+              <div class="batch-header">
+                <h1>Presets</h1>
+                <button id="newPresetDraftButton" class="batch-primary-action" type="button">
+                  <span class="batch-tool-label">New Preset</span>
+                </button>
               </div>
-            </header>
-            <div class="editor-body">
-              <section class="preset-workspace-body">
-                <article class="preset-workspace-card preset-editor-card">
-                  <p class="preset-workspace-title">Preset editor workspace</p>
-                  <p class="note">Save reusable layout defaults from an order, switch to any saved preset in the library, review the generated slug, and save the current draft.</p>
-                  <div class="preset-editor-helper" aria-label="Preset editor steps">
-                    <p class="preset-editor-helper-title">This task supports:</p>
-                    <ul class="preset-editor-helper-list">
-                      <li>starting a new draft from <strong>Save as New Preset</strong> in Production Batch</li>
-                      <li>loading an existing preset from the library selector</li>
-                      <li>editing the preset name and checking the generated preset id before save</li>
-                    </ul>
+              <p class="batch-tools-note">Choose a saved preset to edit reusable layout defaults and listing assignments.</p>
+              <div id="presetLibraryList" class="preset-library-list" aria-label="Preset library"></div>
+            </aside>
+            <section class="editor-panel preset-editor-panel" aria-label="Preset editor panel">
+              <header class="editor-header">
+                <div class="preset-editor-header-inner">
+                  <div>
+                    <p class="eyebrow">Preset Library</p>
+                    <h2>Preset Editor</h2>
+                    <p class="editor-meta">Edit preset metadata, global defaults, line rules, and assigned Etsy listings.</p>
                   </div>
-                  <div class="preset-editor-fields">
-                    <label class="field compact-field">
-                      <span>Preset library</span>
-                      <select id="presetEditorSelect"></select>
-                    </label>
-                    <label class="field compact-field">
-                      <span>Preset name</span>
-                      <input id="presetDraftName" type="text" autocomplete="off" placeholder="Skywalk RN">
-                    </label>
-                  </div>
-                  <div class="preset-editor-actions">
+                  <div class="editor-actions">
                     <button id="savePresetButton" class="editor-action-button" type="button">
                       <span class="editor-action-label">Save Preset</span>
                     </button>
@@ -534,6 +531,14 @@
                       <span class="editor-action-label">Delete Preset</span>
                     </button>
                   </div>
+                </div>
+              </header>
+              <div class="editor-body">
+                <section class="preset-editor" aria-label="Preset editor">
+                  <label class="field compact-field">
+                    <span>Preset Name</span>
+                    <input id="presetDraftName" type="text" autocomplete="off" placeholder="Skywalk RN">
+                  </label>
                   <section class="preset-editor-controls" aria-label="Preset editing controls">
                     <section class="global-control-card">
                       <div class="section-heading">Global Defaults</div>
@@ -581,9 +586,9 @@
                     <div id="presetAssignmentsList" class="preset-assignment-list" aria-live="polite"></div>
                   </section>
                   <p id="presetEditorStatus" class="note" aria-live="polite">Choose a preset or start from an order layout.</p>
-                </article>
-              </section>
-            </div>
+                </section>
+              </div>
+            </section>
           </section>
         </section>
         <section id="sizeGuideWorkspace" class="workspace-view" aria-label="Size guides workspace" hidden>

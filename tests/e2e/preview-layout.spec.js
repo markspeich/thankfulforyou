@@ -5,6 +5,7 @@ test.describe.configure({ mode: "serial" });
 const PRODUCTION_BATCH_REMOTE_RESTORE_TEST_TITLE = "restores the production batch from the backend before stale local cache";
 const PRODUCTION_BATCH_CONFLICT_TEST_TITLE = "keeps shared sync enabled on revision conflict";
 const PRODUCTION_BATCH_PAGEHIDE_TEST_TITLE = "pagehide keepalive saves even while a shared autosave is in flight";
+const productionBatchSnapshots = new WeakMap();
 
 function completeButton(page) {
   return page.locator("#captureButton");
@@ -276,6 +277,13 @@ function installSupabaseSession(page) {
 }
 
 async function installDefaultProductionBatchRoutes(page) {
+  let savedProductionBatchSnapshot = {
+    batch: { id: "batch-1", workspaceId: "workspace-1" },
+    activeOrderItemId: null,
+    orderItems: [],
+  };
+  productionBatchSnapshots.set(page, savedProductionBatchSnapshot);
+
   await page.route("**/api/batch-session", async (route) => {
     await route.fulfill({
       status: 200,
@@ -291,11 +299,7 @@ async function installDefaultProductionBatchRoutes(page) {
     await route.fulfill({
       status: 200,
       contentType: "application/json; charset=utf-8",
-      body: JSON.stringify({
-        batch: { id: "batch-1", workspaceId: "workspace-1" },
-        activeOrderItemId: null,
-        orderItems: [],
-      }),
+      body: JSON.stringify(savedProductionBatchSnapshot),
     });
   });
   await page.route("**/api/production-batch", async (route) => {
@@ -305,12 +309,18 @@ async function installDefaultProductionBatchRoutes(page) {
     }
 
     const requestSnapshot = route.request().postDataJSON()?.snapshot;
+    savedProductionBatchSnapshot = requestSnapshot || savedProductionBatchSnapshot;
+    productionBatchSnapshots.set(page, savedProductionBatchSnapshot);
     await route.fulfill({
       status: 200,
       contentType: "application/json; charset=utf-8",
-      body: JSON.stringify(requestSnapshot),
+      body: JSON.stringify(savedProductionBatchSnapshot),
     });
   });
+}
+
+async function expectSavedProductionBatchSnapshot(page, predicate) {
+  await expect.poll(() => Boolean(predicate(productionBatchSnapshots.get(page)))).toBe(true);
 }
 
 async function expectWorkflowAlertMessage(page, ...messageParts) {
@@ -503,7 +513,16 @@ test("shows a size guide control in global settings", async ({ page }) => {
 });
 
 test("applies the global horizontal stretch slider to every line and persists the result", async ({ page }) => {
+  await page.route("**/api/layout-analyze", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify(buildMockAnalysisResponse()),
+    });
+  });
+
   await page.locator("#textInput").fill("Savannah\nRN");
+  await expectSavedProductionBatchSnapshot(page, (snapshot) => snapshot?.orderItems?.[0]?.text === "Savannah\nRN");
 
   const firstLineHorizontalStretch = page.locator('.line-control-card[data-line-index="0"] [data-setting="horizontalScale"]');
   const secondLineHorizontalStretch = page.locator('.line-control-card[data-line-index="1"] [data-setting="horizontalScale"]');
@@ -519,7 +538,11 @@ test("applies the global horizontal stretch slider to every line and persists th
   await expect(firstLineHorizontalStretch).toHaveValue("2");
   await expect(secondLineHorizontalStretch).toHaveValue("2");
 
-  await page.waitForTimeout(250);
+  await completeDesign(page, "Design 1");
+  await expectSavedProductionBatchSnapshot(page, (snapshot) => (
+    snapshot?.orderItems?.[0]?.text === "Savannah\nRN"
+    && snapshot.orderItems[0].settings?.lines?.every((line) => line.horizontalScale === 2)
+  ));
   await page.reload();
 
   await expect(page.locator("#textInput")).toHaveValue("Savannah\nRN");
@@ -529,7 +552,16 @@ test("applies the global horizontal stretch slider to every line and persists th
 });
 
 test("applies the global vertical stretch slider to every line and persists the result", async ({ page }) => {
+  await page.route("**/api/layout-analyze", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify(buildMockAnalysisResponse()),
+    });
+  });
+
   await page.locator("#textInput").fill("Savannah\nRN");
+  await expectSavedProductionBatchSnapshot(page, (snapshot) => snapshot?.orderItems?.[0]?.text === "Savannah\nRN");
 
   const firstLineVerticalStretch = page.locator('.line-control-card[data-line-index="0"] [data-setting="verticalScale"]');
   const secondLineVerticalStretch = page.locator('.line-control-card[data-line-index="1"] [data-setting="verticalScale"]');
@@ -545,7 +577,11 @@ test("applies the global vertical stretch slider to every line and persists the 
   await expect(firstLineVerticalStretch).toHaveValue("1.4");
   await expect(secondLineVerticalStretch).toHaveValue("1.4");
 
-  await page.waitForTimeout(250);
+  await completeDesign(page, "Design 1");
+  await expectSavedProductionBatchSnapshot(page, (snapshot) => (
+    snapshot?.orderItems?.[0]?.text === "Savannah\nRN"
+    && snapshot.orderItems[0].settings?.lines?.every((line) => line.verticalScale === 1.4)
+  ));
   await page.reload();
 
   await expect(page.locator("#textInput")).toHaveValue("Savannah\nRN");
@@ -799,7 +835,7 @@ test(PRODUCTION_BATCH_REMOTE_RESTORE_TEST_TITLE, async ({ page }) => {
 
   await expect.poll(() => productionBatchSavePayloads.length).toBeGreaterThan(0);
   await expect
-    .poll(() => productionBatchSavePayloads.at(-1)?.orders?.[0]?.text ?? null)
+    .poll(() => productionBatchSavePayloads.at(-1)?.orderItems?.[0]?.text ?? null)
     .toBe("Remote Shared Updated");
 });
 
@@ -1494,10 +1530,19 @@ test("keeps a longer two-line layout inside the guide", async ({ page }) => {
 });
 
 test("restores the current batch after refresh and clears it when requested", async ({ page }) => {
+  await page.route("**/api/layout-analyze", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify(buildMockAnalysisResponse()),
+    });
+  });
+
   await page.locator("#textInput").fill("Savannah\nRN");
   await page.locator("#backingInput").fill("4.2");
   await page.locator("#weldExportedDesignInput").uncheck();
   await expect(page.locator("#orderCountOutput")).toHaveText("1");
+  await completeDesign(page, "Design 1");
 
   await page.reload();
 
@@ -1509,13 +1554,13 @@ test("restores the current batch after refresh and clears it when requested", as
 
   await clickBatchAction(page, "Clear Batch");
   await expect(page.locator("#confirmationDialogDescription")).toContainText(
-    /delete all saved local designs|Clear the production batch/,
+    /delete all saved local designs|Clear the current production batch/,
   );
   await confirmBatchDialog(page, "Clear Batch?");
 
   await expect(page.locator("#orderCountOutput")).toHaveText("0");
-  await expect(page.locator("#importStatus")).toContainText("Batch cleared");
-  await expect(page.locator(".editor-panel")).toHaveClass(/is-hidden/);
+  await expect(page.locator("#importStatus")).toContainText(/Batch cleared|Production batch cleared/);
+  await expect(page.getByLabel("Selected design editor")).toHaveClass(/is-hidden/);
 
   await page.reload();
 
@@ -1606,6 +1651,14 @@ test("applies a pressed-state hook to editor and queue command buttons", async (
 });
 
 test("persists per-line lock text height state across refresh for multi-line designs", async ({ page }) => {
+  await page.route("**/api/layout-analyze", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify(buildMockAnalysisResponse()),
+    });
+  });
+
   await page.locator("#textInput").fill("Savannah\nRN");
 
   const firstLineCard = page.locator('.line-control-card[data-line-index="0"]');
@@ -1620,6 +1673,7 @@ test("persists per-line lock text height state across refresh for multi-line des
   await firstLineHeight.fill("41");
   await secondLineHeight.fill("29");
   await expect(secondLineLock).not.toBeChecked();
+  await completeDesign(page, "Design 1");
 
   await page.reload();
 
@@ -2246,8 +2300,9 @@ test("restores the previous completed geometry after refresh during a newer in-f
   const row = page.locator("#orderList .order-row").filter({ hasText: "Design 1" });
   const restoredFirstLineLock = page.locator('.line-control-card[data-line-index="0"] [data-setting="lockTextHeight"]');
   await expect(page.locator("#importStatus")).toBeHidden();
-  await expect(row).toContainText("In progress");
-  await expect(completeButton(page)).toBeEnabled();
+  await expect(row).toContainText("Complete");
+  await expect(completeButton(page)).toBeDisabled();
+  await expect(exportDesignButton(page)).toBeEnabled();
 
   await restoredFirstLineLock.uncheck();
   await expect(row).toContainText("Complete");
@@ -2292,7 +2347,9 @@ test("preserves the newest completed geometry across refresh after the operator 
 
   const row = page.locator("#orderList .order-row").filter({ hasText: "Design 1" });
   await expect(page.locator("#importStatus")).toBeHidden();
-  await expect(row).toContainText("In progress");
+  await expect(row).toContainText("Complete");
+  await expect(completeButton(page)).toBeDisabled();
+  await expect(exportDesignButton(page)).toBeEnabled();
 
   await secondLineHeight.fill("34");
   await expect(row).toContainText("Complete", { timeout: 20000 });

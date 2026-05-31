@@ -132,6 +132,7 @@ const PRESET_SYNC_LINE_SETTING_KEYS = Object.freeze([
   "verticalScale",
   "lockTextHeight",
 ]);
+const WORKSPACE_NAV_COLLAPSED_STORAGE_KEY = "thankfulforyou.workspaceNavCollapsed";
 
 const appShell = document.querySelector(".app-shell");
 const workspaceStage = document.querySelector("#workspaceStage");
@@ -232,7 +233,8 @@ const reloadPresetButton = document.querySelector("#reloadPresetButton");
 const captureButton = document.querySelector("#captureButton");
 const cancelDesignButton = document.querySelector("#cancelDesignButton");
 const completeNextButton = document.querySelector("#completeNextButton");
-const presetEditorSelect = document.querySelector("#presetEditorSelect");
+const presetLibraryList = document.querySelector("#presetLibraryList");
+const newPresetDraftButton = document.querySelector("#newPresetDraftButton");
 const presetDraftNameInput = document.querySelector("#presetDraftName");
 const savePresetButton = document.querySelector("#savePresetButton");
 const deletePresetButton = document.querySelector("#deletePresetButton");
@@ -1230,40 +1232,124 @@ function syncPresetEditorDraftFromControls() {
   };
 }
 
-function renderPresetEditorOptions(selectedPresetId = "") {
-  if (!presetEditorSelect) {
+function selectPresetEditorRow(presetId) {
+  if (!presetId) {
+    presetEditorDraft = createPresetEditorDraft(null, { previousId: null, generateNewId: true });
+    renderPresetEditorDraft();
+    setPresetEditorStatus("Start a new preset draft or choose a saved preset.", "pending");
     return;
   }
 
-  presetEditorSelect.replaceChildren();
+  loadPresetEditorDraftFromRegistry(presetId);
+}
 
-  const draftOption = document.createElement("option");
-  draftOption.value = "";
-  draftOption.textContent = "New preset draft";
-  presetEditorSelect.append(draftOption);
+function createPresetLibraryRow({ id, label, meta }, selectedPresetId) {
+  const row = document.createElement("article");
+  row.className = "size-preset-row preset-library-row";
+  row.dataset.presetId = id;
+  row.role = "button";
+  row.tabIndex = 0;
+  row.classList.toggle("is-selected", id === selectedPresetId);
+  row.addEventListener("click", () => {
+    selectPresetEditorRow(id);
+  });
+  row.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") {
+      return;
+    }
 
-  getPresetOptions().forEach((preset) => {
-    const option = document.createElement("option");
-    option.value = preset.id;
-    option.textContent = preset.label;
-    presetEditorSelect.append(option);
+    event.preventDefault();
+    selectPresetEditorRow(id);
   });
 
-  presetEditorSelect.value = selectedPresetId && isValidPresetId(selectedPresetId)
-    ? selectedPresetId
-    : "";
+  const name = document.createElement("p");
+  name.className = "size-preset-name";
+  name.textContent = label;
+
+  const detail = document.createElement("p");
+  detail.className = "size-preset-meta";
+  detail.textContent = meta;
+
+  row.append(name, detail);
+  return row;
+}
+
+function renderPresetLibraryRows(selectedPresetId = "") {
+  if (!presetLibraryList) {
+    return;
+  }
+
+  const shouldShowDraftRow = selectedPresetId === "";
+  const rows = [
+    ...(shouldShowDraftRow
+      ? [createPresetLibraryRow({
+          id: "",
+          label: "New preset draft",
+          meta: "Start from default reusable settings",
+        }, selectedPresetId)]
+      : []),
+    ...getPresetOptions().map((preset) => {
+      const definition = getPresetDefinitionForEditor(preset.id);
+      const assignmentCount = Array.isArray(definition?.listingAssignments)
+        ? definition.listingAssignments.length
+        : 0;
+      const meta = assignmentCount
+        ? `${assignmentCount} assigned listing${assignmentCount === 1 ? "" : "s"}`
+        : "No assigned listings";
+
+      return createPresetLibraryRow({
+        id: preset.id,
+        label: preset.label,
+        meta,
+      }, selectedPresetId);
+    }),
+  ];
+
+  presetLibraryList.replaceChildren(...rows);
+}
+
+function renderPresetEditorEmptyState() {
+  renderPresetLibraryRows(null);
+  presetDraftNameInput.value = "";
+  if (presetWeldExportedDesignInput) {
+    presetWeldExportedDesignInput.checked = DEFAULT_WELD_EXPORTED_DESIGN;
+  }
+  if (presetBoundingSizePresetInput) {
+    presetBoundingSizePresetInput.value = DEFAULT_BOUNDING_SIZE_PRESET_ID;
+  }
+  if (presetGlobalHorizontalScaleInput) {
+    presetGlobalHorizontalScaleInput.value = "1";
+  }
+  if (presetGlobalVerticalScaleInput) {
+    presetGlobalVerticalScaleInput.value = "1";
+  }
+  if (presetBackingInput) {
+    presetBackingInput.value = String(DEFAULT_BACKING_MM);
+  }
+  updatePresetGlobalHorizontalScaleOutput();
+  updatePresetGlobalVerticalScaleOutput();
+  updatePresetBackingOutput();
+  renderPresetEditorLineControls();
+  if (savePresetButton) {
+    savePresetButton.disabled = true;
+  }
+  if (deletePresetButton) {
+    deletePresetButton.disabled = true;
+  }
+  renderPresetAssignmentList();
 }
 
 function renderPresetEditorDraft() {
   if (!presetEditorDraft) {
-    presetEditorDraft = createPresetEditorDraft(null, { previousId: null, generateNewId: true });
+    renderPresetEditorEmptyState();
+    return;
   }
 
   const selectedPresetId = presetEditorDraft.previousId && isValidPresetId(presetEditorDraft.previousId)
     ? presetEditorDraft.previousId
     : "";
 
-  renderPresetEditorOptions(selectedPresetId);
+  renderPresetLibraryRows(selectedPresetId);
 
   const draftName = typeof presetEditorDraft.preset?.name === "string"
     ? presetEditorDraft.preset.name
@@ -1297,6 +1383,21 @@ function renderPresetEditorDraft() {
       || getPresetOptions().length <= 1;
   }
   renderPresetAssignmentList();
+}
+
+function selectFirstPresetEditorRowIfNeeded() {
+  if (presetEditorDraft) {
+    renderPresetEditorDraft();
+    return;
+  }
+
+  const firstPresetId = getPresetOptions()[0]?.id || "";
+  if (firstPresetId) {
+    loadPresetEditorDraftFromRegistry(firstPresetId);
+    return;
+  }
+
+  renderPresetEditorEmptyState();
 }
 
 function renderPresetAssignmentList() {
@@ -2723,6 +2824,21 @@ function selectSizePresetForEditing(presetId) {
   renderSizePresetList();
 }
 
+function selectFirstSizePresetIfNeeded() {
+  if (selectedSizePresetId && getBoundingSizePresetDefinitionsForEditor().some((preset) => preset.id === selectedSizePresetId)) {
+    selectSizePresetForEditing(selectedSizePresetId);
+    return;
+  }
+
+  const firstSizePresetId = getBoundingSizePresetDefinitionsForEditor()[0]?.id || "";
+  if (firstSizePresetId) {
+    selectSizePresetForEditing(firstSizePresetId);
+    return;
+  }
+
+  renderSizePresetList();
+}
+
 function generateSizePresetId() {
   const rawId = globalThis.crypto?.randomUUID?.().replace(/-/g, "")
     || `${Date.now().toString(16)}${Math.random().toString(16).slice(2, 10)}`;
@@ -3122,7 +3238,7 @@ async function saveBatchSnapshotToRemote(options = {}) {
     }
     mergeProductionBatchPublishedStateFromSnapshot(savedSnapshot || snapshot);
     mergeProductionBatchAuditFromSnapshot(savedSnapshot);
-    lastProductionBatchSaveKey = buildProductionBatchSaveKey(buildProductionBatchSnapshot());
+    lastProductionBatchSaveKey = buildProductionBatchSaveKey(savedSnapshot || snapshot);
     suppressBatchSyncLocalNotice = true;
     suppressProductionBatchAutosave = true;
     persistBatchState({ skipRemoteSave: true });
@@ -4851,17 +4967,28 @@ function setActiveWorkspace(workspace) {
   orderWorkspaceButton.setAttribute("aria-pressed", String(activeWorkspace === "orders"));
   presetWorkspaceButton.setAttribute("aria-pressed", String(activeWorkspace === "presets"));
   sizeGuideWorkspaceButton.setAttribute("aria-pressed", String(activeWorkspace === "sizeGuides"));
+  if (activeWorkspace === "presets") {
+    selectFirstPresetEditorRowIfNeeded();
+  }
   if (activeWorkspace === "sizeGuides") {
-    renderSizePresetList();
+    selectFirstSizePresetIfNeeded();
   }
 }
 
 function readNavCollapsedPreference() {
-  return false;
+  try {
+    return window.localStorage.getItem(WORKSPACE_NAV_COLLAPSED_STORAGE_KEY) === "true";
+  } catch {
+    return false;
+  }
 }
 
 function persistNavCollapsedPreference(nextCollapsed) {
   navCollapsed = Boolean(nextCollapsed);
+  try {
+    window.localStorage.setItem(WORKSPACE_NAV_COLLAPSED_STORAGE_KEY, String(navCollapsed));
+  } catch {
+  }
 }
 
 function setNavCollapsed(nextCollapsed, options = {}) {
@@ -6493,15 +6620,9 @@ sizeGuideWorkspaceButton.addEventListener("click", () => {
 productionBatchLogoutButton?.addEventListener("click", () => {
   void handleProductionBatchSignOut();
 });
-presetEditorSelect?.addEventListener("change", () => {
-  if (!presetEditorSelect.value) {
-    presetEditorDraft = createPresetEditorDraft(null, { previousId: null, generateNewId: true });
-    renderPresetEditorDraft();
-    setPresetEditorStatus("Start a new preset draft or choose a saved preset.", "pending");
-    return;
-  }
-
-  loadPresetEditorDraftFromRegistry(presetEditorSelect.value);
+newPresetDraftButton?.addEventListener("click", () => {
+  selectPresetEditorRow("");
+  setPresetEditorStatus("Started a new preset draft.", "pending");
 });
 presetDraftNameInput?.addEventListener("input", syncPresetEditorDraftFromInputs);
 savePresetButton?.addEventListener("click", () => {
