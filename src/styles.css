@@ -1216,6 +1216,12 @@ h2 {
   background: #edf8f1;
 }
 
+.preset-listing-indicator-warning {
+  color: #7a4b00;
+  border-color: #e1b75f;
+  background: #fff5d6;
+}
+
 .preset-listing-indicator.is-hidden {
   display: none;
 }
