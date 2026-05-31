@@ -178,6 +178,14 @@ async function clickBatchAction(page, name) {
   await page.getByRole("button", { name }).click();
 }
 
+async function selectPresetEditorRow(page, name) {
+  await page.locator(".preset-library-row", { hasText: name }).click();
+}
+
+async function selectedPresetEditorRowId(page) {
+  return page.locator(".preset-library-row.is-selected").getAttribute("data-preset-id");
+}
+
 async function setClipboardPayload(page, payload) {
   await page.evaluate((clipboardPayload) => {
     Object.defineProperty(navigator, "clipboard", {
@@ -361,6 +369,8 @@ test("shows size guides in the Size Guides workspace", async ({ page }) => {
   await expect(sizeGuide.getByText("2.2 x 1.5 in", { exact: true })).toBeVisible();
   await expect(sizeGuide.getByText("Max 2.2 x 1.5 in")).toBeVisible();
   await expect(sizeGuide.getByText("Min 1.6 x 1.1 in")).toBeVisible();
+  await expect(sizeGuide.locator(".size-preset-row.is-selected").first()).toContainText("2.2 x 1.5 in");
+  await expect(page.locator("#sizePresetNameInput")).toHaveValue("2.2 x 1.5 in");
   await expect(sizeGuide.locator(".size-preset-select-button")).toHaveCount(0);
   await expect(sizeGuide.locator(".size-guide-panel .batch-header").getByRole("button", { name: "New Guide" })).toBeVisible();
   await expect(sizeGuide.locator(".size-guide-editor-panel .editor-header").getByRole("button", { name: "Save Guide" })).toBeVisible();
@@ -482,9 +492,64 @@ test("shows size guides in the Size Guides workspace", async ({ page }) => {
   await expect(page.locator("#sizePresetNameInput")).toHaveValue("2.2 x 1.5 in");
 });
 
+test("uses a master-detail layout for preset selection and editing", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Presets" }).click();
+
+  const presetsWorkspace = page.locator("#presetsWorkspace");
+  await expect(presetsWorkspace.locator(".production-workspace")).toBeVisible();
+  await expect(presetsWorkspace.locator(".preset-library-panel")).toBeVisible();
+  await expect(presetsWorkspace.locator(".preset-editor-panel")).toBeVisible();
+  await expect(presetsWorkspace.locator(".preset-library-panel").getByRole("heading", { name: "Presets" })).toBeVisible();
+  await expect(presetsWorkspace.locator(".preset-editor-panel").getByRole("heading", { name: "Preset Editor" })).toBeVisible();
+  await expect(presetsWorkspace.locator(".preset-library-panel #presetEditorSelect")).toHaveCount(0);
+  await expect(presetsWorkspace.locator(".preset-library-panel .preset-library-row")).toHaveCount(4);
+  await expect(presetsWorkspace.locator(".preset-library-row", { hasText: "New preset draft" })).toHaveCount(0);
+  await expect(presetsWorkspace.locator(".preset-library-row.is-selected")).toContainText("All Candlepin");
+  await expect(presetsWorkspace.locator(".preset-library-row.is-selected")).toHaveAttribute("data-preset-id", "preset-a1f4c8e2b601");
+  await expect(page.locator("#presetDraftName")).toHaveValue("All Candlepin");
+  await expect(presetsWorkspace.locator(".preset-editor-panel #presetDraftName")).toBeVisible();
+
+  const layout = await presetsWorkspace.evaluate((workspace) => {
+    const leftPanel = workspace.querySelector(".preset-library-panel");
+    const editorPanel = workspace.querySelector(".preset-editor-panel");
+    if (!leftPanel || !editorPanel) {
+      return null;
+    }
+
+    const leftRect = leftPanel.getBoundingClientRect();
+    const editorRect = editorPanel.getBoundingClientRect();
+    return {
+      leftPanelRight: leftRect.right,
+      editorPanelLeft: editorRect.left,
+      leftPanelTop: leftRect.top,
+      editorPanelTop: editorRect.top,
+    };
+  });
+
+  expect(layout).toEqual(expect.objectContaining({
+    leftPanelRight: expect.any(Number),
+    editorPanelLeft: expect.any(Number),
+    leftPanelTop: expect.any(Number),
+    editorPanelTop: expect.any(Number),
+  }));
+  expect(layout.leftPanelRight).toBeLessThanOrEqual(layout.editorPanelLeft);
+  expect(Math.abs(layout.leftPanelTop - layout.editorPanelTop)).toBeLessThanOrEqual(1);
+
+  await presetsWorkspace.locator("#newPresetDraftButton").click();
+  await expect(presetsWorkspace.locator(".preset-library-panel .preset-library-row")).toHaveCount(5);
+  await expect(presetsWorkspace.locator(".preset-library-row.is-selected")).toContainText("New preset draft");
+
+  await presetsWorkspace.locator(".preset-library-row", { hasText: "Skywalk, Somekind" }).click();
+  await expect(page.locator("#presetDraftName")).toHaveValue("Skywalk, Somekind");
+  await expect(presetsWorkspace.locator(".preset-library-row.is-selected")).toHaveAttribute("data-preset-id", "preset-c3e8a1d7f520");
+  await expect(presetsWorkspace.locator(".preset-library-row.is-selected")).toContainText("Skywalk, Somekind");
+});
+
 test("shows a live preview while editing a size guide", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Size Guides" }).click();
+  await page.getByRole("button", { name: "New Guide" }).click();
 
   const preview = page.locator("#sizePresetPreview");
   await expect(preview).toBeVisible();
@@ -528,6 +593,7 @@ test("creates a custom size guide and uses it in the order editor preview", asyn
   await page.goto("/");
 
   await page.getByRole("button", { name: "Size Guides" }).click();
+  await page.getByRole("button", { name: "New Guide" }).click();
   await page.locator("#sizePresetNameInput").fill("Test Box");
   await page.locator("#sizePresetMaxWidthInput").fill("3");
   await page.locator("#sizePresetMaxHeightInput").fill("2");
@@ -646,12 +712,11 @@ test("can create a new preset from order settings and update an existing preset"
 
   let createdPresetId = "";
   await expect.poll(async () => {
-    createdPresetId = await page.locator("#presetEditorSelect").inputValue();
+    createdPresetId = await selectedPresetEditorRowId(page) || "";
     return createdPresetId !== "";
   }, { timeout: 10000 }).toBe(true);
   await expect(page.locator("#presetEditorStatus")).toContainText("Saved");
-  await expect(page.locator("#presetEditorSelect")).toHaveValue(createdPresetId);
-  await expect(page.locator("#presetEditorSelect")).toContainText(createdPresetName);
+  await expect(page.locator(".preset-library-row.is-selected")).toContainText(createdPresetName);
 
   await page.getByRole("button", { name: "Production Batch" }).click();
   await page.locator("#presetInput").selectOption(createdPresetId);
@@ -683,7 +748,7 @@ test("can create a new preset from order settings and update an existing preset"
   await expect(page.locator('[data-line-index="1"] [data-setting="fontSizeMm"]')).toHaveValue(String(overwrittenSecondLineSizeMm));
 
   await page.getByRole("button", { name: "Presets" }).click();
-  await page.locator("#presetEditorSelect").selectOption(createdPresetId);
+  await selectPresetEditorRow(page, createdPresetName);
   await expect(page.locator("#presetDraftName")).toHaveValue(createdPresetName);
   await setRangeValue(page, "#presetBackingInput", 5.1);
   await setRangeValue(page, '[data-preset-rule-key="first"] [data-setting="fontSizeMm"]', 21);
@@ -691,8 +756,8 @@ test("can create a new preset from order settings and update an existing preset"
   await page.getByRole("button", { name: "Save Preset" }).click();
 
   await expect(page.locator("#presetEditorStatus")).toContainText("Saved");
-  await expect(page.locator("#presetEditorSelect")).toHaveValue(createdPresetId);
-  await expect(page.locator("#presetEditorSelect")).toContainText(renamedPresetName);
+  await expect(page.locator(".preset-library-row.is-selected")).toHaveAttribute("data-preset-id", createdPresetId);
+  await expect(page.locator(".preset-library-row.is-selected")).toContainText(renamedPresetName);
 
   await page.getByRole("button", { name: "Production Batch" }).click();
   await page.locator("#orderList .order-row").filter({ hasText: "Design 1" }).click();
@@ -770,7 +835,7 @@ test("assigning a preset to a completed imported order clears stale batch-export
   await page.getByRole("button", { name: "Save Preset" }).click();
   let createdPresetId = "";
   await expect.poll(async () => {
-    createdPresetId = await page.locator("#presetEditorSelect").inputValue();
+    createdPresetId = await selectedPresetEditorRowId(page) || "";
     return createdPresetId !== "";
   }, { timeout: 10000 }).toBe(true);
   await expect(page.locator("#presetEditorStatus")).toContainText("Saved");
@@ -826,7 +891,7 @@ test("renaming a preset while analysis is running still restores export readines
   await page.getByRole("button", { name: "Save Preset" }).click();
   let createdPresetId = "";
   await expect.poll(async () => {
-    createdPresetId = await page.locator("#presetEditorSelect").inputValue();
+    createdPresetId = await selectedPresetEditorRowId(page) || "";
     return createdPresetId !== "";
   }, { timeout: 10000 }).toBe(true);
   await expect(page.locator("#presetEditorStatus")).toContainText("Saved");
@@ -839,11 +904,11 @@ test("renaming a preset while analysis is running still restores export readines
   await expect(page.locator("#connectionStatusLabel")).toContainText("Analyzing completed layout...");
 
   await page.getByRole("button", { name: "Presets" }).click();
-  await page.locator("#presetEditorSelect").selectOption(createdPresetId);
+  await selectPresetEditorRow(page, createdPresetName);
   await page.locator("#presetDraftName").fill(renamedPresetName);
   await page.getByRole("button", { name: "Save Preset" }).click();
   await expect(page.locator("#presetEditorStatus")).toContainText("Saved");
-  await expect(page.locator("#presetEditorSelect")).toHaveValue(createdPresetId);
+  await expect(page.locator(".preset-library-row.is-selected")).toHaveAttribute("data-preset-id", createdPresetId);
 
   const pendingAnalysis = pendingAnalyses.shift();
   await pendingAnalysis.fulfill();
@@ -896,7 +961,7 @@ test("shows assigned listings for a preset and lets operators unassign them", as
   await expect(page.locator("#downloadButton")).toBeEnabled();
 
   await page.getByRole("button", { name: "Presets" }).click();
-  await page.locator("#presetEditorSelect").selectOption("preset-c3e8a1d7f520");
+  await selectPresetEditorRow(page, "Skywalk, Somekind");
   await expect(page.locator("#presetEditorStatus")).toContainText("Editing Skywalk, Somekind.");
   await expect(page.locator("#presetAssignmentsEmptyState")).toBeHidden();
 
@@ -979,7 +1044,7 @@ test("deletes a saved preset only after confirmation and migrates active uses aw
 
   let createdPresetId = "";
   await expect.poll(async () => {
-    createdPresetId = await page.locator("#presetEditorSelect").inputValue();
+    createdPresetId = await selectedPresetEditorRowId(page) || "";
     return createdPresetId !== "";
   }, { timeout: 10000 }).toBe(true);
   await expect(page.locator("#presetEditorStatus")).toContainText("Saved");
@@ -989,7 +1054,7 @@ test("deletes a saved preset only after confirmation and migrates active uses aw
   await expect(page.locator("#presetInput")).toHaveValue(createdPresetId);
 
   await page.getByRole("button", { name: "Presets" }).click();
-  await page.locator("#presetEditorSelect").selectOption(createdPresetId);
+  await selectPresetEditorRow(page, createdPresetName);
 
   await page.getByRole("button", { name: "Delete Preset" }).click();
   const dialog = page.locator("#confirmationDialog");
@@ -998,14 +1063,14 @@ test("deletes a saved preset only after confirmation and migrates active uses aw
   await expect(dialog.locator("#confirmationDialogDescription")).toContainText(createdPresetName);
   await dialog.locator("#confirmationDialogCancelButton").click();
   await expect(dialog).not.toBeVisible();
-  await expect(page.locator("#presetEditorSelect")).toHaveValue(createdPresetId);
+  await expect(page.locator(".preset-library-row.is-selected")).toHaveAttribute("data-preset-id", createdPresetId);
 
   await page.getByRole("button", { name: "Delete Preset" }).click();
   await expect(dialog).toBeVisible();
   await dialog.locator("#confirmationDialogConfirmButton").click();
   await expect(dialog).not.toBeVisible();
   await expect(page.locator("#presetEditorStatus")).toContainText("Deleted");
-  await expect(page.locator(`#presetEditorSelect option[value="${createdPresetId}"]`)).toHaveCount(0);
+  await expect(page.locator(`.preset-library-row[data-preset-id="${createdPresetId}"]`)).toHaveCount(0);
 
   await page.getByRole("button", { name: "Production Batch" }).click();
   await expect(page.locator("#presetInput")).not.toHaveValue(createdPresetId);
