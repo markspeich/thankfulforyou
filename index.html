@@ -527,6 +527,9 @@
                     <button id="savePresetButton" class="editor-action-button" type="button">
                       <span class="editor-action-label">Save Preset</span>
                     </button>
+                    <button id="cancelPresetButton" class="editor-action-button" type="button" disabled>
+                      <span class="editor-action-label">Cancel</span>
+                    </button>
                     <button id="deletePresetButton" class="editor-action-button editor-danger-button" type="button" disabled>
                       <span class="editor-action-label">Delete Preset</span>
                     </button>
@@ -615,6 +618,9 @@
                     <button id="saveSizePresetButton" class="editor-action-button" type="button">
                       <span class="editor-action-label">Save Guide</span>
                     </button>
+                    <button id="cancelSizePresetButton" class="editor-action-button" type="button" disabled>
+                      <span class="editor-action-label">Cancel</span>
+                    </button>
                     <button id="deleteSizePresetButton" class="editor-action-button editor-danger-button" type="button" disabled>
                       <span class="editor-action-label">Delete Guide</span>
                     </button>
@@ -625,7 +631,7 @@
                 <section class="size-preset-editor" aria-label="Size guide editor">
                   <label class="field compact-field" for="sizePresetNameInput">
                     <span>Guide Name</span>
-                    <input id="sizePresetNameInput" type="text" autocomplete="off" placeholder="Medium Badge">
+                    <input id="sizePresetNameInput" type="text" autocomplete="off" placeholder="W x H" readonly>
                   </label>
                   <div class="size-preset-dimension-grid">
                     <label class="field compact-field" for="sizePresetMaxWidthInput">
@@ -651,7 +657,7 @@
                   </div>
                   <section class="size-preset-preview-panel" aria-label="Size guide preview">
                     <svg id="sizePresetPreview" class="size-preset-preview" role="img" aria-label="Preview of the size guide"></svg>
-                    <p id="sizePresetPreviewEmptyState" class="size-preset-preview-empty">Enter maximum and minimum dimensions to preview this guide.</p>
+                    <p id="sizePresetPreviewEmptyState" class="size-preset-preview-empty">Enter maximum dimensions to preview this guide.</p>
                   </section>
                   <p id="sizePresetEditorStatus" class="note" aria-live="polite">Create a size guide or select one below.</p>
                 </section>
