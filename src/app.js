@@ -71,6 +71,7 @@ import {
   getBoundingSizePresetOptions,
   isBuiltInBoundingSizePresetId,
   isValidBoundingSizePresetId,
+  normalizeBoundingSizePresetDefinition,
   resolveBoundingSizePreset,
 } from "./bounding-size-presets.js";
 
@@ -187,6 +188,12 @@ const confirmationDialogDescription = document.querySelector("#confirmationDialo
 const confirmationDialogCloseButton = document.querySelector("#confirmationDialogCloseButton");
 const confirmationDialogCancelButton = document.querySelector("#confirmationDialogCancelButton");
 const confirmationDialogConfirmButton = document.querySelector("#confirmationDialogConfirmButton");
+const savePresetAsDialog = document.querySelector("#savePresetAsDialog");
+const savePresetAsForm = document.querySelector("#savePresetAsForm");
+const savePresetAsNameInput = document.querySelector("#savePresetAsNameInput");
+const savePresetAsStatus = document.querySelector("#savePresetAsStatus");
+const savePresetAsCloseButton = document.querySelector("#savePresetAsCloseButton");
+const savePresetAsCancelButton = document.querySelector("#savePresetAsCancelButton");
 const orderSearchInput = document.querySelector("#orderSearchInput");
 const orderCountOutput = document.querySelector("#orderCountOutput");
 const completeCountOutput = document.querySelector("#completeCountOutput");
@@ -236,7 +243,9 @@ const completeNextButton = document.querySelector("#completeNextButton");
 const presetLibraryList = document.querySelector("#presetLibraryList");
 const newPresetDraftButton = document.querySelector("#newPresetDraftButton");
 const presetDraftNameInput = document.querySelector("#presetDraftName");
+const DEFAULT_PRESET_NAME_PLACEHOLDER = presetDraftNameInput?.getAttribute("placeholder") || "";
 const savePresetButton = document.querySelector("#savePresetButton");
+const cancelPresetButton = document.querySelector("#cancelPresetButton");
 const deletePresetButton = document.querySelector("#deletePresetButton");
 const presetWeldExportedDesignInput = document.querySelector("#presetWeldExportedDesignInput");
 const presetBoundingSizePresetInput = document.querySelector("#presetBoundingSizePresetInput");
@@ -260,6 +269,7 @@ const sizePresetPreview = document.querySelector("#sizePresetPreview");
 const sizePresetPreviewEmptyState = document.querySelector("#sizePresetPreviewEmptyState");
 const newSizePresetButton = document.querySelector("#newSizePresetButton");
 const saveSizePresetButton = document.querySelector("#saveSizePresetButton");
+const cancelSizePresetButton = document.querySelector("#cancelSizePresetButton");
 const deleteSizePresetButton = document.querySelector("#deleteSizePresetButton");
 const sizePresetEditorStatus = document.querySelector("#sizePresetEditorStatus");
 const presetEditorStatus = document.querySelector("#presetEditorStatus");
@@ -271,6 +281,8 @@ const editorActionLabelByButton = new Map(
 let workflowAlertHideTimer = null;
 let workflowAlertToken = 0;
 let selectedSizePresetId = null;
+let sizePresetEditorBaselineKey = null;
+let sizePresetEditorDraftActive = false;
 
 const canvas = document.createElement("canvas");
 const ctx = canvas.getContext("2d");
@@ -291,8 +303,10 @@ let copiedLayoutControlsSnapshot = null;
 let activeWorkspace = "orders";
 let navCollapsed = readNavCollapsedPreference();
 let presetEditorDraft = null;
+let presetEditorBaselineKey = null;
 let activeConfirmationRequest = null;
 let confirmationDialogRestoreFocusTarget = null;
+let activeSavePresetAsRequest = null;
 let batchSessionContext = null;
 let productionBatchContext = null;
 let productionBatchAutosaveTimeoutId = null;
@@ -1232,11 +1246,62 @@ function syncPresetEditorDraftFromControls() {
   };
 }
 
+function buildPresetEditorDirtyKey() {
+  if (!presetEditorDraft) {
+    return "";
+  }
+
+  syncPresetEditorDraftFromInputs();
+  syncPresetEditorDraftFromControls();
+  return JSON.stringify(presetEditorDraft);
+}
+
+function setPresetEditorBaselineToCurrent() {
+  presetEditorBaselineKey = presetEditorDraft ? buildPresetEditorDirtyKey() : null;
+  updatePresetSaveButtonState();
+}
+
+function updatePresetSaveButtonState() {
+  if (!savePresetButton && !cancelPresetButton) {
+    return;
+  }
+
+  if (!presetEditorDraft) {
+    if (savePresetButton) {
+      savePresetButton.disabled = true;
+    }
+    if (cancelPresetButton) {
+      cancelPresetButton.disabled = true;
+    }
+    return;
+  }
+
+  if (presetEditorBaselineKey === null) {
+    if (savePresetButton) {
+      savePresetButton.disabled = false;
+    }
+    if (cancelPresetButton) {
+      cancelPresetButton.disabled = false;
+    }
+    return;
+  }
+
+  const isDirty = buildPresetEditorDirtyKey() !== presetEditorBaselineKey;
+  if (savePresetButton) {
+    savePresetButton.disabled = !isDirty;
+  }
+  if (cancelPresetButton) {
+    cancelPresetButton.disabled = presetEditorDraft.previousId ? !isDirty : false;
+  }
+}
+
 function selectPresetEditorRow(presetId) {
   if (!presetId) {
     presetEditorDraft = createPresetEditorDraft(null, { previousId: null, generateNewId: true });
     renderPresetEditorDraft();
+    setPresetEditorBaselineToCurrent();
     setPresetEditorStatus("Start a new preset draft or choose a saved preset.", "pending");
+    presetDraftNameInput?.focus();
     return;
   }
 
@@ -1311,6 +1376,7 @@ function renderPresetLibraryRows(selectedPresetId = "") {
 function renderPresetEditorEmptyState() {
   renderPresetLibraryRows(null);
   presetDraftNameInput.value = "";
+  presetDraftNameInput.placeholder = DEFAULT_PRESET_NAME_PLACEHOLDER;
   if (presetWeldExportedDesignInput) {
     presetWeldExportedDesignInput.checked = DEFAULT_WELD_EXPORTED_DESIGN;
   }
@@ -1332,6 +1398,9 @@ function renderPresetEditorEmptyState() {
   renderPresetEditorLineControls();
   if (savePresetButton) {
     savePresetButton.disabled = true;
+  }
+  if (cancelPresetButton) {
+    cancelPresetButton.disabled = true;
   }
   if (deletePresetButton) {
     deletePresetButton.disabled = true;
@@ -1357,6 +1426,7 @@ function renderPresetEditorDraft() {
   const globalDefaults = normalizePresetGlobalDefaults(presetEditorDraft.preset?.globalDefaults || {});
   const lineGroups = getPresetEditorLineGroups(presetEditorDraft.preset || {});
   presetDraftNameInput.value = draftName;
+  presetDraftNameInput.placeholder = selectedPresetId ? DEFAULT_PRESET_NAME_PLACEHOLDER : "Enter preset name";
   if (presetWeldExportedDesignInput) {
     presetWeldExportedDesignInput.checked = globalDefaults.weldExportedDesign;
   }
@@ -1376,7 +1446,7 @@ function renderPresetEditorDraft() {
   updatePresetGlobalVerticalScaleOutput();
   updatePresetBackingOutput();
   renderPresetEditorLineControls();
-  savePresetButton.disabled = false;
+  updatePresetSaveButtonState();
   if (deletePresetButton) {
     deletePresetButton.disabled = !presetEditorDraft?.previousId
       || !isValidPresetId(presetEditorDraft.previousId)
@@ -1551,29 +1621,141 @@ function loadPresetEditorDraftFromRegistry(presetId) {
 
   presetEditorDraft = createPresetEditorDraft(preset, { previousId: presetId });
   renderPresetEditorDraft();
+  setPresetEditorBaselineToCurrent();
   setPresetEditorStatus(`Editing ${preset.name}.`, "pending");
 }
 
-function openPresetEditorForNewPreset() {
+function cancelPresetEditorChanges() {
+  if (presetEditorDraft?.previousId && isValidPresetId(presetEditorDraft.previousId)) {
+    const presetId = presetEditorDraft.previousId;
+    const savedPresetName = getPresetDefinitionForEditor(presetId)?.name?.trim() || "preset";
+    loadPresetEditorDraftFromRegistry(presetId);
+    setPresetEditorStatus(`Canceled changes to ${savedPresetName}.`, "pending");
+    return;
+  }
+
+  const firstPresetId = getPresetOptions()[0]?.id || "";
+  if (firstPresetId) {
+    loadPresetEditorDraftFromRegistry(firstPresetId);
+  } else {
+    presetEditorDraft = null;
+    renderPresetEditorEmptyState();
+    presetEditorBaselineKey = null;
+  }
+  setPresetEditorStatus("Canceled preset draft.", "pending");
+}
+
+function setSavePresetAsStatus(message = "") {
+  if (!savePresetAsStatus) {
+    return;
+  }
+
+  savePresetAsStatus.textContent = message;
+  savePresetAsStatus.hidden = !message;
+}
+
+function finishSavePresetAsDialog(result) {
+  if (!activeSavePresetAsRequest) {
+    return;
+  }
+
+  const { resolve, restoreFocusTarget } = activeSavePresetAsRequest;
+  activeSavePresetAsRequest = null;
+  if (savePresetAsDialog instanceof HTMLDialogElement && savePresetAsDialog.open) {
+    savePresetAsDialog.close();
+  }
+  setSavePresetAsStatus("");
+  if (restoreFocusTarget instanceof HTMLElement) {
+    restoreFocusTarget.focus();
+  }
+  resolve(result);
+}
+
+function showSavePresetAsDialog(defaultName = "") {
+  const fallbackPrompt = globalThis.prompt;
+  if (!(savePresetAsDialog instanceof HTMLDialogElement) || !savePresetAsNameInput) {
+    const promptedName = typeof fallbackPrompt === "function"
+      ? fallbackPrompt("Preset name", defaultName)
+      : null;
+    const normalizedName = typeof promptedName === "string" ? promptedName.trim() : "";
+    return Promise.resolve(normalizedName || null);
+  }
+
+  if (activeSavePresetAsRequest) {
+    finishSavePresetAsDialog(null);
+  }
+
+  savePresetAsNameInput.value = defaultName;
+  setSavePresetAsStatus("");
+
+  return new Promise((resolve) => {
+    activeSavePresetAsRequest = {
+      resolve,
+      restoreFocusTarget: document.activeElement instanceof HTMLElement ? document.activeElement : null,
+    };
+    savePresetAsDialog.showModal();
+    savePresetAsNameInput.focus();
+    savePresetAsNameInput.select();
+  });
+}
+
+async function saveActiveOrderAsNewPreset() {
   const activeOrder = getActiveOrder();
   if (!activeOrder) {
     updateWorkflowAlert("Add or select a design before saving a preset.", "error");
     return;
   }
 
-  const draftName = buildPresetDraftNameFromOrder(activeOrder);
-  const preset = inferPresetDefinitionFromSettings({
-    name: draftName,
-    settings: getCurrentSettings(),
-  });
+  const presetName = await showSavePresetAsDialog();
+  if (!presetName) {
+    return;
+  }
 
-  presetEditorDraft = createPresetEditorDraft({
-    ...preset,
-    name: draftName,
-  }, { previousId: null, generateNewId: true });
-  renderPresetEditorDraft();
-  setActiveWorkspace("presets");
-  setPresetEditorStatus("Preset draft ready from the current order settings.", "pending");
+  if (saveAsNewPresetButton) {
+    saveAsNewPresetButton.disabled = true;
+  }
+  updateWorkflowAlert(`Saving ${presetName}...`, "pending", { autoHideMs: 0 });
+
+  const newPreset = {
+    ...inferPresetDefinitionFromSettings({
+      name: presetName,
+      settings: getCurrentSettings(),
+    }),
+    id: generatePresetId(),
+    name: presetName,
+  };
+
+  try {
+    const localPayload = savePresetDefinitionLocally({
+      preset: newPreset,
+      previousId: null,
+    });
+    const savedPreset = localPayload?.preset || newPreset;
+    renderPresetOptions();
+    presetInput.value = savedPreset.id;
+    updateActiveOrderFromControls();
+    renderOrderList();
+    persistBatchState();
+    render();
+
+    try {
+      await savePresetSnapshot(getPresetSnapshot());
+      updateWorkflowAlert(`Saved ${savedPreset.name} and selected it for this design.`, "success");
+    } catch (error) {
+      updateWorkflowAlert(
+        error instanceof Error
+          ? `Saved ${savedPreset.name} locally, but Supabase save failed: ${error.message}`
+          : `Saved ${savedPreset.name} locally, but Supabase save failed.`,
+        "error",
+      );
+    }
+  } catch (error) {
+    updateWorkflowAlert(error instanceof Error ? error.message : "Unable to save preset.", "error");
+  } finally {
+    if (saveAsNewPresetButton) {
+      saveAsNewPresetButton.disabled = !getActiveOrder();
+    }
+  }
 }
 
 function buildOverwrittenPresetDefinition({ preset, settings }) {
@@ -1630,6 +1812,7 @@ async function overwriteSelectedPresetFromActiveOrder() {
     if (presetEditorDraft?.previousId === existingPreset.id) {
       presetEditorDraft = createPresetEditorDraft(overwrittenPreset, { previousId: overwrittenPreset.id });
       renderPresetEditorDraft();
+      setPresetEditorBaselineToCurrent();
     }
     persistBatchState();
     render();
@@ -1687,6 +1870,7 @@ async function persistPresetEditorDraft({ syncInputs = false, successMessage } =
       { previousId: savedPresetId },
     );
     renderPresetEditorDraft();
+    setPresetEditorBaselineToCurrent();
     if (activeOrderChanged) {
       const activeOrder = getActiveOrder();
       if (activeOrder) {
@@ -1710,7 +1894,7 @@ async function persistPresetEditorDraft({ syncInputs = false, successMessage } =
     return true;
   } catch (error) {
     setPresetEditorStatus(error instanceof Error ? error.message : "Unable to save preset.", "error");
-    savePresetButton.disabled = false;
+    updatePresetSaveButtonState();
     return false;
   }
 }
@@ -1752,6 +1936,7 @@ async function deletePresetEditorDraft() {
     const replacementPreset = getPresetDefinitionForEditor(replacementPresetId);
     presetEditorDraft = createPresetEditorDraft(replacementPreset, { previousId: replacementPresetId });
     renderPresetEditorDraft();
+    setPresetEditorBaselineToCurrent();
     renderOrderList();
     persistBatchState();
     render();
@@ -1768,7 +1953,7 @@ async function deletePresetEditorDraft() {
     }
   } catch (error) {
     setPresetEditorStatus(error instanceof Error ? error.message : "Unable to delete preset.", "error");
-    savePresetButton.disabled = false;
+    updatePresetSaveButtonState();
     if (deletePresetButton) {
       deletePresetButton.disabled = false;
     }
@@ -1865,6 +2050,7 @@ async function assignSelectedPresetToActiveListing() {
     if (presetEditorDraft?.previousId === selectedPresetId) {
       presetEditorDraft = createPresetEditorDraft(assignedPreset, { previousId: assignedPreset.id });
       renderPresetEditorDraft();
+      setPresetEditorBaselineToCurrent();
     }
     activeOrder.source.manualPresetOverride = false;
     activeOrder.settings = buildPresetSynchronizedSettings(activeOrder.settings, assignedPreset.id, {
@@ -2604,15 +2790,42 @@ function renderSizePresetList() {
     return;
   }
 
-  sizePresetList.replaceChildren(...getBoundingSizePresetDefinitionsForEditor().map((definition) => {
+  const draftDefinition = sizePresetEditorDraftActive
+    ? [{
+      id: "",
+      label: buildSizePresetEditorLabel() || "New guide draft",
+      maxWidthIn: readPositiveNumberInput(sizePresetMaxWidthInput),
+      maxHeightIn: readPositiveNumberInput(sizePresetMaxHeightInput),
+      minWidthIn: readPositiveNumberInput(sizePresetMinWidthInput),
+      minHeightIn: readPositiveNumberInput(sizePresetMinHeightInput),
+      circleDiameterIn: readPositiveNumberInput(sizePresetCircleDiameterInput),
+      isDraft: true,
+    }]
+    : [];
+  const savedDefinitions = getBoundingSizePresetDefinitionsForEditor().map((definition) => {
     const preset = resolveBoundingSizePreset(definition.id);
+    return {
+      id: definition.id,
+      label: preset.label,
+      maxWidthIn: preset.maxWidthIn,
+      maxHeightIn: preset.maxHeightIn,
+      minWidthIn: preset.minWidthIn,
+      minHeightIn: preset.minHeightIn,
+      circleDiameterIn: preset.circleDiameterIn,
+      isDraft: false,
+    };
+  });
+
+  sizePresetList.replaceChildren(...[...draftDefinition, ...savedDefinitions].map((preset) => {
     const row = document.createElement("article");
     row.className = "size-preset-row";
     row.role = "button";
     row.tabIndex = 0;
-    row.classList.toggle("is-selected", definition.id === selectedSizePresetId);
+    row.classList.toggle("is-selected", preset.isDraft || preset.id === selectedSizePresetId);
     row.addEventListener("click", () => {
-      selectSizePresetForEditing(definition.id);
+      if (!preset.isDraft) {
+        selectSizePresetForEditing(preset.id);
+      }
     });
     row.addEventListener("keydown", (event) => {
       if (event.key !== "Enter" && event.key !== " ") {
@@ -2620,7 +2833,9 @@ function renderSizePresetList() {
       }
 
       event.preventDefault();
-      selectSizePresetForEditing(definition.id);
+      if (!preset.isDraft) {
+        selectSizePresetForEditing(preset.id);
+      }
     });
 
     const content = document.createElement("div");
@@ -2630,11 +2845,15 @@ function renderSizePresetList() {
 
     const max = document.createElement("p");
     max.className = "size-preset-meta";
-    max.textContent = `Max ${preset.maxWidthIn} x ${preset.maxHeightIn} in`;
+    max.textContent = preset.maxWidthIn !== null && preset.maxHeightIn !== null
+      ? `Max ${preset.maxWidthIn} x ${preset.maxHeightIn} in`
+      : "Enter max dimensions";
 
     const min = document.createElement("p");
     min.className = "size-preset-meta";
-    min.textContent = `Min ${preset.minWidthIn} x ${preset.minHeightIn} in`;
+    min.textContent = preset.minWidthIn !== null && preset.minHeightIn !== null
+      ? `Min ${preset.minWidthIn} x ${preset.minHeightIn} in`
+      : "Min optional";
 
     const circle = document.createElement("p");
     circle.className = "size-preset-meta";
@@ -2667,15 +2886,47 @@ function readPositiveNumberInput(input) {
   return Number.isFinite(numeric) && numeric > 0 ? numeric : null;
 }
 
+function formatSizePresetDimension(value) {
+  return Number.isInteger(value) ? String(value) : String(value).replace(/0+$/, "").replace(/\.$/, "");
+}
+
+function buildSizePresetEditorLabel() {
+  const maxWidthIn = readPositiveNumberInput(sizePresetMaxWidthInput);
+  const maxHeightIn = readPositiveNumberInput(sizePresetMaxHeightInput);
+
+  if (maxWidthIn === null && maxHeightIn === null) {
+    return "";
+  }
+
+  const widthLabel = maxWidthIn === null ? "W" : formatSizePresetDimension(maxWidthIn);
+  const heightLabel = maxHeightIn === null ? "H" : formatSizePresetDimension(maxHeightIn);
+
+  return `${widthLabel} x ${heightLabel}`;
+}
+
+function syncSizePresetEditorNameFromMaxDimensions() {
+  if (!sizePresetNameInput) {
+    return;
+  }
+
+  sizePresetNameInput.value = buildSizePresetEditorLabel();
+}
+
+function readSizePresetEditorMinDimension(input, fallback) {
+  return readPositiveNumberInput(input) ?? fallback;
+}
+
 function renderSizePresetEditorPreview() {
   if (!sizePresetPreview || !sizePresetPreviewEmptyState) {
     return;
   }
 
+  syncSizePresetEditorNameFromMaxDimensions();
+
   const maxWidthIn = readPositiveNumberInput(sizePresetMaxWidthInput);
   const maxHeightIn = readPositiveNumberInput(sizePresetMaxHeightInput);
-  const minWidthIn = readPositiveNumberInput(sizePresetMinWidthInput);
-  const minHeightIn = readPositiveNumberInput(sizePresetMinHeightInput);
+  const minWidthIn = readSizePresetEditorMinDimension(sizePresetMinWidthInput, maxWidthIn);
+  const minHeightIn = readSizePresetEditorMinDimension(sizePresetMinHeightInput, maxHeightIn);
   const circleDiameterIn = readPositiveNumberInput(sizePresetCircleDiameterInput);
   const canRender = maxWidthIn !== null
     && maxHeightIn !== null
@@ -2781,6 +3032,7 @@ function renderSizePresetEditorPreview() {
 
 function clearSizePresetEditor() {
   selectedSizePresetId = null;
+  sizePresetEditorDraftActive = false;
   if (sizePresetNameInput) {
     sizePresetNameInput.value = "";
   }
@@ -2805,6 +3057,15 @@ function clearSizePresetEditor() {
   setSizePresetEditorStatus("Create a size guide or select one below.", "pending");
   renderSizePresetEditorPreview();
   renderSizePresetList();
+  setSizePresetEditorBaselineToCurrent();
+}
+
+function startNewSizePresetDraft() {
+  clearSizePresetEditor();
+  sizePresetEditorDraftActive = true;
+  setSizePresetEditorStatus("Started a new size guide draft.", "pending");
+  renderSizePresetList();
+  setSizePresetEditorBaselineToCurrent();
 }
 
 function selectSizePresetForEditing(presetId) {
@@ -2817,8 +3078,9 @@ function selectSizePresetForEditing(presetId) {
   }
 
   selectedSizePresetId = definition.id;
+  sizePresetEditorDraftActive = false;
   if (sizePresetNameInput) {
-    sizePresetNameInput.value = definition.label;
+    sizePresetNameInput.value = "";
   }
   if (sizePresetMaxWidthInput) {
     sizePresetMaxWidthInput.value = String(definition.max.widthIn);
@@ -2843,6 +3105,7 @@ function selectSizePresetForEditing(presetId) {
   setSizePresetEditorStatus(`Editing ${definition.label}.`, "pending");
   renderSizePresetEditorPreview();
   renderSizePresetList();
+  setSizePresetEditorBaselineToCurrent();
 }
 
 function selectFirstSizePresetIfNeeded() {
@@ -2860,6 +3123,33 @@ function selectFirstSizePresetIfNeeded() {
   renderSizePresetList();
 }
 
+function cancelSizePresetEditorChanges() {
+  if (sizePresetEditorDraftActive) {
+    const firstSizePresetId = getBoundingSizePresetDefinitionsForEditor()[0]?.id || "";
+    sizePresetEditorDraftActive = false;
+
+    if (firstSizePresetId) {
+      selectSizePresetForEditing(firstSizePresetId);
+    } else {
+      clearSizePresetEditor();
+    }
+
+    setSizePresetEditorStatus("Canceled size guide draft.", "pending");
+    return;
+  }
+
+  const currentDefinition = getBoundingSizePresetDefinitionsForEditor()
+    .find((definition) => definition.id === selectedSizePresetId);
+
+  if (currentDefinition) {
+    selectSizePresetForEditing(currentDefinition.id);
+    setSizePresetEditorStatus(`Canceled changes to ${currentDefinition.label}.`, "pending");
+    return;
+  }
+
+  clearSizePresetEditor();
+}
+
 function generateSizePresetId() {
   const rawId = globalThis.crypto?.randomUUID?.().replace(/-/g, "")
     || `${Date.now().toString(16)}${Math.random().toString(16).slice(2, 10)}`;
@@ -2868,10 +3158,11 @@ function generateSizePresetId() {
 
 function readSizePresetEditorDefinition() {
   const editingBuiltIn = selectedSizePresetId && isBuiltInBoundingSizePresetId(selectedSizePresetId);
+  const label = buildSizePresetEditorLabel();
 
   return {
     id: editingBuiltIn ? generateSizePresetId() : (selectedSizePresetId || generateSizePresetId()),
-    label: sizePresetNameInput?.value,
+    label,
     max: {
       widthIn: sizePresetMaxWidthInput?.value,
       heightIn: sizePresetMaxHeightInput?.value,
@@ -2882,6 +3173,61 @@ function readSizePresetEditorDefinition() {
     },
     circleDiameterIn: sizePresetCircleDiameterInput?.value,
   };
+}
+
+function buildSizePresetEditorDirtyKey() {
+  syncSizePresetEditorNameFromMaxDimensions();
+
+  try {
+    const definition = normalizeBoundingSizePresetDefinition({
+      id: "size-dirty-check",
+      label: buildSizePresetEditorLabel(),
+      max: {
+        widthIn: sizePresetMaxWidthInput?.value,
+        heightIn: sizePresetMaxHeightInput?.value,
+      },
+      min: {
+        widthIn: sizePresetMinWidthInput?.value,
+        heightIn: sizePresetMinHeightInput?.value,
+      },
+      circleDiameterIn: sizePresetCircleDiameterInput?.value,
+    });
+
+    return JSON.stringify({
+      label: definition.label,
+      max: definition.max,
+      min: definition.min,
+      circleDiameterIn: definition.circleDiameterIn ?? null,
+    });
+  } catch {
+    return JSON.stringify({
+      label: buildSizePresetEditorLabel(),
+      maxWidthIn: sizePresetMaxWidthInput?.value || "",
+      maxHeightIn: sizePresetMaxHeightInput?.value || "",
+      minWidthIn: sizePresetMinWidthInput?.value || "",
+      minHeightIn: sizePresetMinHeightInput?.value || "",
+      circleDiameterIn: sizePresetCircleDiameterInput?.value || "",
+    });
+  }
+}
+
+function setSizePresetEditorBaselineToCurrent() {
+  sizePresetEditorBaselineKey = buildSizePresetEditorDirtyKey();
+  updateSizePresetSaveButtonState();
+}
+
+function updateSizePresetSaveButtonState() {
+  if (!saveSizePresetButton && !cancelSizePresetButton) {
+    return;
+  }
+
+  const isDirty = buildSizePresetEditorDirtyKey() !== sizePresetEditorBaselineKey;
+  if (saveSizePresetButton) {
+    saveSizePresetButton.disabled = !isDirty;
+  }
+  if (cancelSizePresetButton) {
+    cancelSizePresetButton.disabled = !sizePresetEditorDraftActive && !isDirty;
+  }
 }
 
 function refreshBoundingSizePresetUi(preferredSizePresetId = null) {
@@ -2902,6 +3248,10 @@ function refreshBoundingSizePresetUi(preferredSizePresetId = null) {
 }
 
 async function saveSizePresetFromEditor() {
+  if (saveSizePresetButton) {
+    saveSizePresetButton.disabled = true;
+  }
+
   try {
     const definition = readSizePresetEditorDefinition();
     const previousId = selectedSizePresetId && !isBuiltInBoundingSizePresetId(selectedSizePresetId)
@@ -2925,6 +3275,7 @@ async function saveSizePresetFromEditor() {
     }
   } catch (error) {
     setSizePresetEditorStatus(error instanceof Error ? error.message : "Unable to save size guide.", "error");
+    updateSizePresetSaveButtonState();
   }
 }
 
@@ -6666,36 +7017,58 @@ newPresetDraftButton?.addEventListener("click", () => {
   selectPresetEditorRow("");
   setPresetEditorStatus("Started a new preset draft.", "pending");
 });
-presetDraftNameInput?.addEventListener("input", syncPresetEditorDraftFromInputs);
+presetDraftNameInput?.addEventListener("input", () => {
+  syncPresetEditorDraftFromInputs();
+  updatePresetSaveButtonState();
+});
 savePresetButton?.addEventListener("click", () => {
   void savePresetEditorDraft();
 });
+cancelPresetButton?.addEventListener("click", cancelPresetEditorChanges);
 deletePresetButton?.addEventListener("click", () => {
   void deletePresetEditorDraft();
 });
 presetBackingInput?.addEventListener("input", () => {
   updatePresetBackingOutput();
+  updatePresetSaveButtonState();
 });
-presetBoundingSizePresetInput?.addEventListener("change", syncPresetEditorDraftFromControls);
+presetBoundingSizePresetInput?.addEventListener("change", () => {
+  syncPresetEditorDraftFromControls();
+  updatePresetSaveButtonState();
+});
 presetGlobalHorizontalScaleInput?.addEventListener("input", () => {
   updatePresetGlobalHorizontalScaleOutput();
+  updatePresetSaveButtonState();
 });
 presetGlobalVerticalScaleInput?.addEventListener("input", () => {
   updatePresetGlobalVerticalScaleOutput();
+  updatePresetSaveButtonState();
 });
-newSizePresetButton?.addEventListener("click", clearSizePresetEditor);
+presetWeldExportedDesignInput?.addEventListener("input", () => {
+  updatePresetSaveButtonState();
+});
+newSizePresetButton?.addEventListener("click", startNewSizePresetDraft);
 [sizePresetNameInput, sizePresetMaxWidthInput, sizePresetMaxHeightInput, sizePresetMinWidthInput, sizePresetMinHeightInput, sizePresetCircleDiameterInput]
   .forEach((input) => {
-    input?.addEventListener("input", renderSizePresetEditorPreview);
+    input?.addEventListener("input", () => {
+      renderSizePresetEditorPreview();
+      renderSizePresetList();
+      updateSizePresetSaveButtonState();
+    });
   });
 saveSizePresetButton?.addEventListener("click", () => {
   void saveSizePresetFromEditor();
 });
+cancelSizePresetButton?.addEventListener("click", cancelSizePresetEditorChanges);
 deleteSizePresetButton?.addEventListener("click", () => {
   void deleteSelectedSizePreset();
 });
 presetLineRuleControls?.addEventListener("input", (event) => {
   updateRangeOutputForInput(event.target);
+  updatePresetSaveButtonState();
+});
+presetLineRuleControls?.addEventListener("change", () => {
+  updatePresetSaveButtonState();
 });
 presetAssignmentsList?.addEventListener("click", (event) => {
   const button = event.target instanceof Element
@@ -6718,7 +7091,9 @@ clearBatchButton.addEventListener("click", clearAllOrders);
 showColorCountsButton?.addEventListener("click", openBatchColorCountsDialog);
 exportCompletedButton.addEventListener("click", exportAllOrders);
 copyCompletedButton.addEventListener("click", copyAllOrders);
-saveAsNewPresetButton?.addEventListener("click", openPresetEditorForNewPreset);
+saveAsNewPresetButton?.addEventListener("click", () => {
+  void saveActiveOrderAsNewPreset();
+});
 overwritePresetButton?.addEventListener("click", () => {
   void overwriteSelectedPresetFromActiveOrder();
 });
@@ -6778,6 +7153,32 @@ confirmationDialogElement?.addEventListener("keydown", (event) => {
 
   event.preventDefault();
   finishConfirmationDialog(false);
+});
+savePresetAsForm?.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const presetName = savePresetAsNameInput?.value.trim() || "";
+  if (!presetName) {
+    setSavePresetAsStatus("Preset name is required.");
+    savePresetAsNameInput?.focus();
+    return;
+  }
+
+  finishSavePresetAsDialog(presetName);
+});
+savePresetAsCancelButton?.addEventListener("click", () => {
+  finishSavePresetAsDialog(null);
+});
+savePresetAsCloseButton?.addEventListener("click", () => {
+  finishSavePresetAsDialog(null);
+});
+savePresetAsDialog?.addEventListener("cancel", (event) => {
+  event.preventDefault();
+  finishSavePresetAsDialog(null);
+});
+savePresetAsDialog?.addEventListener("click", (event) => {
+  if (event.target === savePresetAsDialog) {
+    finishSavePresetAsDialog(null);
+  }
 });
 closePresetAssignmentDialogButton?.addEventListener("click", closePresetAssignmentDialog);
 presetAssignmentDialog?.addEventListener("click", (event) => {

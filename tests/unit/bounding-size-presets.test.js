@@ -77,6 +77,20 @@ describe("size guides", () => {
     });
   });
 
+  it("defaults omitted minimum dimensions to the maximum dimensions", () => {
+    expect(normalizeBoundingSizePresetDefinition({
+      id: "size-no-min",
+      label: "3 x 2",
+      max: { widthIn: "3", heightIn: "2" },
+      min: { widthIn: "", heightIn: "" },
+    })).toEqual({
+      id: "size-no-min",
+      label: "3 x 2",
+      max: { widthIn: 3, heightIn: 2 },
+      min: { widthIn: 3, heightIn: 2 },
+    });
+  });
+
   it("rejects invalid custom size dimensions", () => {
     expect(() => normalizeBoundingSizePresetDefinition({
       id: "size-bad",

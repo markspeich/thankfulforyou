@@ -85,9 +85,12 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - The `Presets` page should follow the same two-pane production layout style as `Production Batch` and `Size Guides`: preset selection in a left navigation panel, with the preset editor in a right editor panel on desktop-width screens.
 - The `Presets` page should use row-based preset selection in the left navigation panel, matching the production batch and size guide row-selection pattern rather than presenting the operator-facing selector as a dropdown.
 - The `Presets` page editor panel should contain the preset name, reusable global defaults, reusable line rules, listing assignments, actions, and status for the selected preset.
+- The `Presets` page editor actions should include `Save Preset`, `Cancel`, and `Delete Preset`; `Cancel` should be enabled only after starting a new preset draft or changing the selected preset, and should discard an unsaved preset draft or revert edits to the selected saved preset.
+- Starting a new preset draft from the Presets page should focus the preset name field and set its helper placeholder to `Enter preset name`.
 - Live preset edits should save to Supabase Postgres so changes propagate across sessions and environments.
 - On startup, presets should load from Supabase Postgres before falling back to bundled defaults for an empty development database.
 - The app should allow creating a new preset from the current design-editor layout state.
+- On the design editor screen, choosing `Save as New Preset` should open an in-place dialog that asks for the preset name, save the inferred reusable preset, add it to the preset dropdown, select it for the active design, and keep the operator on the design editor screen instead of switching to the preset editor page.
 - The `Save as New Preset` flow should infer reusable preset structure instead of freezing a one-off order snapshot.
 - Shared values across every text line should become preset `lineDefaults`.
 - First-line-only differences should become a `first` line rule.
@@ -116,12 +119,15 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Scale the text proportionally to make the best use of the active preset's selected maximum bounding rectangle, scaling up or down as needed so the text fills as much of the allowed space as possible while still staying within that rectangle.
 - Support additional size guides beyond the current 2.2 inch by 1.5 inch guide.
 - Operators must be able to create new size guides from the UI for testing and production setup, without editing source files or redeploying the app.
-- Each size guide must define both a maximum rectangle and a minimum rectangle so the preview can show the allowed size range for that badge reel design.
+- Each size guide must define a maximum rectangle. Minimum width and minimum height are optional; omitted minimum dimensions should be treated as unconstrained for authoring and default to the matching maximum dimension for stored geometry.
 - The size guide editor should live on its own `Size Guides` page rather than inside the preset editor.
-- The size guide editor should include a live preview of the max rectangle, min rectangle, dimension labels, and optional centered circle from the fields currently being edited.
+- The size guide editor should include a live preview of the max rectangle, optional min rectangle, dimension labels, and optional centered circle from the fields currently being edited.
 - The `Size Guides` page should follow the same two-pane production layout style as `Production Batch`: saved size guide rows in a left navigation panel, with the full size guide editor in a right editor panel on desktop-width screens. The editor panel should contain the number fields, preview, actions, and status.
 - Clicking a saved size guide row should load it into the editor directly; size guide rows should not include a separate `Edit` button.
-- The `New Guide` action should sit at the top of the left size-guide navigation panel. `Save Guide` and `Delete Guide` should sit at the top right of the size-guide editor panel.
+- The `New Guide` action should sit at the top of the left size-guide navigation panel. `Save Guide`, `Cancel`, and `Delete Guide` should sit at the top right of the size-guide editor panel.
+- `Cancel` should be enabled only after starting a new size-guide draft or changing the selected guide, and should discard an unsaved size-guide draft or revert edits to the selected saved size guide.
+- Clicking `New Guide` should immediately show a selected unsaved draft row in the size-guide navigation list.
+- The size guide name field should be read-only and derived live from the maximum dimensions as `W x H`, showing the entered dimension immediately while the other dimension is still blank.
 - Size guide editor fields should use compact spacing so production dimensions can be scanned and edited without excessive vertical spread.
 - The active size guide must be a global layout setting selected in the `Global Settings` card and saved as part of reusable presets.
 - Treat `Text Height` as the authored physical size for each line in millimeters.

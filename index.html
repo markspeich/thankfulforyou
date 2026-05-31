@@ -527,6 +527,9 @@
                     <button id="savePresetButton" class="editor-action-button" type="button">
                       <span class="editor-action-label">Save Preset</span>
                     </button>
+                    <button id="cancelPresetButton" class="editor-action-button" type="button" disabled>
+                      <span class="editor-action-label">Cancel</span>
+                    </button>
                     <button id="deletePresetButton" class="editor-action-button editor-danger-button" type="button" disabled>
                       <span class="editor-action-label">Delete Preset</span>
                     </button>
@@ -615,6 +618,9 @@
                     <button id="saveSizePresetButton" class="editor-action-button" type="button">
                       <span class="editor-action-label">Save Guide</span>
                     </button>
+                    <button id="cancelSizePresetButton" class="editor-action-button" type="button" disabled>
+                      <span class="editor-action-label">Cancel</span>
+                    </button>
                     <button id="deleteSizePresetButton" class="editor-action-button editor-danger-button" type="button" disabled>
                       <span class="editor-action-label">Delete Guide</span>
                     </button>
@@ -625,7 +631,7 @@
                 <section class="size-preset-editor" aria-label="Size guide editor">
                   <label class="field compact-field" for="sizePresetNameInput">
                     <span>Guide Name</span>
-                    <input id="sizePresetNameInput" type="text" autocomplete="off" placeholder="Medium Badge">
+                    <input id="sizePresetNameInput" type="text" autocomplete="off" placeholder="W x H" readonly>
                   </label>
                   <div class="size-preset-dimension-grid">
                     <label class="field compact-field" for="sizePresetMaxWidthInput">
@@ -651,7 +657,7 @@
                   </div>
                   <section class="size-preset-preview-panel" aria-label="Size guide preview">
                     <svg id="sizePresetPreview" class="size-preset-preview" role="img" aria-label="Preview of the size guide"></svg>
-                    <p id="sizePresetPreviewEmptyState" class="size-preset-preview-empty">Enter maximum and minimum dimensions to preview this guide.</p>
+                    <p id="sizePresetPreviewEmptyState" class="size-preset-preview-empty">Enter maximum dimensions to preview this guide.</p>
                   </section>
                   <p id="sizePresetEditorStatus" class="note" aria-live="polite">Create a size guide or select one below.</p>
                 </section>
@@ -736,6 +742,42 @@
         </div>
       </div>
     </div>
+
+    <dialog id="savePresetAsDialog" class="batch-summary-dialog save-preset-as-dialog" aria-labelledby="savePresetAsTitle">
+      <div class="confirmation-dialog-card save-preset-as-card">
+        <header class="confirmation-dialog-header">
+          <div>
+            <p class="confirmation-dialog-eyebrow">New Preset</p>
+            <h2 id="savePresetAsTitle">Save as New Preset</h2>
+          </div>
+          <button
+            id="savePresetAsCloseButton"
+            class="confirmation-dialog-close"
+            type="button"
+            aria-label="Close save preset dialog"
+          >
+            <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+              <path d="M6 6l12 12M18 6 6 18" />
+            </svg>
+          </button>
+        </header>
+        <form id="savePresetAsForm" class="save-preset-as-form">
+          <label class="field" for="savePresetAsNameInput">
+            Preset name
+            <input id="savePresetAsNameInput" type="text" autocomplete="off" placeholder="Enter the preset name" />
+          </label>
+          <p id="savePresetAsStatus" class="confirmation-dialog-description" hidden></p>
+          <div class="confirmation-dialog-actions">
+            <button id="savePresetAsCancelButton" class="confirmation-dialog-button confirmation-dialog-cancel" type="button">
+              Cancel
+            </button>
+            <button id="savePresetAsConfirmButton" class="confirmation-dialog-button confirmation-dialog-confirm" type="submit">
+              Save Preset
+            </button>
+          </div>
+        </form>
+      </div>
+    </dialog>
 
     <dialog id="presetAssignmentDialog" class="batch-summary-dialog" aria-labelledby="presetAssignmentTitle">
       <div class="batch-summary-card batch-summary-card-success">

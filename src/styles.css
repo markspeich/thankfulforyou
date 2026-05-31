@@ -880,6 +880,24 @@ select {
   border-color: #781e15;
 }
 
+.save-preset-as-dialog {
+  width: min(440px, calc(100vw - 32px));
+  padding: 0;
+  border: 0;
+  background: transparent;
+  overflow: visible;
+}
+
+.save-preset-as-card {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.save-preset-as-form {
+  display: grid;
+  gap: 16px;
+}
+
 .batch-summary-card-success {
   background: linear-gradient(180deg, #f4fff7 0%, #ecfbf0 100%);
   border-color: #b9e2c5;

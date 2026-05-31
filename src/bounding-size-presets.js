@@ -43,6 +43,18 @@ function assertPositiveNumber(value, fieldName) {
   return numeric;
 }
 
+function isBlankValue(value) {
+  return value === undefined || value === null || value === "";
+}
+
+function assertOptionalPositiveNumber(value, fallback, fieldName) {
+  if (isBlankValue(value)) {
+    return fallback;
+  }
+
+  return assertPositiveNumber(value, fieldName);
+}
+
 function resolveDefinition(definition) {
   const circleDiameterIn = Number.isFinite(definition.circleDiameterIn) ? definition.circleDiameterIn : null;
 
@@ -67,8 +79,8 @@ export function normalizeBoundingSizePresetDefinition(definition = {}) {
   const label = String(definition.label ?? "").trim();
   const maxWidthIn = assertPositiveNumber(definition.max?.widthIn, "Maximum width");
   const maxHeightIn = assertPositiveNumber(definition.max?.heightIn, "Maximum height");
-  const minWidthIn = assertPositiveNumber(definition.min?.widthIn, "Minimum width");
-  const minHeightIn = assertPositiveNumber(definition.min?.heightIn, "Minimum height");
+  const minWidthIn = assertOptionalPositiveNumber(definition.min?.widthIn, maxWidthIn, "Minimum width");
+  const minHeightIn = assertOptionalPositiveNumber(definition.min?.heightIn, maxHeightIn, "Minimum height");
 
   if (!/^size-[a-z0-9]+(?:-[a-z0-9]+)*$/.test(id)) {
     throw new Error("Size guide id must start with size- and contain only lowercase letters, numbers, and hyphens.");
