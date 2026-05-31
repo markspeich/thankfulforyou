@@ -491,6 +491,37 @@ describe("presets", () => {
     expect(localStorageMock.setItem).not.toHaveBeenCalled();
   });
 
+  it("removes a listing id from other presets when saving it onto a new preset", () => {
+    const result = savePresetDefinitionLocally({
+      previousId: "preset-b7d2e9f4c318",
+      preset: {
+        schemaVersion: 1,
+        id: "preset-b7d2e9f4c318",
+        name: "Candlepin, Skywalk",
+        globalDefaults: {
+          backingMm: 3.1,
+          weldExportedDesign: true,
+        },
+        lineDefaults: {
+          fontId: "candlepin",
+        },
+        lineRules: [{ match: { kind: "all" }, settings: { fontId: "candlepin" } }],
+        listingAssignments: [
+          { listingId: "4439916732", name: "Original Listing", lineOverrides: [] },
+          { listingId: "1884223710", name: "Moved Listing", lineOverrides: [] },
+        ],
+      },
+    });
+
+    expect(getPresetDefinitionForEditor("preset-b7d2e9f4c318")?.listingAssignments.map((assignment) => assignment.listingId)).toEqual([
+      "4439916732",
+      "1884223710",
+    ]);
+    expect(getPresetDefinitionForEditor("preset-c3e8a1d7f520")?.listingAssignments.map((assignment) => assignment.listingId)).not.toContain("1884223710");
+    expect(getPresetIdForListingId("1884223710")).toBe("preset-b7d2e9f4c318");
+    expect(result.snapshot).toEqual(getPresetSnapshot());
+  });
+
   it("can save custom size guides into the preset snapshot", () => {
     const localStorageMock = {
       setItem: vi.fn(),

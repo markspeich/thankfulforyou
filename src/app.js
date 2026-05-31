@@ -1916,12 +1916,33 @@ async function assignSelectedPresetToActiveListing() {
     id: basePreset.id || generatePresetId(),
     name: (basePreset.name || draftName).trim(),
   };
+  const existingAssignedPresetId = hasPresetMappingForListingId(listingId)
+    ? getPresetIdForListingId(listingId)
+    : null;
+
+  if (existingAssignedPresetId && existingAssignedPresetId !== normalizedPreset.id) {
+    const existingAssignedPreset = getPresetDefinitionForEditor(existingAssignedPresetId);
+    const existingPresetName = existingAssignedPreset?.name || "another preset";
+    const approved = await showConfirmationDialog({
+      title: "Move listing link?",
+      description: `Listing ${listingId} is already linked to ${existingPresetName}. Move it to ${normalizedPreset.name} instead?`,
+      confirmLabel: "Change Link",
+      cancelLabel: "Keep Current",
+    });
+
+    if (!approved) {
+      updateWorkflowAlert(`Kept listing ${listingId} linked to ${existingPresetName}.`, "pending");
+      return;
+    }
+  }
+
+  const assignmentPayload = {
+    listingId,
+    name: activeOrder.source?.listingTitle?.trim() || `Listing ${listingId}`,
+  };
   const assignedPreset = upsertListingAssignment({
     preset: normalizedPreset,
-    assignment: {
-      listingId,
-      name: activeOrder.source?.listingTitle?.trim() || `Listing ${listingId}`,
-    },
+    assignment: assignmentPayload,
   });
 
   try {
@@ -3350,6 +3371,9 @@ function applyPersistedBatchState(parsed) {
   activeOrderItemId = restoredOrders.some((order) => order.id === parsed.activeOrderItemId)
     ? parsed.activeOrderItemId
     : restoredOrders[0]?.id || null;
+  restoredOrders.forEach((order) => {
+    syncOrderPresetFromListing(order, { force: true });
+  });
   return restoredOrders.length > 0;
 }
 
@@ -3760,13 +3784,19 @@ function getMappedPresetIdForOrder(order) {
   return getPresetIdForListingId(listingId);
 }
 
-function shouldSyncOrderPreset(order, presetId) {
+function shouldSyncOrderPreset(order, presetId, options = {}) {
+  const { force = false } = options;
   if (
     !order
     || !presetId
-    || order.source?.manualPresetOverride
-    || typeof order.savedSettingsSignature === "string"
   ) {
+    return false;
+  }
+
+  if (!force && (
+    order.source?.manualPresetOverride
+    || typeof order.savedSettingsSignature === "string"
+  )) {
     return false;
   }
 
@@ -3794,15 +3824,19 @@ function shouldSyncOrderPreset(order, presetId) {
   return expectedSettings.lines.some((expectedLine, index) => !lineSettingsMatch(normalized.lines[index], expectedLine));
 }
 
-function syncOrderPresetFromListing(order) {
+function syncOrderPresetFromListing(order, options = {}) {
   const mappedPresetId = getMappedPresetIdForOrder(order);
-  if (!shouldSyncOrderPreset(order, mappedPresetId)) {
+  if (!shouldSyncOrderPreset(order, mappedPresetId, options)) {
     return;
   }
 
-  order.settings = buildPresetSynchronizedSettings(order.settings, mappedPresetId, {
+  const nextSettings = buildPresetSynchronizedSettings(order.settings, mappedPresetId, {
     listingId: order.source?.listingId,
   });
+  clearOrderCompletionState(order, nextSettings);
+  if (order.source) {
+    order.source.manualPresetOverride = false;
+  }
 }
 
 function syncOrdersForListingAssignmentChange(listingId) {
@@ -5054,6 +5088,7 @@ function renderPresetListingIndicator(order) {
   const selectedPresetId = presetInput.value;
 
   presetListingIndicator.classList.toggle("is-hidden", !mappedPresetId);
+  presetListingIndicator.classList.remove("preset-listing-indicator-warning");
   if (!mappedPresetId) {
     presetListingIndicator.textContent = "";
     presetListingIndicator.title = "";
@@ -5068,6 +5103,13 @@ function renderPresetListingIndicator(order) {
   }
 
   const mappedPresetName = getPresetDefinitionForEditor(mappedPresetId)?.name || "another preset";
+  if (order?.source?.manualPresetOverride) {
+    presetListingIndicator.textContent = "Preset overriden";
+    presetListingIndicator.title = `This design overrides the linked preset ${mappedPresetName}. Listing ID ${listingId}.`;
+    presetListingIndicator.classList.add("preset-listing-indicator-warning");
+    return;
+  }
+
   presetListingIndicator.textContent = "Assigned elsewhere";
   presetListingIndicator.title = `Listing ID ${listingId} is assigned to ${mappedPresetName}.`;
 }

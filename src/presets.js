@@ -561,16 +561,34 @@ export function getBoundingSizePresetDefinitionsForEditor() {
 
 export function savePresetDefinitionLocally({ preset, previousId = null }) {
   const normalizedPreset = normalizePresetDefinition(preset);
+  const listingIdsForSavedPreset = new Set(
+    normalizedPreset.listingAssignments.map((assignment) => assignment.listingId),
+  );
   const lookupId = typeof previousId === "string" && previousId.trim()
     ? previousId.trim()
     : normalizedPreset.id;
-  const definitions = [...presetRegistry.presetById.values()];
+  let definitions = [...presetRegistry.presetById.values()];
   const existingIndex = definitions.findIndex((definition) => definition.id === lookupId);
 
   if (existingIndex >= 0) {
     definitions[existingIndex] = normalizedPreset;
   } else {
     definitions.push(normalizedPreset);
+  }
+
+  if (listingIdsForSavedPreset.size > 0) {
+    definitions = definitions.map((definition) => {
+      if (definition.id === normalizedPreset.id) {
+        return definition;
+      }
+
+      return {
+        ...definition,
+        listingAssignments: definition.listingAssignments.filter(
+          (assignment) => !listingIdsForSavedPreset.has(assignment.listingId),
+        ),
+      };
+    });
   }
 
   const nextDefaultPresetId = presetRegistry.defaultPresetId === lookupId

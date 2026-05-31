@@ -397,6 +397,10 @@ The website should be a practical production tool rather than a marketing site. 
 - The `Global Settings` card should contain `Weld Exported Design`, `Size Guide`, global `Horizontal Stretch`, global `Vertical Stretch`, and `Backing Border`, followed by the per-line controls for `Line 1`, `Line 2`, and any additional lines.
 - The selected-order editor should also provide an `Assign Preset to Listing` action when the active order has an imported Etsy listing id.
 - The `Assign Preset to Listing` action should assign the currently selected preset to that listing id by updating the preset's listing assignments.
+- A preset may be linked to multiple Etsy listing ids.
+- A single Etsy listing id should be linked to only one preset at a time.
+- When an operator attempts to link an Etsy listing id that is already linked to a different preset, the app must show an explicit confirmation before moving the listing id to the new preset.
+- If the operator approves moving a listing id link, the app should remove that listing id from the previous preset and keep the selected preset's other listing assignments intact.
 - When the active order's imported listing id is assigned to the selected preset, the `Preset Name` label should show a compact inline `Linked` indicator without adding another row to the preset card.
 - When the active order's imported listing id is assigned to a different preset than the currently selected preset, the `Preset Name` label should show a compact inline warning that the listing is assigned elsewhere.
 - After `Assign Preset to Listing` succeeds, the app should open a confirmation dialog that clearly states which preset was assigned to which Etsy listing so operators do not need to infer success from subtle status text alone.
