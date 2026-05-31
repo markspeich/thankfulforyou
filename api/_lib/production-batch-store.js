@@ -70,7 +70,7 @@ export async function loadProductionBatch({ batchId, workspaceId }) {
       .in("id", orderItemIds),
     supabase
       .from("designs")
-      .select("id, workspace_id, order_item_id, design_text, preset_id, size_guide_id, backing_border_mm, weld_exported_design, global_horizontal_scale, global_vertical_scale, production_status, revision, updated_at, updated_by")
+      .select("id, workspace_id, order_item_id, design_text, preset_id, size_guide_id, backing_border_mm, weld_exported_design, global_horizontal_scale, global_vertical_scale, production_status, cached_build_json, previous_completed_build_json, saved_settings_signature, completed_settings_signature, analysis_badge_json, pending_analysis_signature, revision, updated_at, updated_by")
       .in("order_item_id", orderItemIds),
   ]);
 

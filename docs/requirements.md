@@ -274,6 +274,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Storage and API contracts should use batch/order-item terminology directly; legacy batch-shaped snapshot contracts should be removed even when that requires recreating presets, size guides, or in-progress batch data from scratch.
 - The app should support saving the current production batch to Supabase so the current batch can be restored on another browser.
 - Persisted batch-item data should include enough information to restore the batch, the selected design, imported Etsy metadata, current text, current per-line settings, backing border, weld toggle, and saved/exported status after refresh.
+- Persisted design data must include the completion state metadata needed to restore a saved design as complete in another browser, including its saved settings signature, completed settings signature, cached analyzed build, previous completed build when relevant, and face-analysis badge state.
 - Persisted shared-batch data should also include batch identity, batch membership in a workspace, `updatedAt`, `updatedBy`, and a revision or version field for each design so stale writes can be detected.
 - Shared batch editing should support one person creating a batch and another person opening and continuing that same batch later.
 - The collaboration model should support multiple authorized users in the future, but the first version may use lightweight edit ownership, presence, or stale-write detection instead of full simultaneous freeform co-editing.

@@ -18,6 +18,24 @@ describe("production batch relational snapshot mapping", () => {
           updatedBy: { id: "44444444-4444-4444-8444-444444444444", email: "operator@example.com" },
           text: "Morgan\nRN",
           status: "captured",
+          cachedBuild: {
+            signature: "completed-signature",
+            layout: { svg: "<svg></svg>", bounds: { width: 2.2, height: 1.5 } },
+            analysis: { connectedComponents: 1, warnings: [] },
+          },
+          previousCompletedBuild: {
+            signature: "previous-signature",
+            layout: { svg: "<svg data-previous></svg>" },
+            analysis: { connectedComponents: 2, warnings: ["older geometry"] },
+          },
+          savedSettingsSignature: "completed-signature",
+          completedSettingsSignature: "completed-signature",
+          pendingAnalysisSignature: null,
+          analysisBadge: {
+            state: "ok",
+            shortLabel: "1 piece",
+            fullLabel: "Connected acrylic layout",
+          },
           source: {
             orderNumber: "4057600528",
             listingId: "1884223710",
@@ -91,6 +109,23 @@ describe("production batch relational snapshot mapping", () => {
       global_horizontal_scale: 1.1,
       global_vertical_scale: 0.95,
       production_status: "saved",
+      cached_build_json: {
+        signature: "completed-signature",
+        layout: { svg: "<svg></svg>", bounds: { width: 2.2, height: 1.5 } },
+        analysis: { connectedComponents: 1, warnings: [] },
+      },
+      previous_completed_build_json: {
+        signature: "previous-signature",
+        layout: { svg: "<svg data-previous></svg>" },
+        analysis: { connectedComponents: 2, warnings: ["older geometry"] },
+      },
+      saved_settings_signature: "completed-signature",
+      completed_settings_signature: "completed-signature",
+      analysis_badge_json: {
+        state: "ok",
+        shortLabel: "1 piece",
+        fullLabel: "Connected acrylic layout",
+      },
     });
     expect(rows.designLines).toEqual([
       expect.objectContaining({
@@ -160,6 +195,23 @@ describe("production batch relational snapshot mapping", () => {
           global_horizontal_scale: 1.1,
           global_vertical_scale: 0.95,
           production_status: "saved",
+          cached_build_json: {
+            signature: "completed-signature",
+            layout: { svg: "<svg></svg>", bounds: { width: 2.2, height: 1.5 } },
+            analysis: { connectedComponents: 1, warnings: [] },
+          },
+          previous_completed_build_json: {
+            signature: "previous-signature",
+            layout: { svg: "<svg data-previous></svg>" },
+            analysis: { connectedComponents: 2, warnings: ["older geometry"] },
+          },
+          saved_settings_signature: "completed-signature",
+          completed_settings_signature: "completed-signature",
+          analysis_badge_json: {
+            state: "ok",
+            shortLabel: "1 piece",
+            fullLabel: "Connected acrylic layout",
+          },
         },
       ],
       designLines: [
@@ -197,6 +249,24 @@ describe("production batch relational snapshot mapping", () => {
           updatedBy: { id: "44444444-4444-4444-8444-444444444444" },
           text: "Morgan\nRN",
           status: "captured",
+          cachedBuild: {
+            signature: "completed-signature",
+            layout: { svg: "<svg></svg>", bounds: { width: 2.2, height: 1.5 } },
+            analysis: { connectedComponents: 1, warnings: [] },
+          },
+          previousCompletedBuild: {
+            signature: "previous-signature",
+            layout: { svg: "<svg data-previous></svg>" },
+            analysis: { connectedComponents: 2, warnings: ["older geometry"] },
+          },
+          savedSettingsSignature: "completed-signature",
+          completedSettingsSignature: "completed-signature",
+          pendingAnalysisSignature: null,
+          analysisBadge: {
+            state: "ok",
+            shortLabel: "1 piece",
+            fullLabel: "Connected acrylic layout",
+          },
           source: {
             orderNumber: "4057600528",
             listingId: "1884223710",

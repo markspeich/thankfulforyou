@@ -20,6 +20,14 @@ function normalizeJsonValue(value, fallback) {
   return value == null ? fallback : value;
 }
 
+function normalizeNullableJsonValue(value) {
+  return value == null ? null : value;
+}
+
+function normalizeStringValue(value) {
+  return typeof value === "string" && value ? value : null;
+}
+
 function splitDesignTextLines(text) {
   return String(text ?? "").split(/\r?\n/);
 }
@@ -88,6 +96,12 @@ function buildDesignRow(orderItem, { workspaceId, updatedBy }) {
     global_horizontal_scale: toNumber(settings.globalHorizontalScale, 1),
     global_vertical_scale: toNumber(settings.globalVerticalScale, 1),
     production_status: mapDesignStatusToProductionStatus(orderItem.status),
+    cached_build_json: normalizeNullableJsonValue(orderItem.cachedBuild),
+    previous_completed_build_json: normalizeNullableJsonValue(orderItem.previousCompletedBuild),
+    saved_settings_signature: normalizeStringValue(orderItem.savedSettingsSignature),
+    completed_settings_signature: normalizeStringValue(orderItem.completedSettingsSignature),
+    analysis_badge_json: normalizeNullableJsonValue(orderItem.analysisBadge),
+    pending_analysis_signature: normalizeStringValue(orderItem.pendingAnalysisSignature),
     revision: Number.isInteger(orderItem.revision) ? orderItem.revision : 1,
     updated_by: updatedBy || null,
     updated_at: orderItem.updatedAt || undefined,
@@ -166,6 +180,12 @@ function buildOrderItemFromRows({ orderItem, design, designLines }) {
     updatedBy: orderItem.updated_by ? { id: orderItem.updated_by } : null,
     text: design?.design_text ?? "",
     status: mapProductionStatusToDesignStatus(design?.production_status),
+    cachedBuild: normalizeJsonValue(design?.cached_build_json, null),
+    previousCompletedBuild: normalizeJsonValue(design?.previous_completed_build_json, null),
+    savedSettingsSignature: normalizeStringValue(design?.saved_settings_signature),
+    completedSettingsSignature: normalizeStringValue(design?.completed_settings_signature),
+    analysisBadge: normalizeJsonValue(design?.analysis_badge_json, null),
+    pendingAnalysisSignature: normalizeStringValue(design?.pending_analysis_signature),
     source: buildSource(orderItem),
     settings: {
       text: design?.design_text ?? "",
