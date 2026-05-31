@@ -743,6 +743,42 @@
       </div>
     </div>
 
+    <dialog id="savePresetAsDialog" class="batch-summary-dialog save-preset-as-dialog" aria-labelledby="savePresetAsTitle">
+      <div class="confirmation-dialog-card save-preset-as-card">
+        <header class="confirmation-dialog-header">
+          <div>
+            <p class="confirmation-dialog-eyebrow">New Preset</p>
+            <h2 id="savePresetAsTitle">Save as New Preset</h2>
+          </div>
+          <button
+            id="savePresetAsCloseButton"
+            class="confirmation-dialog-close"
+            type="button"
+            aria-label="Close save preset dialog"
+          >
+            <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+              <path d="M6 6l12 12M18 6 6 18" />
+            </svg>
+          </button>
+        </header>
+        <form id="savePresetAsForm" class="save-preset-as-form">
+          <label class="field" for="savePresetAsNameInput">
+            Preset name
+            <input id="savePresetAsNameInput" type="text" autocomplete="off" placeholder="Enter the preset name" />
+          </label>
+          <p id="savePresetAsStatus" class="confirmation-dialog-description" hidden></p>
+          <div class="confirmation-dialog-actions">
+            <button id="savePresetAsCancelButton" class="confirmation-dialog-button confirmation-dialog-cancel" type="button">
+              Cancel
+            </button>
+            <button id="savePresetAsConfirmButton" class="confirmation-dialog-button confirmation-dialog-confirm" type="submit">
+              Save Preset
+            </button>
+          </div>
+        </form>
+      </div>
+    </dialog>
+
     <dialog id="presetAssignmentDialog" class="batch-summary-dialog" aria-labelledby="presetAssignmentTitle">
       <div class="batch-summary-card batch-summary-card-success">
         <header class="batch-summary-header">

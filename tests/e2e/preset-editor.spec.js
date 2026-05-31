@@ -142,6 +142,15 @@ async function clickPresetAction(page, name) {
   await page.getByRole("button", { name }).click();
 }
 
+async function saveNewPresetFromDesignEditor(page, name) {
+  await clickPresetAction(page, "Save as New Preset");
+  await expect(page.locator("#savePresetAsDialog")).toBeVisible();
+  await page.locator("#savePresetAsNameInput").fill(name);
+  await page.locator("#savePresetAsDialog").getByRole("button", { name: "Save Preset", exact: true }).click();
+  await expect(page.locator("#savePresetAsDialog")).not.toBeVisible();
+  return page.locator("#presetInput").inputValue();
+}
+
 async function installDelayedAnalysisRoute(page) {
   const pendingRequests = [];
 
@@ -180,10 +189,6 @@ async function clickBatchAction(page, name) {
 
 async function selectPresetEditorRow(page, name) {
   await page.locator(".preset-library-row", { hasText: name }).click();
-}
-
-async function selectedPresetEditorRowId(page) {
-  return page.locator(".preset-library-row.is-selected").getAttribute("data-preset-id");
 }
 
 async function setClipboardPayload(page, payload) {
@@ -493,6 +498,7 @@ test("shows size guides in the Size Guides workspace", async ({ page }) => {
 });
 
 test("uses a master-detail layout for preset selection and editing", async ({ page }) => {
+  await installPresetRoutes(page);
   await page.goto("/");
   await page.getByRole("button", { name: "Presets" }).click();
 
@@ -732,13 +738,68 @@ test("enables size guide saving only after editor changes", async ({ page }) => 
 });
 
 test("preserves the size guide when saving and reloading a layout preset", async ({ page }) => {
+  await installPresetRoutes(page);
   await page.goto("/");
   await clickBatchAction(page, "Add Design");
 
   await page.locator("#boundingSizePresetInput").selectOption("size-2-2x1-5");
   await clickPresetAction(page, "Save as New Preset");
-  await page.locator("#presetDraftName").fill("Default Size Preset");
-  await expect(page.locator("#presetBoundingSizePresetInput")).toHaveValue("size-2-2x1-5");
+  await expect(page.locator("#savePresetAsDialog")).toBeVisible();
+  await page.locator("#savePresetAsNameInput").fill("Default Size Preset");
+  await page.locator("#savePresetAsDialog").getByRole("button", { name: "Save Preset", exact: true }).click();
+
+  const createdPresetId = await page.locator("#presetInput").inputValue();
+  await page.locator("#presetInput").selectOption("preset-a1f4c8e2b601");
+  await page.locator("#presetInput").selectOption(createdPresetId);
+  await expect(page.locator("#boundingSizePresetInput")).toHaveValue("size-2-2x1-5");
+});
+
+test("saves a new preset from the design editor without switching to the preset editor", async ({ page }) => {
+  const nonce = Date.now();
+  const createdPresetName = `Editor Save ${nonce}`;
+
+  await installPresetRoutes(page);
+  await page.goto("/");
+
+  await clickBatchAction(page, "Add Design");
+  await page.locator("#textInput").fill("Morgan\nRN");
+  await page.locator('[data-line-index="0"] [data-setting="fontId"]').selectOption("skywalk");
+  await page.locator('[data-line-index="1"] [data-setting="fontId"]').selectOption("somekind");
+  await setRangeValue(page, "#backingInput", 4.4);
+
+  await clickPresetAction(page, "Save as New Preset");
+
+  await expect(page.locator("#ordersWorkspace")).toBeVisible();
+  await expect(page.locator("#savePresetAsDialog")).toBeVisible();
+  await expect(page.locator("#savePresetAsNameInput")).toHaveValue("");
+  await expect(page.locator("#savePresetAsNameInput")).toHaveAttribute("placeholder", "Enter the preset name");
+  await expect(page.locator("#savePresetAsNameInput")).toBeFocused();
+  await expect.poll(async () => {
+    return page.locator("#savePresetAsDialog").evaluate((dialog) => ({
+      horizontalOverflow: dialog.scrollWidth > dialog.clientWidth,
+      verticalOverflow: dialog.scrollHeight > dialog.clientHeight,
+    }));
+  }).toEqual({
+    horizontalOverflow: false,
+    verticalOverflow: false,
+  });
+  await page.locator("#savePresetAsNameInput").fill(createdPresetName);
+  await page.locator("#savePresetAsDialog").getByRole("button", { name: "Save Preset", exact: true }).click();
+
+  await expect(page.locator("#savePresetAsDialog")).not.toBeVisible();
+  await expect(page.locator("#workflowAlertText")).toContainText(`Saved ${createdPresetName}`);
+
+  const createdPresetId = await page.locator("#presetInput").inputValue();
+  await expect(page.locator(`#presetInput option[value="${createdPresetId}"]`)).toHaveText(createdPresetName);
+  await expect(page.locator("#presetInput")).toHaveValue(createdPresetId);
+
+  await page.locator("#presetInput").selectOption("preset-a1f4c8e2b601");
+  await page.locator("#presetInput").selectOption(createdPresetId);
+  await expect(page.locator('[data-line-index="0"] [data-setting="fontId"]')).toHaveValue("skywalk");
+  await expect(page.locator('[data-line-index="1"] [data-setting="fontId"]')).toHaveValue("somekind");
+  await expect(page.locator("#backingInput")).toHaveValue("4.4");
+  await expect(page.locator("#ordersWorkspace")).toBeVisible();
+  await expect(page.locator("#presetsWorkspace")).toBeHidden();
 });
 
 test("creates a custom size guide and uses it in the order editor preview", async ({ page }) => {
@@ -847,27 +908,9 @@ test("can create a new preset from order settings and update an existing preset"
   await setRangeValue(page, "#backingInput", 4.4);
   await setRangeValue(page, '[data-line-index="1"] [data-setting="fontSizeMm"]', 23);
 
-  await clickPresetAction(page, "Save as New Preset");
-  const presetWorkspace = page.getByRole("region", { name: "Preset editor workspace" });
-  await expect(presetWorkspace).toBeVisible();
-  await expect(presetWorkspace).not.toContainText("tools will land here next");
-  await expect(page.locator("#presetBackingInput")).toBeVisible();
-  await expect(page.locator("#presetGlobalHorizontalScaleInput")).toBeVisible();
-  await expect(page.locator("#presetGlobalVerticalScaleInput")).toBeVisible();
-  await expect(page.locator('[data-preset-rule-key="lineDefaults"]')).toHaveCount(0);
-  await expect(page.locator('[data-preset-rule-key="first"] [data-setting="fontSizeMm"]')).toBeVisible();
-  await page.locator("#presetDraftName").fill(createdPresetName);
-  await page.getByRole("button", { name: "Save Preset" }).click();
-
-  let createdPresetId = "";
-  await expect.poll(async () => {
-    createdPresetId = await selectedPresetEditorRowId(page) || "";
-    return createdPresetId !== "";
-  }, { timeout: 10000 }).toBe(true);
-  await expect(page.locator("#presetEditorStatus")).toContainText("Saved");
-  await expect(page.locator(".preset-library-row.is-selected")).toContainText(createdPresetName);
-
-  await page.getByRole("button", { name: "Production Batch" }).click();
+  const createdPresetId = await saveNewPresetFromDesignEditor(page, createdPresetName);
+  await expect(page.locator("#workflowAlertText")).toContainText(`Saved ${createdPresetName}`);
+  await expect(page.locator(`#presetInput option[value="${createdPresetId}"]`)).toHaveText(createdPresetName);
   await page.locator("#presetInput").selectOption(createdPresetId);
   await expect(page.locator("#presetInput")).toHaveValue(createdPresetId);
   await expect(page.locator('[data-line-index="0"] [data-setting="fontId"]')).toHaveValue("skywalk");
@@ -875,6 +918,18 @@ test("can create a new preset from order settings and update an existing preset"
   await expect(page.locator('[data-line-index="1"] [data-setting="fontSizeMm"]')).toHaveValue("23");
   await expect(page.locator("#backingInput")).toHaveValue("4.4");
 
+  await page.getByRole("button", { name: "Presets" }).click();
+  const presetWorkspace = page.getByRole("region", { name: "Preset editor workspace" });
+  await expect(presetWorkspace).toBeVisible();
+  await expect(presetWorkspace).not.toContainText("tools will land here next");
+  await selectPresetEditorRow(page, createdPresetName);
+  await expect(page.locator("#presetBackingInput")).toBeVisible();
+  await expect(page.locator("#presetGlobalHorizontalScaleInput")).toBeVisible();
+  await expect(page.locator("#presetGlobalVerticalScaleInput")).toBeVisible();
+  await expect(page.locator('[data-preset-rule-key="lineDefaults"]')).toHaveCount(0);
+  await expect(page.locator('[data-preset-rule-key="first"] [data-setting="fontSizeMm"]')).toBeVisible();
+
+  await page.getByRole("button", { name: "Production Batch" }).click();
   await completeDesign(page, "Design 1");
   await expect(page.locator("#downloadButton")).toBeEnabled();
 
@@ -979,17 +1034,7 @@ test("assigning a preset to a completed imported order clears stale batch-export
   await setRangeValue(page, "#backingInput", 4.4);
   await setRangeValue(page, '[data-line-index="1"] [data-setting="fontSizeMm"]', 23);
 
-  await clickPresetAction(page, "Save as New Preset");
-  await page.locator("#presetDraftName").fill(createdPresetName);
-  await page.getByRole("button", { name: "Save Preset" }).click();
-  let createdPresetId = "";
-  await expect.poll(async () => {
-    createdPresetId = await selectedPresetEditorRowId(page) || "";
-    return createdPresetId !== "";
-  }, { timeout: 10000 }).toBe(true);
-  await expect(page.locator("#presetEditorStatus")).toContainText("Saved");
-
-  await page.getByRole("button", { name: "Production Batch" }).click();
+  const createdPresetId = await saveNewPresetFromDesignEditor(page, createdPresetName);
   await completeDesign(page, "Design 1");
 
   await setClipboardPayload(page, importPayload);
@@ -1035,17 +1080,7 @@ test("renaming a preset while analysis is running still restores export readines
   await setRangeValue(page, "#backingInput", 4.4);
   await setRangeValue(page, '[data-line-index="1"] [data-setting="fontSizeMm"]', 23);
 
-  await clickPresetAction(page, "Save as New Preset");
-  await page.locator("#presetDraftName").fill(createdPresetName);
-  await page.getByRole("button", { name: "Save Preset" }).click();
-  let createdPresetId = "";
-  await expect.poll(async () => {
-    createdPresetId = await selectedPresetEditorRowId(page) || "";
-    return createdPresetId !== "";
-  }, { timeout: 10000 }).toBe(true);
-  await expect(page.locator("#presetEditorStatus")).toContainText("Saved");
-
-  await page.getByRole("button", { name: "Production Batch" }).click();
+  const createdPresetId = await saveNewPresetFromDesignEditor(page, createdPresetName);
   await page.locator("#presetInput").selectOption(createdPresetId);
   await page.locator("#captureButton").click();
 
@@ -1277,18 +1312,7 @@ test("deletes a saved preset only after confirmation and migrates active uses aw
   await page.locator('[data-line-index="0"] [data-setting="fontId"]').selectOption("skywalk");
   await page.locator('[data-line-index="1"] [data-setting="fontId"]').selectOption("somekind");
 
-  await clickPresetAction(page, "Save as New Preset");
-  await page.locator("#presetDraftName").fill(createdPresetName);
-  await page.getByRole("button", { name: "Save Preset" }).click();
-
-  let createdPresetId = "";
-  await expect.poll(async () => {
-    createdPresetId = await selectedPresetEditorRowId(page) || "";
-    return createdPresetId !== "";
-  }, { timeout: 10000 }).toBe(true);
-  await expect(page.locator("#presetEditorStatus")).toContainText("Saved");
-
-  await page.getByRole("button", { name: "Production Batch" }).click();
+  const createdPresetId = await saveNewPresetFromDesignEditor(page, createdPresetName);
   await page.locator("#presetInput").selectOption(createdPresetId);
   await expect(page.locator("#presetInput")).toHaveValue(createdPresetId);
 

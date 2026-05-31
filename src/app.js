@@ -188,6 +188,12 @@ const confirmationDialogDescription = document.querySelector("#confirmationDialo
 const confirmationDialogCloseButton = document.querySelector("#confirmationDialogCloseButton");
 const confirmationDialogCancelButton = document.querySelector("#confirmationDialogCancelButton");
 const confirmationDialogConfirmButton = document.querySelector("#confirmationDialogConfirmButton");
+const savePresetAsDialog = document.querySelector("#savePresetAsDialog");
+const savePresetAsForm = document.querySelector("#savePresetAsForm");
+const savePresetAsNameInput = document.querySelector("#savePresetAsNameInput");
+const savePresetAsStatus = document.querySelector("#savePresetAsStatus");
+const savePresetAsCloseButton = document.querySelector("#savePresetAsCloseButton");
+const savePresetAsCancelButton = document.querySelector("#savePresetAsCancelButton");
 const orderSearchInput = document.querySelector("#orderSearchInput");
 const orderCountOutput = document.querySelector("#orderCountOutput");
 const completeCountOutput = document.querySelector("#completeCountOutput");
@@ -300,6 +306,7 @@ let presetEditorDraft = null;
 let presetEditorBaselineKey = null;
 let activeConfirmationRequest = null;
 let confirmationDialogRestoreFocusTarget = null;
+let activeSavePresetAsRequest = null;
 let batchSessionContext = null;
 let productionBatchContext = null;
 let productionBatchAutosaveTimeoutId = null;
@@ -1638,28 +1645,117 @@ function cancelPresetEditorChanges() {
   setPresetEditorStatus("Canceled preset draft.", "pending");
 }
 
-function openPresetEditorForNewPreset() {
+function setSavePresetAsStatus(message = "") {
+  if (!savePresetAsStatus) {
+    return;
+  }
+
+  savePresetAsStatus.textContent = message;
+  savePresetAsStatus.hidden = !message;
+}
+
+function finishSavePresetAsDialog(result) {
+  if (!activeSavePresetAsRequest) {
+    return;
+  }
+
+  const { resolve, restoreFocusTarget } = activeSavePresetAsRequest;
+  activeSavePresetAsRequest = null;
+  if (savePresetAsDialog instanceof HTMLDialogElement && savePresetAsDialog.open) {
+    savePresetAsDialog.close();
+  }
+  setSavePresetAsStatus("");
+  if (restoreFocusTarget instanceof HTMLElement) {
+    restoreFocusTarget.focus();
+  }
+  resolve(result);
+}
+
+function showSavePresetAsDialog(defaultName = "") {
+  const fallbackPrompt = globalThis.prompt;
+  if (!(savePresetAsDialog instanceof HTMLDialogElement) || !savePresetAsNameInput) {
+    const promptedName = typeof fallbackPrompt === "function"
+      ? fallbackPrompt("Preset name", defaultName)
+      : null;
+    const normalizedName = typeof promptedName === "string" ? promptedName.trim() : "";
+    return Promise.resolve(normalizedName || null);
+  }
+
+  if (activeSavePresetAsRequest) {
+    finishSavePresetAsDialog(null);
+  }
+
+  savePresetAsNameInput.value = defaultName;
+  setSavePresetAsStatus("");
+
+  return new Promise((resolve) => {
+    activeSavePresetAsRequest = {
+      resolve,
+      restoreFocusTarget: document.activeElement instanceof HTMLElement ? document.activeElement : null,
+    };
+    savePresetAsDialog.showModal();
+    savePresetAsNameInput.focus();
+    savePresetAsNameInput.select();
+  });
+}
+
+async function saveActiveOrderAsNewPreset() {
   const activeOrder = getActiveOrder();
   if (!activeOrder) {
     updateWorkflowAlert("Add or select a design before saving a preset.", "error");
     return;
   }
 
-  const draftName = buildPresetDraftNameFromOrder(activeOrder);
-  const preset = inferPresetDefinitionFromSettings({
-    name: draftName,
-    settings: getCurrentSettings(),
-  });
+  const presetName = await showSavePresetAsDialog();
+  if (!presetName) {
+    return;
+  }
 
-  presetEditorDraft = createPresetEditorDraft({
-    ...preset,
-    name: draftName,
-  }, { previousId: null, generateNewId: true });
-  renderPresetEditorDraft();
-  presetEditorBaselineKey = null;
-  updatePresetSaveButtonState();
-  setActiveWorkspace("presets");
-  setPresetEditorStatus("Preset draft ready from the current order settings.", "pending");
+  if (saveAsNewPresetButton) {
+    saveAsNewPresetButton.disabled = true;
+  }
+  updateWorkflowAlert(`Saving ${presetName}...`, "pending", { autoHideMs: 0 });
+
+  const newPreset = {
+    ...inferPresetDefinitionFromSettings({
+      name: presetName,
+      settings: getCurrentSettings(),
+    }),
+    id: generatePresetId(),
+    name: presetName,
+  };
+
+  try {
+    const localPayload = savePresetDefinitionLocally({
+      preset: newPreset,
+      previousId: null,
+    });
+    const savedPreset = localPayload?.preset || newPreset;
+    renderPresetOptions();
+    presetInput.value = savedPreset.id;
+    updateActiveOrderFromControls();
+    renderOrderList();
+    persistBatchState();
+    render();
+
+    try {
+      await savePresetSnapshot(getPresetSnapshot());
+      updateWorkflowAlert(`Saved ${savedPreset.name} and selected it for this design.`, "success");
+    } catch (error) {
+      updateWorkflowAlert(
+        error instanceof Error
+          ? `Saved ${savedPreset.name} locally, but Supabase save failed: ${error.message}`
+          : `Saved ${savedPreset.name} locally, but Supabase save failed.`,
+        "error",
+      );
+    }
+  } catch (error) {
+    updateWorkflowAlert(error instanceof Error ? error.message : "Unable to save preset.", "error");
+  } finally {
+    if (saveAsNewPresetButton) {
+      saveAsNewPresetButton.disabled = !getActiveOrder();
+    }
+  }
 }
 
 function buildOverwrittenPresetDefinition({ preset, settings }) {
@@ -6995,7 +7091,9 @@ clearBatchButton.addEventListener("click", clearAllOrders);
 showColorCountsButton?.addEventListener("click", openBatchColorCountsDialog);
 exportCompletedButton.addEventListener("click", exportAllOrders);
 copyCompletedButton.addEventListener("click", copyAllOrders);
-saveAsNewPresetButton?.addEventListener("click", openPresetEditorForNewPreset);
+saveAsNewPresetButton?.addEventListener("click", () => {
+  void saveActiveOrderAsNewPreset();
+});
 overwritePresetButton?.addEventListener("click", () => {
   void overwriteSelectedPresetFromActiveOrder();
 });
@@ -7055,6 +7153,32 @@ confirmationDialogElement?.addEventListener("keydown", (event) => {
 
   event.preventDefault();
   finishConfirmationDialog(false);
+});
+savePresetAsForm?.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const presetName = savePresetAsNameInput?.value.trim() || "";
+  if (!presetName) {
+    setSavePresetAsStatus("Preset name is required.");
+    savePresetAsNameInput?.focus();
+    return;
+  }
+
+  finishSavePresetAsDialog(presetName);
+});
+savePresetAsCancelButton?.addEventListener("click", () => {
+  finishSavePresetAsDialog(null);
+});
+savePresetAsCloseButton?.addEventListener("click", () => {
+  finishSavePresetAsDialog(null);
+});
+savePresetAsDialog?.addEventListener("cancel", (event) => {
+  event.preventDefault();
+  finishSavePresetAsDialog(null);
+});
+savePresetAsDialog?.addEventListener("click", (event) => {
+  if (event.target === savePresetAsDialog) {
+    finishSavePresetAsDialog(null);
+  }
 });
 closePresetAssignmentDialogButton?.addEventListener("click", closePresetAssignmentDialog);
 presetAssignmentDialog?.addEventListener("click", (event) => {

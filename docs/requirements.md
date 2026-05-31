@@ -90,6 +90,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Live preset edits should save to Supabase Postgres so changes propagate across sessions and environments.
 - On startup, presets should load from Supabase Postgres before falling back to bundled defaults for an empty development database.
 - The app should allow creating a new preset from the current design-editor layout state.
+- On the design editor screen, choosing `Save as New Preset` should open an in-place dialog that asks for the preset name, save the inferred reusable preset, add it to the preset dropdown, select it for the active design, and keep the operator on the design editor screen instead of switching to the preset editor page.
 - The `Save as New Preset` flow should infer reusable preset structure instead of freezing a one-off order snapshot.
 - Shared values across every text line should become preset `lineDefaults`.
 - First-line-only differences should become a `first` line rule.
