@@ -984,6 +984,95 @@ test("shows assigned listings for a preset and lets operators unassign them", as
   await expect(page.locator("#presetInput")).not.toHaveValue("preset-c3e8a1d7f520");
 });
 
+test("confirms before moving a listing id link to a different preset", async ({ page }) => {
+  const listingId = "1884223710";
+  const importPayload = JSON.stringify([
+    {
+      orderNumber: "MOVE-1884223710",
+      listingId,
+      buyerName: "Listing Move Tester",
+      personalization: "Morgan\nRN",
+      listingTitle: "Skywalk + Somekind listing with shorter second line",
+      quantity: 1,
+    },
+  ]);
+
+  await installPresetRoutes(page);
+  await page.route("**/api/layout-analyze", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify(buildMockAnalysisResponse()),
+    });
+  });
+  await page.goto("/");
+
+  await setClipboardPayload(page, importPayload);
+  await page.locator("#importClipboardButton").click();
+  await expect(page.locator("#importStatus")).toContainText("Imported 1 Etsy design from the clipboard.");
+  await page.locator("#presetInput").selectOption("preset-b7d2e9f4c318");
+
+  await clickPresetAction(page, "Assign Preset to Listing");
+  await expect(page.locator("#confirmationDialog")).toBeVisible();
+  await expect(page.locator("#confirmationDialogTitle")).toHaveText("Move listing link?");
+  await expect(page.locator("#confirmationDialogDescription")).toContainText("Skywalk, Somekind");
+  await expect(page.locator("#confirmationDialogDescription")).toContainText("Candlepin, Skywalk");
+  await expect(page.locator("#confirmationDialogDescription")).toContainText(listingId);
+  await page.getByRole("button", { name: "Change Link" }).click();
+
+  await expect(page.locator("#presetAssignmentDialog")).toBeVisible();
+  await page.getByRole("button", { name: "Close assignment confirmation" }).click();
+
+  await page.getByRole("button", { name: "Presets" }).click();
+  await selectPresetEditorRow(page, "Candlepin, Skywalk");
+  await expect(page.locator("#presetAssignmentsList")).toContainText(listingId);
+  await expect(page.locator("#presetAssignmentsList")).toContainText("4439916732");
+
+  await selectPresetEditorRow(page, "Skywalk, Somekind");
+  await expect(page.locator("#presetAssignmentsList")).not.toContainText(listingId);
+});
+
+test("refresh restores imported listings to their assigned preset", async ({ page }) => {
+  await installPresetRoutes(page);
+  await page.route("**/api/production-batch?batchId=batch-1", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify({
+        batch: { id: "batch-1", workspaceId: "workspace-1" },
+        activeOrderItemId: "order-linked-stale-preset",
+        orderItems: [
+          {
+            id: "order-linked-stale-preset",
+            text: "Morgan\nRN",
+            status: "in-progress",
+            settings: {
+              text: "Morgan\nRN",
+              presetId: "preset-a1f4c8e2b601",
+              backingMm: 3.1,
+              weldExportedDesign: true,
+              lines: [
+                { fontId: "candlepin", bridgeMm: 0.5, lineBridgeMm: 0.5, offsetXMm: 0, fontSizeMm: 34, horizontalScale: 1, verticalScale: 1, lockTextHeight: false },
+                { fontId: "candlepin", bridgeMm: 0.5, lineBridgeMm: 0.5, offsetXMm: 0, fontSizeMm: 34, horizontalScale: 1, verticalScale: 1, lockTextHeight: false },
+              ],
+            },
+            source: {
+              listingId: "1884223710",
+              listingTitle: "Skywalk + Somekind listing with shorter second line",
+              manualPresetOverride: true,
+            },
+          },
+        ],
+      }),
+    });
+  });
+
+  await page.goto("/");
+
+  await expect(page.locator("#presetInput")).toHaveValue("preset-c3e8a1d7f520");
+  await expect(page.locator("#presetListingIndicator")).toHaveText("Linked");
+});
+
 test("marks listing-assigned presets inline beside the preset name label", async ({ page }) => {
   const importPayload = JSON.stringify([
     {
@@ -1014,8 +1103,9 @@ test("marks listing-assigned presets inline beside the preset name label", async
   await expect(page.locator("#presetListingIndicator")).toHaveAttribute("title", /assigned to the selected preset/);
 
   await page.locator("#presetInput").selectOption("preset-a1f4c8e2b601");
-  await expect(page.locator("#presetListingIndicator")).toHaveText("Assigned elsewhere");
-  await expect(page.locator("#presetListingIndicator")).toHaveAttribute("title", /assigned to Skywalk, Somekind/);
+  await expect(page.locator("#presetListingIndicator")).toHaveText("Preset overriden");
+  await expect(page.locator("#presetListingIndicator")).toHaveClass(/preset-listing-indicator-warning/);
+  await expect(page.locator("#presetListingIndicator")).toHaveAttribute("title", /overrides the linked preset Skywalk, Somekind/);
 });
 
 test("deletes a saved preset only after confirmation and migrates active uses away from it", async ({ page }) => {

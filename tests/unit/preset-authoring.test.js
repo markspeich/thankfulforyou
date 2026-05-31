@@ -299,6 +299,35 @@ describe("preset authoring", () => {
     ]);
   });
 
+  it("keeps existing preset listings when assigning a different listing to the same preset", () => {
+    const preset = upsertListingAssignment({
+      preset: {
+        id: "skywalk-rn",
+        name: "Skywalk RN",
+        lineDefaults: {},
+        lineRules: [{ match: { kind: "all" }, settings: {} }],
+        listingAssignments: [
+          { listingId: "1884223710", name: "PICU Badge Reel", lineOverrides: [] },
+          { listingId: "4465975709", name: "Tech Reel", lineOverrides: [] },
+        ],
+      },
+      assignment: {
+        listingId: "new-listing-17",
+        name: "Updated Listing",
+      },
+    });
+
+    expect(preset.listingAssignments).toEqual([
+      { listingId: "1884223710", name: "PICU Badge Reel", lineOverrides: [] },
+      { listingId: "4465975709", name: "Tech Reel", lineOverrides: [] },
+      {
+        listingId: "new-listing-17",
+        name: "Updated Listing",
+        lineOverrides: [],
+      },
+    ]);
+  });
+
   it("removes one listing assignment without touching the rest", () => {
     const preset = removeListingAssignment({
       preset: {
