@@ -173,7 +173,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Export designs as SVG for current production use.
 - SVG export must produce vector path definitions, not embedded raster image data.
 - Exported SVG face and backing paths must use a solid fill color of RGB(255, 0, 0).
-- When imported Etsy color metadata is available, exported SVG output must add a small `Arial` color-value label to the right of the backing layer for each exported design instance.
+- When imported Etsy color metadata is available, exported SVG output must add an `Arial` color-value label to the right of the backing layer for each exported design instance, with a large enough font size to read easily in batch export files.
 - The exported color label should contain only the imported color value, not the word `Color` or any quantity text.
 - When `Weld Exported Design` is checked, exported face-layer paths must be welded/unioned so overlapping letters do not create internal cut lines.
 - When `Weld Exported Design` is unchecked, SVG export may preserve overlapping letter contours without welding so the overlaps remain visible and editable.
@@ -302,6 +302,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - In batch export SVG output, each design should start about `2.03 inches` below the top of the previous design so stacked exports use a tighter, more consistent vertical pitch.
 - In batch export SVG output, each order's text path should be grouped separately from its backing path so the name can be selected as one group without including the backing border.
 - Copied and exported SVG output should emit each design instance as three separate top-level selectable objects: one grouped name object, one backing-border path object, and one color-label text object when color metadata is present.
+- Batch export SVG output should lay those three objects out in fixed-width text, backing-border, and color columns, with each object horizontally and vertically centered in its row/column position.
 - The exported backing layer should be an actual outline path for LightBurn, not only a filled shape or SVG stroke effect. The path can be imported and manually assigned to a LightBurn cut layer.
 - Exported face-layer paths should also be welded/unioned so overlapping letters do not create internal cut lines.
 - Exported cut paths should be smooth enough for laser production and should avoid visibly pixelated/stair-stepped contours.
