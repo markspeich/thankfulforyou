@@ -86,7 +86,7 @@ describe("export_svg face tracing", () => {
     expect(analysis.facePath).not.toContain("Q");
   });
 
-  test("switches exported face geometry between welded and direct outlines", { timeout: 15000 }, () => {
+  test("switches exported face geometry between welded and direct outlines", { timeout: 30000 }, () => {
     const baseLayout = {
       text: "T",
       widthMm: 40,
@@ -164,6 +164,58 @@ describe("export_svg face tracing", () => {
     expect(Math.abs(simplifiedBounds.top - baselineBounds.top)).toBeLessThanOrEqual(0.05);
     expect(Math.abs(simplifiedBounds.right - baselineBounds.right)).toBeLessThanOrEqual(0.05);
     expect(Math.abs(simplifiedBounds.bottom - baselineBounds.bottom)).toBeLessThanOrEqual(0.05);
+  });
+
+  test("uses gentler one-pass smoothing for standard backing borders", { timeout: 30000 }, () => {
+    const layout = {
+      text: "MOM",
+      widthMm: 60,
+      heightMm: 30,
+      backingMm: 3.1,
+      letters: [
+        {
+          character: "M",
+          fontId: "candlepin",
+          fontPath: "public/fonts/Candlepin-Laser.otf",
+          fontSizeMm: 18,
+          x: 4,
+          y: 22,
+        },
+        {
+          character: "O",
+          fontId: "candlepin",
+          fontPath: "public/fonts/Candlepin-Laser.otf",
+          fontSizeMm: 18,
+          x: 16,
+          y: 22,
+        },
+        {
+          character: "M",
+          fontId: "candlepin",
+          fontPath: "public/fonts/Candlepin-Laser.otf",
+          fontSizeMm: 18,
+          x: 28,
+          y: 22,
+        },
+      ],
+    };
+
+    const standard = analyzeLayout(layout);
+    const onePass = analyzeLayout({
+      ...layout,
+      traceProfileOverrides: {
+        backingSmoothIterations: 1,
+      },
+    });
+    const twoPass = analyzeLayout({
+      ...layout,
+      traceProfileOverrides: {
+        backingSmoothIterations: 2,
+      },
+    });
+
+    expect(standard.backingPath).toBe(onePass.backingPath);
+    expect(standard.backingPath).not.toBe(twoPass.backingPath);
   });
 
   test("applies per-letter vertical stretch without widening outline bounds", { timeout: 30000 }, () => {

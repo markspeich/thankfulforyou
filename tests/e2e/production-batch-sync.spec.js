@@ -64,8 +64,33 @@ async function expectWorkflowAlertFloatingToast(page) {
   });
 }
 
+function buildMockAnalysisResponse(overrides = {}) {
+  return {
+    isConnected: true,
+    connectedComponentCount: 1,
+    facePath: "M0 0 L10 0 L10 10 L0 10 Z",
+    exportFacePath: "M0 0 L10 0 L10 10 L0 10 Z",
+    backingPath: "M-1 -1 L11 -1 L11 11 L-1 11 Z",
+    faceBoundsMm: {
+      x: 0,
+      y: 0,
+      width: 10,
+      height: 10,
+    },
+    ...overrides,
+  };
+}
+
 test("discarding a conflicted local draft reloads the production batch without a follow-up recovery alert", async ({ page }) => {
   await installSupabaseSession(page);
+  await page.route("**/api/layout-analyze", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify(buildMockAnalysisResponse()),
+    });
+  });
+
   const remoteSnapshot = {
     batch: { id: "batch-1",
       workspaceId: "workspace-1",
@@ -177,6 +202,14 @@ test("discarding a conflicted local draft reloads the production batch without a
 
 test("shows stale design alerts only on the affected design", async ({ page }) => {
   await installSupabaseSession(page);
+  await page.route("**/api/layout-analyze", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify(buildMockAnalysisResponse()),
+    });
+  });
+
   const remoteSnapshot = {
     batch: { id: "batch-1",
       workspaceId: "workspace-1",
@@ -511,6 +544,14 @@ test("cancel restores the last saved shared design state", async ({ page }) => {
 
 test("does not re-autosave immediately after a successful manual save merges revision metadata", async ({ page }) => {
   await installSupabaseSession(page);
+  await page.route("**/api/layout-analyze", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify(buildMockAnalysisResponse()),
+    });
+  });
+
   const remoteSnapshot = {
     batch: { id: "batch-1",
       workspaceId: "workspace-1",
@@ -602,6 +643,14 @@ test("does not re-autosave immediately after a successful manual save merges rev
 
 test("save confirmation renders as a floating toast without entering the editor layout", async ({ page }) => {
   await installSupabaseSession(page);
+  await page.route("**/api/layout-analyze", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify(buildMockAnalysisResponse()),
+    });
+  });
+
   const remoteSnapshot = {
     batch: { id: "batch-1",
       workspaceId: "workspace-1",

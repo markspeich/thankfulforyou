@@ -610,7 +610,7 @@ def get_trace_profile(payload):
             "face_smooth_iterations": 0,
             "face_curve_mode": "polyline",
             "backing_tolerance_mm": 0.045,
-            "backing_smooth_iterations": 2,
+            "backing_smooth_iterations": 1,
             "backing_curve_mode": "quadratic",
         }
 
