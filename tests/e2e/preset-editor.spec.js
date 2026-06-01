@@ -339,6 +339,9 @@ test("switches between order items, presets, and size guides from the left nav",
   await expect(page.getByRole("button", { name: "Presets" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Fonts" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Size Guides" })).toBeVisible();
+  await expect.poll(async () => {
+    return page.getByRole("button", { name: "Size Guides" }).evaluate((button) => Math.round(button.getBoundingClientRect().height));
+  }).toBeLessThanOrEqual(54);
   await expect(ordersWorkspace).toBeVisible();
   await expect(presetsWorkspace).toBeHidden();
   await expect(fontsWorkspace).toBeHidden();
