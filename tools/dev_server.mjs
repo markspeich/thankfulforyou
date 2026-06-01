@@ -1,14 +1,18 @@
 import { createReadStream, existsSync } from "node:fs";
+import { appendFile, mkdir } from "node:fs/promises";
 import { readFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
-import { extname, join, normalize } from "node:path";
+import { dirname, extname, join, normalize } from "node:path";
 import { createServer } from "node:http";
+import { randomUUID } from "node:crypto";
 import { buildPublicAppConfigScript } from "./app_config.mjs";
 import { resolveDevPort } from "./dev_port.mjs";
 import { loadEnvFile } from "./env_file.mjs";
 
 const port = resolveDevPort();
 const root = process.cwd();
+const productionBatchLogPath = process.env.PRODUCTION_BATCH_LOG_PATH
+  || join(process.platform === "win32" ? "C:\\tmp" : "/tmp", "thankfulforyou-production-batch.log");
 loadEnvFile({ cwd: root });
 const pythonCommand = process.env.PYTHON || (process.platform === "win32" ? "py" : "python3");
 const pythonScriptArgs = process.env.PYTHON
@@ -32,6 +36,38 @@ const presetSnapshots = new Map();
 function sendJson(response, statusCode, payload) {
   response.writeHead(statusCode, { "Content-Type": "application/json; charset=utf-8" });
   response.end(JSON.stringify(payload));
+}
+
+async function appendProductionBatchLog(entry) {
+  try {
+    await mkdir(dirname(productionBatchLogPath), { recursive: true });
+    await appendFile(productionBatchLogPath, `${JSON.stringify(entry)}\n`, "utf8");
+  } catch (error) {
+    console.error("Unable to write production batch log:", error instanceof Error ? error.message : error);
+  }
+}
+
+function summarizeProductionBatchPayload(payload) {
+  const snapshot = payload?.snapshot && typeof payload.snapshot === "object" ? payload.snapshot : null;
+  const orderItems = Array.isArray(snapshot?.orderItems) ? snapshot.orderItems : [];
+
+  return {
+    changedOrderItemIds: Array.isArray(payload?.changedOrderItemIds) ? payload.changedOrderItemIds : null,
+    batchId: snapshot?.batch?.id || null,
+    workspaceId: snapshot?.batch?.workspaceId || null,
+    activeOrderItemId: snapshot?.activeOrderItemId || null,
+    orderCount: orderItems.length,
+    orders: orderItems.map((order) => ({
+      id: order?.id || null,
+      revision: order?.revision ?? null,
+      status: order?.status || null,
+      textPreview: typeof order?.text === "string" ? order.text.replace(/\s+/g, " ").slice(0, 60) : "",
+      savedSettingsSignature: typeof order?.savedSettingsSignature === "string" ? order.savedSettingsSignature.slice(0, 80) : null,
+      completedSettingsSignature: typeof order?.completedSettingsSignature === "string" ? order.completedSettingsSignature.slice(0, 80) : null,
+      pendingAnalysisSignature: typeof order?.pendingAnalysisSignature === "string" ? order.pendingAnalysisSignature.slice(0, 80) : null,
+      cachedBuildSignature: typeof order?.cachedBuild?.signature === "string" ? order.cachedBuild.signature.slice(0, 80) : null,
+    })),
+  };
 }
 
 function readRequestBody(request) {
@@ -118,6 +154,8 @@ const server = createServer(async (request, response) => {
     || requestUrl.pathname === "/api/production-batch"
     || requestUrl.pathname === "/api/fonts"
   ) {
+    const requestId = randomUUID();
+    const startedAt = Date.now();
     const bodyText = request.method === "PUT" || request.method === "POST" ? await readRequestBody(request) : "";
     let payload = undefined;
 
@@ -138,6 +176,7 @@ const server = createServer(async (request, response) => {
       };
       const modulePath = modulePathByPathname[requestUrl.pathname];
       const { default: handler } = await import(modulePath);
+      const shouldLogProductionBatch = requestUrl.pathname === "/api/production-batch";
       const req = {
         method: request.method,
         headers: Object.fromEntries(
@@ -156,12 +195,47 @@ const server = createServer(async (request, response) => {
           response.setHeader(name, value);
         },
         json(jsonPayload) {
-          sendJson(response, this.statusCode || 200, jsonPayload);
+          const statusCode = this.statusCode || 200;
+          if (shouldLogProductionBatch) {
+            void appendProductionBatchLog({
+              at: new Date().toISOString(),
+              requestId,
+              method: request.method,
+              path: requestUrl.pathname,
+              query: Object.fromEntries(requestUrl.searchParams.entries()),
+              durationMs: Date.now() - startedAt,
+              statusCode,
+              request: request.method === "PUT" ? summarizeProductionBatchPayload(payload) : null,
+              response: {
+                error: typeof jsonPayload?.error === "string" ? jsonPayload.error : null,
+                details: jsonPayload?.details ?? null,
+                orderCount: Array.isArray(jsonPayload?.orderItems) ? jsonPayload.orderItems.length : null,
+                activeOrderItemId: jsonPayload?.activeOrderItemId ?? null,
+              },
+            });
+          }
+          sendJson(response, statusCode, jsonPayload);
         },
       };
 
       await handler(req, res);
     } catch (error) {
+      if (requestUrl.pathname === "/api/production-batch") {
+        void appendProductionBatchLog({
+          at: new Date().toISOString(),
+          requestId,
+          method: request.method,
+          path: requestUrl.pathname,
+          query: Object.fromEntries(requestUrl.searchParams.entries()),
+          durationMs: Date.now() - startedAt,
+          statusCode: 500,
+          request: request.method === "PUT" ? summarizeProductionBatchPayload(payload) : null,
+          response: {
+            error: error instanceof Error ? error.message : "Unable to process production batch request.",
+            stack: error instanceof Error ? error.stack : null,
+          },
+        });
+      }
       sendJson(response, 500, {
         error: error instanceof Error ? error.message : "Unable to process production batch request.",
       });

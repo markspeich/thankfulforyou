@@ -171,20 +171,24 @@ export async function getSessionContext(auth) {
   };
 }
 
-export async function saveProductionBatch({ snapshot, userId }) {
+export async function saveProductionBatch({ snapshot, userId, changedOrderItemIds = null }) {
   const supabase = createSupabaseAdminClient();
   const rows = buildProductionBatchRowsFromSnapshot(snapshot, {
     workspaceId: snapshot.batch.workspaceId,
     updatedBy: userId,
   });
 
+  const changedOrderItemIdSet = Array.isArray(changedOrderItemIds)
+    ? new Set(changedOrderItemIds.filter((value) => typeof value === "string" && value))
+    : null;
+  const shouldSaveOrderItem = (orderItemId) => !changedOrderItemIdSet || changedOrderItemIdSet.has(orderItemId);
   const savedAt = new Date().toISOString();
-  const nextOrderItems = rows.orderItems.map((orderItem) => ({
+  const nextOrderItems = rows.orderItems.filter((orderItem) => shouldSaveOrderItem(orderItem.id)).map((orderItem) => ({
     ...orderItem,
     revision: Number.isInteger(orderItem.revision) ? orderItem.revision + 1 : 1,
     updated_at: savedAt,
   }));
-  const nextDesigns = rows.designs.map((design) => ({
+  const nextDesigns = rows.designs.filter((design) => shouldSaveOrderItem(design.order_item_id)).map((design) => ({
     ...design,
     revision: Number.isInteger(design.revision) ? design.revision + 1 : 1,
     updated_at: savedAt,
@@ -212,23 +216,36 @@ export async function saveProductionBatch({ snapshot, userId }) {
     throw batchError;
   }
 
-  const { error: deleteBatchItemsError } = await supabase
-    .from("batch_items")
-    .delete()
-    .eq("batch_id", snapshot.batch.id)
-    .eq("workspace_id", snapshot.batch.workspaceId);
+  if (changedOrderItemIdSet) {
+    const changedBatchItems = rows.batchItems.filter((item) => shouldSaveOrderItem(item.order_item_id));
+    if (changedBatchItems.length) {
+      const { error: batchItemsError } = await supabase
+        .from("batch_items")
+        .upsert(changedBatchItems, { onConflict: "batch_id,order_item_id" });
 
-  if (deleteBatchItemsError) {
-    throw deleteBatchItemsError;
-  }
-
-  if (rows.batchItems.length) {
-    const { error: batchItemsError } = await supabase
+      if (batchItemsError) {
+        throw batchItemsError;
+      }
+    }
+  } else {
+    const { error: deleteBatchItemsError } = await supabase
       .from("batch_items")
-      .insert(rows.batchItems);
+      .delete()
+      .eq("batch_id", snapshot.batch.id)
+      .eq("workspace_id", snapshot.batch.workspaceId);
 
-    if (batchItemsError) {
-      throw batchItemsError;
+    if (deleteBatchItemsError) {
+      throw deleteBatchItemsError;
+    }
+
+    if (rows.batchItems.length) {
+      const { error: batchItemsError } = await supabase
+        .from("batch_items")
+        .insert(rows.batchItems);
+
+      if (batchItemsError) {
+        throw batchItemsError;
+      }
     }
   }
 
@@ -261,6 +278,7 @@ export async function saveProductionBatch({ snapshot, userId }) {
   }
 
   const designLines = rows.designLines
+    .filter((line) => shouldSaveOrderItem(line.order_item_id))
     .map((line) => {
       const { order_item_id: orderItemId, ...lineRow } = line;
       return {

@@ -152,6 +152,27 @@ describe("production batch api client", () => {
       body: JSON.stringify({ snapshot }),
     });
   });
+
+  it("passes changed order item ids through for scoped production batch saves", async () => {
+    const snapshot = {
+      batch: { id: "batch-1", workspaceId: "workspace-1" },
+      activeOrderItemId: "order-2",
+      orderItems: [{ id: "order-1", revision: 1 }, { id: "order-2", revision: 3 }],
+    };
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => snapshot,
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { saveProductionBatchSnapshot } = await import("../../src/production-batch-api.js");
+
+    await expect(saveProductionBatchSnapshot(snapshot, { changedOrderItemIds: ["order-2"] })).resolves.toEqual(snapshot);
+    expect(fetchMock).toHaveBeenCalledWith("/api/production-batch", expect.objectContaining({
+      body: JSON.stringify({ snapshot, changedOrderItemIds: ["order-2"] }),
+    }));
+  });
 });
 
 describe("auth session helpers", () => {

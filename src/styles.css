@@ -1463,6 +1463,12 @@ h2 {
   border-color: #efd18a;
 }
 
+.order-analysis-indicator.error {
+  color: #9b1c1c;
+  background: #fee2e2;
+  border-color: #f3a3a3;
+}
+
 .order-analysis-indicator.running {
   color: #446f8b;
   background: #edf4f9;

@@ -81,6 +81,163 @@ function buildMockAnalysisResponse(overrides = {}) {
   };
 }
 
+function buildTestSettingsSignature(settings = {}) {
+  return JSON.stringify({
+    version: 2,
+    text: typeof settings.text === "string" ? settings.text : "",
+    presetId: typeof settings.presetId === "string" ? settings.presetId : "",
+    boundingSizePresetId: typeof settings.boundingSizePresetId === "string" ? settings.boundingSizePresetId : "",
+    backingMm: Number.isFinite(Number(settings.backingMm)) ? Number(settings.backingMm) : 0,
+    weldExportedDesign: Boolean(settings.weldExportedDesign),
+    lines: (Array.isArray(settings.lines) ? settings.lines : []).map((line = {}) => ({
+      fontId: typeof line.fontId === "string" ? line.fontId : "",
+      bridgeMm: Number.isFinite(Number(line.bridgeMm)) ? Number(line.bridgeMm) : 0,
+      lineBridgeMm: Number.isFinite(Number(line.lineBridgeMm)) ? Number(line.lineBridgeMm) : 0,
+      offsetXMm: Number.isFinite(Number(line.offsetXMm)) ? Number(line.offsetXMm) : 0,
+      fontSizeMm: Number.isFinite(Number(line.fontSizeMm)) ? Number(line.fontSizeMm) : 0,
+      horizontalScale: Number.isFinite(Number(line.horizontalScale)) ? Number(line.horizontalScale) : 0,
+      verticalScale: Number.isFinite(Number(line.verticalScale)) ? Number(line.verticalScale) : 0,
+      lockTextHeight: Boolean(line.lockTextHeight),
+    })),
+  });
+}
+
+function buildCompletedRemoteOrder(overrides = {}) {
+  const settings = overrides.settings || {
+    text: "Saved Linked\nPreset",
+    presetId: "preset-a1f4c8e2b601",
+    boundingSizePresetId: "size-2-2x1-5",
+    backingMm: 3.1,
+    weldExportedDesign: true,
+    lines: [
+      {
+        fontId: "candlepin",
+        bridgeMm: 0.5,
+        lineBridgeMm: 0.5,
+        offsetXMm: 0,
+        fontSizeMm: 34,
+        horizontalScale: 1,
+        verticalScale: 1,
+        lockTextHeight: false,
+      },
+      {
+        fontId: "candlepin",
+        bridgeMm: 0.5,
+        lineBridgeMm: 0.5,
+        offsetXMm: 0,
+        fontSizeMm: 34,
+        horizontalScale: 1,
+        verticalScale: 1,
+        lockTextHeight: false,
+      },
+    ],
+  };
+  const signature = buildTestSettingsSignature(settings);
+
+  return {
+    id: "remote-order-1",
+    revision: 7,
+    text: settings.text,
+    status: "captured",
+    settings,
+    cachedBuild: {
+      signature,
+      layout: {
+        text: settings.text,
+        widthMm: 20,
+        heightMm: 14,
+        backingMm: settings.backingMm,
+        weldExportedDesign: settings.weldExportedDesign,
+        boundingSizePresetId: settings.boundingSizePresetId,
+        guide: {
+          id: "size-2-2x1-5",
+          label: "2.2 x 1.5",
+          maxWidthIn: 2.2,
+          maxHeightIn: 1.5,
+          maxWidthMm: 55.88,
+          maxHeightMm: 38.1,
+          minWidthMm: 0,
+          minHeightMm: 0,
+          circleDiameterMm: null,
+        },
+        textBoundsMm: {
+          left: 1,
+          top: 1,
+          width: 18,
+          height: 12,
+        },
+        fit: {
+          fitScale: 1,
+          lineScaleFactors: [1, 1],
+          overflowsGuide: false,
+        },
+        letters: [],
+      },
+      analysis: buildMockAnalysisResponse(),
+    },
+    previousCompletedBuild: null,
+    savedSettingsSignature: signature,
+    completedSettingsSignature: signature,
+    analysisBadge: {
+      state: "ok",
+      shortLabel: "1",
+      fullLabel: "Connected acrylic face",
+    },
+    pendingAnalysisSignature: null,
+    source: {
+      listingId: "1884223710",
+      listingTitle: "Linked preset listing",
+      buyerName: "Avery",
+    },
+    ...overrides,
+  };
+}
+
+test("keeps a saved shared design complete when its linked listing preset differs on startup", async ({ page }) => {
+  await installSupabaseSession(page);
+
+  const remoteSnapshot = {
+    batch: {
+      id: "batch-1",
+      workspaceId: "workspace-1",
+    },
+    activeOrderItemId: "remote-order-1",
+    orderItems: [
+      buildCompletedRemoteOrder(),
+    ],
+  };
+
+  await page.route("**/api/batch-session", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify({
+        operator: { id: "user-1", email: "mark@example.com" },
+        workspace: { id: "workspace-1", name: "Thankful For You" },
+        batch: {
+          id: "batch-1",
+          workspaceId: "workspace-1",
+        },
+      }),
+    });
+  });
+  await page.route("**/api/production-batch?batchId=batch-1", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify(remoteSnapshot),
+    });
+  });
+
+  await page.goto("/");
+
+  const row = page.locator("#orderList .order-row").filter({ hasText: "Saved Linked" });
+  await expect(row).toContainText("Complete");
+  await expect(row.locator(".order-analysis-indicator.ok")).toBeVisible();
+  await expect(page.locator("#presetInput")).toHaveValue("preset-a1f4c8e2b601");
+  await expect(page.locator("#captureButton")).toBeDisabled();
+});
+
 test("discarding a conflicted local draft reloads the production batch without a follow-up recovery alert", async ({ page }) => {
   await installSupabaseSession(page);
   await page.route("**/api/layout-analyze", async (route) => {
