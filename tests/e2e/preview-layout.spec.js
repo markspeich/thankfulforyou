@@ -712,6 +712,14 @@ test("does not render a queue sync status card in the queue tools menu", async (
 
 test(PRODUCTION_BATCH_REMOTE_RESTORE_TEST_TITLE, async ({ page }) => {
   await installSupabaseSession(page);
+  await page.route("**/api/layout-analyze", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify(buildMockAnalysisResponse()),
+    });
+  });
+
   const staleLocalSnapshot = {
     version: 1,
     orderSequence: 2,
@@ -841,6 +849,14 @@ test(PRODUCTION_BATCH_REMOTE_RESTORE_TEST_TITLE, async ({ page }) => {
 
 test(PRODUCTION_BATCH_CONFLICT_TEST_TITLE, async ({ page }) => {
   await installSupabaseSession(page);
+  await page.route("**/api/layout-analyze", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify(buildMockAnalysisResponse()),
+    });
+  });
+
   const remoteSnapshot = {
     batch: { id: "batch-1",
       workspaceId: "workspace-1",

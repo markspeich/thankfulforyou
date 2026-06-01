@@ -86,7 +86,7 @@ describe("export_svg face tracing", () => {
     expect(analysis.facePath).not.toContain("Q");
   });
 
-  test("switches exported face geometry between welded and direct outlines", { timeout: 15000 }, () => {
+  test("switches exported face geometry between welded and direct outlines", { timeout: 30000 }, () => {
     const baseLayout = {
       text: "T",
       widthMm: 40,
@@ -164,6 +164,58 @@ describe("export_svg face tracing", () => {
     expect(Math.abs(simplifiedBounds.top - baselineBounds.top)).toBeLessThanOrEqual(0.05);
     expect(Math.abs(simplifiedBounds.right - baselineBounds.right)).toBeLessThanOrEqual(0.05);
     expect(Math.abs(simplifiedBounds.bottom - baselineBounds.bottom)).toBeLessThanOrEqual(0.05);
+  });
+
+  test("uses gentler one-pass smoothing for standard backing borders", { timeout: 30000 }, () => {
+    const layout = {
+      text: "MOM",
+      widthMm: 60,
+      heightMm: 30,
+      backingMm: 3.1,
+      letters: [
+        {
+          character: "M",
+          fontId: "candlepin",
+          fontPath: "public/fonts/Candlepin-Laser.otf",
+          fontSizeMm: 18,
+          x: 4,
+          y: 22,
+        },
+        {
+          character: "O",
+          fontId: "candlepin",
+          fontPath: "public/fonts/Candlepin-Laser.otf",
+          fontSizeMm: 18,
+          x: 16,
+          y: 22,
+        },
+        {
+          character: "M",
+          fontId: "candlepin",
+          fontPath: "public/fonts/Candlepin-Laser.otf",
+          fontSizeMm: 18,
+          x: 28,
+          y: 22,
+        },
+      ],
+    };
+
+    const standard = analyzeLayout(layout);
+    const onePass = analyzeLayout({
+      ...layout,
+      traceProfileOverrides: {
+        backingSmoothIterations: 1,
+      },
+    });
+    const twoPass = analyzeLayout({
+      ...layout,
+      traceProfileOverrides: {
+        backingSmoothIterations: 2,
+      },
+    });
+
+    expect(standard.backingPath).toBe(onePass.backingPath);
+    expect(standard.backingPath).not.toBe(twoPass.backingPath);
   });
 
   test("applies per-letter vertical stretch without widening outline bounds", { timeout: 30000 }, () => {
@@ -406,9 +458,9 @@ describe("export_svg face tracing", () => {
     expect(svg).toContain('stroke="none"');
     expect(svg).toContain("Text: Cached");
     expect(svg).toContain('height="71.562mm"');
-    expect(svg).toContain('id="order-1-copy-1-name-group" transform="translate(0 0.000)"');
+    expect(svg).toContain('id="order-1-copy-1-name-group" transform="translate(0.000 0.000)"');
     expect(svg).toContain('id="order-1-copy-1-backing-border" d="M20 0 L30 0 L30 10 Z" transform="translate(50.000 0.000)"');
-    expect(svg).toContain('id="order-1-copy-2-name-group" transform="translate(0 51.562)"');
+    expect(svg).toContain('id="order-1-copy-2-name-group" transform="translate(0.000 51.562)"');
     expect(svg).toContain('id="order-1-copy-2-backing-border" d="M20 0 L30 0 L30 10 Z" transform="translate(50.000 51.562)"');
     expect(svg).toContain('id="order-1-copy-1-color-label"');
     expect(svg).toContain('font-family="Arial"');
@@ -445,12 +497,53 @@ describe("export_svg face tracing", () => {
       ],
     });
 
-    expect(svg).toContain('height="123.124mm"');
-    expect(svg).toContain('id="order-1-copy-1-name-group" transform="translate(0 0.000)"');
-    expect(svg).toContain('id="order-1-copy-2-name-group" transform="translate(0 51.562)"');
-    expect(svg).toContain('id="order-2-copy-1-name-group" transform="translate(0 103.124)"');
-    expect(svg).toContain('id="order-2-copy-1-backing-border" d="M20 0 L30 0 L30 10 Z" transform="translate(50.000 103.124)"');
+    expect(svg).toContain('height="154.686mm"');
+    expect(svg).toContain('id="order-1-copy-1-name-group" transform="translate(5.781 15.781)"');
+    expect(svg).toContain('id="order-1-copy-2-name-group" transform="translate(5.781 67.343)"');
+    expect(svg).toContain('id="order-2-copy-1-name-group" transform="translate(5.781 118.905)"');
+    expect(svg).toContain('id="order-2-copy-1-backing-border" d="M20 0 L30 0 L30 10 Z" transform="translate(57.343 118.905)"');
     expect(svg).toContain(">Sage Green</text>");
     expect(svg).toContain(">Red</text>");
+  });
+
+  test("centers batch export items in fixed-width text backing and color columns", () => {
+    const svg = exportSvg({
+      layouts: [
+        {
+          text: "First",
+          widthMm: 40,
+          heightMm: 20,
+          analysis: {
+            exportFacePath: "M0 0 L10 0 L10 10 Z",
+            backingPath: "M20 0 L30 0 L30 10 Z",
+            connectedComponentCount: 1,
+          },
+          colorName: "Sage Green",
+        },
+        {
+          text: "Second",
+          widthMm: 30,
+          heightMm: 20,
+          analysis: {
+            exportFacePath: "M0 0 L10 0 L10 10 Z",
+            backingPath: "M20 0 L30 0 L30 10 Z",
+            connectedComponentCount: 1,
+          },
+          colorName: "Red",
+        },
+      ],
+    });
+
+    expect(svg).toContain('width="154.686mm"');
+    expect(svg).toContain('height="103.124mm"');
+    expect(svg).toContain('id="order-1-copy-1-name-group" transform="translate(5.781 15.781)"');
+    expect(svg).toContain('id="order-1-copy-1-backing-border" d="M20 0 L30 0 L30 10 Z" transform="translate(57.343 15.781)"');
+    expect(svg).toContain('id="order-2-copy-1-name-group" transform="translate(10.781 67.343)"');
+    expect(svg).toContain('id="order-2-copy-1-backing-border" d="M20 0 L30 0 L30 10 Z" transform="translate(62.343 67.343)"');
+    expect(svg).toContain('id="order-1-copy-1-color-label" x="128.905" y="25.781"');
+    expect(svg).toContain('id="order-2-copy-1-color-label" x="128.905" y="77.343"');
+    expect(svg).toContain('font-size="6.000mm"');
+    expect(svg).toContain('text-anchor="middle"');
+    expect(svg).toContain('dominant-baseline="middle"');
   });
 });

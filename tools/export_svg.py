@@ -17,9 +17,10 @@ from PIL import Image, ImageDraw, ImageFont
 
 MM_PER_INCH = 25.4
 BATCH_EXPORT_START_STEP_MM = 2.03 * MM_PER_INCH
+BATCH_EXPORT_COLUMN_WIDTH_MM = BATCH_EXPORT_START_STEP_MM
 EXPORT_GAP_MM = 10.0
 COLOR_LABEL_MARGIN_MM = 3.0
-COLOR_LABEL_FONT_SIZE_MM = 4.0
+COLOR_LABEL_FONT_SIZE_MM = 6.0
 COLOR_LABEL_LINE_HEIGHT_MM = 4.8
 REMOTE_FONT_MAX_BYTES = 2 * 1024 * 1024
 
@@ -55,45 +56,77 @@ def parse_export_quantity(value):
 
 
 def fill_mask_holes(mask):
-    width, height = mask.size
-    data = bytearray(mask.tobytes())
+    bounds = mask.getbbox()
+    if not bounds:
+        return
+
+    left, top, right, bottom = bounds
+    cropped = mask.crop(bounds)
+    width, height = cropped.size
+    data = bytearray(cropped.tobytes())
     exterior = bytearray(width * height)
     queue = deque()
 
-    def enqueue_if_empty(x, y):
-        if x < 0 or y < 0 or x >= width or y >= height:
-            return
-
-        index = y * width + x
-        if exterior[index] or data[index] > 0:
-            return
-
-        exterior[index] = 1
-        queue.append((x, y))
-
     for x in range(width):
-        enqueue_if_empty(x, 0)
-        enqueue_if_empty(x, height - 1)
+        top_index = x
+        if not exterior[top_index] and data[top_index] <= 0:
+            exterior[top_index] = 1
+            queue.append((x, 0))
+
+        bottom_index = (height - 1) * width + x
+        if not exterior[bottom_index] and data[bottom_index] <= 0:
+            exterior[bottom_index] = 1
+            queue.append((x, height - 1))
+
     for y in range(height):
-        enqueue_if_empty(0, y)
-        enqueue_if_empty(width - 1, y)
+        left_index = y * width
+        if not exterior[left_index] and data[left_index] <= 0:
+            exterior[left_index] = 1
+            queue.append((0, y))
+
+        right_index = y * width + width - 1
+        if not exterior[right_index] and data[right_index] <= 0:
+            exterior[right_index] = 1
+            queue.append((width - 1, y))
 
     while queue:
         x, y = queue.popleft()
-        enqueue_if_empty(x + 1, y)
-        enqueue_if_empty(x - 1, y)
-        enqueue_if_empty(x, y + 1)
-        enqueue_if_empty(x, y - 1)
+        if x + 1 < width:
+            index = y * width + x + 1
+            if not exterior[index] and data[index] <= 0:
+                exterior[index] = 1
+                queue.append((x + 1, y))
+        if x > 0:
+            index = y * width + x - 1
+            if not exterior[index] and data[index] <= 0:
+                exterior[index] = 1
+                queue.append((x - 1, y))
+        if y + 1 < height:
+            index = (y + 1) * width + x
+            if not exterior[index] and data[index] <= 0:
+                exterior[index] = 1
+                queue.append((x, y + 1))
+        if y > 0:
+            index = (y - 1) * width + x
+            if not exterior[index] and data[index] <= 0:
+                exterior[index] = 1
+                queue.append((x, y - 1))
 
     for index, value in enumerate(data):
         data[index] = 255 if value > 0 or not exterior[index] else 0
 
-    mask.putdata(data)
+    cropped.putdata(data)
+    mask.paste(cropped, (left, top))
 
 
 def count_connected_components(mask):
-    width, height = mask.size
-    data = mask.tobytes()
+    bounds = mask.getbbox()
+    if not bounds:
+        return 0
+
+    cropped = mask.crop(bounds)
+    width, height = cropped.size
+    data = cropped.tobytes()
     visited = bytearray(width * height)
     component_count = 0
 
@@ -224,24 +257,25 @@ def polyline_closed_path(points, scale):
 
 
 def trace_mask_outline(mask, scale, tolerance_mm, smooth_iterations, curve_mode="quadratic"):
-    width, height = mask.size
+    bounds = mask.getbbox()
+    if not bounds:
+        return ""
+
+    left, top, right, bottom = bounds
     pixels = mask.load()
     edges = defaultdict(list)
 
-    def filled(x, y):
-        return 0 <= x < width and 0 <= y < height and pixels[x, y] > 0
-
-    for y in range(height):
-        for x in range(width):
-            if not filled(x, y):
+    for y in range(top, bottom):
+        for x in range(left, right):
+            if pixels[x, y] <= 0:
                 continue
-            if not filled(x, y - 1):
+            if y == top or pixels[x, y - 1] <= 0:
                 edges[(x, y)].append((x + 1, y))
-            if not filled(x + 1, y):
+            if x + 1 >= right or pixels[x + 1, y] <= 0:
                 edges[(x + 1, y)].append((x + 1, y + 1))
-            if not filled(x, y + 1):
+            if y + 1 >= bottom or pixels[x, y + 1] <= 0:
                 edges[(x + 1, y + 1)].append((x, y + 1))
-            if not filled(x - 1, y):
+            if x == left or pixels[x - 1, y] <= 0:
                 edges[(x, y + 1)].append((x, y))
 
     paths = []
@@ -399,30 +433,16 @@ def sanitize_text_token(value):
 
 
 def mask_bounds_mm(mask, scale):
-    width, height = mask.size
-    pixels = mask.load()
-    min_x = None
-    min_y = None
-    max_x = None
-    max_y = None
-
-    for y in range(height):
-        for x in range(width):
-            if pixels[x, y] <= 0:
-                continue
-            min_x = x if min_x is None else min(min_x, x)
-            min_y = y if min_y is None else min(min_y, y)
-            max_x = x if max_x is None else max(max_x, x)
-            max_y = y if max_y is None else max(max_y, y)
-
-    if min_x is None or min_y is None or max_x is None or max_y is None:
+    bounds = mask.getbbox()
+    if not bounds:
         return None
 
+    left, top, right, bottom = bounds
     return {
-        "left": min_x / scale,
-        "top": min_y / scale,
-        "width": (max_x + 1 - min_x) / scale,
-        "height": (max_y + 1 - min_y) / scale,
+        "left": left / scale,
+        "top": top / scale,
+        "width": (right - left) / scale,
+        "height": (bottom - top) / scale,
     }
 
 
@@ -615,7 +635,7 @@ def get_trace_profile(payload):
             "face_smooth_iterations": 0,
             "face_curve_mode": "polyline",
             "backing_tolerance_mm": 0.045,
-            "backing_smooth_iterations": 2,
+            "backing_smooth_iterations": 1,
             "backing_curve_mode": "quadratic",
         }
 
@@ -764,17 +784,20 @@ def estimate_color_label_width_mm(color_name):
     return max(12.0, len(color_name) * estimated_char_width_mm)
 
 
-def build_color_label(order, instance_id, translate_y):
+def build_color_label(order, instance_id, translate_y, x=None, y=None, center_vertical=False):
     color_name = order.get("color_name", "")
     if not color_name:
         return ""
 
-    x = order["backing_x"] + order["width"] + COLOR_LABEL_MARGIN_MM
-    y = translate_y + min(order["height"] - 1.5, max(COLOR_LABEL_FONT_SIZE_MM, COLOR_LABEL_FONT_SIZE_MM + 1.0))
+    if x is None:
+        x = order["backing_x"] + order["width"] + COLOR_LABEL_MARGIN_MM
+    if y is None:
+        y = translate_y + min(order["height"] - 1.5, max(COLOR_LABEL_FONT_SIZE_MM, COLOR_LABEL_FONT_SIZE_MM + 1.0))
+    baseline = ' dominant-baseline="middle"' if center_vertical else ""
     return (
         f'  <text id="{instance_id}-color-label" x="{x:.3f}" y="{y:.3f}" '
         f'font-family="Arial" font-size="{COLOR_LABEL_FONT_SIZE_MM:.3f}mm" '
-        f'fill="rgb(255, 0, 0)">{color_name}</text>'
+        f'fill="rgb(255, 0, 0)" text-anchor="middle"{baseline}>{color_name}</text>'
     )
 
 
@@ -790,12 +813,24 @@ def expand_export_instances(order_paths):
     return instances
 
 
-def build_svg_document(title, desc, instances):
+def build_svg_document(title, desc, instances, fixed_columns=False):
     export_fill = "rgb(255, 0, 0)"
-    export_width = max(instance["order"]["export_width"] for instance in instances)
+    column_width = None
+    if fixed_columns:
+        column_width = max(
+            BATCH_EXPORT_COLUMN_WIDTH_MM,
+            *(instance["order"]["width"] for instance in instances),
+        )
+        export_width = column_width * 3
+    else:
+        export_width = max(instance["order"]["export_width"] for instance in instances)
+
     export_height = 0.0
     if instances:
-        export_height = BATCH_EXPORT_START_STEP_MM * (len(instances) - 1) + instances[-1]["order"]["height"]
+        if fixed_columns:
+            export_height = BATCH_EXPORT_START_STEP_MM * len(instances)
+        else:
+            export_height = BATCH_EXPORT_START_STEP_MM * (len(instances) - 1) + instances[-1]["order"]["height"]
 
     parts = [
         f"""<svg xmlns="http://www.w3.org/2000/svg" width="{export_width:.3f}mm" height="{export_height:.3f}mm" viewBox="0 0 {export_width:.3f} {export_height:.3f}">
@@ -807,13 +842,33 @@ def build_svg_document(title, desc, instances):
     for instance in instances:
         order = instance["order"]
         instance_id = instance["instance_id"]
+        face_x = 0.0
+        backing_x = order["backing_x"]
+        color_label_x = None
+        item_y = current_y
+        color_label_y = None
+        center_color_label = False
+        if fixed_columns:
+            face_x = (column_width - order["width"]) / 2
+            backing_x = column_width + (column_width - order["width"]) / 2
+            color_label_x = column_width * 2 + column_width / 2
+            item_y = current_y + max(0.0, (BATCH_EXPORT_START_STEP_MM - order["height"]) / 2)
+            color_label_y = current_y + BATCH_EXPORT_START_STEP_MM / 2
+            center_color_label = True
         parts.append(
-            f"""  <g id="{instance_id}-name-group" transform="translate(0 {current_y:.3f})" fill="{export_fill}" stroke="none">
+            f"""  <g id="{instance_id}-name-group" transform="translate({face_x:.3f} {item_y:.3f})" fill="{export_fill}" stroke="none">
     <path d="{order["face_path"]}"/>
   </g>
-  <path id="{instance_id}-backing-border" d="{order["backing_path"]}" transform="translate({order["backing_x"]:.3f} {current_y:.3f})" fill="{export_fill}" stroke="none"/>"""
+  <path id="{instance_id}-backing-border" d="{order["backing_path"]}" transform="translate({backing_x:.3f} {item_y:.3f})" fill="{export_fill}" stroke="none"/>"""
         )
-        color_label = build_color_label(order, instance_id, current_y)
+        color_label = build_color_label(
+            order,
+            instance_id,
+            current_y,
+            color_label_x,
+            color_label_y,
+            center_color_label,
+        )
         if color_label:
             parts.append(color_label)
         current_y += BATCH_EXPORT_START_STEP_MM
@@ -851,7 +906,7 @@ def build_batch_svg(root, layouts):
         f'{"; ".join(desc_items)}. Each exported instance is stacked below the previous one. '
         f'Face layer is on the left. Offset backing layer is on the right. Generated as vector paths from the selected production fonts.'
     )
-    return build_svg_document("Badge reel batch layout", desc, expand_export_instances(order_paths))
+    return build_svg_document("Badge reel batch layout", desc, expand_export_instances(order_paths), fixed_columns=True)
 
 
 def build_analysis(payload):
