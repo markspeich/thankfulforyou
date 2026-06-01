@@ -5399,20 +5399,28 @@ function renderFontWorkspace() {
   const selectedFont = getFontOption(selectedFontId);
   fontLibraryList.replaceChildren();
   FONT_OPTIONS.forEach((font) => {
-    const row = document.createElement("button");
-    row.type = "button";
-    row.className = "font-library-row";
+    const row = document.createElement("article");
+    row.className = "font-library-row size-preset-row";
     row.classList.toggle("is-selected", font.id === selectedFont.id);
+    row.role = "button";
+    row.tabIndex = 0;
     row.dataset.fontId = font.id;
     row.innerHTML = `
-      <span class="font-library-name"></span>
-      <span class="font-library-meta"></span>
+      <p class="size-preset-name font-library-name"></p>
+      <p class="size-preset-meta font-library-meta"></p>
     `;
     row.querySelector(".font-library-name").textContent = font.label;
     row.querySelector(".font-library-meta").textContent = font.isBuiltin ? "Built-in" : "Uploaded";
     row.addEventListener("click", () => {
       selectedFontId = font.id;
       renderFontWorkspace();
+    });
+    row.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        selectedFontId = font.id;
+        renderFontWorkspace();
+      }
     });
     fontLibraryList.append(row);
   });
@@ -5787,18 +5795,6 @@ async function captureActiveOrder({ advanceToNext = false } = {}) {
     if (nextUncaptured) {
       selectOrder(nextUncaptured.id);
     }
-  }
-
-  if (!previousCompletedBuild && !order.savedSettingsSignature) {
-    await saveBatchSnapshotToRemote({
-      persistActiveDraft: false,
-      publishOrderIds: [order.id],
-      successMessage: `Production batch saved at ${new Date().toLocaleTimeString([], {
-        hour: "numeric",
-        minute: "2-digit",
-      })}.`,
-      successAlertAutoHideMs: 8000,
-    });
   }
 
   try {

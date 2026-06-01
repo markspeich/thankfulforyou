@@ -2272,37 +2272,6 @@ button:disabled {
   padding-right: 2px;
 }
 
-.font-library-row {
-  display: grid;
-  gap: 4px;
-  width: 100%;
-  padding: 12px 13px;
-  text-align: left;
-  color: var(--ink);
-  background: #fff;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  cursor: pointer;
-}
-
-.font-library-row:hover,
-.font-library-row.is-selected {
-  border-color: rgba(185, 28, 28, 0.42);
-  background: #fff7f7;
-}
-
-.font-library-name {
-  font-size: 0.92rem;
-  font-weight: 800;
-}
-
-.font-library-meta {
-  color: var(--muted);
-  font-size: 0.75rem;
-  font-weight: 700;
-  text-transform: uppercase;
-}
-
 .font-editor-panel .editor-body {
   grid-template-rows: auto;
   align-content: start;

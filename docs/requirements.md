@@ -108,6 +108,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Deleting an uploaded font should require an explicit in-app confirmation and should not silently break existing saved designs that already reference that font.
 - The `Fonts` workspace should allow overwriting an uploaded font by uploading a new version while keeping the same font identity for designs and presets that reference it.
 - Replacing an uploaded font should use a new stored file version rather than reusing the exact same asset path, so previews, analysis, export, and CDN caches can resolve the updated font reliably.
+- The `Fonts` workspace font rows should use the same shared two-pane selector row style as the `Presets` and `Size Guides` workspaces.
 - Allow horizontal-only stretching per line of text so operators can make a line wider without making it taller.
 - Per-line `Horizontal Stretch` controls should allow values up to `200%`.
 - Allow vertical-only stretching per line of text so operators can make a line taller without making it wider.

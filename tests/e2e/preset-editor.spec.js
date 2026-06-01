@@ -354,6 +354,15 @@ test("switches between order items, presets, and size guides from the left nav",
   await expect(presetsWorkspace).toBeVisible();
   await expect(fontsWorkspace).toBeHidden();
   await expect(sizeGuideWorkspace).toBeHidden();
+  const presetRowTitleTypography = await presetsWorkspace.locator(".preset-library-row .size-preset-name").first().evaluate((element) => {
+    const style = window.getComputedStyle(element);
+    return {
+      fontFamily: style.fontFamily,
+      fontSize: style.fontSize,
+      fontWeight: style.fontWeight,
+      lineHeight: style.lineHeight,
+    };
+  });
 
   await page.getByRole("button", { name: "Fonts" }).click();
   await expect(ordersWorkspace).toBeHidden();
@@ -363,6 +372,16 @@ test("switches between order items, presets, and size guides from the left nav",
   await expect(fontsWorkspace.getByRole("heading", { name: "Fonts" })).toBeVisible();
   await expect(fontsWorkspace.getByRole("button", { name: /Candlepin Laser/ })).toBeVisible();
   await expect(fontsWorkspace.getByRole("button", { name: "Delete font" })).toBeDisabled();
+  const fontRowTitleTypography = await fontsWorkspace.locator(".font-library-row .font-library-name").first().evaluate((element) => {
+    const style = window.getComputedStyle(element);
+    return {
+      fontFamily: style.fontFamily,
+      fontSize: style.fontSize,
+      fontWeight: style.fontWeight,
+      lineHeight: style.lineHeight,
+    };
+  });
+  expect(fontRowTitleTypography).toEqual(presetRowTitleTypography);
 
   await page.getByRole("button", { name: "Size Guides" }).click();
   await expect(ordersWorkspace).toBeHidden();
@@ -370,6 +389,16 @@ test("switches between order items, presets, and size guides from the left nav",
   await expect(fontsWorkspace).toBeHidden();
   await expect(sizeGuideWorkspace).toBeVisible();
   await expect(page.getByRole("region", { name: "Size guides workspace" })).toBeVisible();
+  const sizeGuideRowTitleTypography = await sizeGuideWorkspace.locator(".size-preset-row .size-preset-name").first().evaluate((element) => {
+    const style = window.getComputedStyle(element);
+    return {
+      fontFamily: style.fontFamily,
+      fontSize: style.fontSize,
+      fontWeight: style.fontWeight,
+      lineHeight: style.lineHeight,
+    };
+  });
+  expect(sizeGuideRowTitleTypography).toEqual(presetRowTitleTypography);
 
   await page.getByRole("button", { name: "Production Batch" }).click();
   await expect(page.getByRole("region", { name: "Order items workspace" })).toBeVisible();

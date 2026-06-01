@@ -6,6 +6,7 @@ import {
   ensureFontStorageBucket,
   normalizeUploadedFontFile,
   rejectBuiltinFontMutation,
+  resolveUploadedFontDisplayName,
 } from "../../api/_lib/font-store.js";
 
 describe("font store helpers", () => {
@@ -37,6 +38,19 @@ describe("font store helpers", () => {
       type: "application/zip",
       size: 123,
     })).toThrow("Unsupported font file type. Upload an OTF, TTF, WOFF, or WOFF2 file.");
+  });
+
+  it("uses the font file name table before a browser-provided display name", async () => {
+    const fontBuffer = await import("node:fs/promises")
+      .then((fs) => fs.readFile(new URL("../../public/fonts/Candlepin-Laser.otf", import.meta.url)));
+
+    expect(resolveUploadedFontDisplayName({
+      file: {
+        name: "Actually Different.otf",
+        buffer: fontBuffer,
+      },
+      fallbackDisplayName: "Candlepin Laser",
+    })).toBe("Candlepin - Laser");
   });
 
   it("rejects built-in font mutations", () => {
