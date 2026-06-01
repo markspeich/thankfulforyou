@@ -54,40 +54,67 @@ def parse_export_quantity(value):
 
 
 def fill_mask_holes(mask):
-    width, height = mask.size
-    data = bytearray(mask.tobytes())
+    bounds = mask.getbbox()
+    if not bounds:
+        return
+
+    left, top, right, bottom = bounds
+    cropped = mask.crop(bounds)
+    width, height = cropped.size
+    data = bytearray(cropped.tobytes())
     exterior = bytearray(width * height)
     queue = deque()
 
-    def enqueue_if_empty(x, y):
-        if x < 0 or y < 0 or x >= width or y >= height:
-            return
-
-        index = y * width + x
-        if exterior[index] or data[index] > 0:
-            return
-
-        exterior[index] = 1
-        queue.append((x, y))
-
     for x in range(width):
-        enqueue_if_empty(x, 0)
-        enqueue_if_empty(x, height - 1)
+        top_index = x
+        if not exterior[top_index] and data[top_index] <= 0:
+            exterior[top_index] = 1
+            queue.append((x, 0))
+
+        bottom_index = (height - 1) * width + x
+        if not exterior[bottom_index] and data[bottom_index] <= 0:
+            exterior[bottom_index] = 1
+            queue.append((x, height - 1))
+
     for y in range(height):
-        enqueue_if_empty(0, y)
-        enqueue_if_empty(width - 1, y)
+        left_index = y * width
+        if not exterior[left_index] and data[left_index] <= 0:
+            exterior[left_index] = 1
+            queue.append((0, y))
+
+        right_index = y * width + width - 1
+        if not exterior[right_index] and data[right_index] <= 0:
+            exterior[right_index] = 1
+            queue.append((width - 1, y))
 
     while queue:
         x, y = queue.popleft()
-        enqueue_if_empty(x + 1, y)
-        enqueue_if_empty(x - 1, y)
-        enqueue_if_empty(x, y + 1)
-        enqueue_if_empty(x, y - 1)
+        if x + 1 < width:
+            index = y * width + x + 1
+            if not exterior[index] and data[index] <= 0:
+                exterior[index] = 1
+                queue.append((x + 1, y))
+        if x > 0:
+            index = y * width + x - 1
+            if not exterior[index] and data[index] <= 0:
+                exterior[index] = 1
+                queue.append((x - 1, y))
+        if y + 1 < height:
+            index = (y + 1) * width + x
+            if not exterior[index] and data[index] <= 0:
+                exterior[index] = 1
+                queue.append((x, y + 1))
+        if y > 0:
+            index = (y - 1) * width + x
+            if not exterior[index] and data[index] <= 0:
+                exterior[index] = 1
+                queue.append((x, y - 1))
 
     for index, value in enumerate(data):
         data[index] = 255 if value > 0 or not exterior[index] else 0
 
-    mask.putdata(data)
+    cropped.putdata(data)
+    mask.paste(cropped, (left, top))
 
 
 def count_connected_components(mask):
@@ -236,20 +263,17 @@ def trace_mask_outline(mask, scale, tolerance_mm, smooth_iterations, curve_mode=
     pixels = mask.load()
     edges = defaultdict(list)
 
-    def filled(x, y):
-        return left <= x < right and top <= y < bottom and pixels[x, y] > 0
-
     for y in range(top, bottom):
         for x in range(left, right):
-            if not filled(x, y):
+            if pixels[x, y] <= 0:
                 continue
-            if not filled(x, y - 1):
+            if y == top or pixels[x, y - 1] <= 0:
                 edges[(x, y)].append((x + 1, y))
-            if not filled(x + 1, y):
+            if x + 1 >= right or pixels[x + 1, y] <= 0:
                 edges[(x + 1, y)].append((x + 1, y + 1))
-            if not filled(x, y + 1):
+            if y + 1 >= bottom or pixels[x, y + 1] <= 0:
                 edges[(x + 1, y + 1)].append((x, y + 1))
-            if not filled(x - 1, y):
+            if x == left or pixels[x - 1, y] <= 0:
                 edges[(x, y + 1)].append((x, y))
 
     paths = []
