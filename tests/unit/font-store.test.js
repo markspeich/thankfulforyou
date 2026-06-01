@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildFontStoragePath,
   createFontStoreError,
+  ensureFontStorageBucket,
   normalizeUploadedFontFile,
   rejectBuiltinFontMutation,
 } from "../../api/_lib/font-store.js";
@@ -50,5 +51,41 @@ describe("font store helpers", () => {
       statusCode: 400,
       expose: true,
     });
+  });
+
+  it("creates the storage bucket when it is missing", async () => {
+    const createBucketCalls = [];
+    const supabase = {
+      storage: {
+        getBucket: async () => ({
+          data: null,
+          error: { message: "Bucket not found", statusCode: 404 },
+        }),
+        createBucket: async (bucketId, options) => {
+          createBucketCalls.push({ bucketId, options });
+          return { data: { id: bucketId }, error: null };
+        },
+      },
+    };
+
+    await ensureFontStorageBucket(supabase);
+
+    expect(createBucketCalls).toEqual([
+      {
+        bucketId: "workspace-fonts",
+        options: {
+          public: true,
+          fileSizeLimit: 5 * 1024 * 1024,
+          allowedMimeTypes: [
+            "font/otf",
+            "font/ttf",
+            "font/woff",
+            "font/woff2",
+            "application/font-sfnt",
+            "application/octet-stream",
+          ],
+        },
+      },
+    ]);
   });
 });

@@ -4,6 +4,18 @@ import { basename, extname } from "node:path";
 import { createSupabaseAdminClient } from "./supabase-admin.js";
 
 export const FONT_STORAGE_BUCKET = "workspace-fonts";
+const FONT_STORAGE_BUCKET_OPTIONS = Object.freeze({
+  public: true,
+  fileSizeLimit: 5 * 1024 * 1024,
+  allowedMimeTypes: [
+    "font/otf",
+    "font/ttf",
+    "font/woff",
+    "font/woff2",
+    "application/font-sfnt",
+    "application/octet-stream",
+  ],
+});
 const SUPPORTED_FONT_EXTENSIONS = new Set(["otf", "ttf", "woff", "woff2"]);
 const CONTENT_TYPE_BY_FORMAT = {
   otf: "font/otf",
@@ -85,6 +97,45 @@ async function getPublicUrl(supabase, storagePath) {
   return data?.publicUrl || null;
 }
 
+function isMissingBucketError(error) {
+  if (!error) {
+    return false;
+  }
+  const message = typeof error.message === "string" ? error.message : "";
+  return error.statusCode === 404
+    || error.status === 404
+    || /bucket not found|not found/i.test(message);
+}
+
+function isExistingBucketError(error) {
+  if (!error) {
+    return false;
+  }
+  const message = typeof error.message === "string" ? error.message : "";
+  return error.statusCode === 409
+    || error.status === 409
+    || /already exists|duplicate/i.test(message);
+}
+
+export async function ensureFontStorageBucket(supabase) {
+  const { error: getBucketError } = await supabase.storage.getBucket(FONT_STORAGE_BUCKET);
+  if (!getBucketError) {
+    return;
+  }
+
+  if (!isMissingBucketError(getBucketError)) {
+    throw getBucketError;
+  }
+
+  const { error: createBucketError } = await supabase.storage.createBucket(
+    FONT_STORAGE_BUCKET,
+    FONT_STORAGE_BUCKET_OPTIONS,
+  );
+  if (createBucketError && !isExistingBucketError(createBucketError)) {
+    throw createBucketError;
+  }
+}
+
 async function uploadFontObject(supabase, storagePath, file, contentType) {
   const body = file?.arrayBuffer
     ? Buffer.from(await file.arrayBuffer())
@@ -94,6 +145,8 @@ async function uploadFontObject(supabase, storagePath, file, contentType) {
   if (!body || !body.length) {
     throw createFontStoreError(400, "Font upload must include a non-empty file.");
   }
+
+  await ensureFontStorageBucket(supabase);
 
   const { error } = await supabase.storage
     .from(FONT_STORAGE_BUCKET)
