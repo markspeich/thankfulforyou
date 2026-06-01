@@ -253,6 +253,24 @@ select {
   box-shadow: 0 4px 0 currentColor;
 }
 
+.workspace-nav-icon-fonts::before {
+  left: 3px;
+  top: 3px;
+  width: 12px;
+  height: 12px;
+  border: 2px solid currentColor;
+  border-radius: 50%;
+}
+
+.workspace-nav-icon-fonts::after {
+  left: 8px;
+  top: 6px;
+  width: 2px;
+  height: 10px;
+  background: currentColor;
+  box-shadow: -4px 6px 0 -1px currentColor, 4px 6px 0 -1px currentColor;
+}
+
 .workspace-nav-icon-size-guide::before {
   inset: 2px;
   border: 2px solid currentColor;
@@ -2235,6 +2253,90 @@ button:disabled {
   grid-auto-rows: max-content;
   gap: 12px;
   width: min(860px, 100%);
+}
+
+.fonts-workspace {
+  background: #fff;
+}
+
+.fonts-library-panel {
+  grid-template-rows: auto auto minmax(0, 1fr);
+}
+
+.font-library-list {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  min-height: 0;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.font-library-row {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  padding: 12px 13px;
+  text-align: left;
+  color: var(--ink);
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.font-library-row:hover,
+.font-library-row.is-selected {
+  border-color: rgba(185, 28, 28, 0.42);
+  background: #fff7f7;
+}
+
+.font-library-name {
+  font-size: 0.92rem;
+  font-weight: 800;
+}
+
+.font-library-meta {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.font-editor-panel .editor-body {
+  grid-template-rows: auto;
+  align-content: start;
+  overflow-y: auto;
+  padding: 18px 22px 22px 24px;
+  background: #fff;
+}
+
+.font-editor-header-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  width: min(860px, 100%);
+}
+
+.font-editor {
+  display: grid;
+  gap: 14px;
+  width: min(860px, 100%);
+}
+
+.font-preview-sample {
+  min-height: 160px;
+  display: grid;
+  place-items: center;
+  padding: 28px;
+  color: #b91c1c;
+  background: #f8fafc;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 3rem;
+  line-height: 1.05;
+  text-align: center;
 }
 
 .size-guide-panel {

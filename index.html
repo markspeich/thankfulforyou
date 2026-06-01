@@ -66,6 +66,15 @@
           <span class="workspace-nav-label">Presets</span>
         </button>
         <button
+          id="fontWorkspaceButton"
+          class="workspace-nav-item"
+          type="button"
+          aria-label="Fonts"
+        >
+          <span class="workspace-nav-icon workspace-nav-icon-fonts" aria-hidden="true"></span>
+          <span class="workspace-nav-label">Fonts</span>
+        </button>
+        <button
           id="sizeGuideWorkspaceButton"
           class="workspace-nav-item"
           type="button"
@@ -589,6 +598,50 @@
                     <div id="presetAssignmentsList" class="preset-assignment-list" aria-live="polite"></div>
                   </section>
                   <p id="presetEditorStatus" class="note" aria-live="polite">Choose a preset or start from an order layout.</p>
+                </section>
+              </div>
+            </section>
+          </section>
+        </section>
+        <section id="fontsWorkspace" class="workspace-view" aria-label="Fonts workspace" hidden>
+          <section class="production-workspace fonts-workspace">
+            <aside class="orders-panel fonts-library-panel" aria-label="Font library navigation">
+              <div class="batch-header">
+                <h1>Fonts</h1>
+                <button id="newFontUploadButton" class="batch-primary-action" type="button">
+                  <span class="batch-tool-label">Upload Font</span>
+                </button>
+                <input id="fontFileInput" class="visually-hidden" type="file" accept=".otf,.ttf,.woff,.woff2">
+              </div>
+              <p class="batch-tools-note">Manage workspace fonts used by order designs and reusable presets.</p>
+              <div id="fontLibraryList" class="font-library-list" aria-label="Font library"></div>
+            </aside>
+            <section class="editor-panel font-editor-panel" aria-label="Font editor panel">
+              <header class="editor-header">
+                <div class="font-editor-header-inner">
+                  <div>
+                    <p class="eyebrow">Workspace Fonts</p>
+                    <h2 id="selectedFontName">Candlepin Laser</h2>
+                    <p id="selectedFontMeta" class="editor-meta">Built-in production font</p>
+                  </div>
+                  <div class="editor-actions">
+                    <button id="replaceFontButton" class="editor-action-button" type="button" disabled>
+                      <span class="editor-action-label">Upload New Version</span>
+                    </button>
+                    <button id="deleteFontButton" class="editor-action-button editor-danger-button" type="button" aria-label="Delete font" disabled>
+                      <span class="editor-action-label">Delete Font</span>
+                    </button>
+                  </div>
+                </div>
+              </header>
+              <div class="editor-body">
+                <section class="font-editor" aria-label="Font editor">
+                  <label class="field compact-field">
+                    <span>Display Name</span>
+                    <input id="fontDisplayNameInput" type="text" autocomplete="off" placeholder="Font name">
+                  </label>
+                  <div class="font-preview-sample" id="selectedFontPreview">Thankful For You</div>
+                  <p id="fontEditorStatus" class="note" aria-live="polite">Built-in fonts are protected from deletion.</p>
                 </section>
               </div>
             </section>

@@ -74,32 +74,17 @@ import {
   normalizeBoundingSizePresetDefinition,
   resolveBoundingSizePreset,
 } from "./bounding-size-presets.js";
+import {
+  buildFontOptions,
+  createWorkspaceFont,
+  deleteWorkspaceFont,
+  loadWorkspaceFontOptions,
+  replaceWorkspaceFont,
+  resolveFontOption,
+} from "./fonts.js";
 
-const FONT_OPTIONS = [
-  {
-    id: "candlepin",
-    label: "Candlepin Laser",
-    family: "CandlepinLaser",
-    url: "public/fonts/Candlepin-Laser.otf",
-    exportPath: "public/fonts/Candlepin-Laser.otf",
-  },
-  {
-    id: "skywalk",
-    label: "Skywalk Laser",
-    family: "SkywalkLaser",
-    url: "public/fonts/SkywalkLaserRegular.otf",
-    exportPath: "public/fonts/SkywalkLaserRegular.otf",
-  },
-  {
-    id: "somekind",
-    label: "Somekind",
-    family: "Somekind",
-    url: "public/fonts/Somekind.ttf",
-    exportPath: "public/fonts/Somekind.ttf",
-  },
-];
-
-const FONT_BY_ID = new Map(FONT_OPTIONS.map((font) => [font.id, font]));
+let FONT_OPTIONS = buildFontOptions();
+let FONT_BY_ID = new Map(FONT_OPTIONS.map((font) => [font.id, font]));
 const DEFAULT_PREVIEW_WIDTH_MM = PREVIEW_BOX_WIDTH_MM + PREVIEW_MARGIN_MM * 2 + PREVIEW_LABEL_RIGHT_MM;
 const DEFAULT_PREVIEW_HEIGHT_MM = PREVIEW_BOX_HEIGHT_MM + PREVIEW_MARGIN_MM * 2;
 const PREVIEW_INNER_GUIDE_WIDTH_MM = 1.6 * 25.4;
@@ -148,12 +133,24 @@ const productionBatchSignInButton = document.querySelector("#productionBatchSign
 const productionBatchAuthError = document.querySelector("#productionBatchAuthError");
 const ordersWorkspace = document.querySelector("#ordersWorkspace");
 const presetsWorkspace = document.querySelector("#presetsWorkspace");
+const fontsWorkspace = document.querySelector("#fontsWorkspace");
 const sizeGuideWorkspace = document.querySelector("#sizeGuideWorkspace");
 const orderWorkspaceButton = document.querySelector("#orderWorkspaceButton");
 const presetWorkspaceButton = document.querySelector("#presetWorkspaceButton");
+const fontWorkspaceButton = document.querySelector("#fontWorkspaceButton");
 const sizeGuideWorkspaceButton = document.querySelector("#sizeGuideWorkspaceButton");
 const productionBatchLogoutButton = document.querySelector("#productionBatchLogoutButton");
 const navCollapseButton = document.querySelector("#navCollapseButton");
+const fontLibraryList = document.querySelector("#fontLibraryList");
+const newFontUploadButton = document.querySelector("#newFontUploadButton");
+const fontFileInput = document.querySelector("#fontFileInput");
+const fontDisplayNameInput = document.querySelector("#fontDisplayNameInput");
+const selectedFontName = document.querySelector("#selectedFontName");
+const selectedFontMeta = document.querySelector("#selectedFontMeta");
+const selectedFontPreview = document.querySelector("#selectedFontPreview");
+const replaceFontButton = document.querySelector("#replaceFontButton");
+const deleteFontButton = document.querySelector("#deleteFontButton");
+const fontEditorStatus = document.querySelector("#fontEditorStatus");
 const addOrderButton = document.querySelector("#addOrderButton");
 const importClipboardButton = document.querySelector("#importClipboardButton");
 const clearBatchButton = document.querySelector("#clearBatchButton");
@@ -301,6 +298,7 @@ let deferredPreviewRenderToken = 0;
 let suppressBatchSyncLocalNotice = false;
 let copiedLayoutControlsSnapshot = null;
 let activeWorkspace = "orders";
+let selectedFontId = "candlepin";
 let navCollapsed = readNavCollapsedPreference();
 let presetEditorDraft = null;
 let presetEditorBaselineKey = null;
@@ -521,11 +519,49 @@ const statusLabels = {
 const IMPORT_SOURCE_TAG = "thankfulforyou-etsy-clipboard";
 const IMPORT_MOJIBAKE_PATTERN = /[ÂÃâ]/;
 function getFontOption(fontId) {
-  return FONT_BY_ID.get(fontId) || FONT_OPTIONS[0];
+  return resolveFontOption(fontId, FONT_OPTIONS);
 }
 
 function getCanvasFont(fontSizePx, fontId) {
   return `${fontSizePx}px "${getFontOption(fontId).family}", "Segoe Script", cursive`;
+}
+
+function setFontOptions(fontOptions) {
+  FONT_OPTIONS = fontOptions.length ? fontOptions : buildFontOptions();
+  FONT_BY_ID = new Map(FONT_OPTIONS.map((font) => [font.id, font]));
+  if (!FONT_BY_ID.has(selectedFontId)) {
+    selectedFontId = FONT_OPTIONS[0]?.id || "candlepin";
+  }
+}
+
+async function refreshWorkspaceFonts(accessToken = null) {
+  try {
+    setFontOptions(await loadWorkspaceFontOptions({ accessToken, includeDeleted: true }));
+  } catch {
+    setFontOptions(buildFontOptions());
+  }
+  renderFontWorkspace();
+}
+
+async function buildFontUploadPayload(file, displayName = "") {
+  const buffer = Array.from(new Uint8Array(await file.arrayBuffer()));
+  return {
+    displayName,
+    file: {
+      name: file.name,
+      type: file.type,
+      size: file.size,
+      buffer,
+    },
+  };
+}
+
+function setFontEditorStatus(message, state = "pending") {
+  if (!fontEditorStatus) {
+    return;
+  }
+  fontEditorStatus.textContent = message;
+  fontEditorStatus.dataset.state = state;
 }
 
 function createDefaultLineSettings() {
@@ -5348,23 +5384,127 @@ function hideInitialBatchLoading() {
   initialBatchLoading.hidden = true;
 }
 
+function getFontMetaLabel(font) {
+  const kind = font.isBuiltin ? "Built-in production font" : "Uploaded workspace font";
+  const format = font.fileFormat ? font.fileFormat.toUpperCase() : "font";
+  const version = font.version ? `v${font.version}` : "v1";
+  return `${kind} · ${format} · ${version}`;
+}
+
+function renderFontWorkspace() {
+  if (!fontLibraryList) {
+    return;
+  }
+
+  const selectedFont = getFontOption(selectedFontId);
+  fontLibraryList.replaceChildren();
+  FONT_OPTIONS.forEach((font) => {
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = "font-library-row";
+    row.classList.toggle("is-selected", font.id === selectedFont.id);
+    row.dataset.fontId = font.id;
+    row.innerHTML = `
+      <span class="font-library-name"></span>
+      <span class="font-library-meta"></span>
+    `;
+    row.querySelector(".font-library-name").textContent = font.label;
+    row.querySelector(".font-library-meta").textContent = font.isBuiltin ? "Built-in" : "Uploaded";
+    row.addEventListener("click", () => {
+      selectedFontId = font.id;
+      renderFontWorkspace();
+    });
+    fontLibraryList.append(row);
+  });
+
+  selectedFontName.textContent = selectedFont.label;
+  selectedFontMeta.textContent = getFontMetaLabel(selectedFont);
+  fontDisplayNameInput.value = selectedFont.displayName || selectedFont.label;
+  fontDisplayNameInput.disabled = Boolean(selectedFont.isBuiltin);
+  selectedFontPreview.style.fontFamily = `"${selectedFont.family}", "Segoe Script", cursive`;
+  replaceFontButton.disabled = Boolean(selectedFont.isBuiltin);
+  deleteFontButton.disabled = Boolean(selectedFont.isBuiltin);
+  fontEditorStatus.textContent = selectedFont.isBuiltin
+    ? "Built-in fonts are protected from deletion."
+    : "Uploaded fonts can be replaced with a new version or deleted from future selections.";
+}
+
 function setActiveWorkspace(workspace) {
-  activeWorkspace = ["orders", "presets", "sizeGuides"].includes(workspace) ? workspace : "orders";
+  activeWorkspace = ["orders", "presets", "fonts", "sizeGuides"].includes(workspace) ? workspace : "orders";
   appShell.dataset.workspace = activeWorkspace;
   ordersWorkspace.hidden = activeWorkspace !== "orders";
   presetsWorkspace.hidden = activeWorkspace !== "presets";
+  fontsWorkspace.hidden = activeWorkspace !== "fonts";
   sizeGuideWorkspace.hidden = activeWorkspace !== "sizeGuides";
   orderWorkspaceButton.classList.toggle("is-active", activeWorkspace === "orders");
   presetWorkspaceButton.classList.toggle("is-active", activeWorkspace === "presets");
+  fontWorkspaceButton.classList.toggle("is-active", activeWorkspace === "fonts");
   sizeGuideWorkspaceButton.classList.toggle("is-active", activeWorkspace === "sizeGuides");
   orderWorkspaceButton.setAttribute("aria-pressed", String(activeWorkspace === "orders"));
   presetWorkspaceButton.setAttribute("aria-pressed", String(activeWorkspace === "presets"));
+  fontWorkspaceButton.setAttribute("aria-pressed", String(activeWorkspace === "fonts"));
   sizeGuideWorkspaceButton.setAttribute("aria-pressed", String(activeWorkspace === "sizeGuides"));
   if (activeWorkspace === "presets") {
     selectFirstPresetEditorRowIfNeeded();
   }
+  if (activeWorkspace === "fonts") {
+    renderFontWorkspace();
+  }
   if (activeWorkspace === "sizeGuides") {
     selectFirstSizePresetIfNeeded();
+  }
+}
+
+async function handleFontFileSelection(mode) {
+  const file = fontFileInput.files?.[0] || null;
+  fontFileInput.value = "";
+  if (!file) {
+    return;
+  }
+
+  const selectedFont = getFontOption(selectedFontId);
+  const displayName = fontDisplayNameInput.value.trim() || file.name.replace(/\.[^.]+$/, "");
+  try {
+    setFontEditorStatus(mode === "replace" ? "Uploading new font version..." : "Uploading font...", "pending");
+    const payload = await buildFontUploadPayload(file, displayName);
+    const savedFont = mode === "replace"
+      ? await replaceWorkspaceFont(selectedFont.id, payload, { accessToken: productionBatchAccessToken })
+      : await createWorkspaceFont(payload, { accessToken: productionBatchAccessToken });
+    await refreshWorkspaceFonts(productionBatchAccessToken);
+    selectedFontId = savedFont?.id || selectedFontId;
+    renderFontWorkspace();
+    renderLineControls(getActiveOrder()?.settings || readSettingsFromControls());
+    setFontEditorStatus(mode === "replace" ? "Font version uploaded." : "Font uploaded.", "success");
+  } catch (error) {
+    setFontEditorStatus(error instanceof Error ? error.message : "Unable to upload font.", "error");
+  }
+}
+
+async function handleDeleteSelectedFont() {
+  const selectedFont = getFontOption(selectedFontId);
+  if (selectedFont.isBuiltin) {
+    return;
+  }
+
+  const confirmed = await showConfirmationDialog({
+    title: "Delete Font?",
+    description: `Delete ${selectedFont.label} from future font selections? Existing saved designs may still reference it.`,
+    confirmLabel: "Delete Font",
+    isDanger: true,
+  });
+  if (!confirmed) {
+    return;
+  }
+
+  try {
+    setFontEditorStatus("Deleting font...", "pending");
+    await deleteWorkspaceFont(selectedFont.id, { accessToken: productionBatchAccessToken });
+    selectedFontId = "candlepin";
+    await refreshWorkspaceFonts(productionBatchAccessToken);
+    renderLineControls(getActiveOrder()?.settings || readSettingsFromControls());
+    setFontEditorStatus("Font deleted from future selections.", "success");
+  } catch (error) {
+    setFontEditorStatus(error instanceof Error ? error.message : "Unable to delete font.", "error");
   }
 }
 
@@ -5647,6 +5787,18 @@ async function captureActiveOrder({ advanceToNext = false } = {}) {
     if (nextUncaptured) {
       selectOrder(nextUncaptured.id);
     }
+  }
+
+  if (!previousCompletedBuild && !order.savedSettingsSignature) {
+    await saveBatchSnapshotToRemote({
+      persistActiveDraft: false,
+      publishOrderIds: [order.id],
+      successMessage: `Production batch saved at ${new Date().toLocaleTimeString([], {
+        hour: "numeric",
+        minute: "2-digit",
+      })}.`,
+      successAlertAutoHideMs: 8000,
+    });
   }
 
   try {
@@ -7007,6 +7159,23 @@ orderWorkspaceButton.addEventListener("click", () => {
 presetWorkspaceButton.addEventListener("click", () => {
   setActiveWorkspace("presets");
 });
+fontWorkspaceButton.addEventListener("click", () => {
+  setActiveWorkspace("fonts");
+});
+newFontUploadButton?.addEventListener("click", () => {
+  fontFileInput.dataset.mode = "create";
+  fontFileInput.click();
+});
+replaceFontButton?.addEventListener("click", () => {
+  fontFileInput.dataset.mode = "replace";
+  fontFileInput.click();
+});
+fontFileInput?.addEventListener("change", () => {
+  void handleFontFileSelection(fontFileInput.dataset.mode === "replace" ? "replace" : "create");
+});
+deleteFontButton?.addEventListener("click", () => {
+  void handleDeleteSelectedFont();
+});
 sizeGuideWorkspaceButton.addEventListener("click", () => {
   setActiveWorkspace("sizeGuides");
 });
@@ -7264,6 +7433,7 @@ renderSizePresetEditorPreview();
 renderPresetEditorDraft();
 updateBackingOutput();
 productionBatchAccessToken = await bootstrapProductionBatchAccess();
+void refreshWorkspaceFonts(productionBatchAccessToken);
 const restoredBatch = productionBatchAccessToken
   ? await restoreInitialBatchState(productionBatchAccessToken)
   : { source: null, count: 0 };

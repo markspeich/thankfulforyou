@@ -1,4 +1,5 @@
 import json
+import hashlib
 import os
 import sys
 import tempfile
@@ -296,16 +297,21 @@ def resolve_font_candidates(root, font_ref):
 
 def cache_remote_font(font_ref):
     asset_base_url = os.environ.get("THANKFULFORYOU_ASSET_BASE_URL", "").strip()
-    if not asset_base_url or not font_ref or not str(font_ref).startswith("public/fonts/"):
+    font_ref = str(font_ref or "")
+    is_absolute_url = font_ref.startswith("https://") or font_ref.startswith("http://")
+    is_local_public_font = font_ref.startswith("public/fonts/")
+    if not font_ref or (not is_absolute_url and (not asset_base_url or not is_local_public_font)):
         return None
 
     cache_dir = Path(tempfile.gettempdir()) / "thankfulforyou-fonts"
     cache_dir.mkdir(parents=True, exist_ok=True)
-    cache_path = cache_dir / Path(font_ref).name
+    cache_name = hashlib.sha256(font_ref.encode("utf-8")).hexdigest()
+    suffix = Path(urllib.parse.urlparse(font_ref).path).suffix or Path(font_ref).suffix or ".otf"
+    cache_path = cache_dir / f"{cache_name}{suffix}"
     if cache_path.exists():
         return cache_path
 
-    font_url = urllib.parse.urljoin(f"{asset_base_url.rstrip('/')}/", urllib.parse.quote(font_ref))
+    font_url = font_ref if is_absolute_url else urllib.parse.urljoin(f"{asset_base_url.rstrip('/')}/", urllib.parse.quote(font_ref))
     headers = {}
     asset_cookie = os.environ.get("THANKFULFORYOU_ASSET_REQUEST_COOKIE", "").strip()
     protection_bypass = (

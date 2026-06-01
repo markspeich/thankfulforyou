@@ -113,23 +113,30 @@ const server = createServer(async (request, response) => {
     return;
   }
 
-  if (requestUrl.pathname === "/api/batch-session" || requestUrl.pathname === "/api/production-batch") {
-    const bodyText = request.method === "PUT" ? await readRequestBody(request) : "";
+  if (
+    requestUrl.pathname === "/api/batch-session"
+    || requestUrl.pathname === "/api/production-batch"
+    || requestUrl.pathname === "/api/fonts"
+  ) {
+    const bodyText = request.method === "PUT" || request.method === "POST" ? await readRequestBody(request) : "";
     let payload = undefined;
 
     if (bodyText) {
       try {
         payload = JSON.parse(bodyText);
       } catch {
-        sendJson(response, 400, { error: "Production batch payload must be valid JSON." });
+        sendJson(response, 400, { error: "API payload must be valid JSON." });
         return;
       }
     }
 
     try {
-      const modulePath = requestUrl.pathname === "/api/batch-session"
-        ? "../api/batch-session.js"
-        : "../api/production-batch.js";
+      const modulePathByPathname = {
+        "/api/batch-session": "../api/batch-session.js",
+        "/api/production-batch": "../api/production-batch.js",
+        "/api/fonts": "../api/fonts.js",
+      };
+      const modulePath = modulePathByPathname[requestUrl.pathname];
       const { default: handler } = await import(modulePath);
       const req = {
         method: request.method,

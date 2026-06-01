@@ -331,14 +331,17 @@ test("switches between order items, presets, and size guides from the left nav",
   const appShell = page.locator(".app-shell");
   const ordersWorkspace = page.locator("#ordersWorkspace");
   const presetsWorkspace = page.locator("#presetsWorkspace");
+  const fontsWorkspace = page.locator("#fontsWorkspace");
   const sizeGuideWorkspace = page.locator("#sizeGuideWorkspace");
   const editorPanel = page.getByLabel("Selected design editor");
 
   await expect(page.getByRole("button", { name: "Production Batch" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Presets" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Fonts" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Size Guides" })).toBeVisible();
   await expect(ordersWorkspace).toBeVisible();
   await expect(presetsWorkspace).toBeHidden();
+  await expect(fontsWorkspace).toBeHidden();
   await expect(sizeGuideWorkspace).toBeHidden();
   await expect(editorPanel).toHaveClass(/is-hidden/);
 
@@ -346,22 +349,65 @@ test("switches between order items, presets, and size guides from the left nav",
   await expect(ordersWorkspace).toBeHidden();
   await expect(page.getByRole("region", { name: "Preset editor workspace" })).toBeVisible();
   await expect(presetsWorkspace).toBeVisible();
+  await expect(fontsWorkspace).toBeHidden();
   await expect(sizeGuideWorkspace).toBeHidden();
+
+  await page.getByRole("button", { name: "Fonts" }).click();
+  await expect(ordersWorkspace).toBeHidden();
+  await expect(presetsWorkspace).toBeHidden();
+  await expect(fontsWorkspace).toBeVisible();
+  await expect(page.getByRole("region", { name: "Fonts workspace" })).toBeVisible();
+  await expect(fontsWorkspace.getByRole("heading", { name: "Fonts" })).toBeVisible();
+  await expect(fontsWorkspace.getByRole("button", { name: /Candlepin Laser/ })).toBeVisible();
+  await expect(fontsWorkspace.getByRole("button", { name: "Delete font" })).toBeDisabled();
 
   await page.getByRole("button", { name: "Size Guides" }).click();
   await expect(ordersWorkspace).toBeHidden();
   await expect(presetsWorkspace).toBeHidden();
+  await expect(fontsWorkspace).toBeHidden();
   await expect(sizeGuideWorkspace).toBeVisible();
   await expect(page.getByRole("region", { name: "Size guides workspace" })).toBeVisible();
 
   await page.getByRole("button", { name: "Production Batch" }).click();
   await expect(page.getByRole("region", { name: "Order items workspace" })).toBeVisible();
   await expect(page.getByRole("region", { name: "Preset editor workspace" })).toBeHidden();
+  await expect(fontsWorkspace).toBeHidden();
   await expect(sizeGuideWorkspace).toBeHidden();
   await expect(editorPanel).toHaveClass(/is-hidden/);
 
   await page.getByRole("button", { name: "Collapse navigation" }).click();
   await expect(appShell).toHaveAttribute("data-nav-collapsed", "true");
+});
+
+test("loads workspace fonts into the Fonts workspace and line controls", async ({ page }) => {
+  await page.route("**/api/fonts**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify({
+        fonts: [
+          {
+            id: "font-clinic-sans",
+            display_name: "Clinic Sans",
+            family_name: "ClinicSans",
+            public_url: "public/fonts/Candlepin-Laser.otf",
+            file_format: "otf",
+            version: 1,
+            is_builtin: false,
+            deleted_at: null,
+          },
+        ],
+      }),
+    });
+  });
+
+  await page.goto("/");
+
+  await clickBatchAction(page, "Add Design");
+  await page.getByRole("textbox", { name: "Design Text" }).fill("Nurse Joy");
+  await expect(page.locator('[data-line-index="0"] [data-setting="fontId"]')).toContainText("Clinic Sans");
+  await page.getByRole("button", { name: "Fonts" }).click();
+  await expect(page.locator("#fontsWorkspace").getByRole("button", { name: /Clinic Sans/ })).toBeVisible();
 });
 
 test("shows size guides in the Size Guides workspace", async ({ page }) => {
