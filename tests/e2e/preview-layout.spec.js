@@ -2113,6 +2113,230 @@ test("downgrades an abandoned first-time in-flight analysis to a retryable draft
   await page.unrouteAll({ behavior: "ignoreErrors" });
 });
 
+test("does not publish first-time in-flight analysis as a completed remote design", async ({ page }) => {
+  await page.route("**/api/layout-analyze", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify(buildMockAnalysisResponse()),
+    });
+  });
+
+  await page.locator("#textInput").fill("Savannah\nRN");
+  await completeButton(page).click();
+
+  await expectSavedProductionBatchSnapshot(page, (snapshot) => {
+    const [order] = snapshot?.orderItems || [];
+    return order
+      && order.text === "Savannah\nRN"
+      && order.status === "in-progress"
+      && order.cachedBuild === null
+      && order.savedSettingsSignature === null
+      && order.completedSettingsSignature === null
+      && order.analysisBadge === null
+      && order.pendingAnalysisSignature === null;
+  });
+
+  const row = page.locator("#orderList .order-row").filter({ hasText: "Design 1" });
+  await expect(row).toContainText("Complete", { timeout: 20000 });
+  await expectSavedProductionBatchSnapshot(page, (snapshot) => {
+    const [order] = snapshot?.orderItems || [];
+    return order
+      && order.status === "captured"
+      && order.cachedBuild?.analysis?.connectedComponentCount === 1
+      && typeof order.savedSettingsSignature === "string"
+      && order.pendingAnalysisSignature === null;
+  });
+
+  await page.reload();
+  await expect(page.locator("#importStatus")).toBeHidden();
+  await expect(row).toContainText("Complete");
+  await expect(exportDesignButton(page)).toBeEnabled();
+
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+});
+
+test("keeps completed save newer than a delayed draft autosave", async ({ page }) => {
+  await page.route("**/api/layout-analyze", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify(buildMockAnalysisResponse()),
+    });
+  });
+  await page.unroute("**/api/production-batch");
+
+  let savedProductionBatchSnapshot = productionBatchSnapshots.get(page);
+  const productionBatchSavePayloads = [];
+  await page.route("**/api/production-batch?batchId=batch-1", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify(savedProductionBatchSnapshot),
+    });
+  });
+  await page.route("**/api/production-batch", async (route) => {
+    if (route.request().method() !== "PUT") {
+      await route.fallback();
+      return;
+    }
+
+    const requestSnapshot = route.request().postDataJSON()?.snapshot;
+    productionBatchSavePayloads.push(requestSnapshot);
+    if (productionBatchSavePayloads.length === 1) {
+      await page.waitForTimeout(700);
+    }
+    savedProductionBatchSnapshot = requestSnapshot || savedProductionBatchSnapshot;
+    productionBatchSnapshots.set(page, savedProductionBatchSnapshot);
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify(savedProductionBatchSnapshot),
+    });
+  });
+
+  await page.locator("#textInput").fill("Savannah\nRN");
+  await expect.poll(() => productionBatchSavePayloads.length).toBe(1);
+  await completeButton(page).click();
+
+  const row = page.locator("#orderList .order-row").filter({ hasText: "Design 1" });
+  await expect(row).toContainText("Complete", { timeout: 20000 });
+  await expect.poll(() => productionBatchSavePayloads.length).toBe(2);
+  await expectSavedProductionBatchSnapshot(page, (snapshot) => {
+    const [order] = snapshot?.orderItems || [];
+    return order
+      && order.status === "captured"
+      && order.cachedBuild?.analysis?.connectedComponentCount === 1
+      && typeof order.savedSettingsSignature === "string"
+      && order.pendingAnalysisSignature === null;
+  });
+
+  await page.reload();
+  await expect(page.locator("#importStatus")).toBeHidden();
+  await expect(row).toContainText("Complete");
+  await expect(exportDesignButton(page)).toBeEnabled();
+
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+});
+
+test("downgrades stale exported state when restored settings no longer match saved geometry", async ({ page }) => {
+  await page.locator("#textInput").fill("Savannah\nRN");
+  await completeDesign(page, "Design 1");
+  const currentSnapshot = productionBatchSnapshots.get(page);
+  const [savedOrder] = currentSnapshot.orderItems;
+  const staleExportedOrder = {
+    ...savedOrder,
+    status: "exported",
+    text: "Savannah\nRN",
+    settings: {
+      ...savedOrder.settings,
+      text: "Savannah\nRN",
+      backingMm: Number(savedOrder.settings.backingMm) + 0.4,
+    },
+  };
+  productionBatchSnapshots.set(page, {
+    ...currentSnapshot,
+    orderItems: [staleExportedOrder],
+  });
+  await page.route("**/api/production-batch?batchId=batch-1", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify(productionBatchSnapshots.get(page)),
+    });
+  });
+
+  await page.reload();
+
+  const row = page.locator("#orderList .order-row").filter({ hasText: "Design 1" });
+  await expect(page.locator("#importStatus")).toBeHidden();
+  await expect(row).toContainText("In progress");
+  await expect(row).not.toContainText("Exported");
+  await expect(completeButton(page)).toBeEnabled();
+  await expect(exportDesignButton(page)).toBeDisabled();
+});
+
+test("restores modified exported designs as complete rather than exported after saving", async ({ page }) => {
+  await page.route("**/api/export-svg", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "image/svg+xml; charset=utf-8",
+      body: "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>",
+    });
+  });
+  await page.route("**/api/layout-analyze", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify(buildMockAnalysisResponse()),
+    });
+  });
+
+  await page.locator("#textInput").fill("Savannah\nRN");
+  await completeDesign(page, "Design 1");
+  const row = page.locator("#orderList .order-row").filter({ hasText: "Design 1" });
+  await clickEditorToolButton(page, "#downloadButton");
+  await expect(row).toContainText("Exported");
+
+  await page.locator("#backingInput").fill("3.7");
+  await expect(row).toContainText("In progress");
+  await completeButton(page).click();
+  await expect(row).toContainText("Complete", { timeout: 20000 });
+  await expect(row).not.toContainText("Exported");
+  await expectSavedProductionBatchSnapshot(page, (snapshot) => {
+    const [order] = snapshot?.orderItems || [];
+    return order
+      && order.status === "captured"
+      && order.settings?.backingMm === 3.7
+      && order.cachedBuild?.analysis?.connectedComponentCount === 1;
+  });
+
+  await page.reload();
+  await expect(page.locator("#importStatus")).toBeHidden();
+  await expect(row).toContainText("Complete");
+  await expect(row).not.toContainText("Exported");
+  await expect(exportDesignButton(page)).toBeEnabled();
+
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+});
+
+test("shows a row save error when completed analysis cannot be persisted", async ({ page }) => {
+  await page.route("**/api/layout-analyze", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify(buildMockAnalysisResponse()),
+    });
+  });
+  await page.route("**/api/production-batch", async (route) => {
+    if (route.request().method() !== "PUT") {
+      await route.fallback();
+      return;
+    }
+
+    await route.fulfill({
+      status: 500,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify({ error: "forced persistence failure" }),
+    });
+  });
+
+  await page.locator("#textInput").fill("Savannah\nRN");
+  await completeButton(page).click();
+
+  const row = page.locator("#orderList .order-row").filter({ hasText: "Design 1" });
+  await expect(row.locator(".order-analysis-indicator.error")).toBeVisible({ timeout: 20000 });
+  await expect(row.locator(".order-analysis-indicator.ok")).toHaveCount(0);
+  await expect(row.locator(".order-analysis-indicator.error")).toHaveAttribute("title", /Save failed:/);
+  await expect(completeButton(page)).toBeEnabled();
+  await expect(exportDesignButton(page)).toBeDisabled();
+  await expect(page.locator("#importStatus")).toContainText("forced persistence failure");
+  await expect(page.locator("#importStatus")).toHaveAttribute("data-state", "error");
+
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+});
+
 test("clears stale saved geometry signatures that have no completed build after refresh", async ({ page }) => {
   await page.locator("#textInput").fill("Savannah\nRN");
   await page.evaluate(() => {

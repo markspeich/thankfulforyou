@@ -697,7 +697,7 @@ function normalizeStoredAnalysisBadge(analysisBadge) {
   }
 
   const state = analysisBadge.state;
-  if (state !== "running" && state !== "ok" && state !== "warning") {
+  if (state !== "running" && state !== "ok" && state !== "warning" && state !== "error") {
     return null;
   }
 
@@ -2535,7 +2535,7 @@ function hydrateStoredOrder(order, index) {
     if (status === "captured" || status === "exported" || analysisBadge?.state === "running") {
       analysisBadge = buildCompletedAnalysisBadge(savedCompletedBuild.analysis);
     }
-  } else if (!settingsSignatureMatches(settings, savedSettingsSignature) && status !== "exported") {
+  } else if (!settingsSignatureMatches(settings, savedSettingsSignature)) {
     status = "in-progress";
     analysisBadge = null;
   }
@@ -2576,6 +2576,7 @@ function hydrateStoredOrder(order, index) {
     savedSettingsSignature,
     completedSettingsSignature,
     analysisBadge,
+    saveErrorMessage: null,
     analysisState: "idle",
     pendingAnalysisSignature: null,
     pendingAnalysisRequestId: null,
@@ -2680,6 +2681,18 @@ function isOrderAwaitingPublishedSave(order) {
   );
 }
 
+function buildSerializedDraftOrderForPendingAnalysis(order) {
+  const draftOrder = buildSerializedBatchOrder(order);
+  draftOrder.status = "in-progress";
+  draftOrder.cachedBuild = null;
+  draftOrder.previousCompletedBuild = null;
+  draftOrder.savedSettingsSignature = null;
+  draftOrder.completedSettingsSignature = null;
+  draftOrder.analysisBadge = null;
+  draftOrder.pendingAnalysisSignature = null;
+  return draftOrder;
+}
+
 function shouldUsePublishedProductionBatchOrder(order) {
   if (!order?.publishedSnapshot) {
     return false;
@@ -2703,6 +2716,10 @@ function buildProductionBatchSnapshot(options = {}) {
 
       if (shouldUsePublishedProductionBatchOrder(order)) {
         return structuredClone(order.publishedSnapshot);
+      }
+
+      if (isOrderAwaitingPublishedSave(order)) {
+        return buildSerializedDraftOrderForPendingAnalysis(order);
       }
 
       return buildSerializedBatchOrder(order);
@@ -2817,8 +2834,60 @@ function resolveProductionBatchSaveOrderIds(publishOrderIds) {
   }
 
   return orders
-    .filter((order) => hasUnsavedPublishedSnapshotChanges(order) || isOrderAwaitingPublishedSave(order))
+    .filter((order) => {
+      if (!order.publishedSnapshot) {
+        return true;
+      }
+
+      if (hasUnsavedPublishedSnapshotChanges(order) || isOrderAwaitingPublishedSave(order)) {
+        return false;
+      }
+
+      return order.status !== order.publishedSnapshot.status;
+    })
     .map((order) => order.id);
+}
+
+function markSaveErrorForOrderIds(orderIds, message) {
+  const orderIdSet = new Set((Array.isArray(orderIds) ? orderIds : []).filter((value) => typeof value === "string" && value));
+  if (!orderIdSet.size) {
+    return;
+  }
+
+  const saveErrorMessage = typeof message === "string" && message.trim()
+    ? message.trim()
+    : "Unable to save this design.";
+  orders.forEach((order) => {
+    if (orderIdSet.has(order.id)) {
+      order.saveErrorMessage = saveErrorMessage;
+    }
+  });
+  if (activeOrderItemId && orderIdSet.has(activeOrderItemId)) {
+    updateConnectionStatus(
+      "warning",
+      "Save failed",
+      saveErrorMessage,
+      {
+        state: "error",
+        shortLabel: "!",
+        fullLabel: `Save failed: ${saveErrorMessage}`,
+      },
+    );
+  }
+  scheduleRenderOrderList();
+}
+
+function clearSaveErrorsForOrderIds(orderIds) {
+  const orderIdSet = new Set((Array.isArray(orderIds) ? orderIds : []).filter((value) => typeof value === "string" && value));
+  if (!orderIdSet.size) {
+    return;
+  }
+
+  orders.forEach((order) => {
+    if (orderIdSet.has(order.id)) {
+      order.saveErrorMessage = null;
+    }
+  });
 }
 
 function renderSizePresetList() {
@@ -3360,6 +3429,12 @@ function clearProductionBatchAutosaveTimeout() {
   }
 }
 
+async function waitForProductionBatchAutosaveIdle() {
+  while (productionBatchAutosaveInFlight) {
+    await new Promise((resolve) => window.setTimeout(resolve, 25));
+  }
+}
+
 async function flushProductionBatchAutosave(options = {}) {
   const { force = false, keepalive = false } = options;
   const allowConcurrentKeepalive = force && keepalive;
@@ -3504,7 +3579,9 @@ function applyPersistedBatchState(parsed) {
     ? parsed.activeOrderItemId
     : restoredOrders[0]?.id || null;
   restoredOrders.forEach((order) => {
-    syncOrderPresetFromListing(order, { force: true });
+    syncOrderPresetFromListing(order, {
+      force: typeof order.savedSettingsSignature !== "string",
+    });
   });
   return restoredOrders.length > 0;
 }
@@ -3618,19 +3695,20 @@ async function saveBatchSnapshotToRemote(options = {}) {
 
   if (!canSaveThroughProductionBatchConflict(publishOrderIds)) {
     renderProductionBatchToast();
-    return;
+    return false;
   }
 
   try {
     snapshot = buildProductionBatchSnapshot({ publishOrderIds });
     const snapshotKey = buildProductionBatchSaveKey(snapshot);
+    const changedOrderItemIds = resolveProductionBatchSaveOrderIds(publishOrderIds);
 
     if (!canAttemptProductionBatchSave() || !snapshot.batch?.id || !snapshot.batch?.workspaceId) {
-      return;
+      return false;
     }
 
     if (snapshotKey && snapshotKey === lastProductionBatchSaveKey) {
-      return;
+      return true;
     }
 
     const accessToken = await getAccessToken();
@@ -3639,11 +3717,12 @@ async function saveBatchSnapshotToRemote(options = {}) {
     }
     productionBatchAccessToken = accessToken;
 
-    const savedSnapshot = await saveProductionBatchSnapshot(snapshot, { keepalive, accessToken });
+    const savedSnapshot = await saveProductionBatchSnapshot(snapshot, { keepalive, accessToken, changedOrderItemIds });
     if (productionBatchConflictState) {
       renderProductionBatchToast();
-      return;
+      return false;
     }
+    clearSaveErrorsForOrderIds(changedOrderItemIds);
     if (savedSnapshot?.batch) {
       enableProductionBatchSync(savedSnapshot.batch);
     }
@@ -3658,7 +3737,7 @@ async function saveBatchSnapshotToRemote(options = {}) {
 
     if (isBatchSnapshotEmpty(savedSnapshot || snapshot)) {
       updateBatchSyncStatus("empty");
-      return;
+      return true;
     }
 
     if (typeof successMessage === "string" && successMessage.trim()) {
@@ -3667,18 +3746,22 @@ async function saveBatchSnapshotToRemote(options = {}) {
       });
     }
     updateBatchSyncStatus("saved-remote", { count: (savedSnapshot || snapshot).orderItems.length });
+    return true;
   } catch (error) {
     suppressProductionBatchAutosave = false;
     suppressBatchSyncLocalNotice = false;
     const isConflictError = error instanceof ProductionBatchConflictError;
     if (isConflictError) {
+      const conflictDetailOrderId = typeof error.details?.orderItemId === "string" && error.details.orderItemId
+        ? error.details.orderItemId
+        : typeof error.details?.orderId === "string" && error.details.orderId
+          ? error.details.orderId
+          : "";
       const fallbackConflictOrderId = resolveProductionBatchSaveOrderIds(publishOrderIds)[0] || "";
-      const conflictingOrder = orders.find((order) => order.id === error.details?.orderItemId)
+      const conflictingOrder = orders.find((order) => order.id === conflictDetailOrderId)
         || orders.find((order) => order.id === fallbackConflictOrderId)
         || getActiveOrder();
-      const conflictingOrderId = typeof error.details?.orderItemId === "string" && error.details.orderItemId
-        ? error.details.orderItemId
-        : conflictingOrder?.id || "";
+      const conflictingOrderId = conflictDetailOrderId || conflictingOrder?.id || "";
       if (conflictingOrder) {
         applyProductionBatchAuditToOrder(conflictingOrder, error.details);
       }
@@ -3688,16 +3771,18 @@ async function saveBatchSnapshotToRemote(options = {}) {
         auditSource: error.details && typeof error.details === "object" ? structuredClone(error.details) : null,
       };
       persistBatchState({ skipRemoteSave: true });
+      markSaveErrorForOrderIds([conflictingOrderId].filter(Boolean), "Production batch save conflict. Load the latest design before saving again.");
       renderProductionBatchToast();
-      return;
+      return false;
     }
 
     if (isProductionBatchAuthenticationError(error)) {
       const detail = "Production batch session expired. Sign in again to continue saving this batch.";
       handleProductionBatchAuthenticationRequired(detail);
       persistBatchState({ skipRemoteSave: true });
+      markSaveErrorForOrderIds(resolveProductionBatchSaveOrderIds(publishOrderIds), detail);
       updateWorkflowAlert(detail, "pending");
-      return;
+      return false;
     }
 
     if (degradeOnFailure && !isConflictError) {
@@ -3709,11 +3794,16 @@ async function saveBatchSnapshotToRemote(options = {}) {
       persistBatchState({ skipRemoteSave: true });
     }
     productionBatchConflictState = null;
+    markSaveErrorForOrderIds(
+      resolveProductionBatchSaveOrderIds(publishOrderIds),
+      error instanceof Error ? error.message : "Unable to save the production batch.",
+    );
     renderProductionBatchToast();
     updateWorkflowAlert(
       error instanceof Error ? error.message : "Unable to save the production batch.",
       "error",
     );
+    return false;
   }
 }
 
@@ -3888,6 +3978,7 @@ function createBatchItem({
     savedSettingsSignature: null,
     completedSettingsSignature: null,
     analysisBadge: null,
+    saveErrorMessage: null,
     analysisState: "idle",
     pendingAnalysisSignature: null,
     pendingAnalysisRequestId: null,
@@ -4435,6 +4526,11 @@ function renderAnalysisIndicator(container, analysisSummary) {
     count.className = "order-analysis-count";
     count.textContent = analysisSummary.shortLabel;
     container.append(count);
+  } else if (analysisSummary.state === "error") {
+    const icon = document.createElement("span");
+    icon.className = "order-analysis-icon";
+    icon.textContent = "!";
+    container.append(icon);
   }
 
   if (analysisSummary.fullLabel) {
@@ -4841,6 +4937,7 @@ function clearOrderCompletionState(order, settings = order?.settings) {
   order.savedSettingsSignature = null;
   order.completedSettingsSignature = null;
   order.analysisBadge = null;
+  order.saveErrorMessage = null;
   order.analysisState = "idle";
   order.pendingAnalysisSignature = null;
   order.pendingAnalysisRequestId = null;
@@ -4879,6 +4976,7 @@ function restoreOrderFromPublishedSnapshot(order) {
   order.savedSettingsSignature = snapshot.savedSettingsSignature;
   order.completedSettingsSignature = snapshot.completedSettingsSignature;
   order.analysisBadge = snapshot.analysisBadge ? structuredClone(snapshot.analysisBadge) : null;
+  order.saveErrorMessage = null;
   order.analysisState = "idle";
   order.pendingAnalysisSignature = null;
   order.pendingAnalysisRequestId = null;
@@ -4999,9 +5097,13 @@ function updateActiveOrderFromControls() {
     return;
   }
 
+  const previousSignature = buildSettingsSignature(order.settings);
   order.text = textInput.value;
   order.settings = getCurrentSettings();
   const currentSignature = buildSettingsSignature(order.settings);
+  if (currentSignature !== previousSignature) {
+    order.saveErrorMessage = null;
+  }
   const matchingCompletedBuild = getBuildForSignature(order, getSettingsSignatureCandidates(order.settings));
   const savedCompletedBuild = getBuildForSignature(order, order.savedSettingsSignature);
   const preservesPendingGeometry = order.pendingAnalysisSignature === currentSignature && !matchingCompletedBuild;
@@ -5071,6 +5173,7 @@ function getPendingAnalysisCompletionSignature(order, fallbackSignature = null) 
 function hasCompletedEditingState(order, settings = getCurrentSettings()) {
   return Boolean(
     order
+    && !order.saveErrorMessage
     && typeof order.completedSettingsSignature === "string"
     && settingsSignatureMatches(settings, order.completedSettingsSignature),
   );
@@ -5122,6 +5225,10 @@ function getSavedCachedBuild(order) {
 }
 
 function isOrderReadyForExport(order) {
+  if (order?.saveErrorMessage) {
+    return false;
+  }
+
   if (!getSavedCachedBuild(order)) {
     return false;
   }
@@ -5192,6 +5299,14 @@ function buildCompletedAnalysisBadge(analysis) {
 function getBatchAnalysisSummary(order) {
   if (!order) {
     return null;
+  }
+
+  if (order.saveErrorMessage) {
+    return {
+      state: "error",
+      shortLabel: "!",
+      fullLabel: `Save failed: ${order.saveErrorMessage}`,
+    };
   }
 
   if (order.analysisState === "running") {
@@ -5775,8 +5890,11 @@ async function captureActiveOrder({ advanceToNext = false } = {}) {
     shortLabel: "",
     fullLabel: "Analysis running",
   };
+  order.saveErrorMessage = null;
   order.status = "captured";
-  persistBatchState();
+  clearProductionBatchAutosaveTimeout();
+  productionBatchAutosavePending = false;
+  persistBatchState({ skipRemoteSave: true });
   renderOrderList();
 
   updateConnectionStatus(
@@ -5803,6 +5921,7 @@ async function captureActiveOrder({ advanceToNext = false } = {}) {
     const completionSignature = getPendingAnalysisCompletionSignature(order, signature);
     const shouldApplyCompletedAnalysis = isLatestAnalysisRequest
       && settingsSignatureMatches(order.settings, completionSignature);
+    let completedAnalysisPersisted = true;
 
     if (isLatestAnalysisRequest) {
       storeCachedBuild(order, completionSignature, layout, analysis);
@@ -5823,7 +5942,8 @@ async function captureActiveOrder({ advanceToNext = false } = {}) {
         order.previousCompletedBuild = null;
       }
 
-      await saveBatchSnapshotToRemote({
+      await waitForProductionBatchAutosaveIdle();
+      completedAnalysisPersisted = await saveBatchSnapshotToRemote({
         persistActiveDraft: false,
         publishOrderIds: [order.id],
         successMessage: `Production batch saved at ${new Date().toLocaleTimeString([], {
@@ -5832,11 +5952,17 @@ async function captureActiveOrder({ advanceToNext = false } = {}) {
         })}.`,
         successAlertAutoHideMs: 8000,
       });
+      if (!completedAnalysisPersisted && !order.saveErrorMessage) {
+        order.saveErrorMessage = "Unable to save this design.";
+        renderOrderList();
+      }
     }
 
     persistBatchState();
 
     if (
+      completedAnalysisPersisted
+      &&
       shouldApplyCompletedAnalysis
       && activeOrderItemId === order.id
       && settingsSignatureMatches(getCurrentSettings(), completionSignature)

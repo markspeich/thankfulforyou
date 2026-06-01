@@ -30,11 +30,50 @@ function normalizeRevision(value) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function findRevisionConflict(incomingSnapshot, currentSnapshot) {
+function normalizeChangedOrderItemIds(value) {
+  return Array.isArray(value)
+    ? value.filter((item) => typeof item === "string" && item.trim()).map((item) => item.trim())
+    : null;
+}
+
+function mergeSnapshotWithCurrentForUnchangedOrders(incomingSnapshot, currentSnapshot, changedOrderItemIds = null) {
+  if (!changedOrderItemIds || !currentSnapshot || !Array.isArray(incomingSnapshot?.orderItems) || !Array.isArray(currentSnapshot?.orderItems)) {
+    return incomingSnapshot;
+  }
+
+  const changedOrderItemIdSet = new Set(changedOrderItemIds);
+  const incomingOrderItemsById = new Map(
+    incomingSnapshot.orderItems
+      .filter((orderItem) => typeof orderItem?.id === "string" && orderItem.id.trim())
+      .map((orderItem) => [orderItem.id.trim(), orderItem]),
+  );
+
+  const mergedOrderItems = currentSnapshot.orderItems.map((currentOrderItem) => {
+    const orderItemId = typeof currentOrderItem?.id === "string" ? currentOrderItem.id.trim() : "";
+    return orderItemId && changedOrderItemIdSet.has(orderItemId) && incomingOrderItemsById.has(orderItemId)
+      ? incomingOrderItemsById.get(orderItemId)
+      : currentOrderItem;
+  });
+
+  for (const incomingOrderItem of incomingSnapshot.orderItems) {
+    const orderItemId = typeof incomingOrderItem?.id === "string" ? incomingOrderItem.id.trim() : "";
+    if (orderItemId && changedOrderItemIdSet.has(orderItemId) && !currentSnapshot.orderItems.some((currentOrderItem) => currentOrderItem?.id === orderItemId)) {
+      mergedOrderItems.push(incomingOrderItem);
+    }
+  }
+
+  return {
+    ...incomingSnapshot,
+    orderItems: mergedOrderItems,
+  };
+}
+
+function findRevisionConflict(incomingSnapshot, currentSnapshot, changedOrderItemIds = null) {
   if (!incomingSnapshot || !currentSnapshot || !Array.isArray(incomingSnapshot.orderItems) || !Array.isArray(currentSnapshot.orderItems)) {
     return null;
   }
 
+  const changedOrderItemIdSet = changedOrderItemIds ? new Set(changedOrderItemIds) : null;
   const currentOrderItemsById = new Map(
     currentSnapshot.orderItems
       .filter((orderItem) => typeof orderItem?.id === "string" && orderItem.id.trim())
@@ -43,6 +82,10 @@ function findRevisionConflict(incomingSnapshot, currentSnapshot) {
 
   for (const incomingOrderItem of incomingSnapshot.orderItems) {
     const orderItemId = typeof incomingOrderItem?.id === "string" ? incomingOrderItem.id.trim() : "";
+    if (changedOrderItemIdSet && !changedOrderItemIdSet.has(orderItemId)) {
+      continue;
+    }
+
     if (!orderItemId || !currentOrderItemsById.has(orderItemId)) {
       continue;
     }
@@ -91,7 +134,8 @@ export default async function handler(req, res) {
     }
 
     if (req.method === "PUT") {
-      const { snapshot } = readJsonBody(req);
+      const { snapshot, changedOrderItemIds: rawChangedOrderItemIds } = readJsonBody(req);
+      const changedOrderItemIds = normalizeChangedOrderItemIds(rawChangedOrderItemIds);
 
       if (!snapshot?.batch?.id || !snapshot?.batch?.workspaceId) {
         res.status(400).json({ error: "snapshot.batch.id and snapshot.batch.workspaceId are required." });
@@ -118,7 +162,8 @@ export default async function handler(req, res) {
         return;
       }
 
-      const revisionConflict = findRevisionConflict(snapshot, normalizeSnapshot(currentSnapshot));
+      const normalizedCurrentSnapshot = normalizeSnapshot(currentSnapshot);
+      const revisionConflict = findRevisionConflict(snapshot, normalizedCurrentSnapshot, changedOrderItemIds);
       if (revisionConflict) {
         res.status(409).json({
           error: "Revision conflict",
@@ -128,7 +173,8 @@ export default async function handler(req, res) {
       }
 
       const savedSnapshot = await saveProductionBatch({
-        snapshot,
+        snapshot: mergeSnapshotWithCurrentForUnchangedOrders(snapshot, normalizedCurrentSnapshot, changedOrderItemIds),
+        changedOrderItemIds,
         userId: req.auth.userId,
       });
 

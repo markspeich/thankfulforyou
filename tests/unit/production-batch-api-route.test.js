@@ -188,6 +188,7 @@ describe("production batch api route", () => {
 
     expect(saveProductionBatchMock).toHaveBeenCalledWith({
       snapshot,
+      changedOrderItemIds: null,
       userId: "user-1",
     });
     expect(response.statusCode).toBe(200);
@@ -195,6 +196,62 @@ describe("production batch api route", () => {
       batch: { id: "batch-1", workspaceId: "workspace-1", updatedBy: "user-1" },
       activeOrderItemId: "order-2",
       orderItems: [{ id: "order-2", revision: 4 }],
+    });
+  });
+
+  it("checks conflicts only for changed order items and preserves current unchanged rows", async () => {
+    resolveProductionBatchAuthMock.mockResolvedValue({
+      userId: "user-1",
+      workspaceId: "workspace-1",
+    });
+    loadProductionBatchMock.mockResolvedValue({
+      batch: { id: "batch-1", workspaceId: "workspace-1" },
+      activeOrderItemId: "order-2",
+      orderItems: [
+        { id: "order-1", revision: 9, text: "Current unchanged" },
+        { id: "order-2", revision: 4, text: "Current changed" },
+      ],
+    });
+    saveProductionBatchMock.mockResolvedValue({
+      batch: { id: "batch-1", workspaceId: "workspace-1" },
+      activeOrderItemId: "order-2",
+      orderItems: [
+        { id: "order-1", revision: 9, text: "Current unchanged" },
+        { id: "order-2", revision: 5, text: "Incoming changed" },
+      ],
+    });
+
+    const { default: handler } = await import("../../api/production-batch.js");
+    const response = createResponseRecorder();
+
+    await handler({
+      method: "PUT",
+      headers: { authorization: "Bearer token-1" },
+      body: {
+        changedOrderItemIds: ["order-2"],
+        snapshot: {
+          batch: { id: "batch-1", workspaceId: "workspace-1" },
+          activeOrderItemId: "order-2",
+          orderItems: [
+            { id: "order-1", revision: 1, text: "Stale unchanged" },
+            { id: "order-2", revision: 4, text: "Incoming changed" },
+          ],
+        },
+      },
+    }, response);
+
+    expect(response.statusCode).toBe(200);
+    expect(saveProductionBatchMock).toHaveBeenCalledWith({
+      changedOrderItemIds: ["order-2"],
+      userId: "user-1",
+      snapshot: {
+        batch: { id: "batch-1", workspaceId: "workspace-1" },
+        activeOrderItemId: "order-2",
+        orderItems: [
+          { id: "order-1", revision: 9, text: "Current unchanged" },
+          { id: "order-2", revision: 4, text: "Incoming changed" },
+        ],
+      },
     });
   });
 
