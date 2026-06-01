@@ -91,8 +91,13 @@ def fill_mask_holes(mask):
 
 
 def count_connected_components(mask):
-    width, height = mask.size
-    data = mask.tobytes()
+    bounds = mask.getbbox()
+    if not bounds:
+        return 0
+
+    cropped = mask.crop(bounds)
+    width, height = cropped.size
+    data = cropped.tobytes()
     visited = bytearray(width * height)
     component_count = 0
 
@@ -223,15 +228,19 @@ def polyline_closed_path(points, scale):
 
 
 def trace_mask_outline(mask, scale, tolerance_mm, smooth_iterations, curve_mode="quadratic"):
-    width, height = mask.size
+    bounds = mask.getbbox()
+    if not bounds:
+        return ""
+
+    left, top, right, bottom = bounds
     pixels = mask.load()
     edges = defaultdict(list)
 
     def filled(x, y):
-        return 0 <= x < width and 0 <= y < height and pixels[x, y] > 0
+        return left <= x < right and top <= y < bottom and pixels[x, y] > 0
 
-    for y in range(height):
-        for x in range(width):
+    for y in range(top, bottom):
+        for x in range(left, right):
             if not filled(x, y):
                 continue
             if not filled(x, y - 1):
@@ -393,30 +402,16 @@ def sanitize_text_token(value):
 
 
 def mask_bounds_mm(mask, scale):
-    width, height = mask.size
-    pixels = mask.load()
-    min_x = None
-    min_y = None
-    max_x = None
-    max_y = None
-
-    for y in range(height):
-        for x in range(width):
-            if pixels[x, y] <= 0:
-                continue
-            min_x = x if min_x is None else min(min_x, x)
-            min_y = y if min_y is None else min(min_y, y)
-            max_x = x if max_x is None else max(max_x, x)
-            max_y = y if max_y is None else max(max_y, y)
-
-    if min_x is None or min_y is None or max_x is None or max_y is None:
+    bounds = mask.getbbox()
+    if not bounds:
         return None
 
+    left, top, right, bottom = bounds
     return {
-        "left": min_x / scale,
-        "top": min_y / scale,
-        "width": (max_x + 1 - min_x) / scale,
-        "height": (max_y + 1 - min_y) / scale,
+        "left": left / scale,
+        "top": top / scale,
+        "width": (right - left) / scale,
+        "height": (bottom - top) / scale,
     }
 
 
