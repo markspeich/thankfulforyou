@@ -99,6 +99,15 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Preset creation and editing must not store order-specific text inside preset definitions.
 - Per-line preset and saved-order data must persist the `Lock Text Height` setting so reusable presets and restored batch items preserve which lines are protected from automatic fit resizing.
 - Allow font selection per line of text.
+- The app should provide a top-level left navigation item named `Fonts` for managing workspace fonts.
+- Font management should be workspace-wide so signed-in operators in the same Supabase workspace see and use the same uploaded fonts.
+- The `Fonts` workspace should allow uploading new font files from the operator's computer.
+- Uploaded fonts should be stored in Supabase so they remain available across sessions, operators, and deployments.
+- Uploaded fonts should be usable in order item designs and reusable presets anywhere the built-in production fonts are currently selectable.
+- The `Fonts` workspace should allow deleting uploaded fonts, with built-in production fonts protected from deletion.
+- Deleting an uploaded font should require an explicit in-app confirmation and should not silently break existing saved designs that already reference that font.
+- The `Fonts` workspace should allow overwriting an uploaded font by uploading a new version while keeping the same font identity for designs and presets that reference it.
+- Replacing an uploaded font should use a new stored file version rather than reusing the exact same asset path, so previews, analysis, export, and CDN caches can resolve the updated font reliably.
 - Allow horizontal-only stretching per line of text so operators can make a line wider without making it taller.
 - Per-line `Horizontal Stretch` controls should allow values up to `200%`.
 - Allow vertical-only stretching per line of text so operators can make a line taller without making it wider.
