@@ -16,6 +16,20 @@ The current app runs locally.
 npm start
 ```
 
+`npm start` uses the existing remote-compatible worktree setup: it prepares `.env.local` from the machine-local shared seed when needed, then serves the app with those environment variables.
+
+To explicitly run the app against the Supabase CLI local stack:
+
+```powershell
+npm run start:local
+```
+
+To explicitly run the app against the remote Supabase environment from `.env.local` or the machine-local shared seed:
+
+```powershell
+npm run start:remote
+```
+
 The local dev server picks a deterministic port for each worktree. In this worktree, the default URL is `http://127.0.0.1:4710`.
 
 To force a different port:
@@ -39,7 +53,9 @@ npm run test:e2e
 
 `npm run test:unit` does not hit Supabase or Postgres. Database-facing unit coverage uses mocks so the unit lane stays fast and does not require Docker.
 
-`npm run test:db` resets the local Supabase database from `supabase/migrations` and `supabase/seed.sql`, then runs the tests in `tests/db`. This command requires Docker Desktop and the local Supabase stack. It is intentionally separate from `npm test` so ordinary test runs do not unexpectedly reset local database state.
+`npm run test:db` and `npm run test:db:local` reset the local Supabase database from `supabase/migrations` and `supabase/seed.sql`, then run the tests in `tests/db`. These commands require Docker Desktop and the local Supabase stack. They are intentionally separate from `npm test` so ordinary test runs do not unexpectedly reset local database state.
+
+`npm run test:db:remote` runs the same DB integration tests against the remote Supabase environment from `.env.local` or the machine-local shared seed. It does not reset the remote database. The tests refuse to run against a non-local Supabase URL unless you explicitly set `TFY_ALLOW_REMOTE_DB_TESTS=1` for that command.
 
 `npm run test:e2e` now defaults to the current checkout's local dev server URL. It uses the same shared port helper as `npm start`, so each worktree targets its own local server automatically.
 
@@ -143,12 +159,18 @@ After startup, inspect the local URLs and keys:
 npx supabase status
 ```
 
-Use the printed values to point this checkout at local Supabase:
+The local-mode scripts read the printed values automatically through `npx supabase status --output env`:
 
 - `SUPABASE_URL`: local API URL, usually `http://127.0.0.1:54321`
 - `SUPABASE_PUBLISHABLE_KEY`: local anon key from `supabase status`
 - `SUPABASE_ANON_KEY`: same local anon key, when needed for compatibility
 - `SUPABASE_SERVICE_ROLE_KEY`: local service role key from `supabase status`
+
+Run the app against the local stack:
+
+```powershell
+npm run start:local
+```
 
 To rebuild the local database from committed migrations and seed data:
 
@@ -156,7 +178,7 @@ To rebuild the local database from committed migrations and seed data:
 npx supabase db reset --local
 ```
 
-`npm run test:db` runs this reset automatically before executing DB integration tests.
+`npm run test:db` and `npm run test:db:local` run this reset automatically before executing DB integration tests.
 
 The local seed creates the `Primary Batch` documented above. Auth users are not seeded automatically; create a local operator user through local Studio or the Auth API, then insert a `workspace_memberships` row for workspace `11111111-1111-4111-8111-111111111111` before exercising authenticated production-batch flows.
 
