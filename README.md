@@ -29,16 +29,21 @@ On Windows in this Codex worktree setup, keep the dev server running in a foregr
 
 ## Run Tests
 
-The project now has both fast unit tests for layout math and browser tests for the live preview.
+The project now has fast mocked unit tests, local database integration tests, and browser tests for the live preview.
 
 ```powershell
 npm run test:unit
+npm run test:db
 npm run test:e2e
 ```
 
+`npm run test:unit` does not hit Supabase or Postgres. Database-facing unit coverage uses mocks so the unit lane stays fast and does not require Docker.
+
+`npm run test:db` resets the local Supabase database from `supabase/migrations` and `supabase/seed.sql`, then runs the tests in `tests/db`. This command requires Docker Desktop and the local Supabase stack. It is intentionally separate from `npm test` so ordinary test runs do not unexpectedly reset local database state.
+
 `npm run test:e2e` now defaults to the current checkout's local dev server URL. It uses the same shared port helper as `npm start`, so each worktree targets its own local server automatically.
 
-Or run both:
+Or run the default unit and browser suites:
 
 ```powershell
 npm test
@@ -121,6 +126,39 @@ If the Supabase project has no auth users yet, create or invite an operator acco
 For local verification of production batch behavior, authenticate with a Supabase user that belongs to the target workspace before testing cross-browser restore, save conflicts, or recovery flows.
 
 The local `npm start` dev server now serves the browser auth module graph directly from `node_modules` for the unbundled app shell, so production batch sign-in and authenticated batch requests can be exercised locally against a real Supabase project.
+
+### Local Supabase Stack
+
+This repo is configured to run a local Supabase stack for development and future integration tests. The stack uses Docker through the Supabase CLI and applies the versioned schema in `supabase/migrations`.
+
+Start the local stack from the repo root:
+
+```powershell
+npx supabase start
+```
+
+After startup, inspect the local URLs and keys:
+
+```powershell
+npx supabase status
+```
+
+Use the printed values to point this checkout at local Supabase:
+
+- `SUPABASE_URL`: local API URL, usually `http://127.0.0.1:54321`
+- `SUPABASE_PUBLISHABLE_KEY`: local anon key from `supabase status`
+- `SUPABASE_ANON_KEY`: same local anon key, when needed for compatibility
+- `SUPABASE_SERVICE_ROLE_KEY`: local service role key from `supabase status`
+
+To rebuild the local database from committed migrations and seed data:
+
+```powershell
+npx supabase db reset --local
+```
+
+`npm run test:db` runs this reset automatically before executing DB integration tests.
+
+The local seed creates the `Primary Batch` documented above. Auth users are not seeded automatically; create a local operator user through local Studio or the Auth API, then insert a `workspace_memberships` row for workspace `11111111-1111-4111-8111-111111111111` before exercising authenticated production-batch flows.
 
 ### Playwright Targeting
 
