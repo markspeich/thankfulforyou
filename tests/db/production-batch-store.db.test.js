@@ -184,4 +184,86 @@ describe("production batch store database integration", () => {
     expect(orderItem).toEqual({ id: orderItemId });
     expect(design).toEqual({ order_item_id: orderItemId });
   });
+
+  it("saves a new active batch item after archived items preserved their old positions", async () => {
+    const suffix = Date.now().toString(36);
+    const batchId = "44444444-4444-4444-8444-444444444444";
+    const archivedOrderItemId = `db-test-archived-${suffix}`;
+    const activeOrderItemId = `db-test-active-${suffix}`;
+
+    await saveProductionBatch({
+      userId: null,
+      snapshot: {
+        batch: {
+          id: batchId,
+          workspaceId: PRIMARY_WORKSPACE_ID,
+          name: "Archive Position Batch",
+          status: "active",
+        },
+        activeOrderItemId: archivedOrderItemId,
+        orderItems: [{
+          id: archivedOrderItemId,
+          revision: 1,
+          text: "Old",
+          status: "captured",
+          source: { orderNumber: `ARCHIVED-${suffix}` },
+          settings: {
+            text: "Old",
+            presetId: "preset-c3e8a1d7f520",
+            boundingSizePresetId: "size-2-2x1-5",
+            lines: [{ fontId: "skywalk" }],
+          },
+        }],
+      },
+    });
+
+    await archiveProductionBatch({
+      batchId,
+      workspaceId: PRIMARY_WORKSPACE_ID,
+      userId: null,
+    });
+
+    const saved = await saveProductionBatch({
+      userId: null,
+      changedOrderItemIds: [activeOrderItemId],
+      snapshot: {
+        batch: {
+          id: batchId,
+          workspaceId: PRIMARY_WORKSPACE_ID,
+          name: "Archive Position Batch",
+          status: "active",
+        },
+        activeOrderItemId,
+        orderItems: [{
+          id: activeOrderItemId,
+          revision: 1,
+          text: "New",
+          status: "captured",
+          source: { orderNumber: `ACTIVE-${suffix}` },
+          settings: {
+            text: "New",
+            presetId: "preset-c3e8a1d7f520",
+            boundingSizePresetId: "size-2-2x1-5",
+            lines: [{ fontId: "somekind" }],
+          },
+        }],
+      },
+    });
+
+    expect(saved?.orderItems).toHaveLength(1);
+    expect(saved?.orderItems[0]?.id).toBe(activeOrderItemId);
+
+    const supabase = createSupabaseAdminClient();
+    const { data: batchItems, error } = await supabase
+      .from("batch_items")
+      .select("order_item_id, batch_position, status")
+      .eq("batch_id", batchId)
+      .order("batch_position", { ascending: true });
+
+    expect(error).toBeNull();
+    expect(batchItems).toEqual(expect.arrayContaining([
+      { order_item_id: archivedOrderItemId, batch_position: 0, status: "archived" },
+      { order_item_id: activeOrderItemId, batch_position: 0, status: "active" },
+    ]));
+  });
 });
