@@ -300,6 +300,9 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - The UI should show enough shared-state context for operators to avoid accidental overwrites, including at minimum who last updated a design and when.
 - Remote pre-production testing should support a Vercel preview deployment paired with a non-production Supabase environment such as a Supabase preview branch or staging project.
 - The repository should keep Supabase schema changes in versioned migration files so preview branches and future production promotions can reproduce the production batch backend reliably.
+- Local database-backed development and integration testing should use the Supabase CLI local stack, including local Postgres built from `supabase/migrations` and seeded through `supabase/seed.sql`, so tests do not require a hosted Supabase test project.
+- Local Supabase seed data should include the primary workspace and active production batch needed by production-batch flows, while auth users and workspace memberships may be created explicitly for each local testing scenario.
+- Database integration tests should live in a separate test lane from ordinary mocked unit tests, reset local Supabase from committed migrations and seed data before running, and cover persistence behavior that depends on real Postgres constraints, Supabase query behavior, or seeded schema shape.
 - In the selected-order editor, show the imported Etsy color as a read-only label directly below the `Design Text` field whenever imported color metadata is available.
 - In the selected-order editor, show the imported Etsy quantity as a read-only label directly below the `Color` label whenever imported quantity metadata is available.
 - If the imported color name contains the word `White`, highlight that displayed color name in the editor.
