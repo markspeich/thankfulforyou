@@ -51,6 +51,7 @@ import {
 } from "./layout-controls-clipboard.js";
 import { buildReloadedPresetSettings } from "./preset-selection.js";
 import {
+  archiveProductionBatch,
   fetchProductionBatchSnapshot,
   fetchBatchSession,
   ProductionBatchConflictError,
@@ -5761,17 +5762,17 @@ async function deleteOrder(orderId) {
   }
 }
 
-async function clearAllOrders() {
+async function archiveAllOrders() {
   saveActiveOrderDraft();
   if (!orders.length) {
     return;
   }
 
   const confirmed = await showConfirmationDialog({
-    title: "Clear Batch?",
+    title: "Archive Batch?",
     description: isProductionBatchSyncEnabled()
-      ? "Clear the current production batch in Supabase?"
-      : "Clear the current in-memory batch?",
+      ? "Archive the current production batch in Supabase? Archived designs stay in the database and are hidden from the active queue."
+      : "Archive the current in-memory batch?",
     confirmLabel: "Confirm",
     cancelLabel: "Keep Batch",
     isDanger: true,
@@ -5780,15 +5781,53 @@ async function clearAllOrders() {
     return;
   }
 
+  const previousOrders = orders.map((order) => structuredClone(order));
+  const previousActiveOrderItemId = activeOrderItemId;
+  const previousOrderSequence = orderSequence;
+
   orders.splice(0, orders.length);
   activeOrderItemId = null;
   orderSequence = 1;
   resetEditorToEmptyState();
-  persistBatchState();
+  renderOrderList();
+
+  let archivedRemoteSnapshot = null;
+  if (isProductionBatchSyncEnabled()) {
+    try {
+      const archiveBatchId = productionBatchContext.id;
+      const accessToken = productionBatchAccessToken || readProductionBatchAccessTokenOverride() || await getAccessToken();
+      productionBatchAccessToken = accessToken;
+      archivedRemoteSnapshot = await archiveProductionBatch(archiveBatchId, { accessToken });
+    } catch (error) {
+      orders.splice(0, orders.length, ...previousOrders);
+      activeOrderItemId = previousActiveOrderItemId;
+      orderSequence = previousOrderSequence;
+      if (activeOrderItemId) {
+        const restoredOrder = getActiveOrder();
+        if (restoredOrder) {
+          applySettings(restoredOrder.settings);
+        }
+      }
+      renderOrderList();
+      render();
+      updateWorkflowAlert(
+        error instanceof Error ? error.message : "Unable to archive the production batch.",
+        "error",
+      );
+      return;
+    }
+  }
+
+  productionBatchAutosavePending = false;
+  if (archivedRemoteSnapshot?.batch) {
+    enableProductionBatchSync(archivedRemoteSnapshot.batch);
+  }
+  lastProductionBatchSaveKey = buildProductionBatchSaveKey(archivedRemoteSnapshot || buildProductionBatchSnapshot());
+  persistBatchState({ skipRemoteSave: true });
   updateWorkflowAlert(
     isProductionBatchSyncEnabled()
-      ? "Production batch cleared in Supabase."
-      : "Batch cleared.",
+      ? "Production batch archived in Supabase."
+      : "Batch archived.",
     "pending",
   );
   renderOrderList();
@@ -7378,7 +7417,7 @@ navCollapseButton.addEventListener("click", () => {
 
 addOrderButton.addEventListener("click", addOrder);
 importClipboardButton.addEventListener("click", importFromClipboard);
-clearBatchButton.addEventListener("click", clearAllOrders);
+clearBatchButton.addEventListener("click", archiveAllOrders);
 showColorCountsButton?.addEventListener("click", openBatchColorCountsDialog);
 exportCompletedButton.addEventListener("click", exportAllOrders);
 copyCompletedButton.addEventListener("click", copyAllOrders);

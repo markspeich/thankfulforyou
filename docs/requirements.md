@@ -304,8 +304,9 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - In the selected-order editor, show the imported Etsy quantity as a read-only label directly below the `Color` label whenever imported quantity metadata is available.
 - If the imported color name contains the word `White`, highlight that displayed color name in the editor.
 - The app should provide a batch action to delete a single design without affecting the rest of the current batch.
-- The app should provide a batch-reset action to clear all batchd and persisted designs when the operator is ready to start a new batch.
-- Clearing all designs should also clear the corresponding hosted saved batch data in Supabase.
+- The app should provide an `Archive Batch` action when the operator is ready to start a new batch.
+- Archiving a batch should hide all current batch items from the active design queue after refresh while preserving the underlying hosted order-item and design records in Supabase for later retrieval.
+- Archived batch memberships should use `batch_items.status = 'archived'`; completed batch items that have not been archived should still appear in the active design queue after refresh.
 - In the selected-order editor, when imported listing title and 75 by 75 image data are available, show the listing title above the listing image and place both above the main text-entry controls.
 - SVG export should place the face text layer and offset backing layer side by side, with the backing layer to the right of the text layer.
 - In batch export SVG output, each order's face and backing paths should appear below the previous order's paths in a single vertically stacked file.

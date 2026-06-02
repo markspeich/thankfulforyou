@@ -93,3 +93,25 @@ export async function saveProductionBatchSnapshot(snapshot, options = {}) {
 
   return payload;
 }
+
+export async function archiveProductionBatch(batchId, options = {}) {
+  const { accessToken = null } = options;
+  const response = await fetch("/api/production-batch", {
+    method: "POST",
+    headers: buildAuthHeaders(accessToken, {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    }),
+    body: JSON.stringify({
+      action: "archive",
+      batchId,
+    }),
+  });
+  const payload = await readJsonOrFallback(response, {});
+
+  if (!response.ok) {
+    throw new Error(payload.error || "Unable to archive the production batch.");
+  }
+
+  return payload;
+}

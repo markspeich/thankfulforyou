@@ -119,7 +119,7 @@ create table if not exists public.batch_items (
   batch_id uuid not null references public.production_batches(id) on delete cascade,
   order_item_id text not null references public.order_items(id) on delete cascade,
   batch_position integer not null check (batch_position >= 0),
-  status text not null default 'active' check (status in ('active', 'skipped', 'completed', 'removed')),
+  status text not null default 'active' check (status in ('active', 'skipped', 'completed', 'archived')),
   added_at timestamptz not null default now(),
   added_by uuid references auth.users(id) on delete set null,
   unique (batch_id, order_item_id),

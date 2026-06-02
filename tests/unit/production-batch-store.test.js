@@ -18,6 +18,10 @@ function createSupabaseClientMock() {
 
 function createTableMock(table) {
   return {
+    update(payload) {
+      supabaseMock.calls.push({ table, operation: "update", payload });
+      return createUpdateChain();
+    },
     upsert(payload) {
       supabaseMock.calls.push({ table, operation: "upsert", payload });
 
@@ -59,9 +63,32 @@ function createDeleteChain() {
   };
 }
 
+function createUpdateChain() {
+  return {
+    eq() {
+      return this;
+    },
+    neq() {
+      return Promise.resolve({ error: null });
+    },
+    select() {
+      return this;
+    },
+    maybeSingle() {
+      return Promise.resolve({
+        data: { id: "batch-1" },
+        error: null,
+      });
+    },
+  };
+}
+
 function createSelectChain(table) {
   return {
     eq() {
+      return this;
+    },
+    neq() {
       return this;
     },
     in() {
@@ -221,5 +248,28 @@ describe("production batch store", () => {
     expect(batchItemsDelete).toBeUndefined();
     expect(batchItemsUpsert.payload).toHaveLength(1);
     expect(batchItemsUpsert.payload[0]).toMatchObject({ order_item_id: "order-2" });
+  });
+
+  it("archives batch memberships without deleting saved order or design records", async () => {
+    const { archiveProductionBatch } = await import("../../api/_lib/production-batch-store.js");
+
+    await archiveProductionBatch({
+      batchId: "batch-1",
+      workspaceId: "workspace-1",
+      userId: "user-1",
+    });
+
+    const batchUpdate = supabaseMock.calls.find((call) => call.table === "production_batches" && call.operation === "update");
+    const batchItemsUpdate = supabaseMock.calls.find((call) => call.table === "batch_items" && call.operation === "update");
+    const orderItemsDelete = supabaseMock.calls.find((call) => call.table === "order_items" && call.operation === "delete");
+    const designsDelete = supabaseMock.calls.find((call) => call.table === "designs" && call.operation === "delete");
+
+    expect(batchUpdate.payload).toMatchObject({
+      active_order_item_id: null,
+      updated_by: "user-1",
+    });
+    expect(batchItemsUpdate.payload).toEqual({ status: "archived" });
+    expect(orderItemsDelete).toBeUndefined();
+    expect(designsDelete).toBeUndefined();
   });
 });

@@ -49,6 +49,7 @@ export async function loadProductionBatch({ batchId, workspaceId }) {
     .select("order_item_id, batch_position, status")
     .eq("batch_id", batchId)
     .eq("workspace_id", workspaceId)
+    .neq("status", "archived")
     .order("batch_position", { ascending: true });
 
   if (batchItemsError) {
@@ -302,4 +303,42 @@ export async function saveProductionBatch({ snapshot, userId, changedOrderItemId
     batchId: snapshot.batch.id,
     workspaceId: snapshot.batch.workspaceId,
   });
+}
+
+export async function archiveProductionBatch({ batchId, workspaceId, userId }) {
+  const supabase = createSupabaseAdminClient();
+  const savedAt = new Date().toISOString();
+
+  const { data: batch, error: batchError } = await supabase
+    .from("production_batches")
+    .update({
+      active_order_item_id: null,
+      updated_at: savedAt,
+      updated_by: userId || null,
+    })
+    .eq("id", batchId)
+    .eq("workspace_id", workspaceId)
+    .select("id")
+    .maybeSingle();
+
+  if (batchError) {
+    throw batchError;
+  }
+
+  if (!batch) {
+    return null;
+  }
+
+  const { error: batchItemsError } = await supabase
+    .from("batch_items")
+    .update({ status: "archived" })
+    .eq("batch_id", batchId)
+    .eq("workspace_id", workspaceId)
+    .neq("status", "archived");
+
+  if (batchItemsError) {
+    throw batchItemsError;
+  }
+
+  return loadProductionBatch({ batchId, workspaceId });
 }

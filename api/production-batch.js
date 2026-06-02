@@ -1,5 +1,5 @@
 import { resolveProductionBatchAuth } from "./_lib/production-batch-auth.js";
-import { loadProductionBatch, saveProductionBatch } from "./_lib/production-batch-store.js";
+import { archiveProductionBatch, loadProductionBatch, saveProductionBatch } from "./_lib/production-batch-store.js";
 
 function readJsonBody(req) {
   if (req.body == null) {
@@ -34,6 +34,35 @@ function normalizeChangedOrderItemIds(value) {
   return Array.isArray(value)
     ? value.filter((item) => typeof item === "string" && item.trim()).map((item) => item.trim())
     : null;
+}
+
+function normalizeCaughtError(error) {
+  if (error instanceof Error) {
+    return {
+      message: error.message,
+      code: error.code ?? null,
+      details: error.details ?? null,
+      hint: error.hint ?? null,
+    };
+  }
+
+  if (error && typeof error === "object") {
+    return {
+      message: typeof error.message === "string" && error.message.trim()
+        ? error.message.trim()
+        : "Unexpected production batch error.",
+      code: typeof error.code === "string" ? error.code : null,
+      details: error.details ?? null,
+      hint: error.hint ?? null,
+    };
+  }
+
+  return {
+    message: "Unexpected production batch error.",
+    code: null,
+    details: null,
+    hint: null,
+  };
 }
 
 function mergeSnapshotWithCurrentForUnchangedOrders(incomingSnapshot, currentSnapshot, changedOrderItemIds = null) {
@@ -182,7 +211,36 @@ export default async function handler(req, res) {
       return;
     }
 
-    res.setHeader("Allow", "GET, PUT");
+    if (req.method === "POST") {
+      const { action, batchId: rawBatchId } = readJsonBody(req);
+      const batchId = typeof rawBatchId === "string" ? rawBatchId.trim() : "";
+
+      if (action !== "archive") {
+        res.status(400).json({ error: "Unsupported production batch action." });
+        return;
+      }
+
+      if (!batchId) {
+        res.status(400).json({ error: "batchId is required." });
+        return;
+      }
+
+      const savedSnapshot = await archiveProductionBatch({
+        batchId,
+        workspaceId: req.auth.workspaceId,
+        userId: req.auth.userId,
+      });
+
+      if (!savedSnapshot) {
+        res.status(404).json({ error: "Production batch not found." });
+        return;
+      }
+
+      res.status(200).json(normalizeSnapshot(savedSnapshot));
+      return;
+    }
+
+    res.setHeader("Allow", "GET, PUT, POST");
     res.status(405).json({ error: "Method not allowed." });
   } catch (error) {
     if (error?.statusCode && error?.expose) {
@@ -200,8 +258,13 @@ export default async function handler(req, res) {
       return;
     }
 
+    const normalizedError = normalizeCaughtError(error);
+    console.error("Production batch API error", normalizedError, error);
     res.status(500).json({
-      error: error instanceof Error ? error.message : "Unexpected production batch error.",
+      error: normalizedError.message,
+      ...(normalizedError.code ? { code: normalizedError.code } : {}),
+      ...(normalizedError.details ? { details: normalizedError.details } : {}),
+      ...(normalizedError.hint ? { hint: normalizedError.hint } : {}),
     });
   }
 }
