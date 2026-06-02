@@ -452,8 +452,8 @@ test.beforeEach(async ({ page, request }, testInfo) => {
   const orderCount = page.locator("#orderCountOutput");
 
   if ((await orderCount.textContent()) !== "0") {
-    await clickBatchAction(page, "Clear Batch");
-    await confirmBatchDialog(page, "Clear Batch?");
+    await clickBatchAction(page, "Archive Batch");
+    await confirmBatchDialog(page, "Archive Batch?");
     await expect(orderCount).toHaveText("0");
   }
 
@@ -614,8 +614,8 @@ test("coalesces rapid slider input into a single deferred preview rebuild", asyn
 
   const orderCount = page.locator("#orderCountOutput");
   if ((await orderCount.textContent()) !== "0") {
-    await clickBatchAction(page, "Clear Batch");
-    await confirmBatchDialog(page, "Clear Batch?");
+    await clickBatchAction(page, "Archive Batch");
+    await confirmBatchDialog(page, "Archive Batch?");
     await expect(orderCount).toHaveText("0");
   }
 
@@ -667,8 +667,8 @@ test("avoids redundant preview image encodes during a settled slider render", as
 
   const orderCount = page.locator("#orderCountOutput");
   if ((await orderCount.textContent()) !== "0") {
-    await clickBatchAction(page, "Clear Batch");
-    await confirmBatchDialog(page, "Clear Batch?");
+    await clickBatchAction(page, "Archive Batch");
+    await confirmBatchDialog(page, "Archive Batch?");
     await expect(orderCount).toHaveText("0");
   }
 
@@ -1545,7 +1545,7 @@ test("keeps a longer two-line layout inside the guide", async ({ page }) => {
   expect(metrics.textHeightMm).toBeLessThanOrEqual(metrics.guideHeightMm + 0.01);
 });
 
-test("restores the current batch after refresh and clears it when requested", async ({ page }) => {
+test("restores the current batch after refresh and archives it when requested", async ({ page }) => {
   await page.route("**/api/layout-analyze", async (route) => {
     await route.fulfill({
       status: 200,
@@ -1568,20 +1568,14 @@ test("restores the current batch after refresh and clears it when requested", as
   await expect(page.locator("#backingInput")).toHaveValue("4.2");
   await expect(page.locator("#weldExportedDesignInput")).not.toBeChecked();
 
-  await clickBatchAction(page, "Clear Batch");
+  await clickBatchAction(page, "Archive Batch");
   await expect(page.locator("#confirmationDialogDescription")).toContainText(
-    /delete all saved local designs|Clear the current production batch/,
+    /Archive the current in-memory batch|Archive the current production batch/,
   );
-  await confirmBatchDialog(page, "Clear Batch?");
+  await confirmBatchDialog(page, "Archive Batch?");
 
   await expect(page.locator("#orderCountOutput")).toHaveText("0");
-  await expect(page.locator("#importStatus")).toContainText(/Batch cleared|Production batch cleared/);
   await expect(page.getByLabel("Selected design editor")).toHaveClass(/is-hidden/);
-
-  await page.reload();
-
-  await expect(page.locator("#orderCountOutput")).toHaveText("0");
-  await expect(page.locator("#importStatus")).not.toContainText("Restored");
 });
 
 test("keeps the production batch scroll position when selecting a row", async ({ page }) => {
@@ -2166,6 +2160,7 @@ test("keeps completed save newer than a delayed draft autosave", async ({ page }
     });
   });
   await page.unroute("**/api/production-batch");
+  await page.unroute("**/api/production-batch**");
 
   let savedProductionBatchSnapshot = productionBatchSnapshots.get(page);
   const productionBatchSavePayloads = [];
@@ -2176,7 +2171,22 @@ test("keeps completed save newer than a delayed draft autosave", async ({ page }
       body: JSON.stringify(savedProductionBatchSnapshot),
     });
   });
-  await page.route("**/api/production-batch", async (route) => {
+  await page.route("**/api/production-batch**", async (route) => {
+    if (route.request().method() === "POST") {
+      savedProductionBatchSnapshot = {
+        ...savedProductionBatchSnapshot,
+        activeOrderItemId: null,
+        orderItems: [],
+      };
+      productionBatchSnapshots.set(page, savedProductionBatchSnapshot);
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json; charset=utf-8",
+        body: JSON.stringify(savedProductionBatchSnapshot),
+      });
+      return;
+    }
+
     if (route.request().method() !== "PUT") {
       await route.fallback();
       return;

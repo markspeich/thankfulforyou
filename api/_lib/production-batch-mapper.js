@@ -230,7 +230,9 @@ export function buildSnapshotFromProductionBatchRows({
     designLinesByDesignId.set(line.design_id, existing);
   }
 
-  const orderedBatchItems = [...batchItems].sort((first, second) => first.batch_position - second.batch_position);
+  const orderedBatchItems = [...batchItems]
+    .filter((batchItem) => batchItem?.status !== "archived")
+    .sort((first, second) => first.batch_position - second.batch_position);
   const restoredOrderItems = orderedBatchItems.flatMap((batchItem) => {
     const orderItem = orderItemById.get(batchItem.order_item_id);
     const design = designByOrderItemId.get(batchItem.order_item_id);

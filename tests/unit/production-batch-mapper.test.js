@@ -301,4 +301,34 @@ describe("production batch relational snapshot mapping", () => {
       ],
     });
   });
+
+  it("restores completed batch items and filters archived batch memberships", () => {
+    const snapshot = buildSnapshotFromProductionBatchRows({
+      batch: {
+        id: "batch-1",
+        workspace_id: "workspace-1",
+        active_order_item_id: "order-completed",
+      },
+      batchItems: [
+        { order_item_id: "order-completed", batch_position: 0, status: "completed" },
+        { order_item_id: "order-archived", batch_position: 1, status: "archived" },
+      ],
+      orderItems: [
+        { id: "order-completed", workspace_id: "workspace-1", source_json: {}, quantity: 1, revision: 2 },
+        { id: "order-archived", workspace_id: "workspace-1", source_json: {}, quantity: 1, revision: 3 },
+      ],
+      designs: [
+        { id: "design-completed", order_item_id: "order-completed", design_text: "Done", production_status: "saved" },
+        { id: "design-archived", order_item_id: "order-archived", design_text: "Archived", production_status: "saved" },
+      ],
+      designLines: [],
+    });
+
+    expect(snapshot.orderItems).toHaveLength(1);
+    expect(snapshot.orderItems[0]).toMatchObject({
+      id: "order-completed",
+      text: "Done",
+      status: "captured",
+    });
+  });
 });

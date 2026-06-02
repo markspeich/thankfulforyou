@@ -2,9 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const loadProductionBatchMock = vi.fn();
 const saveProductionBatchMock = vi.fn();
+const archiveProductionBatchMock = vi.fn();
 const resolveProductionBatchAuthMock = vi.fn();
 
 vi.mock("../../api/_lib/production-batch-store.js", () => ({
+  archiveProductionBatch: archiveProductionBatchMock,
   loadProductionBatch: loadProductionBatchMock,
   saveProductionBatch: saveProductionBatchMock,
 }));
@@ -39,6 +41,7 @@ beforeEach(() => {
   vi.resetModules();
   loadProductionBatchMock.mockReset();
   saveProductionBatchMock.mockReset();
+  archiveProductionBatchMock.mockReset();
   resolveProductionBatchAuthMock.mockReset();
 });
 
@@ -335,6 +338,108 @@ describe("production batch api route", () => {
     expect(response.body).toEqual({
       error: "Revision conflict",
       details: { orderItemId: "order-1" },
+    });
+  });
+
+  it("archives the current production batch for a valid POST request", async () => {
+    resolveProductionBatchAuthMock.mockResolvedValue({
+      userId: "user-1",
+      workspaceId: "workspace-1",
+    });
+    archiveProductionBatchMock.mockResolvedValue({
+      batch: { id: "batch-1", workspaceId: "workspace-1" },
+      activeOrderItemId: null,
+      orderItems: [],
+    });
+
+    const { default: handler } = await import("../../api/production-batch.js");
+    const response = createResponseRecorder();
+
+    await handler({
+      method: "POST",
+      headers: { authorization: "Bearer token-1" },
+      body: {
+        action: "archive",
+        batchId: "batch-1",
+      },
+    }, response);
+
+    expect(archiveProductionBatchMock).toHaveBeenCalledWith({
+      batchId: "batch-1",
+      workspaceId: "workspace-1",
+      userId: "user-1",
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toEqual({
+      batch: { id: "batch-1", workspaceId: "workspace-1" },
+      activeOrderItemId: null,
+      orderItems: [],
+    });
+  });
+
+  it("rejects unsupported POST actions", async () => {
+    resolveProductionBatchAuthMock.mockResolvedValue({
+      userId: "user-1",
+      workspaceId: "workspace-1",
+    });
+
+    const { default: handler } = await import("../../api/production-batch.js");
+    const response = createResponseRecorder();
+
+    await handler({
+      method: "POST",
+      headers: { authorization: "Bearer token-1" },
+      body: {
+        action: "delete",
+        batchId: "batch-1",
+      },
+    }, response);
+
+    expect(archiveProductionBatchMock).not.toHaveBeenCalled();
+    expect(response.statusCode).toBe(400);
+    expect(response.body).toEqual({
+      error: "Unsupported production batch action.",
+    });
+  });
+
+  it("returns Supabase-style object error details instead of a generic message", async () => {
+    const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    resolveProductionBatchAuthMock.mockResolvedValue({
+      userId: "user-1",
+      workspaceId: "workspace-1",
+    });
+    archiveProductionBatchMock.mockRejectedValue({
+      message: 'new row for relation "batch_items" violates check constraint "batch_items_status_check"',
+      code: "23514",
+      details: "Failing row contains archived status.",
+      hint: "Apply the archive batch migration.",
+    });
+
+    const { default: handler } = await import("../../api/production-batch.js");
+    const response = createResponseRecorder();
+
+    await handler({
+      method: "POST",
+      headers: { authorization: "Bearer token-1" },
+      body: {
+        action: "archive",
+        batchId: "batch-1",
+      },
+    }, response);
+
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      "Production batch API error",
+      expect.objectContaining({
+        code: "23514",
+      }),
+      expect.any(Object),
+    );
+    expect(response.statusCode).toBe(500);
+    expect(response.body).toEqual({
+      error: 'new row for relation "batch_items" violates check constraint "batch_items_status_check"',
+      code: "23514",
+      details: "Failing row contains archived status.",
+      hint: "Apply the archive batch migration.",
     });
   });
 
