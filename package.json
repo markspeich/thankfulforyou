@@ -12,7 +12,7 @@
     "start": "node tools/setup_worktree_env.mjs && node --watch tools/dev_server.mjs",
     "test": "npm run test:unit && npm run test:e2e",
     "test:unit": "vitest run",
-    "test:db": "node tools/setup_worktree_env.mjs && npx supabase db reset --local && vitest run --config vitest.db.config.js",
+    "test:db": "node tools/run_db_tests.mjs",
     "test:e2e": "playwright test",
     "test:e2e:preview": "node tools/run_playwright.mjs preview"
   },
