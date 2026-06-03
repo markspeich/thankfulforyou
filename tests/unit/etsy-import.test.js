@@ -1,9 +1,13 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   buildImportedBatchIdentity,
   parseImportedItems,
 } from "../../src/etsy-import.js";
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe("Etsy import parsing", () => {
   it("parses object payload items into normalized imported items", () => {
@@ -73,6 +77,26 @@ describe("Etsy import parsing", () => {
   });
 
   it("preserves malformed numeric HTML entities in personalization text", () => {
+    expect(parseImportedItems(JSON.stringify({
+      items: [{ personalization: "A &#999999999999; B" }],
+    }))).toMatchObject([
+      { text: "A &#999999999999; B" },
+    ]);
+  });
+
+  it("preserves malformed numeric HTML entities when document exists", () => {
+    const documentStub = {
+      createElement: vi.fn(() => {
+        return {
+          value: "",
+          set innerHTML(value) {
+            this.value = value.replace("&#999999999999;", "\ufffd");
+          },
+        };
+      }),
+    };
+    vi.stubGlobal("document", documentStub);
+
     expect(parseImportedItems(JSON.stringify({
       items: [{ personalization: "A &#999999999999; B" }],
     }))).toMatchObject([

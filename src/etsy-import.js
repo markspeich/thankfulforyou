@@ -36,12 +36,6 @@ function decodeCodePoint(entity, value, radix) {
 }
 
 function decodeHtmlEntities(value) {
-  if (typeof document !== "undefined" && document.createElement) {
-    const textarea = document.createElement("textarea");
-    textarea.innerHTML = value;
-    return textarea.value;
-  }
-
   return value.replace(HTML_ENTITY_PATTERN, (entity, name) => {
     const normalizedName = name.toLowerCase();
 
