@@ -361,7 +361,13 @@ export async function importWorkspaceOrderItems({
 }) {
   const importItems = Array.isArray(items) ? items : [];
   if (!importItems.length) {
-    return { orders: [], importedOrderItemIds: [] };
+    return {
+      orders: [],
+      importedOrderItemIds: [],
+      importedCount: 0,
+      addedToBatchCount: 0,
+      addedOrderItemIds: [],
+    };
   }
 
   if (target === "productionBatch" && !batchId) {
@@ -418,17 +424,27 @@ export async function importWorkspaceOrderItems({
   }
 
   const importedOrderItemIds = orderRows.map((row) => row.id);
+  let addedOrderItemIds = [];
   if (target === "productionBatch") {
-    await addOrderItemsToProductionBatch({
+    const addResult = await addOrderItemsToProductionBatch({
       workspaceId,
       userId,
       batchId,
       orderItemIds: importedOrderItemIds,
     });
+    addedOrderItemIds = Array.isArray(addResult?.addedOrderItemIds) ? addResult.addedOrderItemIds : [];
   }
 
-  return listWorkspaceOrders({
+  const ordersPayload = await listWorkspaceOrders({
     workspaceId,
     activeBatchId: target === "productionBatch" ? batchId : null,
   });
+
+  return {
+    ...ordersPayload,
+    importedOrderItemIds,
+    importedCount: importedOrderItemIds.length,
+    addedToBatchCount: target === "productionBatch" ? addedOrderItemIds.length : 0,
+    addedOrderItemIds,
+  };
 }

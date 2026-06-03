@@ -314,7 +314,7 @@ describe("orders store", () => {
     });
     const { importWorkspaceOrderItems } = await import("../../api/_lib/orders-store.js");
 
-    await importWorkspaceOrderItems({
+    const result = await importWorkspaceOrderItems({
       workspaceId: "workspace-1",
       userId: "user-1",
       target: "productionBatch",
@@ -365,13 +365,17 @@ describe("orders store", () => {
         letter_bridge_mm: 0.8,
       }),
     ]));
+    expect(result).toMatchObject({
+      importedCount: 2,
+      addedToBatchCount: 1,
+    });
   });
 
   it("imports order items to the orders workspace without inserting batch memberships", async () => {
     resetDb();
     const { importWorkspaceOrderItems } = await import("../../api/_lib/orders-store.js");
 
-    await importWorkspaceOrderItems({
+    const result = await importWorkspaceOrderItems({
       workspaceId: "workspace-1",
       userId: "user-1",
       target: "orders",
@@ -401,6 +405,10 @@ describe("orders store", () => {
       production_status: "draft",
     });
     expect(batchItemsUpsert).toBeUndefined();
+    expect(result).toMatchObject({
+      importedCount: 1,
+      addedToBatchCount: 0,
+    });
   });
 
   it("replaces old imported design lines when re-imported text has fewer lines", async () => {

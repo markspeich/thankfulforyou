@@ -215,6 +215,115 @@ describe("orders api route", () => {
     });
   });
 
+  it("adds grouped orders to a production batch and returns counts with refreshed orders", async () => {
+    resolveProductionBatchAuthMock.mockResolvedValue({
+      userId: "user-1",
+      workspaceId: "workspace-1",
+    });
+    addOrderGroupsToProductionBatchMock.mockResolvedValue({
+      addedOrderItemIds: ["item-1", "item-2"],
+    });
+    listWorkspaceOrdersMock.mockResolvedValue({
+      orders: [{ id: "order:1001", isInActiveBatch: true, items: [{ id: "item-1" }, { id: "item-2" }] }],
+    });
+
+    const { default: handler } = await import("../../api/orders.js");
+    const response = createResponseRecorder();
+
+    await handler({
+      method: "POST",
+      headers: { authorization: "Bearer token-1" },
+      body: {
+        action: "addOrdersToProductionBatch",
+        batchId: " batch-1 ",
+        orderIds: [" order:1001 ", "", "order:1002"],
+      },
+    }, response);
+
+    expect(addOrderGroupsToProductionBatchMock).toHaveBeenCalledWith({
+      workspaceId: "workspace-1",
+      userId: "user-1",
+      batchId: "batch-1",
+      orderIds: ["order:1001", "order:1002"],
+    });
+    expect(listWorkspaceOrdersMock).toHaveBeenCalledWith({
+      workspaceId: "workspace-1",
+      activeBatchId: "batch-1",
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toEqual({
+      importedOrderItemCount: 0,
+      addedOrderItemCount: 2,
+      orders: [{ id: "order:1001", isInActiveBatch: true, items: [{ id: "item-1" }, { id: "item-2" }] }],
+    });
+  });
+
+  it("rejects unsupported POST actions", async () => {
+    resolveProductionBatchAuthMock.mockResolvedValue({
+      userId: "user-1",
+      workspaceId: "workspace-1",
+    });
+
+    const { default: handler } = await import("../../api/orders.js");
+    const response = createResponseRecorder();
+
+    await handler({
+      method: "POST",
+      headers: { authorization: "Bearer token-1" },
+      body: { action: "deleteEverything" },
+    }, response);
+
+    expect(addOrderGroupsToProductionBatchMock).not.toHaveBeenCalled();
+    expect(addOrderItemsToProductionBatchMock).not.toHaveBeenCalled();
+    expect(importWorkspaceOrderItemsMock).not.toHaveBeenCalled();
+    expect(response.statusCode).toBe(400);
+    expect(response.body).toEqual({
+      error: "Unsupported orders action.",
+    });
+  });
+
+  it("returns 405 with allowed methods for unsupported methods", async () => {
+    resolveProductionBatchAuthMock.mockResolvedValue({
+      userId: "user-1",
+      workspaceId: "workspace-1",
+    });
+
+    const { default: handler } = await import("../../api/orders.js");
+    const response = createResponseRecorder();
+
+    await handler({
+      method: "DELETE",
+      headers: { authorization: "Bearer token-1" },
+    }, response);
+
+    expect(response.statusCode).toBe(405);
+    expect(response.headers).toEqual({ Allow: "GET, POST" });
+    expect(response.body).toEqual({
+      error: "Method not allowed.",
+    });
+  });
+
+  it("returns exposed auth errors without loading orders", async () => {
+    resolveProductionBatchAuthMock.mockRejectedValue(Object.assign(new Error("Shared workspace access denied."), {
+      statusCode: 403,
+      expose: true,
+    }));
+
+    const { default: handler } = await import("../../api/orders.js");
+    const response = createResponseRecorder();
+
+    await handler({
+      method: "GET",
+      headers: { authorization: "Bearer token-1" },
+    }, response);
+
+    expect(listWorkspaceOrdersMock).not.toHaveBeenCalled();
+    expect(response.statusCode).toBe(403);
+    expect(response.body).toEqual({
+      error: "Shared workspace access denied.",
+    });
+  });
+
   it("rejects production batch imports without a batch id", async () => {
     resolveProductionBatchAuthMock.mockResolvedValue({
       userId: "user-1",
