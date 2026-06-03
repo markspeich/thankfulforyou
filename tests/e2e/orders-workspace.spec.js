@@ -145,7 +145,11 @@ test("renders grouped database orders and selected order item cards", async ({ p
   await installProductionBatchRoutes(page);
   await installOrdersWorkspaceRoutes(page);
 
+  const batchReady = page.waitForResponse((response) => (
+    response.url().includes("/api/production-batch?batchId=batch-1") && response.status() === 200
+  ));
   await page.goto("/");
+  await batchReady;
   await page.getByRole("button", { name: "Orders", exact: true }).click();
 
   const ordersWorkspace = page.getByRole("region", { name: "Orders workspace" });

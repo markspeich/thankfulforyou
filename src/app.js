@@ -4175,6 +4175,45 @@ function registerOutsideDismissableDetailsMenu(menu) {
   });
 }
 
+function closeOpenDatabaseOrderItemMenus(exceptMenu = null) {
+  databaseOrdersWorkspace?.querySelectorAll(".database-order-item-menu[open]").forEach((menu) => {
+    if (menu !== exceptMenu) {
+      closeDetailsMenu(menu);
+    }
+  });
+}
+
+function registerDatabaseOrderItemMenuDismissal(container) {
+  if (!(container instanceof HTMLElement)) {
+    return;
+  }
+
+  document.addEventListener("pointerdown", (event) => {
+    const target = event.target;
+    if (!(target instanceof Node)) {
+      return;
+    }
+
+    const itemMenu = target instanceof Element
+      ? target.closest(".database-order-item-menu")
+      : null;
+    if (itemMenu && container.contains(itemMenu)) {
+      closeOpenDatabaseOrderItemMenus(itemMenu);
+      return;
+    }
+
+    closeOpenDatabaseOrderItemMenus();
+  });
+
+  container.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") {
+      return;
+    }
+
+    closeOpenDatabaseOrderItemMenus();
+  });
+}
+
 function getDatabaseOrderNumber(order) {
   const rawOrderNumber = typeof order?.orderNumber === "string" ? order.orderNumber.trim() : "";
   return rawOrderNumber || String(order?.id || "").replace(/^order:/, "") || "Unknown";
@@ -4227,15 +4266,23 @@ function updateDatabaseOrdersState(nextState) {
   checkedDatabaseOrderIds = nextState.checkedOrderIds;
 }
 
-async function loadDatabaseOrders() {
+function invalidateDatabaseOrders() {
+  loadedDatabaseOrdersKey = null;
+}
+
+async function loadDatabaseOrders({ force = false } = {}) {
   if (!productionBatchAccessToken) {
     return;
   }
 
   const batchId = productionBatchContext?.id || null;
   const loadKey = batchId || "";
-  if (databaseOrdersLoading || loadedDatabaseOrdersKey === loadKey) {
+  if (databaseOrdersLoading || (!force && loadedDatabaseOrdersKey === loadKey)) {
     return;
+  }
+
+  if (force) {
+    invalidateDatabaseOrders();
   }
 
   databaseOrdersLoading = true;
@@ -4443,7 +4490,6 @@ function renderSelectedDatabaseOrderItems() {
 
     menuBody.append(copyDesignButton, addToBatchButton);
     menu.append(summary, menuBody);
-    registerOutsideDismissableDetailsMenu(menu);
 
     cardHeader.append(titleGroup, menu);
 
@@ -7677,6 +7723,7 @@ assignPresetToListingButton?.addEventListener("click", () => {
   });
 registerOutsideDismissableDetailsMenu(batchToolsMenu);
 registerOutsideDismissableDetailsMenu(presetToolsMenu);
+registerDatabaseOrderItemMenuDismissal(databaseOrdersWorkspace);
 closeColorCountsButton?.addEventListener("click", closeBatchColorCountsDialog);
 colorCountsDialog?.addEventListener("click", (event) => {
   if (event.target === colorCountsDialog) {
