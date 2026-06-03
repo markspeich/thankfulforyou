@@ -59,18 +59,25 @@ export function normalizeOrdersWorkspaceState({
   return {
     orders,
     selectedOrderId: nextSelectedOrderId,
-    checkedOrderIds: getCheckedOrderIdsForBulkAction(checkedOrderIds)
-      .filter((orderId) => currentOrderIds.has(orderId)),
+    checkedOrderIds: new Set(
+      getCheckedOrderIdsForBulkAction(checkedOrderIds)
+        .filter((orderId) => currentOrderIds.has(orderId)),
+    ),
   };
 }
 
 export function getCopyableSavedBuild(item) {
+  const design = item?.design && typeof item.design === "object"
+    ? item.design
+    : null;
   const candidates = [
-    item?.cachedBuild,
-    item?.previousCompletedBuild,
+    design?.cachedBuild || item?.cachedBuild,
+    design?.previousCompletedBuild || item?.previousCompletedBuild,
   ];
-  const completedSettingsSignature = isNonEmptyString(item?.completedSettingsSignature)
-    ? item.completedSettingsSignature
+  const rawCompletedSettingsSignature = design?.completedSettingsSignature
+    || item?.completedSettingsSignature;
+  const completedSettingsSignature = isNonEmptyString(rawCompletedSettingsSignature)
+    ? rawCompletedSettingsSignature
     : null;
 
   if (completedSettingsSignature) {

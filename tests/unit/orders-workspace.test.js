@@ -24,14 +24,36 @@ describe("orders workspace helpers", () => {
       checkedOrderIds: ["order:1001", "order:missing", "order:1002"],
     });
 
-    expect(result).toEqual({
-      orders: [
-        { id: "order:1001", buyerName: "Ada" },
-        selectedOrder,
-      ],
-      selectedOrderId: "order:1002",
-      checkedOrderIds: ["order:1001", "order:1002"],
+    expect(result.orders).toEqual([
+      { id: "order:1001", buyerName: "Ada" },
+      selectedOrder,
+    ]);
+    expect(result.selectedOrderId).toBe("order:1002");
+    expect(result.checkedOrderIds).toBeInstanceOf(Set);
+    expect([...result.checkedOrderIds]).toEqual(["order:1001", "order:1002"]);
+  });
+
+  it("returns checked order ids as a set with only current order ids", () => {
+    const result = normalizeOrdersWorkspaceState({
+      payload: {
+        orders: [
+          { id: "order:1501", buyerName: "Ada" },
+          { id: "order:1502", buyerName: "Grace" },
+        ],
+      },
+      selectedOrderId: "order:1501",
+      checkedOrderIds: ["order:1501", "order:1501", "order:missing", "order:1502"],
     });
+
+    expect(result).toMatchObject({
+      orders: [
+        { id: "order:1501", buyerName: "Ada" },
+        { id: "order:1502", buyerName: "Grace" },
+      ],
+      selectedOrderId: "order:1501",
+    });
+    expect(result.checkedOrderIds).toBeInstanceOf(Set);
+    expect([...result.checkedOrderIds]).toEqual(["order:1501", "order:1502"]);
   });
 
   it("selects the first order when selection is missing and drops stale checked ids", () => {
@@ -47,7 +69,8 @@ describe("orders workspace helpers", () => {
     });
 
     expect(result.selectedOrderId).toBe("order:2001");
-    expect(result.checkedOrderIds).toEqual(["order:2002"]);
+    expect(result.checkedOrderIds).toBeInstanceOf(Set);
+    expect([...result.checkedOrderIds]).toEqual(["order:2002"]);
   });
 
   it("returns null selection and no checked ids when the payload has no valid orders", () => {
@@ -57,11 +80,10 @@ describe("orders workspace helpers", () => {
       checkedOrderIds: ["order:missing"],
     });
 
-    expect(result).toEqual({
-      orders: [],
-      selectedOrderId: null,
-      checkedOrderIds: [],
-    });
+    expect(result.orders).toEqual([]);
+    expect(result.selectedOrderId).toBeNull();
+    expect(result.checkedOrderIds).toBeInstanceOf(Set);
+    expect([...result.checkedOrderIds]).toEqual([]);
   });
 
   it("selects the requested grouped order or falls back to the first order", () => {
@@ -108,6 +130,27 @@ describe("orders workspace helpers", () => {
       completedSettingsSignature: "previous-signature",
       cachedBuild,
       previousCompletedBuild,
+    })).toEqual(previousCompletedBuild);
+  });
+
+  it("detects copyable saved builds from nested order item design data", () => {
+    const cachedBuild = {
+      signature: "current-design-signature",
+      layout: { svg: "<svg data-current-design></svg>" },
+      analysis: { connectedComponentCount: 1 },
+    };
+    const previousCompletedBuild = {
+      signature: "previous-design-signature",
+      layout: { svg: "<svg data-previous-design></svg>" },
+      analysis: { connectedComponentCount: 2 },
+    };
+
+    expect(getCopyableSavedBuild({
+      design: {
+        completedSettingsSignature: "previous-design-signature",
+        cachedBuild,
+        previousCompletedBuild,
+      },
     })).toEqual(previousCompletedBuild);
   });
 
