@@ -1,5 +1,10 @@
 import { resolveProductionBatchAuth } from "./_lib/production-batch-auth.js";
-import { archiveProductionBatch, loadProductionBatch, saveProductionBatch } from "./_lib/production-batch-store.js";
+import {
+  archiveProductionBatch,
+  archiveProductionBatchItem,
+  loadProductionBatch,
+  saveProductionBatch,
+} from "./_lib/production-batch-store.js";
 
 function readJsonBody(req) {
   if (req.body == null) {
@@ -212,10 +217,17 @@ export default async function handler(req, res) {
     }
 
     if (req.method === "POST") {
-      const { action, batchId: rawBatchId } = readJsonBody(req);
+      const {
+        action,
+        activeOrderItemId: rawActiveOrderItemId,
+        batchId: rawBatchId,
+        orderItemId: rawOrderItemId,
+      } = readJsonBody(req);
       const batchId = typeof rawBatchId === "string" ? rawBatchId.trim() : "";
+      const orderItemId = typeof rawOrderItemId === "string" ? rawOrderItemId.trim() : "";
+      const activeOrderItemId = typeof rawActiveOrderItemId === "string" ? rawActiveOrderItemId.trim() : null;
 
-      if (action !== "archive") {
+      if (action !== "archive" && action !== "archive-item") {
         res.status(400).json({ error: "Unsupported production batch action." });
         return;
       }
@@ -225,11 +237,24 @@ export default async function handler(req, res) {
         return;
       }
 
-      const savedSnapshot = await archiveProductionBatch({
-        batchId,
-        workspaceId: req.auth.workspaceId,
-        userId: req.auth.userId,
-      });
+      if (action === "archive-item" && !orderItemId) {
+        res.status(400).json({ error: "orderItemId is required." });
+        return;
+      }
+
+      const savedSnapshot = action === "archive-item"
+        ? await archiveProductionBatchItem({
+          batchId,
+          orderItemId,
+          ...(typeof activeOrderItemId === "string" ? { activeOrderItemId } : {}),
+          workspaceId: req.auth.workspaceId,
+          userId: req.auth.userId,
+        })
+        : await archiveProductionBatch({
+          batchId,
+          workspaceId: req.auth.workspaceId,
+          userId: req.auth.userId,
+        });
 
       if (!savedSnapshot) {
         res.status(404).json({ error: "Production batch not found." });
