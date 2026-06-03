@@ -138,7 +138,7 @@ select {
 
 .workspace-nav {
   display: grid;
-  grid-template-rows: auto auto auto auto auto 1fr auto;
+  grid-template-rows: auto auto auto auto auto auto 1fr auto;
   gap: 10px;
   padding: 14px 10px;
   background: linear-gradient(180deg, #163341 0%, #21495d 100%);
@@ -233,6 +233,22 @@ select {
   bottom: 2px;
   width: 2px;
   background: currentColor;
+}
+
+.workspace-nav-icon-database-orders::before {
+  inset: 2px 3px;
+  border: 2px solid currentColor;
+  border-radius: 50%;
+  box-shadow: 0 5px 0 -2px currentColor, 0 10px 0 -2px currentColor;
+}
+
+.workspace-nav-icon-database-orders::after {
+  left: 4px;
+  right: 4px;
+  top: 8px;
+  height: 2px;
+  background: currentColor;
+  box-shadow: 0 5px 0 currentColor;
 }
 
 .workspace-nav-icon-presets::before {
@@ -2217,6 +2233,42 @@ button:disabled {
   font-size: 2.6px;
   font-weight: 700;
   letter-spacing: 0.04em;
+}
+
+.database-orders-workspace {
+  background: #fff;
+}
+
+.database-orders-list-panel {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.database-orders-list-shell,
+.database-order-items-shell {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  min-height: 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--card-radius);
+  background: #fff;
+}
+
+.database-orders-list-shell {
+  overflow: auto;
+}
+
+.database-order-items-panel .editor-body {
+  grid-template-rows: auto;
+  align-content: start;
+  overflow-y: auto;
+  padding: 18px 22px 22px 24px;
+  background: #fff;
+}
+
+.database-order-items-shell {
+  width: min(860px, 100%);
 }
 
 .preset-workspace {

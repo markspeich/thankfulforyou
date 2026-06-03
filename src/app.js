@@ -137,10 +137,12 @@ const productionBatchPasswordInput = document.querySelector("#productionBatchPas
 const productionBatchSignInButton = document.querySelector("#productionBatchSignInButton");
 const productionBatchAuthError = document.querySelector("#productionBatchAuthError");
 const ordersWorkspace = document.querySelector("#ordersWorkspace");
+const databaseOrdersWorkspace = document.querySelector("#databaseOrdersWorkspace");
 const presetsWorkspace = document.querySelector("#presetsWorkspace");
 const fontsWorkspace = document.querySelector("#fontsWorkspace");
 const sizeGuideWorkspace = document.querySelector("#sizeGuideWorkspace");
 const orderWorkspaceButton = document.querySelector("#orderWorkspaceButton");
+const databaseOrdersWorkspaceButton = document.querySelector("#databaseOrdersWorkspaceButton");
 const presetWorkspaceButton = document.querySelector("#presetWorkspaceButton");
 const fontWorkspaceButton = document.querySelector("#fontWorkspaceButton");
 const sizeGuideWorkspaceButton = document.querySelector("#sizeGuideWorkspaceButton");
@@ -5441,17 +5443,20 @@ function renderFontWorkspace() {
 }
 
 function setActiveWorkspace(workspace) {
-  activeWorkspace = ["orders", "presets", "fonts", "sizeGuides"].includes(workspace) ? workspace : "orders";
+  activeWorkspace = ["orders", "databaseOrders", "presets", "fonts", "sizeGuides"].includes(workspace) ? workspace : "orders";
   appShell.dataset.workspace = activeWorkspace;
   ordersWorkspace.hidden = activeWorkspace !== "orders";
+  databaseOrdersWorkspace.hidden = activeWorkspace !== "databaseOrders";
   presetsWorkspace.hidden = activeWorkspace !== "presets";
   fontsWorkspace.hidden = activeWorkspace !== "fonts";
   sizeGuideWorkspace.hidden = activeWorkspace !== "sizeGuides";
   orderWorkspaceButton.classList.toggle("is-active", activeWorkspace === "orders");
+  databaseOrdersWorkspaceButton.classList.toggle("is-active", activeWorkspace === "databaseOrders");
   presetWorkspaceButton.classList.toggle("is-active", activeWorkspace === "presets");
   fontWorkspaceButton.classList.toggle("is-active", activeWorkspace === "fonts");
   sizeGuideWorkspaceButton.classList.toggle("is-active", activeWorkspace === "sizeGuides");
   orderWorkspaceButton.setAttribute("aria-pressed", String(activeWorkspace === "orders"));
+  databaseOrdersWorkspaceButton.setAttribute("aria-pressed", String(activeWorkspace === "databaseOrders"));
   presetWorkspaceButton.setAttribute("aria-pressed", String(activeWorkspace === "presets"));
   fontWorkspaceButton.setAttribute("aria-pressed", String(activeWorkspace === "fonts"));
   sizeGuideWorkspaceButton.setAttribute("aria-pressed", String(activeWorkspace === "sizeGuides"));
@@ -7203,6 +7208,9 @@ weldExportedDesignInput.addEventListener("input", () => {
 });
 orderWorkspaceButton.addEventListener("click", () => {
   setActiveWorkspace("orders");
+});
+databaseOrdersWorkspaceButton.addEventListener("click", () => {
+  setActiveWorkspace("databaseOrders");
 });
 presetWorkspaceButton.addEventListener("click", () => {
   setActiveWorkspace("presets");
