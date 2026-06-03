@@ -290,6 +290,8 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Presets and size guides must be stored in Supabase Postgres and shared across environments for the authenticated workspace.
 - Presets should be stored as relational preset records plus line-rule records rather than one browser-local or remote JSON snapshot.
 - Size guides should be stored as relational size-guide records rather than inside a preset snapshot blob.
+- Updating a size guide's dimensions, minimum rectangle, circle diameter, or derived name must update every preset and design that references that guide by id; designs should not keep rendering stale guide geometry from cached layout data.
+- Deleting a size guide that is still referenced by presets or designs should either be blocked with a clear operator-facing message or explicitly reassign those references to another guide before the size-guide row is removed.
 - Storage and API contracts should use batch/order-item terminology directly; legacy batch-shaped snapshot contracts should be removed even when that requires recreating presets, size guides, or in-progress batch data from scratch.
 - The app should support saving the current production batch to Supabase so the current batch can be restored on another browser.
 - Persisted batch-item data should include enough information to restore the batch, the selected design, imported Etsy metadata, current text, current per-line settings, backing border, weld toggle, and saved/exported status after refresh.

@@ -8,12 +8,15 @@ function toFiniteNumber(value) {
 }
 
 function buildSignaturePayload(settings = {}, options = {}) {
-  const { includeLockTextHeight = true, version = null } = options;
+  const { includeLockTextHeight = true, includeSizeGuideFingerprint = false, version = null } = options;
   const payload = {
     ...(version == null ? {} : { version }),
     text: typeof settings.text === "string" ? settings.text : "",
     presetId: typeof settings.presetId === "string" ? settings.presetId : "",
     boundingSizePresetId: typeof settings.boundingSizePresetId === "string" ? settings.boundingSizePresetId : "",
+    ...(includeSizeGuideFingerprint
+      ? { boundingSizePresetFingerprint: typeof settings.boundingSizePresetFingerprint === "string" ? settings.boundingSizePresetFingerprint : "" }
+      : {}),
     backingMm: toFiniteNumber(settings.backingMm),
     weldExportedDesign: Boolean(settings.weldExportedDesign),
     lines: normalizeLines(settings.lines).map((line = {}) => ({
@@ -34,6 +37,14 @@ function buildSignaturePayload(settings = {}, options = {}) {
 export function buildSettingsSignature(settings = {}) {
   return JSON.stringify(buildSignaturePayload(settings, {
     includeLockTextHeight: true,
+    includeSizeGuideFingerprint: true,
+    version: 3,
+  }));
+}
+
+export function buildPreGuideFingerprintSettingsSignature(settings = {}) {
+  return JSON.stringify(buildSignaturePayload(settings, {
+    includeLockTextHeight: true,
     version: 2,
   }));
 }
@@ -46,9 +57,8 @@ export function buildLegacySettingsSignature(settings = {}) {
 
 export function getSettingsSignatureCandidates(settings = {}) {
   const currentSignature = buildSettingsSignature(settings);
+  const preGuideFingerprintSignature = buildPreGuideFingerprintSettingsSignature(settings);
   const legacySignature = buildLegacySettingsSignature(settings);
 
-  return currentSignature === legacySignature
-    ? [currentSignature]
-    : [currentSignature, legacySignature];
+  return [...new Set([currentSignature, preGuideFingerprintSignature, legacySignature])];
 }
