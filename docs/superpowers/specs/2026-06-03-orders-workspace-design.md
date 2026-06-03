@@ -97,8 +97,9 @@ When the operator clicks `Paste` in `Production Batch`:
 2. normalize imported line items
 3. create or update workspace `order_items`, `designs`, and `design_lines`
 4. add imported order items to the active production batch through `batch_items`
-5. skip active-batch duplicates
-6. show a floating toast summary
+5. immediately write those order, design, design line, and batch membership changes to Supabase before reporting success
+6. skip active-batch duplicates
+7. show a floating toast summary
 
 When the operator clicks `Paste` in `Orders`:
 
@@ -106,8 +107,9 @@ When the operator clicks `Paste` in `Orders`:
 2. normalize imported line items
 3. create or update workspace `order_items`, `designs`, and `design_lines`
 4. do not create `batch_items`
-5. refresh the Orders list
-6. show a floating toast summary
+5. immediately write those order, design, and design line changes to Supabase before reporting success
+6. refresh the Orders list
+7. show a floating toast summary
 
 ## Data Model
 
@@ -147,6 +149,8 @@ Supports narrow actions:
 - `target: "orders"` stores only orders
 - `target: "productionBatch"` stores orders and active batch memberships
 
+Both import targets must be durable immediately. The client should not show a success toast until the server confirms the imported order items and initial design rows were written to Supabase.
+
 `addOrderItemToProductionBatch` accepts one order item id and adds it to the active batch.
 
 `addOrdersToProductionBatch` accepts order grouping ids or order item ids resolved from checked rows and adds all non-archived matching order items to the active batch.
@@ -177,6 +181,7 @@ The existing Production Batch page should call the shared import helper with a `
 - Clipboard unavailable: show a floating toast.
 - Clipboard payload invalid: show a floating toast with the parser error.
 - No importable Etsy designs: show a floating toast.
+- Import save failure: show an error toast and do not claim the paste succeeded.
 - Add-to-batch with no active production batch: show a floating toast and leave orders unchanged.
 - Add-to-batch duplicate: do not create another batch membership; report that the item is already in the batch.
 - Copy design without export-ready cached geometry: show a floating toast saying the design must be completed first.

@@ -300,6 +300,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - `Add to Production Batch` from the `Orders` workspace should add the order item to the active production batch through `batch_items` without duplicating an existing active batch membership.
 - Pasting/importing Etsy clipboard data from the `Production Batch` workspace should create or update the imported order items and add the imported items to the active production batch.
 - Pasting/importing Etsy clipboard data from the `Orders` workspace should create or update the imported order items in the workspace order list without adding them to the active production batch.
+- Pasting/importing Etsy clipboard data from either the `Production Batch` workspace or the `Orders` workspace should immediately write the imported order items and their initial designs to Supabase Postgres before reporting success.
 - Presets and size guides must be stored in Supabase Postgres and shared across environments for the authenticated workspace.
 - Presets should be stored as relational preset records plus line-rule records rather than one browser-local or remote JSON snapshot.
 - Size guides should be stored as relational size-guide records rather than inside a preset snapshot blob.
