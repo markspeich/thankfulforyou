@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 const supabaseMock = vi.hoisted(() => ({
   calls: [],
   batchItems: null,
+  sizeGuides: [],
 }));
 
 vi.mock("../../api/_lib/supabase-admin.js", () => ({
@@ -131,6 +132,13 @@ function createSelectChain(table) {
       });
     },
     then(resolve) {
+      if (table === "size_guides") {
+        return Promise.resolve({
+          data: supabaseMock.sizeGuides,
+          error: null,
+        }).then(resolve);
+      }
+
       if (table === "order_items") {
         return Promise.resolve({
           data: [{
@@ -165,6 +173,7 @@ function createSelectChain(table) {
 afterEach(() => {
   supabaseMock.calls = [];
   supabaseMock.batchItems = null;
+  supabaseMock.sizeGuides = [];
   vi.resetModules();
 });
 
@@ -253,6 +262,38 @@ describe("production batch store", () => {
     expect(batchItemsDelete).toBeUndefined();
     expect(batchItemsUpsert.payload).toHaveLength(1);
     expect(batchItemsUpsert.payload[0]).toMatchObject({ order_item_id: "order-2" });
+  });
+
+  it("does not upsert stale size guide ids that are missing from the workspace", async () => {
+    supabaseMock.sizeGuides = [{ id: "size-existing" }];
+    const { saveProductionBatch } = await import("../../api/_lib/production-batch-store.js");
+
+    await saveProductionBatch({
+      userId: "user-1",
+      snapshot: {
+        batch: { id: "batch-1", workspaceId: "workspace-1" },
+        activeOrderItemId: "order-1",
+        orderItems: [
+          {
+            id: "order-1",
+            revision: 1,
+            text: "Stale Guide",
+            status: "captured",
+            source: {},
+            settings: {
+              text: "Stale Guide",
+              presetId: null,
+              boundingSizePresetId: "size-missing",
+              lines: [{ fontId: "candlepin" }],
+            },
+          },
+        ],
+      },
+    });
+
+    const designsUpsert = supabaseMock.calls.find((call) => call.table === "designs" && call.operation === "upsert");
+
+    expect(designsUpsert.payload[0].size_guide_id).toBeNull();
   });
 
   it("moves archived memberships out of reused positions before scoped batch item upserts", async () => {

@@ -239,11 +239,34 @@ export async function saveProductionBatch({ snapshot, userId, changedOrderItemId
     revision: Number.isInteger(orderItem.revision) ? orderItem.revision + 1 : 1,
     updated_at: savedAt,
   }));
-  const nextDesigns = rows.designs.filter((design) => shouldSaveOrderItem(design.order_item_id)).map((design) => ({
+  let nextDesigns = rows.designs.filter((design) => shouldSaveOrderItem(design.order_item_id)).map((design) => ({
     ...design,
     revision: Number.isInteger(design.revision) ? design.revision + 1 : 1,
     updated_at: savedAt,
   }));
+
+  const referencedSizeGuideIds = [...new Set(nextDesigns
+    .map((design) => design.size_guide_id)
+    .filter((sizeGuideId) => typeof sizeGuideId === "string" && sizeGuideId))];
+  if (referencedSizeGuideIds.length) {
+    const { data: existingSizeGuides, error: sizeGuidesError } = await supabase
+      .from("size_guides")
+      .select("id")
+      .eq("workspace_id", snapshot.batch.workspaceId)
+      .in("id", referencedSizeGuideIds);
+
+    if (sizeGuidesError) {
+      throw sizeGuidesError;
+    }
+
+    const validSizeGuideIds = new Set((existingSizeGuides || []).map((guide) => guide.id));
+    nextDesigns = nextDesigns.map((design) => ({
+      ...design,
+      size_guide_id: !design.size_guide_id || validSizeGuideIds.has(design.size_guide_id)
+        ? design.size_guide_id
+        : null,
+    }));
+  }
 
   if (nextOrderItems.length) {
     const { error: orderItemsError } = await supabase

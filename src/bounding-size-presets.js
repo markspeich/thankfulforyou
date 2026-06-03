@@ -74,6 +74,18 @@ function resolveDefinition(definition) {
   };
 }
 
+export function buildBoundingSizePresetFingerprint(presetId) {
+  const guide = resolveBoundingSizePreset(presetId);
+  return [
+    guide.id,
+    guide.maxWidthIn,
+    guide.maxHeightIn,
+    guide.minWidthIn,
+    guide.minHeightIn,
+    guide.circleDiameterIn ?? "",
+  ].join("|");
+}
+
 export function normalizeBoundingSizePresetDefinition(definition = {}) {
   const id = String(definition.id ?? "").trim();
   const label = String(definition.label ?? "").trim();

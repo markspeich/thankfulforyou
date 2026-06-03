@@ -706,6 +706,13 @@ export function deleteBoundingSizePresetDefinitionLocally(presetId) {
     throw new Error("Size guide not found.");
   }
 
+  const presetUsageCount = [...presetRegistry.presetById.values()]
+    .filter((preset) => preset.globalDefaults?.boundingSizePresetId === normalizedPresetId)
+    .length;
+  if (presetUsageCount > 0) {
+    throw new Error(`Size guide is used by ${presetUsageCount} preset${presetUsageCount === 1 ? "" : "s"} and cannot be deleted.`);
+  }
+
   const snapshot = saveSizePresetSnapshot(definitions.filter((definition) => definition.id !== normalizedPresetId));
 
   return {

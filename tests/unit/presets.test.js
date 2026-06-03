@@ -563,6 +563,37 @@ describe("presets", () => {
     expect(() => deleteBoundingSizePresetDefinitionLocally("size-2-2x1-5")).toThrow("The default size guide cannot be deleted.");
   });
 
+  it("blocks deleting a custom size guide while a preset still references it", () => {
+    saveBoundingSizePresetDefinitionLocally({
+      preset: {
+        id: "size-in-use",
+        label: "In Use",
+        max: { widthIn: 2.5, heightIn: 1.8 },
+        min: { widthIn: 1.5, heightIn: 1 },
+      },
+    });
+    savePresetDefinitionLocally({
+      preset: {
+        schemaVersion: 1,
+        id: "preset-size-in-use",
+        name: "Preset With Size Guide",
+        globalDefaults: {
+          boundingSizePresetId: "size-in-use",
+          backingMm: 3.1,
+          weldExportedDesign: true,
+        },
+        lineDefaults: {
+          fontId: "candlepin",
+        },
+        lineRules: [{ match: { kind: "all" }, settings: { fontId: "candlepin" } }],
+        listingAssignments: [],
+      },
+    });
+
+    expect(() => deleteBoundingSizePresetDefinitionLocally("size-in-use"))
+      .toThrow("Size guide is used by 1 preset and cannot be deleted.");
+  });
+
   it("can delete a preset definition locally and promote a surviving preset as the default when needed", () => {
     const localStorageMock = {
       setItem: vi.fn(),
