@@ -4459,7 +4459,24 @@ function renderSelectedDatabaseOrderItems() {
     savedDesign.className = "database-order-item-saved-design";
     savedDesign.textContent = savedBuild ? "Saved design available" : "No saved design available";
 
-    card.append(cardHeader, lineText, status, savedDesign);
+    const preview = document.createElement("div");
+    preview.className = "database-order-item-preview";
+    preview.setAttribute("role", "img");
+    preview.setAttribute("aria-label", savedBuild
+      ? "Order item preview: export-ready design available"
+      : "Order item preview: design needs completion");
+
+    const previewLabel = document.createElement("span");
+    previewLabel.className = "database-order-item-preview-label";
+    previewLabel.textContent = "Preview";
+
+    const previewStatus = document.createElement("span");
+    previewStatus.className = "database-order-item-preview-status";
+    previewStatus.textContent = savedBuild ? "Export-ready design available" : "Design needs completion";
+
+    preview.append(previewLabel, previewStatus);
+
+    card.append(cardHeader, preview, lineText, status, savedDesign);
     databaseOrderItemsShell.append(card);
   });
 }

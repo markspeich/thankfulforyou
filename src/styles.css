@@ -2354,6 +2354,34 @@ button:disabled {
   line-height: 1.25;
 }
 
+.database-order-item-preview {
+  display: grid;
+  gap: 4px;
+  min-height: 76px;
+  align-content: center;
+  justify-items: center;
+  padding: 12px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 8px;
+  background: #f8fafc;
+  color: var(--ink);
+  text-align: center;
+}
+
+.database-order-item-preview-label {
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.database-order-item-preview-status {
+  max-width: 26ch;
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.3;
+}
+
 .database-order-item-menu {
   position: relative;
 }

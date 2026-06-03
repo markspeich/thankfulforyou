@@ -168,6 +168,9 @@ test("renders grouped database orders and selected order item cards", async ({ p
   await expect(ordersWorkspace.getByText("Already in active batch")).toBeVisible();
 
   const firstItemCard = ordersWorkspace.locator(".database-order-item-card").filter({ hasText: "Ada RN" });
+  await expect(
+    firstItemCard.locator(".database-order-item-preview").getByText("Export-ready design available"),
+  ).toBeVisible();
   await firstItemCard.getByRole("button", { name: "Item actions" }).click();
   await expect(firstItemCard.getByRole("button", { name: "Copy Design" })).toBeVisible();
   await expect(firstItemCard.getByRole("button", { name: "Add to Production Batch" })).toBeEnabled();
