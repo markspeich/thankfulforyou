@@ -72,6 +72,14 @@ describe("Etsy import parsing", () => {
     ]);
   });
 
+  it("preserves malformed numeric HTML entities in personalization text", () => {
+    expect(parseImportedItems(JSON.stringify({
+      items: [{ personalization: "A &#999999999999; B" }],
+    }))).toMatchObject([
+      { text: "A &#999999999999; B" },
+    ]);
+  });
+
   it("builds stable imported identities using transaction id first", () => {
     expect(buildImportedBatchIdentity({
       transactionId: " txn-9 ",

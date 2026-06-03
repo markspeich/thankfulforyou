@@ -9,6 +9,32 @@ const HTML_ENTITIES = new Map([
 ]);
 const NO_IMPORTABLE_DESIGNS_MESSAGE = "Clipboard data did not contain any Etsy designs.";
 
+function decodeCodePoint(entity, value, radix) {
+  if (!value) {
+    return entity;
+  }
+
+  if (radix === 16 && !/^[0-9a-f]+$/i.test(value)) {
+    return entity;
+  }
+
+  if (radix === 10 && !/^[0-9]+$/.test(value)) {
+    return entity;
+  }
+
+  const codePoint = Number.parseInt(value, radix);
+  if (
+    !Number.isInteger(codePoint)
+    || codePoint < 0
+    || codePoint > 0x10ffff
+    || (codePoint >= 0xd800 && codePoint <= 0xdfff)
+  ) {
+    return entity;
+  }
+
+  return String.fromCodePoint(codePoint);
+}
+
 function decodeHtmlEntities(value) {
   if (typeof document !== "undefined" && document.createElement) {
     const textarea = document.createElement("textarea");
@@ -20,13 +46,11 @@ function decodeHtmlEntities(value) {
     const normalizedName = name.toLowerCase();
 
     if (normalizedName.startsWith("#x")) {
-      const codePoint = Number.parseInt(normalizedName.slice(2), 16);
-      return Number.isFinite(codePoint) ? String.fromCodePoint(codePoint) : entity;
+      return decodeCodePoint(entity, normalizedName.slice(2), 16);
     }
 
     if (normalizedName.startsWith("#")) {
-      const codePoint = Number.parseInt(normalizedName.slice(1), 10);
-      return Number.isFinite(codePoint) ? String.fromCodePoint(codePoint) : entity;
+      return decodeCodePoint(entity, normalizedName.slice(1), 10);
     }
 
     return HTML_ENTITIES.get(normalizedName) ?? entity;
