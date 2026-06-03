@@ -44,12 +44,14 @@ export function getSelectedGroupedOrder(orders, selectedOrderId) {
 }
 
 export function normalizeOrdersWorkspaceState({
+  orders: directOrders,
   payload,
   selectedOrderId,
   checkedOrderIds,
 } = {}) {
-  const orders = Array.isArray(payload?.orders)
-    ? payload.orders.filter((order) => order && isNonEmptyString(order.id))
+  const rawOrders = Array.isArray(directOrders) ? directOrders : payload?.orders;
+  const orders = Array.isArray(rawOrders)
+    ? rawOrders.filter((order) => order && isNonEmptyString(order.id))
     : [];
   const currentOrderIds = new Set(orders.map((order) => order.id));
   const nextSelectedOrderId = currentOrderIds.has(selectedOrderId)

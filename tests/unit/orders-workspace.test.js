@@ -56,6 +56,25 @@ describe("orders workspace helpers", () => {
     expect([...result.checkedOrderIds]).toEqual(["order:1501", "order:1502"]);
   });
 
+  it("normalizes direct orders workspace state", () => {
+    const result = normalizeOrdersWorkspaceState({
+      orders: [
+        { id: "order:1751", buyerName: "Ada" },
+        { id: "order:1752", buyerName: "Grace" },
+      ],
+      selectedOrderId: "order:1752",
+      checkedOrderIds: ["order:1751", "order:missing"],
+    });
+
+    expect(result.orders).toEqual([
+      { id: "order:1751", buyerName: "Ada" },
+      { id: "order:1752", buyerName: "Grace" },
+    ]);
+    expect(result.selectedOrderId).toBe("order:1752");
+    expect(result.checkedOrderIds).toBeInstanceOf(Set);
+    expect([...result.checkedOrderIds]).toEqual(["order:1751"]);
+  });
+
   it("selects the first order when selection is missing and drops stale checked ids", () => {
     const result = normalizeOrdersWorkspaceState({
       payload: {
