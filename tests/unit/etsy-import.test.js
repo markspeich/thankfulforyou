@@ -89,10 +89,16 @@ describe("Etsy import parsing", () => {
     }, "  Jordan RN  ")).toBe("fallback:1000|listing-1|Morgan|Jordan RN");
   });
 
-  it("throws when payloads do not contain importable Etsy designs", () => {
-    expect(() => parseImportedItems(JSON.stringify({ items: [
+  it("returns an empty import list when every raw entry filters away", () => {
+    expect(parseImportedItems(JSON.stringify({ items: [
       { personalization: "   " },
       { listingId: "listing-1" },
-    ] }))).toThrow("Clipboard data did not contain any Etsy designs.");
+    ] }))).toEqual([]);
+  });
+
+  it("throws when payloads do not contain Etsy designs", () => {
+    expect(() => parseImportedItems(JSON.stringify({ items: [] }))).toThrow(
+      "Clipboard data did not contain any Etsy designs.",
+    );
   });
 });

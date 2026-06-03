@@ -135,13 +135,12 @@ export function parseImportedItems(payloadText, options = {}) {
     : Array.isArray(parsed?.items)
       ? parsed.items
       : [];
-  const importedItems = rawItems
-    .map((entry) => normalizeImportedEntry(entry, options))
-    .filter(Boolean);
 
-  if (!importedItems.length) {
+  if (!rawItems.length) {
     throw new Error(NO_IMPORTABLE_DESIGNS_MESSAGE);
   }
 
-  return importedItems;
+  return rawItems
+    .map((entry) => normalizeImportedEntry(entry, options))
+    .filter(Boolean);
 }
