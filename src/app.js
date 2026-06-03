@@ -64,6 +64,10 @@ import {
   signInWithPassword as signInOperatorWithPassword,
 } from "./auth-session.js";
 import {
+  buildImportedBatchIdentity,
+  parseImportedItems,
+} from "./etsy-import.js";
+import {
   chooseProductionBatchStartupState,
   createProductionBatchSnapshot,
 } from "./production-batch-model.js";
@@ -518,7 +522,6 @@ const statusLabels = {
   exported: "Exported",
 };
 const IMPORT_SOURCE_TAG = "thankfulforyou-etsy-clipboard";
-const IMPORT_MOJIBAKE_PATTERN = /[ÂÃâ]/;
 function getFontOption(fontId) {
   return resolveFontOption(fontId, FONT_OPTIONS);
 }
@@ -3908,41 +3911,6 @@ async function restoreInitialBatchState(accessToken) {
   };
 }
 
-function decodeHtmlEntities(value) {
-  const textarea = document.createElement("textarea");
-  textarea.innerHTML = value;
-  return textarea.value;
-}
-
-function repairImportedMojibake(value) {
-  if (!IMPORT_MOJIBAKE_PATTERN.test(value)) {
-    return value;
-  }
-
-  try {
-    const bytes = Uint8Array.from(Array.from(value, (character) => {
-      const codePoint = character.codePointAt(0);
-
-      if (typeof codePoint !== "number" || codePoint > 255) {
-        throw new Error("Non-Latin1 character");
-      }
-
-      return codePoint;
-    }));
-    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-  } catch {
-    return value;
-  }
-}
-
-function normalizeImportedText(value) {
-  if (typeof value !== "string") {
-    return "";
-  }
-
-  return repairImportedMojibake(decodeHtmlEntities(value).trim());
-}
-
 function createBatchItem({
   text = "",
   status = "in-progress",
@@ -4101,87 +4069,6 @@ function syncOrdersForListingAssignmentChange(listingId) {
   }
 
   return batchChanged;
-}
-
-function normalizeImportedEntry(entry) {
-  if (!entry || typeof entry !== "object") {
-    return null;
-  }
-
-  const personalization = normalizeImportedText(
-    typeof entry.personalization === "string"
-      ? entry.personalization
-      : entry.text,
-  );
-
-  if (!personalization) {
-    return null;
-  }
-
-  const orderNumber = entry.orderNumber == null ? "" : String(entry.orderNumber).trim();
-  const listingId = entry.listingId == null ? "" : String(entry.listingId).trim();
-  const buyerName = normalizeImportedText(entry.buyerName);
-  const colorName = normalizeImportedText(entry.colorName);
-  const quantity = entry.quantity == null ? "" : String(entry.quantity).trim();
-  const listingTitle = normalizeImportedText(entry.listingTitle);
-  const listingImageUrl75x75 = typeof entry.listingImageUrl75x75 === "string"
-    ? entry.listingImageUrl75x75.trim()
-    : "";
-  const presetId = getPresetIdForListingId(listingId);
-
-  return {
-    text: personalization,
-    presetId,
-    source: {
-      orderNumber,
-      listingId,
-      buyerName,
-      colorName,
-      quantity,
-      listingTitle,
-      listingImageUrl75x75,
-      transactionId: entry.transactionId == null ? "" : String(entry.transactionId).trim(),
-    },
-  };
-}
-
-function buildImportedBatchIdentity(source, text = "") {
-  if (!source || typeof source !== "object") {
-    return "";
-  }
-
-  const transactionId = source.transactionId == null ? "" : String(source.transactionId).trim();
-  if (transactionId) {
-    return `transaction:${transactionId}`;
-  }
-
-  const orderNumber = source.orderNumber == null ? "" : String(source.orderNumber).trim();
-  const listingId = source.listingId == null ? "" : String(source.listingId).trim();
-  const buyerName = typeof source.buyerName === "string" ? source.buyerName.trim() : "";
-  const normalizedText = typeof text === "string" ? text.trim() : "";
-
-  if (!orderNumber && !listingId && !buyerName && !normalizedText) {
-    return "";
-  }
-
-  return `fallback:${orderNumber}|${listingId}|${buyerName}|${normalizedText}`;
-}
-
-function parseImportedItems(payloadText) {
-  const parsed = JSON.parse(payloadText);
-  const rawItems = Array.isArray(parsed)
-    ? parsed
-    : Array.isArray(parsed?.items)
-      ? parsed.items
-      : [];
-
-  if (!rawItems.length) {
-    throw new Error("Clipboard data did not contain any Etsy designs.");
-  }
-
-  return rawItems
-    .map((entry) => normalizeImportedEntry(entry))
-    .filter(Boolean);
 }
 
 function updateWorkflowAlert(message, state = "pending", options = {}) {
@@ -5844,7 +5731,7 @@ async function importFromClipboard() {
 
   try {
     const clipboardText = await navigator.clipboard.readText();
-    const importedItems = parseImportedItems(clipboardText);
+    const importedItems = parseImportedItems(clipboardText, { getPresetIdForListingId });
     const existingImportedIdentities = new Set(
       orders
         .map((order) => buildImportedBatchIdentity(order?.source, order?.text))
