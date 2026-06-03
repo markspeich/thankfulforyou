@@ -12,7 +12,14 @@ function readJsonBody(req) {
   }
 
   if (typeof req.body === "string") {
-    return JSON.parse(req.body);
+    try {
+      return JSON.parse(req.body);
+    } catch {
+      throw Object.assign(new Error("Invalid JSON request body."), {
+        statusCode: 400,
+        expose: true,
+      });
+    }
   }
 
   return req.body;
@@ -34,6 +41,11 @@ function normalizeItems(value) {
 
 function countIds(value, fallback = 0) {
   return Array.isArray(value) ? value.length : fallback;
+}
+
+function normalizeCount(value, fallback = 0) {
+  const count = Number(value);
+  return Number.isFinite(count) && count >= 0 ? count : fallback;
 }
 
 function sendBadRequest(res, error) {
@@ -78,11 +90,18 @@ async function handleImportClipboardItems({ res, auth, body }) {
     workspaceId: auth.workspaceId,
     batchId: batchId || null,
   });
-  const importedOrderItemCount = countIds(mutationResult?.importedOrderItemIds, items.length);
+  const importedOrderItemCount = normalizeCount(
+    mutationResult?.importedCount,
+    countIds(mutationResult?.importedOrderItemIds, items.length),
+  );
+  const addedOrderItemCount = normalizeCount(
+    mutationResult?.addedToBatchCount,
+    countIds(mutationResult?.addedOrderItemIds),
+  );
 
   res.status(200).json({
     importedOrderItemCount,
-    addedOrderItemCount: target === "productionBatch" ? importedOrderItemCount : 0,
+    addedOrderItemCount: target === "productionBatch" ? addedOrderItemCount : 0,
     ...ordersPayload,
   });
 }

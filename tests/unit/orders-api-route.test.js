@@ -129,6 +129,53 @@ describe("orders api route", () => {
     });
   });
 
+  it("returns the store's production batch add count when importing clipboard items to a batch", async () => {
+    resolveProductionBatchAuthMock.mockResolvedValue({
+      userId: "user-1",
+      workspaceId: "workspace-1",
+    });
+    importWorkspaceOrderItemsMock.mockResolvedValue({
+      importedCount: 3,
+      addedToBatchCount: 1,
+    });
+    listWorkspaceOrdersMock.mockResolvedValue({
+      orders: [{ id: "order:1001", isInActiveBatch: true, items: [{ id: "item-1" }] }],
+    });
+
+    const { default: handler } = await import("../../api/orders.js");
+    const response = createResponseRecorder();
+    const items = [
+      { id: "item-1", text: "Mark" },
+      { id: "item-2", text: "Sam" },
+      { id: "item-3", text: "Lee" },
+    ];
+
+    await handler({
+      method: "POST",
+      headers: { authorization: "Bearer token-1" },
+      body: {
+        action: "importClipboardItems",
+        target: "productionBatch",
+        batchId: "batch-1",
+        items,
+      },
+    }, response);
+
+    expect(importWorkspaceOrderItemsMock).toHaveBeenCalledWith({
+      workspaceId: "workspace-1",
+      userId: "user-1",
+      items,
+      target: "productionBatch",
+      batchId: "batch-1",
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toEqual({
+      importedOrderItemCount: 3,
+      addedOrderItemCount: 1,
+      orders: [{ id: "order:1001", isInActiveBatch: true, items: [{ id: "item-1" }] }],
+    });
+  });
+
   it("adds one order item to a production batch and returns counts with refreshed orders", async () => {
     resolveProductionBatchAuthMock.mockResolvedValue({
       userId: "user-1",
@@ -191,6 +238,29 @@ describe("orders api route", () => {
     expect(response.statusCode).toBe(400);
     expect(response.body).toEqual({
       error: "batchId is required when importing to a production batch.",
+    });
+  });
+
+  it("returns 400 for malformed JSON request bodies", async () => {
+    resolveProductionBatchAuthMock.mockResolvedValue({
+      userId: "user-1",
+      workspaceId: "workspace-1",
+    });
+
+    const { default: handler } = await import("../../api/orders.js");
+    const response = createResponseRecorder();
+
+    await handler({
+      method: "POST",
+      headers: { authorization: "Bearer token-1" },
+      body: "{ not-json",
+    }, response);
+
+    expect(importWorkspaceOrderItemsMock).not.toHaveBeenCalled();
+    expect(listWorkspaceOrdersMock).not.toHaveBeenCalled();
+    expect(response.statusCode).toBe(400);
+    expect(response.body).toEqual({
+      error: "Invalid JSON request body.",
     });
   });
 });
