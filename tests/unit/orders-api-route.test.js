@@ -372,4 +372,27 @@ describe("orders api route", () => {
       error: "Invalid JSON request body.",
     });
   });
+
+  it("returns 400 for null JSON request bodies", async () => {
+    resolveProductionBatchAuthMock.mockResolvedValue({
+      userId: "user-1",
+      workspaceId: "workspace-1",
+    });
+
+    const { default: handler } = await import("../../api/orders.js");
+    const response = createResponseRecorder();
+
+    await handler({
+      method: "POST",
+      headers: { authorization: "Bearer token-1" },
+      body: "null",
+    }, response);
+
+    expect(importWorkspaceOrderItemsMock).not.toHaveBeenCalled();
+    expect(listWorkspaceOrdersMock).not.toHaveBeenCalled();
+    expect(response.statusCode).toBe(400);
+    expect(response.body).toEqual({
+      error: "Request body must be a JSON object.",
+    });
+  });
 });

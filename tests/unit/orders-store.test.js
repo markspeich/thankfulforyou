@@ -528,4 +528,55 @@ describe("orders store", () => {
       added_by: "user-2",
     })]);
   });
+
+  it("filters direct batch item additions to active order items in the workspace", async () => {
+    resetDb({
+      order_items: [
+        {
+          id: "item-valid",
+          workspace_id: "workspace-1",
+          status: "active",
+          order_number: "5001",
+          source_json: {},
+          quantity: 1,
+        },
+        {
+          id: "item-other-workspace",
+          workspace_id: "workspace-2",
+          status: "active",
+          order_number: "5002",
+          source_json: {},
+          quantity: 1,
+        },
+        {
+          id: "item-archived",
+          workspace_id: "workspace-1",
+          status: "archived",
+          order_number: "5003",
+          source_json: {},
+          quantity: 1,
+        },
+      ],
+    });
+    const { addOrderItemsToProductionBatch } = await import("../../api/_lib/orders-store.js");
+
+    const result = await addOrderItemsToProductionBatch({
+      workspaceId: "workspace-1",
+      userId: "user-1",
+      batchId: "batch-1",
+      orderItemIds: ["item-valid", "item-other-workspace", "item-archived", "item-missing"],
+    });
+
+    const batchItemsUpsert = supabaseMock.calls.find((call) => call.table === "batch_items" && call.operation === "upsert");
+
+    expect(result).toEqual({ addedOrderItemIds: ["item-valid"] });
+    expect(batchItemsUpsert.payload).toEqual([expect.objectContaining({
+      workspace_id: "workspace-1",
+      batch_id: "batch-1",
+      order_item_id: "item-valid",
+      batch_position: 0,
+      status: "active",
+      added_by: "user-1",
+    })]);
+  });
 });

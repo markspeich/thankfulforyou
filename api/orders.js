@@ -29,6 +29,10 @@ function normalizeString(value) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function isJsonObject(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
 function normalizeStringArray(value) {
   return Array.isArray(value)
     ? value.map((item) => normalizeString(item)).filter(Boolean)
@@ -188,6 +192,11 @@ export default async function handler(req, res) {
 
     if (req.method === "POST") {
       const body = readJsonBody(req);
+      if (!isJsonObject(body)) {
+        sendBadRequest(res, "Request body must be a JSON object.");
+        return;
+      }
+
       const action = normalizeString(body.action);
 
       if (action === "importClipboardItems") {

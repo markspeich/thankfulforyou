@@ -213,6 +213,27 @@ async function queryBatchItems({ supabase, workspaceId, batchId }) {
   return data || [];
 }
 
+async function queryVerifiedOrderItemIds({ supabase, workspaceId, orderItemIds }) {
+  const ids = [...new Set((orderItemIds || []).filter((id) => typeof id === "string" && id))];
+  if (!ids.length) {
+    return [];
+  }
+
+  const { data, error } = await supabase
+    .from("order_items")
+    .select("id")
+    .eq("workspace_id", workspaceId)
+    .neq("status", "archived")
+    .in("id", ids);
+
+  if (error) {
+    throw error;
+  }
+
+  const verifiedIds = new Set((data || []).map((item) => item.id));
+  return ids.filter((id) => verifiedIds.has(id));
+}
+
 export async function listWorkspaceOrders({ workspaceId, activeBatchId = null }) {
   const supabase = createSupabaseAdminClient();
   const { data: orderItems, error: orderItemsError } = await supabase
@@ -310,11 +331,21 @@ export async function addOrderItemsToProductionBatch({
     return { addedOrderItemIds: [] };
   }
 
+  const verifiedMissingIds = await queryVerifiedOrderItemIds({
+    supabase,
+    workspaceId,
+    orderItemIds: missingIds,
+  });
+
+  if (!verifiedMissingIds.length) {
+    return { addedOrderItemIds: [] };
+  }
+
   const maxPosition = existingItems.reduce((max, item) => {
     const position = Number.parseInt(item.batch_position, 10);
     return Number.isInteger(position) && position > max ? position : max;
   }, -1);
-  const rows = missingIds.map((orderItemId, index) => ({
+  const rows = verifiedMissingIds.map((orderItemId, index) => ({
     workspace_id: workspaceId,
     batch_id: batchId,
     order_item_id: orderItemId,
@@ -330,7 +361,7 @@ export async function addOrderItemsToProductionBatch({
     throw error;
   }
 
-  return { addedOrderItemIds: missingIds };
+  return { addedOrderItemIds: verifiedMissingIds };
 }
 
 export async function addOrderGroupsToProductionBatch({
