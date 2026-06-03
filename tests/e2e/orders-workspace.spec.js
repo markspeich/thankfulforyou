@@ -32,6 +32,18 @@ function installSupabaseSession(page) {
   });
 }
 
+function installClipboardText(page, text) {
+  return page.addInitScript((clipboardText) => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        readText: async () => clipboardText,
+        writeText: async () => {},
+      },
+    });
+  }, text);
+}
+
 async function installProductionBatchRoutes(page) {
   await page.route("**/api/batch-session", async (route) => {
     await route.fulfill({
@@ -58,68 +70,113 @@ async function installProductionBatchRoutes(page) {
   });
 }
 
-async function installOrdersWorkspaceRoutes(page) {
-  await page.route("**/api/orders?batchId=batch-1", async (route) => {
+function buildOrdersPayload() {
+  return {
+    orders: [
+      {
+        id: "order:1001",
+        orderNumber: "1001",
+        buyerName: "Ada Lovelace",
+        isInActiveBatch: false,
+        items: [
+          {
+            id: "item-1",
+            listingTitle: "Custom badge reel",
+            isInActiveBatch: false,
+            design: {
+              text: "Ada RN",
+              lines: [
+                { lineIndex: 0, text: "Ada", fontId: "skywalk" },
+                { lineIndex: 1, text: "RN", fontId: "somekind" },
+              ],
+              cachedBuild: {
+                signature: "sig-1",
+                layout: { lines: [] },
+                analysis: { connectedComponents: 1 },
+              },
+            },
+          },
+          {
+            id: "item-2",
+            listingTitle: "Badge buddy",
+            isInActiveBatch: true,
+            design: {
+              text: "PICU",
+              lines: [{ lineIndex: 0, text: "PICU", fontId: "somekind" }],
+            },
+          },
+        ],
+      },
+      {
+        id: "order:1002",
+        orderNumber: "1002",
+        buyerName: "Grace Hopper",
+        isInActiveBatch: true,
+        items: [
+          {
+            id: "item-3",
+            listingTitle: "Name badge reel",
+            isInActiveBatch: true,
+            design: {
+              text: "Grace",
+              lines: [{ lineIndex: 0, text: "Grace", fontId: "candlepin" }],
+            },
+          },
+        ],
+      },
+    ],
+  };
+}
+
+async function installOrdersWorkspaceRoutes(page, options = {}) {
+  const { posts = [] } = options;
+
+  await page.route("**/api/orders**", async (route) => {
+    const request = route.request();
+    if (request.method() === "POST") {
+      posts.push(JSON.parse(request.postData() || "{}"));
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json; charset=utf-8",
+        body: JSON.stringify({
+          ...buildOrdersPayload(),
+          importedOrderItemCount: 1,
+          addedOrderItemCount: 1,
+          skippedOrderItemCount: 0,
+          alreadyInBatchCount: 0,
+        }),
+      });
+      return;
+    }
+
     await route.fulfill({
       status: 200,
       contentType: "application/json; charset=utf-8",
-      body: JSON.stringify({
-        orders: [
-          {
-            id: "order:1001",
-            orderNumber: "1001",
-            buyerName: "Ada Lovelace",
-            isInActiveBatch: false,
-            items: [
-              {
-                id: "item-1",
-                listingTitle: "Custom badge reel",
-                isInActiveBatch: false,
-                design: {
-                  text: "Ada RN",
-                  lines: [
-                    { lineIndex: 0, text: "Ada", fontId: "skywalk" },
-                    { lineIndex: 1, text: "RN", fontId: "somekind" },
-                  ],
-                  cachedBuild: {
-                    signature: "sig-1",
-                    layout: { lines: [] },
-                    analysis: { connectedComponents: 1 },
-                  },
-                },
-              },
-              {
-                id: "item-2",
-                listingTitle: "Badge buddy",
-                isInActiveBatch: true,
-                design: {
-                  text: "PICU",
-                  lines: [{ lineIndex: 0, text: "PICU", fontId: "somekind" }],
-                },
-              },
-            ],
-          },
-          {
-            id: "order:1002",
-            orderNumber: "1002",
-            buyerName: "Grace Hopper",
-            isInActiveBatch: true,
-            items: [
-              {
-                id: "item-3",
-                listingTitle: "Name badge reel",
-                isInActiveBatch: true,
-                design: {
-                  text: "Grace",
-                  lines: [{ lineIndex: 0, text: "Grace", fontId: "candlepin" }],
-                },
-              },
-            ],
-          },
-        ],
-      }),
+      body: JSON.stringify(buildOrdersPayload()),
     });
   });
+}
+
+function buildClipboardPayload() {
+  return JSON.stringify({
+    items: [
+      {
+        orderNumber: "1003",
+        buyerName: "Katherine Johnson",
+        listingId: "listing-1",
+        transactionId: "txn-1003",
+        personalization: "Katherine RN",
+      },
+    ],
+  });
+}
+
+async function gotoAfterBatchLoads(page) {
+  const batchReady = page.waitForResponse((response) => (
+    response.url().includes("/api/production-batch?batchId=batch-1") && response.status() === 200
+  ));
+  await page.goto("/");
+  await batchReady;
 }
 
 test("opens the Orders workspace shell from the left nav", async ({ page }) => {
@@ -189,4 +246,106 @@ test("renders grouped database orders and selected order item cards", async ({ p
   const inBatchItemCard = ordersWorkspace.locator(".database-order-item-card").filter({ hasText: "Grace" });
   await inBatchItemCard.getByRole("button", { name: "Item actions" }).click();
   await expect(inBatchItemCard.getByRole("button", { name: "Add to Production Batch" })).toBeDisabled();
+});
+
+test("pastes imported Etsy items into the Orders workspace without adding them to the batch", async ({ page }) => {
+  const orderPosts = [];
+  await installSupabaseSession(page);
+  await installClipboardText(page, buildClipboardPayload());
+  await installProductionBatchRoutes(page);
+  await installOrdersWorkspaceRoutes(page, { posts: orderPosts });
+
+  await gotoAfterBatchLoads(page);
+  const ordersWorkspace = page.getByRole("region", { name: "Orders workspace" });
+  await page.getByRole("button", { name: "Orders", exact: true }).click();
+  await ordersWorkspace.getByRole("button", { name: "Paste orders" }).click();
+
+  await expect.poll(() => orderPosts).toHaveLength(1);
+  expect(orderPosts[0]).toMatchObject({
+    action: "importClipboardItems",
+    target: "orders",
+  });
+  expect(orderPosts[0]).not.toHaveProperty("batchId");
+});
+
+test("pastes imported Etsy items into the active production batch", async ({ page }) => {
+  const orderPosts = [];
+  await installSupabaseSession(page);
+  await installClipboardText(page, buildClipboardPayload());
+  await installProductionBatchRoutes(page);
+  await installOrdersWorkspaceRoutes(page, { posts: orderPosts });
+
+  await gotoAfterBatchLoads(page);
+  await page.getByRole("button", { name: "Production Batch", exact: true }).click();
+  await page.getByLabel("Batch tools").click();
+  await page.getByRole("button", { name: "Paste", exact: true }).click();
+
+  await expect.poll(() => orderPosts).toHaveLength(1);
+  expect(orderPosts[0]).toMatchObject({
+    action: "importClipboardItems",
+    target: "productionBatch",
+    batchId: "batch-1",
+  });
+});
+
+test("adds an individual order item to the active production batch from the item menu", async ({ page }) => {
+  const orderPosts = [];
+  await installSupabaseSession(page);
+  await installProductionBatchRoutes(page);
+  await installOrdersWorkspaceRoutes(page, { posts: orderPosts });
+
+  await gotoAfterBatchLoads(page);
+  const ordersWorkspace = page.getByRole("region", { name: "Orders workspace" });
+  await page.getByRole("button", { name: "Orders", exact: true }).click();
+  await expect(ordersWorkspace.getByText("Ada RN")).toBeVisible();
+
+  const firstItemCard = ordersWorkspace.locator(".database-order-item-card").filter({ hasText: "Ada RN" });
+  await firstItemCard.getByRole("button", { name: "Item actions" }).click();
+  await firstItemCard.getByRole("button", { name: "Add to Production Batch" }).click();
+
+  await expect.poll(() => orderPosts).toHaveLength(1);
+  expect(orderPosts[0]).toEqual({
+    action: "addOrderItemToProductionBatch",
+    batchId: "batch-1",
+    orderItemId: "item-1",
+  });
+});
+
+test("adds checked orders to the active production batch", async ({ page }) => {
+  const orderPosts = [];
+  await installSupabaseSession(page);
+  await installProductionBatchRoutes(page);
+  await installOrdersWorkspaceRoutes(page, { posts: orderPosts });
+
+  await gotoAfterBatchLoads(page);
+  const ordersWorkspace = page.getByRole("region", { name: "Orders workspace" });
+  await page.getByRole("button", { name: "Orders", exact: true }).click();
+  await expect(ordersWorkspace.getByLabel("Select order 1001")).toBeVisible();
+  await ordersWorkspace.getByLabel("Select order 1001").check();
+  await ordersWorkspace.getByLabel("Orders tools").click();
+  await ordersWorkspace.getByRole("button", { name: "Add Checked to Production Batch" }).click();
+
+  await expect.poll(() => orderPosts).toHaveLength(1);
+  expect(orderPosts[0]).toEqual({
+    action: "addOrdersToProductionBatch",
+    batchId: "batch-1",
+    orderIds: ["order:1001"],
+  });
+});
+
+test("copying an incomplete order item design shows a completion-needed status", async ({ page }) => {
+  await installSupabaseSession(page);
+  await installProductionBatchRoutes(page);
+  await installOrdersWorkspaceRoutes(page);
+
+  await gotoAfterBatchLoads(page);
+  const ordersWorkspace = page.getByRole("region", { name: "Orders workspace" });
+  await page.getByRole("button", { name: "Orders", exact: true }).click();
+  await expect(ordersWorkspace.getByText("Badge buddy")).toBeVisible();
+
+  const incompleteItemCard = ordersWorkspace.locator(".database-order-item-card").filter({ hasText: "Badge buddy" });
+  await incompleteItemCard.getByRole("button", { name: "Item actions" }).click();
+  await incompleteItemCard.getByRole("button", { name: "Copy Design" }).click({ force: true });
+
+  await expect(page.locator("#workflowAlertText")).toHaveText("Complete and save this design before copying.");
 });

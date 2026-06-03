@@ -57,8 +57,14 @@ import {
   ProductionBatchConflictError,
   saveProductionBatchSnapshot,
 } from "./production-batch-api.js";
-import { fetchWorkspaceOrders } from "./orders-api.js";
 import {
+  addOrderItemToProductionBatch,
+  addOrdersToProductionBatch,
+  fetchWorkspaceOrders,
+  importWorkspaceOrders,
+} from "./orders-api.js";
+import {
+  getCheckedOrderIdsForBulkAction,
   getCopyableSavedBuild,
   getSelectedGroupedOrder,
   normalizeOrdersWorkspaceState,
@@ -69,10 +75,7 @@ import {
   signOutBrowserSession,
   signInWithPassword as signInOperatorWithPassword,
 } from "./auth-session.js";
-import {
-  buildImportedBatchIdentity,
-  parseImportedItems,
-} from "./etsy-import.js";
+import { parseImportedItems } from "./etsy-import.js";
 import {
   chooseProductionBatchStartupState,
   createProductionBatchSnapshot,
@@ -177,6 +180,7 @@ const exportCompletedButton = document.querySelector("#exportCompletedButton");
 const showColorCountsButton = document.querySelector("#showColorCountsButton");
 const copyCompletedButton = document.querySelector("#copyCompletedButton");
 const batchToolsMenu = document.querySelector(".batch-tools-menu");
+const pasteOrdersButton = document.querySelector("#pasteOrdersButton");
 const databaseOrdersListShell = document.querySelector(".database-orders-list-shell");
 const databaseOrderItemsShell = document.querySelector(".database-order-items-shell");
 const selectedDatabaseOrderTitle = document.querySelector(".database-order-items-panel .editor-header h2");
@@ -185,7 +189,7 @@ const addCheckedOrdersToBatchButton = document.querySelector("#addCheckedOrdersT
 const editorToolsMenu = document.querySelector(".editor-tools-menu");
 const presetToolsMenu = document.querySelector(".preset-tools-menu");
 const batchActionLabelByButton = new Map(
-  [addOrderButton, importClipboardButton, clearBatchButton, showColorCountsButton, exportCompletedButton, copyCompletedButton]
+  [addOrderButton, importClipboardButton, clearBatchButton, showColorCountsButton, exportCompletedButton, copyCompletedButton, pasteOrdersButton, addCheckedOrdersToBatchButton]
     .filter(Boolean)
     .map((button) => [button, button.querySelector(".batch-tool-label")]),
 );
@@ -539,7 +543,7 @@ const statusLabels = {
   captured: "Complete",
   exported: "Exported",
 };
-const IMPORT_SOURCE_TAG = "thankfulforyou-etsy-clipboard";
+
 function getFontOption(fontId) {
   return resolveFontOption(fontId, FONT_OPTIONS);
 }
@@ -4270,6 +4274,125 @@ function invalidateDatabaseOrders() {
   loadedDatabaseOrdersKey = null;
 }
 
+async function resolveProductionBatchMutationAccessToken() {
+  const accessToken = await getAccessToken();
+  if (!accessToken) {
+    throw new Error("Authentication required.");
+  }
+  productionBatchAccessToken = accessToken;
+  return accessToken;
+}
+
+function getActiveProductionBatchId() {
+  return typeof productionBatchContext?.id === "string" && productionBatchContext.id.trim()
+    ? productionBatchContext.id.trim()
+    : "";
+}
+
+function requireActiveProductionBatchId() {
+  const batchId = getActiveProductionBatchId();
+  if (!batchId) {
+    updateWorkflowAlert("Open an active production batch before adding orders.", "error");
+    return "";
+  }
+
+  return batchId;
+}
+
+function countFromPayload(payload, key) {
+  const value = Number(payload?.[key]);
+  return Number.isFinite(value) && value > 0 ? value : 0;
+}
+
+function designNoun(count) {
+  return `design${count === 1 ? "" : "s"}`;
+}
+
+function buildOrdersImportMessage(payload) {
+  const importedCount = countFromPayload(payload, "importedOrderItemCount");
+  if (importedCount > 0) {
+    return `Imported ${importedCount} Etsy ${designNoun(importedCount)} to Orders.`;
+  }
+
+  return "No new Etsy designs were imported.";
+}
+
+function buildProductionBatchImportMessage(payload) {
+  const importedCount = countFromPayload(payload, "importedOrderItemCount");
+  const addedCount = countFromPayload(payload, "addedOrderItemCount");
+
+  if (importedCount > 0 && addedCount > 0) {
+    return `Imported ${importedCount} Etsy ${designNoun(importedCount)} and added ${addedCount} to the production batch.`;
+  }
+  if (importedCount > 0) {
+    return `Imported ${importedCount} Etsy ${designNoun(importedCount)}. No new designs were added to the production batch.`;
+  }
+  if (addedCount > 0) {
+    return `Added ${addedCount} existing ${designNoun(addedCount)} to the production batch.`;
+  }
+
+  return "No new designs were added to the production batch.";
+}
+
+function buildAddedToBatchMessage(payload) {
+  const addedCount = countFromPayload(payload, "addedOrderItemCount");
+
+  if (addedCount > 0) {
+    return `Added ${addedCount} ${designNoun(addedCount)} to the production batch.`;
+  }
+
+  return "Selected designs were already in the production batch.";
+}
+
+function updateDatabaseOrdersFromPayload(payload, options = {}) {
+  if (!Array.isArray(payload?.orders)) {
+    return false;
+  }
+
+  updateDatabaseOrdersState(normalizeOrdersWorkspaceState({
+    payload,
+    selectedOrderId: selectedDatabaseOrderId,
+    checkedOrderIds: options.checkedOrderIds ?? checkedDatabaseOrderIds,
+  }));
+  loadedDatabaseOrdersKey = getActiveProductionBatchId();
+  renderDatabaseOrdersWorkspace();
+  return true;
+}
+
+async function refreshProductionBatchSnapshot(accessToken) {
+  const batchId = getActiveProductionBatchId();
+  if (!batchId) {
+    return false;
+  }
+
+  const snapshot = await fetchProductionBatchSnapshot(batchId, accessToken);
+  if (snapshot?.batch) {
+    enableProductionBatchSync(snapshot.batch);
+  }
+  if (snapshot) {
+    applyPersistedBatchState(snapshot);
+    lastProductionBatchSaveKey = buildProductionBatchSaveKey(buildProductionBatchSnapshot());
+    suppressBatchSyncLocalNotice = true;
+    persistBatchState({ skipRemoteSave: true });
+    suppressBatchSyncLocalNotice = false;
+    renderOrderList();
+    return true;
+  }
+
+  return false;
+}
+
+async function refreshOrdersAndProductionBatch({ payload = null, accessToken, refreshBatch = false } = {}) {
+  if (refreshBatch) {
+    await refreshProductionBatchSnapshot(accessToken);
+  }
+
+  if (!updateDatabaseOrdersFromPayload(payload)) {
+    invalidateDatabaseOrders();
+    await loadDatabaseOrders({ force: true });
+  }
+}
+
 async function loadDatabaseOrders({ force = false } = {}) {
   if (!productionBatchAccessToken) {
     return;
@@ -4326,7 +4449,10 @@ function renderDatabaseOrdersWorkspace() {
   heading.textContent = "Orders list";
   databaseOrdersListShell.append(heading);
 
-  addCheckedOrdersToBatchButton.disabled = checkedDatabaseOrderIds.size === 0;
+  if (pasteOrdersButton) {
+    pasteOrdersButton.disabled = databaseOrdersLoading || !productionBatchAccessToken;
+  }
+  addCheckedOrdersToBatchButton.disabled = databaseOrdersLoading || checkedDatabaseOrderIds.size === 0;
 
   if (databaseOrdersLoading) {
     const loading = document.createElement("p");
@@ -4473,9 +4599,8 @@ function renderSelectedDatabaseOrderItems() {
     const copyDesignButton = document.createElement("button");
     copyDesignButton.type = "button";
     copyDesignButton.textContent = "Copy Design";
-    copyDesignButton.disabled = !savedBuild;
     copyDesignButton.addEventListener("click", () => {
-      updateWorkflowAlert("Copy Design will be wired in the next task.", "pending");
+      void copyDatabaseOrderItemDesign(item, copyDesignButton);
       closeDetailsMenu(menu);
     });
 
@@ -4484,7 +4609,7 @@ function renderSelectedDatabaseOrderItems() {
     addToBatchButton.textContent = "Add to Production Batch";
     addToBatchButton.disabled = Boolean(item?.isInActiveBatch);
     addToBatchButton.addEventListener("click", () => {
-      updateWorkflowAlert("Add to Production Batch will be wired in the next task.", "pending");
+      void addDatabaseOrderItemToBatch(item, addToBatchButton);
       closeDetailsMenu(menu);
     });
 
@@ -4525,6 +4650,120 @@ function renderSelectedDatabaseOrderItems() {
     card.append(cardHeader, preview, lineText, status, savedDesign);
     databaseOrderItemsShell.append(card);
   });
+}
+
+async function addDatabaseOrderItemToBatch(item, button = null) {
+  const orderItemId = typeof item?.id === "string" ? item.id.trim() : "";
+  const batchId = requireActiveProductionBatchId();
+  if (!batchId || !orderItemId) {
+    return;
+  }
+
+  if (button) {
+    button.disabled = true;
+    button.textContent = "Adding...";
+  }
+
+  try {
+    const accessToken = await resolveProductionBatchMutationAccessToken();
+    const payload = await addOrderItemToProductionBatch({
+      batchId,
+      orderItemId,
+      accessToken,
+    });
+
+    await refreshOrdersAndProductionBatch({ payload, accessToken, refreshBatch: true });
+    updateWorkflowAlert(buildAddedToBatchMessage(payload), "success");
+  } catch (error) {
+    updateWorkflowAlert(
+      error instanceof Error ? error.message : "Unable to add the order item to the production batch.",
+      "error",
+    );
+  } finally {
+    if (button) {
+      button.disabled = Boolean(item?.isInActiveBatch);
+      button.textContent = "Add to Production Batch";
+    }
+    renderDatabaseOrdersWorkspace();
+  }
+}
+
+async function addCheckedDatabaseOrdersToBatch() {
+  const batchId = requireActiveProductionBatchId();
+  if (!batchId) {
+    return;
+  }
+
+  const orderIds = getCheckedOrderIdsForBulkAction(checkedDatabaseOrderIds);
+  if (!orderIds.length) {
+    updateWorkflowAlert("Select one or more orders before adding them to the production batch.", "error");
+    return;
+  }
+
+  addCheckedOrdersToBatchButton.disabled = true;
+  setBatchActionLabel(addCheckedOrdersToBatchButton, "Adding...");
+
+  try {
+    const accessToken = await resolveProductionBatchMutationAccessToken();
+    const payload = await addOrdersToProductionBatch({
+      batchId,
+      orderIds,
+      accessToken,
+    });
+    const nextCheckedOrderIds = new Set(
+      [...checkedDatabaseOrderIds].filter((orderId) => !orderIds.includes(orderId)),
+    );
+
+    updateDatabaseOrdersFromPayload(payload, { checkedOrderIds: nextCheckedOrderIds });
+    await refreshOrdersAndProductionBatch({ payload, accessToken, refreshBatch: true });
+    checkedDatabaseOrderIds = nextCheckedOrderIds;
+    renderDatabaseOrdersWorkspace();
+    updateWorkflowAlert(buildAddedToBatchMessage(payload), "success");
+  } catch (error) {
+    updateWorkflowAlert(
+      error instanceof Error ? error.message : "Unable to add checked orders to the production batch.",
+      "error",
+    );
+  } finally {
+    setBatchActionLabel(addCheckedOrdersToBatchButton, "Add Checked to Production Batch");
+    renderDatabaseOrdersWorkspace();
+  }
+}
+
+async function copyDatabaseOrderItemDesign(item, button = null) {
+  const savedBuild = getCopyableSavedBuild(item);
+  if (!savedBuild) {
+    updateWorkflowAlert("Complete and save this design before copying.", "error");
+    return;
+  }
+
+  if (!canCopySvgToClipboard()) {
+    updateWorkflowAlert("Clipboard copy is not available in this browser context.", "error");
+    return;
+  }
+
+  if (button) {
+    button.disabled = true;
+    button.textContent = "Copying...";
+  }
+
+  try {
+    const svgSource = await requestSvgSource({
+      layout: buildExportPayload(savedBuild.layout, savedBuild.analysis, item?.source),
+    });
+    await copySvgToClipboard(svgSource);
+    updateWorkflowAlert("Copied design SVG to the clipboard.", "success");
+  } catch (error) {
+    updateWorkflowAlert(
+      error instanceof Error ? error.message : "Unable to copy the design SVG.",
+      "error",
+    );
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = "Copy Design";
+    }
+  }
 }
 
 function clamp(value, min, max) {
@@ -6103,69 +6342,67 @@ async function importFromClipboard() {
     return;
   }
 
+  const batchId = requireActiveProductionBatchId();
+  if (!batchId) {
+    return;
+  }
+
   importClipboardButton.disabled = true;
   setBatchActionLabel(importClipboardButton, "Pasting...");
 
   try {
     const clipboardText = await navigator.clipboard.readText();
     const importedItems = parseImportedItems(clipboardText, { getPresetIdForListingId });
-    const existingImportedIdentities = new Set(
-      orders
-        .map((order) => buildImportedBatchIdentity(order?.source, order?.text))
-        .filter(Boolean),
-    );
-    const dedupedItems = [];
-    let skippedCount = 0;
-
-    for (const entry of importedItems) {
-      const identity = buildImportedBatchIdentity(entry.source, entry.text);
-
-      if (identity && existingImportedIdentities.has(identity)) {
-        skippedCount += 1;
-        continue;
-      }
-
-      if (identity) {
-        existingImportedIdentities.add(identity);
-      }
-
-      dedupedItems.push(entry);
-    }
-
-    const createdItems = dedupedItems.map((entry) => {
-      return createBatchItem({
-        text: entry.text,
-        status: "in-progress",
-        presetId: entry.presetId,
-        source: {
-          ...entry.source,
-          importSource: IMPORT_SOURCE_TAG,
-        },
-      });
+    const accessToken = await resolveProductionBatchMutationAccessToken();
+    const payload = await importWorkspaceOrders({
+      target: "productionBatch",
+      batchId,
+      items: importedItems,
+      accessToken,
     });
-
-    saveActiveOrderDraft();
-    if (createdItems.length) {
-      orders.push(...createdItems);
-      orderSequence += createdItems.length;
-      selectOrder(createdItems[0].id);
-    }
-
-    if (createdItems.length && skippedCount) {
-      updateWorkflowAlert(`Imported ${createdItems.length} new Etsy design${createdItems.length === 1 ? "" : "s"} and skipped ${skippedCount} already in the batch.`, "success");
-    } else if (createdItems.length) {
-      updateWorkflowAlert(`Imported ${createdItems.length} Etsy design${createdItems.length === 1 ? "" : "s"} from the clipboard.`, "success");
-    } else if (skippedCount) {
-      updateWorkflowAlert(`Skipped ${skippedCount} Etsy design${skippedCount === 1 ? "" : "s"} already in the batch. No new designs were added.`, "success");
-    } else {
-      updateWorkflowAlert("Clipboard data did not include any importable Etsy designs.", "error");
-    }
+    await refreshOrdersAndProductionBatch({ payload, accessToken, refreshBatch: true });
+    updateWorkflowAlert(buildProductionBatchImportMessage(payload), "success");
   } catch (error) {
     const message = error instanceof Error ? error.message : "Clipboard import failed.";
     updateWorkflowAlert(message, "error");
   } finally {
     importClipboardButton.disabled = false;
     setBatchActionLabel(importClipboardButton, "Paste");
+  }
+}
+
+async function importOrdersFromClipboard() {
+  if (!navigator.clipboard?.readText) {
+    updateWorkflowAlert("Clipboard import is not available in this browser context.", "error");
+    return;
+  }
+
+  if (!pasteOrdersButton) {
+    return;
+  }
+
+  pasteOrdersButton.disabled = true;
+  setBatchActionLabel(pasteOrdersButton, "Pasting...");
+
+  try {
+    const clipboardText = await navigator.clipboard.readText();
+    const importedItems = parseImportedItems(clipboardText, { getPresetIdForListingId });
+    const accessToken = await resolveProductionBatchMutationAccessToken();
+    const payload = await importWorkspaceOrders({
+      target: "orders",
+      items: importedItems,
+      accessToken,
+    });
+
+    await refreshOrdersAndProductionBatch({ payload, accessToken });
+    updateWorkflowAlert(buildOrdersImportMessage(payload), "success");
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Clipboard import failed.";
+    updateWorkflowAlert(message, "error");
+  } finally {
+    pasteOrdersButton.disabled = false;
+    setBatchActionLabel(pasteOrdersButton, "Paste");
+    renderDatabaseOrdersWorkspace();
   }
 }
 
@@ -7584,8 +7821,11 @@ orderWorkspaceButton.addEventListener("click", () => {
 databaseOrdersWorkspaceButton.addEventListener("click", () => {
   setActiveWorkspace("databaseOrders");
 });
+pasteOrdersButton?.addEventListener("click", () => {
+  void importOrdersFromClipboard();
+});
 addCheckedOrdersToBatchButton?.addEventListener("click", () => {
-  updateWorkflowAlert("Add Checked to Production Batch will be wired in the next task.", "pending");
+  void addCheckedDatabaseOrdersToBatch();
 });
 presetWorkspaceButton.addEventListener("click", () => {
   setActiveWorkspace("presets");
@@ -7700,7 +7940,7 @@ overwritePresetButton?.addEventListener("click", () => {
 assignPresetToListingButton?.addEventListener("click", () => {
   void assignSelectedPresetToActiveListing();
 });
-[addOrderButton, importClipboardButton, clearBatchButton, showColorCountsButton, exportCompletedButton, copyCompletedButton]
+[addOrderButton, importClipboardButton, clearBatchButton, showColorCountsButton, exportCompletedButton, copyCompletedButton, pasteOrdersButton, addCheckedOrdersToBatchButton]
   .filter(Boolean)
   .forEach((button) => {
     button.addEventListener("click", () => {
