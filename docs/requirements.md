@@ -287,6 +287,19 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - The durable business object is an `order_item`. Each order item has one current `design` that stores its badge-reel artwork/layout state.
 - Operators should create a `production_batch` from a subset of order items, produce that batch, and then move on to a new batch.
 - A production batch should contain order items through `batch_items` so an order item can appear in later remake, rework, replacement, or test batches without losing its original order-item history.
+- The app should provide a top-level left navigation item named `Orders` for browsing saved database orders outside the active production batch.
+- The `Orders` workspace should show only non-archived orders and order items by default.
+- The `Orders` workspace should use a calm production layout with an orders column and a selected-order items column.
+- The first `Orders` workspace column should show one row per Etsy order, grouped by order number where available.
+- Each order row on the `Orders` workspace should include a checkbox so operators can select orders for bulk actions.
+- The orders column should include an ellipsis menu with an action to add all checked orders to the active production batch.
+- Clicking an order row in the `Orders` workspace should show one card for each non-archived order item in that order.
+- Each order item card on the `Orders` workspace should include the saved design when available.
+- Each order item card on the `Orders` workspace should include an ellipsis menu with actions for `Copy Design` and `Add to Production Batch`.
+- `Copy Design` from the `Orders` workspace should copy the saved design output when export-ready geometry is available and otherwise clearly report that the design must be completed before copying.
+- `Add to Production Batch` from the `Orders` workspace should add the order item to the active production batch through `batch_items` without duplicating an existing active batch membership.
+- Pasting/importing Etsy clipboard data from the `Production Batch` workspace should create or update the imported order items and add the imported items to the active production batch.
+- Pasting/importing Etsy clipboard data from the `Orders` workspace should create or update the imported order items in the workspace order list without adding them to the active production batch.
 - Presets and size guides must be stored in Supabase Postgres and shared across environments for the authenticated workspace.
 - Presets should be stored as relational preset records plus line-rule records rather than one browser-local or remote JSON snapshot.
 - Size guides should be stored as relational size-guide records rather than inside a preset snapshot blob.
