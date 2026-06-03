@@ -2259,6 +2259,59 @@ button:disabled {
   overflow: auto;
 }
 
+.database-order-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+}
+
+.database-order-checkbox {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--ink);
+}
+
+.database-order-row-button {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.database-order-row.is-selected .database-order-row-button,
+.database-order-row-button:hover,
+.database-order-row-button:focus-visible {
+  border-color: var(--ink);
+  background: #f8fafc;
+}
+
+.database-order-row-title {
+  overflow: hidden;
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.database-order-row-meta,
+.database-order-selected-meta,
+.database-order-item-listing,
+.database-order-item-lines,
+.database-order-item-status,
+.database-order-item-saved-design {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.35;
+}
+
 .database-order-items-panel .editor-body {
   grid-template-rows: auto;
   align-content: start;
@@ -2269,6 +2322,94 @@ button:disabled {
 
 .database-order-items-shell {
   width: min(860px, 100%);
+}
+
+.database-order-item-card {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.database-order-item-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 12px;
+}
+
+.database-order-item-title-group {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.database-order-item-title-group h3 {
+  overflow-wrap: anywhere;
+  margin: 0;
+  color: var(--ink);
+  font-size: 1rem;
+  line-height: 1.25;
+}
+
+.database-order-item-menu {
+  position: relative;
+}
+
+.database-order-item-menu-toggle {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+  font-weight: 800;
+  cursor: pointer;
+  list-style: none;
+}
+
+.database-order-item-menu-toggle::-webkit-details-marker {
+  display: none;
+}
+
+.database-order-item-menu-popover {
+  position: absolute;
+  z-index: 10;
+  top: calc(100% + 6px);
+  right: 0;
+  display: grid;
+  gap: 6px;
+  min-width: 190px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.16);
+}
+
+.database-order-item-menu-popover button {
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.database-order-item-menu-popover button:hover:not(:disabled),
+.database-order-item-menu-popover button:focus-visible {
+  background: #f1f5f9;
+}
+
+.database-order-item-menu-popover button:disabled {
+  color: var(--muted);
+  cursor: not-allowed;
 }
 
 .preset-workspace {

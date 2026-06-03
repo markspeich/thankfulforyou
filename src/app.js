@@ -57,6 +57,12 @@ import {
   ProductionBatchConflictError,
   saveProductionBatchSnapshot,
 } from "./production-batch-api.js";
+import { fetchWorkspaceOrders } from "./orders-api.js";
+import {
+  getCopyableSavedBuild,
+  getSelectedGroupedOrder,
+  normalizeOrdersWorkspaceState,
+} from "./orders-workspace.js";
 import {
   getAccessToken,
   getSignedInSession,
@@ -171,6 +177,11 @@ const exportCompletedButton = document.querySelector("#exportCompletedButton");
 const showColorCountsButton = document.querySelector("#showColorCountsButton");
 const copyCompletedButton = document.querySelector("#copyCompletedButton");
 const batchToolsMenu = document.querySelector(".batch-tools-menu");
+const databaseOrdersListShell = document.querySelector(".database-orders-list-shell");
+const databaseOrderItemsShell = document.querySelector(".database-order-items-shell");
+const selectedDatabaseOrderTitle = document.querySelector(".database-order-items-panel .editor-header h2");
+const selectedDatabaseOrderMeta = document.querySelector(".database-order-items-panel .editor-meta");
+const addCheckedOrdersToBatchButton = document.querySelector("#addCheckedOrdersToBatchButton");
 const editorToolsMenu = document.querySelector(".editor-tools-menu");
 const presetToolsMenu = document.querySelector(".preset-tools-menu");
 const batchActionLabelByButton = new Map(
@@ -305,6 +316,11 @@ let deferredPreviewRenderToken = 0;
 let suppressBatchSyncLocalNotice = false;
 let copiedLayoutControlsSnapshot = null;
 let activeWorkspace = "orders";
+let databaseOrders = [];
+let selectedDatabaseOrderId = null;
+let checkedDatabaseOrderIds = new Set();
+let databaseOrdersLoading = false;
+let loadedDatabaseOrdersKey = null;
 let selectedFontId = "candlepin";
 let navCollapsed = readNavCollapsedPreference();
 let presetEditorDraft = null;
@@ -4159,6 +4175,295 @@ function registerOutsideDismissableDetailsMenu(menu) {
   });
 }
 
+function getDatabaseOrderNumber(order) {
+  const rawOrderNumber = typeof order?.orderNumber === "string" ? order.orderNumber.trim() : "";
+  return rawOrderNumber || String(order?.id || "").replace(/^order:/, "") || "Unknown";
+}
+
+function getDatabaseOrderMeta(order) {
+  const parts = [];
+  if (typeof order?.buyerName === "string" && order.buyerName.trim()) {
+    parts.push(order.buyerName.trim());
+  }
+
+  const itemCount = Array.isArray(order?.items) ? order.items.length : 0;
+  parts.push(`${itemCount} item${itemCount === 1 ? "" : "s"}`);
+  parts.push(order?.isInActiveBatch ? "In batch" : "Not in batch");
+  return parts.join(" - ");
+}
+
+function getDatabaseOrderItemListingText(item) {
+  const candidates = [
+    item?.listingTitle,
+    item?.title,
+    item?.listing?.title,
+    item?.design?.listingTitle,
+  ];
+  const match = candidates.find((value) => typeof value === "string" && value.trim());
+  return match ? match.trim() : "Untitled listing";
+}
+
+function getDatabaseOrderItemDesignText(item) {
+  const design = item?.design && typeof item.design === "object" ? item.design : {};
+  const directText = typeof design.text === "string" && design.text.trim()
+    ? design.text.trim()
+    : typeof item?.text === "string" && item.text.trim()
+      ? item.text.trim()
+      : "";
+  return directText || "No design text";
+}
+
+function getDatabaseOrderItemFlattenedLines(item) {
+  const lines = Array.isArray(item?.design?.lines) ? item.design.lines : [];
+  const lineText = lines
+    .map((line) => (typeof line?.text === "string" ? line.text.trim() : ""))
+    .filter(Boolean);
+  return lineText.length ? lineText.join(" / ") : getDatabaseOrderItemDesignText(item);
+}
+
+function updateDatabaseOrdersState(nextState) {
+  databaseOrders = nextState.orders;
+  selectedDatabaseOrderId = nextState.selectedOrderId;
+  checkedDatabaseOrderIds = nextState.checkedOrderIds;
+}
+
+async function loadDatabaseOrders() {
+  if (!productionBatchAccessToken) {
+    return;
+  }
+
+  const batchId = productionBatchContext?.id || null;
+  const loadKey = batchId || "";
+  if (databaseOrdersLoading || loadedDatabaseOrdersKey === loadKey) {
+    return;
+  }
+
+  databaseOrdersLoading = true;
+  renderDatabaseOrdersWorkspace();
+  updateWorkflowAlert("Loading orders...", "pending", { autoHideMs: 0 });
+
+  try {
+    const payload = await fetchWorkspaceOrders({
+      batchId,
+      accessToken: productionBatchAccessToken,
+    });
+    updateDatabaseOrdersState(normalizeOrdersWorkspaceState({
+      payload,
+      selectedOrderId: selectedDatabaseOrderId,
+      checkedOrderIds: checkedDatabaseOrderIds,
+    }));
+    loadedDatabaseOrdersKey = loadKey;
+    if (databaseOrders.length === 0) {
+      updateWorkflowAlert("No orders found in the workspace.", "pending");
+    } else {
+      updateWorkflowAlert("", "pending", { autoHideMs: 0 });
+    }
+  } catch (error) {
+    updateWorkflowAlert(error instanceof Error ? error.message : "Unable to load workspace orders.", "error");
+  } finally {
+    databaseOrdersLoading = false;
+    renderDatabaseOrdersWorkspace();
+  }
+}
+
+function renderDatabaseOrdersWorkspace() {
+  if (!databaseOrdersListShell || !addCheckedOrdersToBatchButton) {
+    return;
+  }
+
+  databaseOrdersListShell.id ||= "databaseOrdersList";
+  databaseOrdersListShell.replaceChildren();
+
+  const heading = document.createElement("div");
+  heading.className = "section-heading";
+  heading.textContent = "Orders list";
+  databaseOrdersListShell.append(heading);
+
+  addCheckedOrdersToBatchButton.disabled = checkedDatabaseOrderIds.size === 0;
+
+  if (databaseOrdersLoading) {
+    const loading = document.createElement("p");
+    loading.className = "batch-tools-note";
+    loading.textContent = "Loading orders...";
+    databaseOrdersListShell.append(loading);
+    renderSelectedDatabaseOrderItems();
+    return;
+  }
+
+  if (!databaseOrders.length) {
+    const empty = document.createElement("p");
+    empty.className = "batch-tools-note";
+    empty.textContent = "No orders loaded.";
+    databaseOrdersListShell.append(empty);
+    renderSelectedDatabaseOrderItems();
+    return;
+  }
+
+  databaseOrders.forEach((order) => {
+    const orderNumber = getDatabaseOrderNumber(order);
+    const row = document.createElement("div");
+    row.className = "database-order-row";
+    row.classList.toggle("is-selected", order.id === selectedDatabaseOrderId);
+
+    const checkbox = document.createElement("input");
+    checkbox.className = "database-order-checkbox";
+    checkbox.type = "checkbox";
+    checkbox.checked = checkedDatabaseOrderIds.has(order.id);
+    checkbox.setAttribute("aria-label", `Select order ${orderNumber}`);
+    checkbox.addEventListener("click", (event) => {
+      event.stopPropagation();
+    });
+    checkbox.addEventListener("change", () => {
+      if (checkbox.checked) {
+        checkedDatabaseOrderIds.add(order.id);
+      } else {
+        checkedDatabaseOrderIds.delete(order.id);
+      }
+      renderDatabaseOrdersWorkspace();
+    });
+
+    const button = document.createElement("button");
+    button.className = "database-order-row-button";
+    button.type = "button";
+    button.setAttribute("aria-pressed", String(order.id === selectedDatabaseOrderId));
+    button.addEventListener("click", () => {
+      selectedDatabaseOrderId = order.id;
+      renderDatabaseOrdersWorkspace();
+    });
+
+    const title = document.createElement("span");
+    title.className = "database-order-row-title";
+    title.textContent = `Order ${orderNumber}`;
+
+    const meta = document.createElement("span");
+    meta.className = "database-order-row-meta";
+    meta.textContent = getDatabaseOrderMeta(order);
+
+    button.append(title, meta);
+    row.append(checkbox, button);
+    databaseOrdersListShell.append(row);
+  });
+
+  renderSelectedDatabaseOrderItems();
+}
+
+function renderSelectedDatabaseOrderItems() {
+  if (!databaseOrderItemsShell) {
+    return;
+  }
+
+  databaseOrderItemsShell.replaceChildren();
+  const selectedOrder = getSelectedGroupedOrder(databaseOrders, selectedDatabaseOrderId);
+
+  if (selectedDatabaseOrderTitle) {
+    selectedDatabaseOrderTitle.textContent = selectedOrder
+      ? `Order ${getDatabaseOrderNumber(selectedOrder)}`
+      : "Selected order items";
+  }
+  if (selectedDatabaseOrderMeta) {
+    selectedDatabaseOrderMeta.textContent = selectedOrder
+      ? getDatabaseOrderMeta(selectedOrder)
+      : "Select an order to review its items before adding designs to the production batch.";
+  }
+
+  const heading = document.createElement("div");
+  heading.className = "section-heading";
+  heading.textContent = selectedOrder ? `Order ${getDatabaseOrderNumber(selectedOrder)}` : "Selected order items";
+  databaseOrderItemsShell.append(heading);
+
+  if (!selectedOrder) {
+    const empty = document.createElement("p");
+    empty.className = "note";
+    empty.textContent = databaseOrdersLoading ? "Loading order items..." : "No order selected.";
+    databaseOrderItemsShell.append(empty);
+    return;
+  }
+
+  const meta = document.createElement("p");
+  meta.className = "database-order-selected-meta";
+  meta.textContent = getDatabaseOrderMeta(selectedOrder);
+  databaseOrderItemsShell.append(meta);
+
+  const items = Array.isArray(selectedOrder.items) ? selectedOrder.items : [];
+  if (!items.length) {
+    const empty = document.createElement("p");
+    empty.className = "note";
+    empty.textContent = "This order has no imported items.";
+    databaseOrderItemsShell.append(empty);
+    return;
+  }
+
+  items.forEach((item) => {
+    const savedBuild = getCopyableSavedBuild(item);
+    const card = document.createElement("article");
+    card.className = "database-order-item-card";
+
+    const cardHeader = document.createElement("div");
+    cardHeader.className = "database-order-item-header";
+
+    const titleGroup = document.createElement("div");
+    titleGroup.className = "database-order-item-title-group";
+
+    const title = document.createElement("h3");
+    title.textContent = getDatabaseOrderItemDesignText(item);
+
+    const listing = document.createElement("p");
+    listing.className = "database-order-item-listing";
+    listing.textContent = getDatabaseOrderItemListingText(item);
+
+    titleGroup.append(title, listing);
+
+    const menu = document.createElement("details");
+    menu.className = "database-order-item-menu";
+    const summary = document.createElement("summary");
+    summary.className = "database-order-item-menu-toggle";
+    summary.setAttribute("role", "button");
+    summary.setAttribute("aria-label", "Item actions");
+    summary.textContent = "...";
+    const menuBody = document.createElement("div");
+    menuBody.className = "database-order-item-menu-popover";
+
+    const copyDesignButton = document.createElement("button");
+    copyDesignButton.type = "button";
+    copyDesignButton.textContent = "Copy Design";
+    copyDesignButton.disabled = !savedBuild;
+    copyDesignButton.addEventListener("click", () => {
+      updateWorkflowAlert("Copy Design will be wired in the next task.", "pending");
+      closeDetailsMenu(menu);
+    });
+
+    const addToBatchButton = document.createElement("button");
+    addToBatchButton.type = "button";
+    addToBatchButton.textContent = "Add to Production Batch";
+    addToBatchButton.disabled = Boolean(item?.isInActiveBatch);
+    addToBatchButton.addEventListener("click", () => {
+      updateWorkflowAlert("Add to Production Batch will be wired in the next task.", "pending");
+      closeDetailsMenu(menu);
+    });
+
+    menuBody.append(copyDesignButton, addToBatchButton);
+    menu.append(summary, menuBody);
+    registerOutsideDismissableDetailsMenu(menu);
+
+    cardHeader.append(titleGroup, menu);
+
+    const lineText = document.createElement("p");
+    lineText.className = "database-order-item-lines";
+    lineText.textContent = getDatabaseOrderItemFlattenedLines(item);
+
+    const status = document.createElement("p");
+    status.className = "database-order-item-status";
+    status.textContent = item?.isInActiveBatch ? "Already in active batch" : "Not in active batch";
+
+    const savedDesign = document.createElement("p");
+    savedDesign.className = "database-order-item-saved-design";
+    savedDesign.textContent = savedBuild ? "Saved design available" : "No saved design available";
+
+    card.append(cardHeader, lineText, status, savedDesign);
+    databaseOrderItemsShell.append(card);
+  });
+}
+
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
@@ -5462,6 +5767,10 @@ function setActiveWorkspace(workspace) {
   sizeGuideWorkspaceButton.setAttribute("aria-pressed", String(activeWorkspace === "sizeGuides"));
   if (activeWorkspace === "presets") {
     selectFirstPresetEditorRowIfNeeded();
+  }
+  if (activeWorkspace === "databaseOrders") {
+    renderDatabaseOrdersWorkspace();
+    void loadDatabaseOrders();
   }
   if (activeWorkspace === "fonts") {
     renderFontWorkspace();
@@ -7211,6 +7520,9 @@ orderWorkspaceButton.addEventListener("click", () => {
 });
 databaseOrdersWorkspaceButton.addEventListener("click", () => {
   setActiveWorkspace("databaseOrders");
+});
+addCheckedOrdersToBatchButton?.addEventListener("click", () => {
+  updateWorkflowAlert("Add Checked to Production Batch will be wired in the next task.", "pending");
 });
 presetWorkspaceButton.addEventListener("click", () => {
   setActiveWorkspace("presets");
