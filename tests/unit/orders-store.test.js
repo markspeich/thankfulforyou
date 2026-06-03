@@ -52,6 +52,9 @@ function createTableMock(table) {
       supabaseMock.db[table].push(...clone(Array.isArray(payload) ? payload : [payload]));
       return Promise.resolve({ data: null, error: null });
     },
+    delete() {
+      return createDeleteChain(table);
+    },
   };
 }
 
@@ -104,6 +107,19 @@ function createSelectChain(table) {
     },
   };
   return chain;
+}
+
+function createDeleteChain(table) {
+  const call = { table, operation: "delete", filters: [] };
+  supabaseMock.calls.push(call);
+
+  return {
+    in(column, values) {
+      call.filters.push({ type: "in", column, values: clone(values) });
+      supabaseMock.db[table] = supabaseMock.db[table].filter((row) => !values.includes(row[column]));
+      return Promise.resolve({ data: null, error: null });
+    },
+  };
 }
 
 function resolveRows(table, filters, state) {
@@ -385,6 +401,56 @@ describe("orders store", () => {
       production_status: "draft",
     });
     expect(batchItemsUpsert).toBeUndefined();
+  });
+
+  it("replaces old imported design lines when re-imported text has fewer lines", async () => {
+    resetDb({
+      order_items: [{
+        id: "transaction:txn-reimport",
+        workspace_id: "workspace-1",
+        status: "active",
+        order_number: "3501",
+        buyer_name: "Ada",
+        transaction_id: "txn-reimport",
+        source_json: { orderNumber: "3501", transactionId: "txn-reimport", buyerName: "Ada" },
+        quantity: 1,
+      }],
+      designs: [{
+        id: "design-transaction:txn-reimport",
+        workspace_id: "workspace-1",
+        order_item_id: "transaction:txn-reimport",
+        design_text: "Name\nRN",
+      }],
+      design_lines: [
+        { design_id: "design-transaction:txn-reimport", line_index: 0, text: "Name", font_id: "skywalk" },
+        { design_id: "design-transaction:txn-reimport", line_index: 1, text: "RN", font_id: "somekind" },
+      ],
+    });
+    const { importWorkspaceOrderItems } = await import("../../api/_lib/orders-store.js");
+
+    const result = await importWorkspaceOrderItems({
+      workspaceId: "workspace-1",
+      userId: "user-1",
+      items: [{
+        text: "Name",
+        source: { orderNumber: "3501", transactionId: "txn-reimport", buyerName: "Ada" },
+        settings: { lines: [{ fontId: "skywalk" }] },
+      }],
+    });
+
+    const designLinesDelete = supabaseMock.calls.find((call) => call.table === "design_lines" && call.operation === "delete");
+    const designLinesUpsert = supabaseMock.calls.find((call) => call.table === "design_lines" && call.operation === "upsert");
+    const importedItem = result.orders[0].items[0];
+
+    expect(designLinesDelete).toMatchObject({
+      table: "design_lines",
+      operation: "delete",
+      filters: [{ type: "in", column: "design_id", values: ["design-transaction:txn-reimport"] }],
+    });
+    expect(supabaseMock.calls.indexOf(designLinesDelete)).toBeLessThan(supabaseMock.calls.indexOf(designLinesUpsert));
+    expect(importedItem.design.lines).toEqual([
+      expect.objectContaining({ lineIndex: 0, text: "Name", fontId: "skywalk" }),
+    ]);
   });
 
   it("adds every item in a grouped order to a production batch", async () => {

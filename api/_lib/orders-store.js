@@ -394,6 +394,18 @@ export async function importWorkspaceOrderItems({
     const designId = designIdByOrderItemId.get(orderItemId);
     return designId ? buildDesignLineRows(item, designId) : [];
   });
+  const savedDesignIds = (savedDesigns || []).map((design) => design.id);
+
+  if (savedDesignIds.length) {
+    const { error: deleteLinesError } = await supabase
+      .from("design_lines")
+      .delete()
+      .in("design_id", savedDesignIds);
+
+    if (deleteLinesError) {
+      throw deleteLinesError;
+    }
+  }
 
   if (lineRows.length) {
     const { error: linesError } = await supabase
