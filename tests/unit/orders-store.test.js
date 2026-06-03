@@ -461,6 +461,119 @@ describe("orders store", () => {
     ]);
   });
 
+  it("does not overwrite saved design geometry when duplicate imported items are re-imported", async () => {
+    const cachedBuild = {
+      signature: "saved-signature",
+      layout: { text: "Saved", lines: [{ text: "Saved" }] },
+      analysis: { connectedComponents: 1 },
+    };
+    resetDb({
+      order_items: [{
+        id: "transaction:txn-saved",
+        workspace_id: "workspace-1",
+        status: "active",
+        order_number: "3601",
+        buyer_name: "Ada",
+        transaction_id: "txn-saved",
+        source_json: { orderNumber: "3601", transactionId: "txn-saved", buyerName: "Ada" },
+        quantity: 1,
+      }],
+      designs: [{
+        id: "design-transaction:txn-saved",
+        workspace_id: "workspace-1",
+        order_item_id: "transaction:txn-saved",
+        design_text: "Saved",
+        preset_id: "skywalk",
+        production_status: "saved",
+        cached_build_json: cachedBuild,
+        previous_completed_build_json: null,
+        saved_settings_signature: "saved-signature",
+        completed_settings_signature: "saved-signature",
+        analysis_badge_json: { state: "complete", connectedComponentCount: 1 },
+      }],
+      design_lines: [
+        { design_id: "design-transaction:txn-saved", line_index: 0, text: "Saved", font_id: "skywalk" },
+      ],
+    });
+    const { importWorkspaceOrderItems } = await import("../../api/_lib/orders-store.js");
+
+    const result = await importWorkspaceOrderItems({
+      workspaceId: "workspace-1",
+      userId: "user-1",
+      items: [{
+        text: "Draft overwrite",
+        presetId: "somekind",
+        source: { orderNumber: "3601", transactionId: "txn-saved", buyerName: "Ada" },
+        settings: { lines: [{ fontId: "somekind" }] },
+      }],
+    });
+
+    const designsUpsert = supabaseMock.calls.find((call) => call.table === "designs" && call.operation === "upsert");
+    const designLinesDelete = supabaseMock.calls.find((call) => call.table === "design_lines" && call.operation === "delete");
+    const designLinesUpsert = supabaseMock.calls.find((call) => call.table === "design_lines" && call.operation === "upsert");
+    const importedItem = result.orders[0].items[0];
+
+    expect(designsUpsert).toBeUndefined();
+    expect(designLinesDelete).toBeUndefined();
+    expect(designLinesUpsert).toBeUndefined();
+    expect(importedItem.design).toMatchObject({
+      text: "Saved",
+      productionStatus: "saved",
+      cachedBuild,
+      savedSettingsSignature: "saved-signature",
+      completedSettingsSignature: "saved-signature",
+      lines: [{ lineIndex: 0, text: "Saved", fontId: "skywalk" }],
+    });
+  });
+
+  it("returns copyable saved build fields when listing workspace orders", async () => {
+    const cachedBuild = {
+      signature: "copyable-signature",
+      layout: { text: "Ada", lines: [{ text: "Ada" }] },
+      analysis: { connectedComponents: 1 },
+    };
+    resetDb({
+      order_items: [{
+        id: "item-copyable",
+        workspace_id: "workspace-1",
+        status: "active",
+        order_number: "3701",
+        buyer_name: "Ada",
+        source_json: {},
+        quantity: 1,
+      }],
+      designs: [{
+        id: "design-copyable",
+        workspace_id: "workspace-1",
+        order_item_id: "item-copyable",
+        design_text: "Ada",
+        production_status: "export_ready",
+        cached_build_json: cachedBuild,
+        previous_completed_build_json: { signature: "previous", layout: {}, analysis: {} },
+        saved_settings_signature: "copyable-signature",
+        completed_settings_signature: "copyable-signature",
+        analysis_badge_json: { state: "complete", connectedComponentCount: 1 },
+      }],
+      design_lines: [
+        { design_id: "design-copyable", line_index: 0, text: "Ada", font_id: "skywalk" },
+      ],
+    });
+    const { listWorkspaceOrders } = await import("../../api/_lib/orders-store.js");
+
+    const result = await listWorkspaceOrders({
+      workspaceId: "workspace-1",
+      activeBatchId: "batch-1",
+    });
+
+    expect(result.orders[0].items[0].design).toMatchObject({
+      cachedBuild,
+      previousCompletedBuild: { signature: "previous", layout: {}, analysis: {} },
+      savedSettingsSignature: "copyable-signature",
+      completedSettingsSignature: "copyable-signature",
+      analysisBadge: { state: "complete", connectedComponentCount: 1 },
+    });
+  });
+
   it("adds every item in a grouped order to a production batch", async () => {
     resetDb({
       order_items: [

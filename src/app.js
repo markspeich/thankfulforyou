@@ -75,7 +75,10 @@ import {
   signOutBrowserSession,
   signInWithPassword as signInOperatorWithPassword,
 } from "./auth-session.js";
-import { parseImportedItems } from "./etsy-import.js";
+import {
+  buildImportedBatchIdentity,
+  parseImportedItems,
+} from "./etsy-import.js";
 import {
   chooseProductionBatchStartupState,
   createProductionBatchSnapshot,
@@ -4344,6 +4347,57 @@ function buildAddedToBatchMessage(payload) {
   return "Selected designs were already in the production batch.";
 }
 
+function buildSkippedBatchImportMessage(skippedCount) {
+  return `Skipped ${skippedCount} Etsy ${designNoun(skippedCount)} already in the batch. No new designs were added.`;
+}
+
+function assertImportableItems(importedItems) {
+  if (!Array.isArray(importedItems) || importedItems.length === 0) {
+    throw new Error("Clipboard data did not include any importable Etsy designs.");
+  }
+}
+
+function filterNewProductionBatchImportItems(importedItems) {
+  const existingImportedIdentities = new Set(
+    orders
+      .map((order) => buildImportedBatchIdentity(order?.source, order?.text))
+      .filter(Boolean),
+  );
+  const filteredItems = [];
+  let skippedCount = 0;
+
+  for (const entry of importedItems) {
+    const identity = buildImportedBatchIdentity(entry.source, entry.text);
+
+    if (identity && existingImportedIdentities.has(identity)) {
+      skippedCount += 1;
+      continue;
+    }
+
+    if (identity) {
+      existingImportedIdentities.add(identity);
+    }
+
+    filteredItems.push(entry);
+  }
+
+  return { filteredItems, skippedCount };
+}
+
+function handleOrdersMutationError(error, fallbackMessage, authDetail) {
+  if (isProductionBatchAuthenticationError(error)) {
+    const detail = authDetail || "Production batch session expired. Sign in again to continue.";
+    handleProductionBatchAuthenticationRequired(detail);
+    updateWorkflowAlert(detail, "pending");
+    return;
+  }
+
+  updateWorkflowAlert(
+    error instanceof Error ? error.message : fallbackMessage,
+    "error",
+  );
+}
+
 function updateDatabaseOrdersFromPayload(payload, options = {}) {
   if (!Array.isArray(payload?.orders)) {
     return false;
@@ -4675,9 +4729,10 @@ async function addDatabaseOrderItemToBatch(item, button = null) {
     await refreshOrdersAndProductionBatch({ payload, accessToken, refreshBatch: true });
     updateWorkflowAlert(buildAddedToBatchMessage(payload), "success");
   } catch (error) {
-    updateWorkflowAlert(
-      error instanceof Error ? error.message : "Unable to add the order item to the production batch.",
-      "error",
+    handleOrdersMutationError(
+      error,
+      "Unable to add the order item to the production batch.",
+      "Production batch session expired. Sign in again to continue adding orders.",
     );
   } finally {
     if (button) {
@@ -4720,9 +4775,10 @@ async function addCheckedDatabaseOrdersToBatch() {
     renderDatabaseOrdersWorkspace();
     updateWorkflowAlert(buildAddedToBatchMessage(payload), "success");
   } catch (error) {
-    updateWorkflowAlert(
-      error instanceof Error ? error.message : "Unable to add checked orders to the production batch.",
-      "error",
+    handleOrdersMutationError(
+      error,
+      "Unable to add checked orders to the production batch.",
+      "Production batch session expired. Sign in again to continue adding orders.",
     );
   } finally {
     setBatchActionLabel(addCheckedOrdersToBatchButton, "Add Checked to Production Batch");
@@ -6353,18 +6409,31 @@ async function importFromClipboard() {
   try {
     const clipboardText = await navigator.clipboard.readText();
     const importedItems = parseImportedItems(clipboardText, { getPresetIdForListingId });
+    assertImportableItems(importedItems);
+    const { filteredItems, skippedCount } = filterNewProductionBatchImportItems(importedItems);
+    if (!filteredItems.length) {
+      updateWorkflowAlert(buildSkippedBatchImportMessage(skippedCount), "success");
+      return;
+    }
+
     const accessToken = await resolveProductionBatchMutationAccessToken();
     const payload = await importWorkspaceOrders({
       target: "productionBatch",
       batchId,
-      items: importedItems,
+      items: filteredItems,
       accessToken,
     });
     await refreshOrdersAndProductionBatch({ payload, accessToken, refreshBatch: true });
-    updateWorkflowAlert(buildProductionBatchImportMessage(payload), "success");
+    const message = skippedCount
+      ? `${buildProductionBatchImportMessage(payload)} Skipped ${skippedCount} already in the batch.`
+      : buildProductionBatchImportMessage(payload);
+    updateWorkflowAlert(message, "success");
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Clipboard import failed.";
-    updateWorkflowAlert(message, "error");
+    handleOrdersMutationError(
+      error,
+      "Clipboard import failed.",
+      "Production batch session expired. Sign in again to continue importing orders.",
+    );
   } finally {
     importClipboardButton.disabled = false;
     setBatchActionLabel(importClipboardButton, "Paste");
@@ -6387,6 +6456,7 @@ async function importOrdersFromClipboard() {
   try {
     const clipboardText = await navigator.clipboard.readText();
     const importedItems = parseImportedItems(clipboardText, { getPresetIdForListingId });
+    assertImportableItems(importedItems);
     const accessToken = await resolveProductionBatchMutationAccessToken();
     const payload = await importWorkspaceOrders({
       target: "orders",
@@ -6397,8 +6467,11 @@ async function importOrdersFromClipboard() {
     await refreshOrdersAndProductionBatch({ payload, accessToken });
     updateWorkflowAlert(buildOrdersImportMessage(payload), "success");
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Clipboard import failed.";
-    updateWorkflowAlert(message, "error");
+    handleOrdersMutationError(
+      error,
+      "Clipboard import failed.",
+      "Production batch session expired. Sign in again to continue importing orders.",
+    );
   } finally {
     pasteOrdersButton.disabled = false;
     setBatchActionLabel(pasteOrdersButton, "Paste");

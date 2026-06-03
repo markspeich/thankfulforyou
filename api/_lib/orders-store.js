@@ -19,8 +19,23 @@ function toPositiveInteger(value, fallback = 1) {
   return Number.isInteger(number) && number > 0 ? number : fallback;
 }
 
+function normalizeJsonValue(value, fallback = null) {
+  return value && typeof value === "object" ? value : fallback;
+}
+
 function splitTextLines(text) {
   return String(text ?? "").split(/\r?\n/);
+}
+
+function isProtectedDesign(row) {
+  if (!row || typeof row !== "object") {
+    return false;
+  }
+
+  const protectedStatuses = new Set(["saved", "analysis_running", "export_ready", "exported"]);
+  return protectedStatuses.has(row.production_status)
+    || Boolean(normalizeString(row.saved_settings_signature))
+    || Boolean(normalizeString(row.completed_settings_signature));
 }
 
 function buildImportedOrderItemId(item) {
@@ -144,6 +159,11 @@ function normalizeDesign(row, lines) {
     globalHorizontalScale: toNumber(row.global_horizontal_scale, 1),
     globalVerticalScale: toNumber(row.global_vertical_scale, 1),
     productionStatus: row.production_status ?? "draft",
+    cachedBuild: normalizeJsonValue(row.cached_build_json),
+    previousCompletedBuild: normalizeJsonValue(row.previous_completed_build_json),
+    savedSettingsSignature: nullableString(row.saved_settings_signature),
+    completedSettingsSignature: nullableString(row.completed_settings_signature),
+    analysisBadge: normalizeJsonValue(row.analysis_badge_json),
     revision: Number.isInteger(row.revision) ? row.revision : null,
     updatedAt: row.updated_at ?? null,
     updatedBy: row.updated_by ?? null,
@@ -260,7 +280,7 @@ export async function listWorkspaceOrders({ workspaceId, activeBatchId = null })
   ] = await Promise.all([
     supabase
       .from("designs")
-      .select("id, workspace_id, order_item_id, design_text, preset_id, size_guide_id, backing_border_mm, weld_exported_design, global_horizontal_scale, global_vertical_scale, production_status, revision, updated_at, updated_by")
+      .select("id, workspace_id, order_item_id, design_text, preset_id, size_guide_id, backing_border_mm, weld_exported_design, global_horizontal_scale, global_vertical_scale, production_status, cached_build_json, previous_completed_build_json, saved_settings_signature, completed_settings_signature, analysis_badge_json, revision, updated_at, updated_by")
       .eq("workspace_id", workspaceId)
       .in("order_item_id", orderItemIds),
     queryBatchItems({ supabase, workspaceId, batchId: activeBatchId }),
@@ -415,23 +435,51 @@ export async function importWorkspaceOrderItems({
     throw orderItemsError;
   }
 
-  const designRows = importItems.map((item) => buildDesignRow(item, { workspaceId, userId }));
-  const { data: savedDesigns, error: designsError } = await supabase
+  const importedOrderItemIds = orderRows.map((row) => row.id);
+  const { data: existingDesigns, error: existingDesignsError } = await supabase
     .from("designs")
-    .upsert(designRows, { onConflict: "order_item_id" })
-    .select("id, order_item_id");
+    .select("id, order_item_id, production_status, saved_settings_signature, completed_settings_signature")
+    .eq("workspace_id", workspaceId)
+    .in("order_item_id", importedOrderItemIds);
 
-  if (designsError) {
-    throw designsError;
+  if (existingDesignsError) {
+    throw existingDesignsError;
   }
 
-  const designIdByOrderItemId = new Map((savedDesigns || []).map((design) => [design.order_item_id, design.id]));
-  const lineRows = importItems.flatMap((item) => {
+  const existingDesignByOrderItemId = new Map((existingDesigns || []).map((design) => [design.order_item_id, design]));
+  const mutableItems = importItems.filter((item) => {
+    const orderItemId = buildImportedOrderItemId(item);
+    return !isProtectedDesign(existingDesignByOrderItemId.get(orderItemId));
+  });
+  const designRows = mutableItems.map((item) => buildDesignRow(item, { workspaceId, userId }));
+  let savedDesigns = [];
+
+  if (designRows.length) {
+    const { data, error: designsError } = await supabase
+      .from("designs")
+      .upsert(designRows, { onConflict: "order_item_id" })
+      .select("id, order_item_id");
+
+    if (designsError) {
+      throw designsError;
+    }
+
+    savedDesigns = data || [];
+  }
+
+  const designIdByOrderItemId = new Map([
+    ...(existingDesigns || []).map((design) => [design.order_item_id, design.id]),
+    ...savedDesigns.map((design) => [design.order_item_id, design.id]),
+  ]);
+  const mutableOrderItemIds = new Set(mutableItems.map((item) => buildImportedOrderItemId(item)));
+  const lineRows = mutableItems.flatMap((item) => {
     const orderItemId = buildImportedOrderItemId(item);
     const designId = designIdByOrderItemId.get(orderItemId);
     return designId ? buildDesignLineRows(item, designId) : [];
   });
-  const savedDesignIds = (savedDesigns || []).map((design) => design.id);
+  const savedDesignIds = [...designIdByOrderItemId]
+    .filter(([orderItemId]) => mutableOrderItemIds.has(orderItemId))
+    .map(([, designId]) => designId);
 
   if (savedDesignIds.length) {
     const { error: deleteLinesError } = await supabase
@@ -454,7 +502,6 @@ export async function importWorkspaceOrderItems({
     }
   }
 
-  const importedOrderItemIds = orderRows.map((row) => row.id);
   let addedOrderItemIds = [];
   if (target === "productionBatch") {
     const addResult = await addOrderItemsToProductionBatch({

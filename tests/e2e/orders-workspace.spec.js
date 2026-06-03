@@ -44,7 +44,9 @@ function installClipboardText(page, text) {
   }, text);
 }
 
-async function installProductionBatchRoutes(page) {
+async function installProductionBatchRoutes(page, options = {}) {
+  const { orderItems = [] } = options;
+
   await page.route("**/api/batch-session", async (route) => {
     await route.fulfill({
       status: 200,
@@ -63,8 +65,8 @@ async function installProductionBatchRoutes(page) {
       contentType: "application/json; charset=utf-8",
       body: JSON.stringify({
         batch: { id: "batch-1", workspaceId: "workspace-1" },
-        activeOrderItemId: null,
-        orderItems: [],
+        activeOrderItemId: orderItems[0]?.id || null,
+        orderItems,
       }),
     });
   });
@@ -129,16 +131,16 @@ function buildOrdersPayload() {
 }
 
 async function installOrdersWorkspaceRoutes(page, options = {}) {
-  const { posts = [] } = options;
+  const { posts = [], postStatus = 200, postBody = null } = options;
 
   await page.route("**/api/orders**", async (route) => {
     const request = route.request();
     if (request.method() === "POST") {
       posts.push(JSON.parse(request.postData() || "{}"));
       await route.fulfill({
-        status: 200,
+        status: postStatus,
         contentType: "application/json; charset=utf-8",
-        body: JSON.stringify({
+        body: JSON.stringify(postBody || {
           ...buildOrdersPayload(),
           importedOrderItemCount: 1,
           addedOrderItemCount: 1,
@@ -169,6 +171,41 @@ function buildClipboardPayload() {
       },
     ],
   });
+}
+
+function buildEmptyClipboardPayload() {
+  return JSON.stringify({
+    items: [
+      {
+        orderNumber: "1004",
+        buyerName: "Empty Clipboard",
+        listingId: "listing-empty",
+        transactionId: "txn-empty",
+        personalization: "",
+      },
+    ],
+  });
+}
+
+function buildDuplicateBatchOrderItem() {
+  return {
+    id: "local-duplicate",
+    text: "Katherine RN",
+    status: "captured",
+    source: {
+      orderNumber: "1003",
+      buyerName: "Katherine Johnson",
+      listingId: "listing-1",
+      transactionId: "txn-1003",
+    },
+    settings: {
+      text: "Katherine RN",
+      presetId: "candlepin",
+      backingMm: 3.1,
+      weldExportedDesign: true,
+      lines: [{ text: "Katherine RN", fontId: "candlepin" }],
+    },
+  };
 }
 
 async function gotoAfterBatchLoads(page) {
@@ -288,6 +325,40 @@ test("pastes imported Etsy items into the active production batch", async ({ pag
   });
 });
 
+test("skips duplicate production batch clipboard items without posting to orders", async ({ page }) => {
+  const orderPosts = [];
+  await installSupabaseSession(page);
+  await installClipboardText(page, buildClipboardPayload());
+  await installProductionBatchRoutes(page, { orderItems: [buildDuplicateBatchOrderItem()] });
+  await installOrdersWorkspaceRoutes(page, { posts: orderPosts });
+
+  await gotoAfterBatchLoads(page);
+  await page.getByRole("button", { name: "Production Batch", exact: true }).click();
+  await page.getByLabel("Batch tools").click();
+  await page.getByRole("button", { name: "Paste", exact: true }).click();
+
+  await expect.poll(() => orderPosts).toHaveLength(0);
+  await expect(page.locator("#workflowAlertText")).toHaveText(
+    "Skipped 1 Etsy design already in the batch. No new designs were added.",
+  );
+});
+
+test("rejects empty Orders clipboard import without posting to orders", async ({ page }) => {
+  const orderPosts = [];
+  await installSupabaseSession(page);
+  await installClipboardText(page, buildEmptyClipboardPayload());
+  await installProductionBatchRoutes(page);
+  await installOrdersWorkspaceRoutes(page, { posts: orderPosts });
+
+  await gotoAfterBatchLoads(page);
+  const ordersWorkspace = page.getByRole("region", { name: "Orders workspace" });
+  await page.getByRole("button", { name: "Orders", exact: true }).click();
+  await ordersWorkspace.getByRole("button", { name: "Paste orders" }).click();
+
+  await expect.poll(() => orderPosts).toHaveLength(0);
+  await expect(page.locator("#workflowAlertText")).toHaveText("Clipboard data did not include any importable Etsy designs.");
+});
+
 test("adds an individual order item to the active production batch from the item menu", async ({ page }) => {
   const orderPosts = [];
   await installSupabaseSession(page);
@@ -309,6 +380,26 @@ test("adds an individual order item to the active production batch from the item
     batchId: "batch-1",
     orderItemId: "item-1",
   });
+});
+
+test("shows the production batch auth gate when an orders mutation requires authentication", async ({ page }) => {
+  await installSupabaseSession(page);
+  await installProductionBatchRoutes(page);
+  await installOrdersWorkspaceRoutes(page, {
+    postStatus: 401,
+    postBody: { error: "Authentication required." },
+  });
+
+  await gotoAfterBatchLoads(page);
+  const ordersWorkspace = page.getByRole("region", { name: "Orders workspace" });
+  await page.getByRole("button", { name: "Orders", exact: true }).click();
+  await expect(ordersWorkspace.getByText("Ada RN")).toBeVisible();
+
+  const firstItemCard = ordersWorkspace.locator(".database-order-item-card").filter({ hasText: "Ada RN" });
+  await firstItemCard.getByRole("button", { name: "Item actions" }).click();
+  await firstItemCard.getByRole("button", { name: "Add to Production Batch" }).click();
+
+  await expect(page.getByRole("heading", { name: "Sign in to production batch" })).toBeVisible();
 });
 
 test("adds checked orders to the active production batch", async ({ page }) => {
