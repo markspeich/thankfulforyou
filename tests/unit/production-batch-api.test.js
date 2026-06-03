@@ -203,6 +203,37 @@ describe("production batch api client", () => {
       }),
     });
   });
+
+  it("archives one production batch item through the shared API route", async () => {
+    const snapshot = {
+      batch: { id: "batch-1", workspaceId: "workspace-1" },
+      activeOrderItemId: "order-2",
+      orderItems: [{ id: "order-2", revision: 1 }],
+    };
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => snapshot,
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { archiveProductionBatchItem } = await import("../../src/production-batch-api.js");
+
+    await expect(archiveProductionBatchItem("batch-1", "order-1", { accessToken: "token-1" })).resolves.toEqual(snapshot);
+    expect(fetchMock).toHaveBeenCalledWith("/api/production-batch", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        Authorization: "Bearer token-1",
+      },
+      body: JSON.stringify({
+        action: "archive-item",
+        batchId: "batch-1",
+        orderItemId: "order-1",
+      }),
+    });
+  });
 });
 
 describe("auth session helpers", () => {

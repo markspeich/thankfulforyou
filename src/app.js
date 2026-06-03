@@ -52,6 +52,7 @@ import {
 import { buildReloadedPresetSettings } from "./preset-selection.js";
 import {
   archiveProductionBatch,
+  archiveProductionBatchItem,
   fetchProductionBatchSnapshot,
   fetchBatchSession,
   ProductionBatchConflictError,
@@ -5734,10 +5735,35 @@ async function deleteOrder(orderId) {
     return;
   }
 
+  const nextActiveOrderItemId = activeOrderItemId === orderId
+    ? orders[orderIndex + 1]?.id || orders[orderIndex - 1]?.id || null
+    : activeOrderItemId;
+  let archivedRemoteSnapshot = null;
+
+  if (canAttemptProductionBatchSave() && productionBatchContext?.id) {
+    try {
+      const accessToken = await getAccessToken();
+      if (!accessToken) {
+        throw new Error("Authentication required.");
+      }
+      productionBatchAccessToken = accessToken;
+      archivedRemoteSnapshot = await archiveProductionBatchItem(productionBatchContext.id, orderId, {
+        accessToken,
+        activeOrderItemId: nextActiveOrderItemId,
+      });
+    } catch (error) {
+      updateWorkflowAlert(
+        error instanceof Error ? error.message : "Unable to delete the design from the shared batch.",
+        "error",
+      );
+      return;
+    }
+  }
+
   orders.splice(orderIndex, 1);
 
   if (activeOrderItemId === orderId) {
-    activeOrderItemId = orders[orderIndex]?.id || orders[orderIndex - 1]?.id || null;
+    activeOrderItemId = nextActiveOrderItemId;
     if (activeOrderItemId) {
       const nextOrder = getActiveOrder();
       applySettings(nextOrder.settings);
@@ -5747,13 +5773,22 @@ async function deleteOrder(orderId) {
     }
   }
 
+  if (archivedRemoteSnapshot?.batch) {
+    enableProductionBatchSync(archivedRemoteSnapshot.batch);
+    mergeProductionBatchPublishedStateFromSnapshot(archivedRemoteSnapshot);
+  }
+
+  if (archivedRemoteSnapshot) {
+    lastProductionBatchSaveKey = buildProductionBatchSaveKey(buildProductionBatchSnapshot());
+  }
+
   if (!orders.length) {
     activeOrderItemId = null;
     orderSequence = 1;
-    persistBatchState();
+    persistBatchState({ skipRemoteSave: Boolean(archivedRemoteSnapshot) });
     updateWorkflowAlert(isProductionBatchSyncEnabled() ? "Production batch cleared." : "Batch cleared.", "pending");
   } else {
-    persistBatchState();
+    persistBatchState({ skipRemoteSave: Boolean(archivedRemoteSnapshot) });
   }
 
   renderOrderList();

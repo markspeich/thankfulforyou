@@ -115,3 +115,27 @@ export async function archiveProductionBatch(batchId, options = {}) {
 
   return payload;
 }
+
+export async function archiveProductionBatchItem(batchId, orderItemId, options = {}) {
+  const { accessToken = null, activeOrderItemId = null } = options;
+  const response = await fetch("/api/production-batch", {
+    method: "POST",
+    headers: buildAuthHeaders(accessToken, {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    }),
+    body: JSON.stringify({
+      action: "archive-item",
+      batchId,
+      orderItemId,
+      ...(typeof activeOrderItemId === "string" ? { activeOrderItemId } : {}),
+    }),
+  });
+  const payload = await readJsonOrFallback(response, {});
+
+  if (!response.ok) {
+    throw new Error(payload.error || "Unable to archive the production batch item.");
+  }
+
+  return payload;
+}
