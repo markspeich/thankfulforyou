@@ -286,7 +286,7 @@ async function gotoAfterBatchLoads(page) {
   await batchReady;
 }
 
-test("opens the Orders workspace shell from the left nav", async ({ page }) => {
+test("opens the Orders workspace shell by default", async ({ page }) => {
   await installSupabaseSession(page);
   await installProductionBatchRoutes(page);
 
@@ -295,8 +295,6 @@ test("opens the Orders workspace shell from the left nav", async ({ page }) => {
   const ordersNavButton = page.getByRole("button", { name: "Orders", exact: true });
   await expect(page.locator(".workspace-nav .workspace-nav-item").first()).toHaveAttribute("aria-label", "Orders");
   await expect(ordersNavButton).toBeVisible();
-
-  await ordersNavButton.click();
 
   const ordersWorkspace = page.getByRole("region", { name: "Orders workspace" });
   await expect(ordersNavButton).toHaveAttribute("aria-pressed", "true");

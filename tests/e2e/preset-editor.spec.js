@@ -352,11 +352,13 @@ test("switches between order items, presets, and size guides from the left nav",
 
   const appShell = page.locator(".app-shell");
   const ordersWorkspace = page.locator("#ordersWorkspace");
+  const databaseOrdersWorkspace = page.locator("#databaseOrdersWorkspace");
   const presetsWorkspace = page.locator("#presetsWorkspace");
   const fontsWorkspace = page.locator("#fontsWorkspace");
   const sizeGuideWorkspace = page.locator("#sizeGuideWorkspace");
   const editorPanel = page.getByLabel("Selected design editor");
 
+  await expect(page.getByRole("button", { name: "Orders", exact: true })).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByRole("button", { name: "Production Batch" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Presets" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Fonts" })).toBeVisible();
@@ -364,7 +366,12 @@ test("switches between order items, presets, and size guides from the left nav",
   await expect.poll(async () => {
     return page.getByRole("button", { name: "Size Guides" }).evaluate((button) => Math.round(button.getBoundingClientRect().height));
   }).toBeLessThanOrEqual(54);
+  await expect(databaseOrdersWorkspace).toBeVisible();
+  await expect(ordersWorkspace).toBeHidden();
+
+  await page.getByRole("button", { name: "Production Batch" }).click();
   await expect(ordersWorkspace).toBeVisible();
+  await expect(databaseOrdersWorkspace).toBeHidden();
   await expect(presetsWorkspace).toBeHidden();
   await expect(fontsWorkspace).toBeHidden();
   await expect(sizeGuideWorkspace).toBeHidden();

@@ -8,7 +8,7 @@
     <link rel="stylesheet" href="src/styles.css">
   </head>
   <body>
-    <main class="app-shell" data-workspace="orders" data-nav-collapsed="false">
+    <main class="app-shell" data-workspace="databaseOrders" data-nav-collapsed="false">
       <script>
         (() => {
           try {
@@ -49,7 +49,7 @@
         </button>
         <button
           id="databaseOrdersWorkspaceButton"
-          class="workspace-nav-item"
+          class="workspace-nav-item is-active"
           type="button"
           aria-label="Orders"
         >
@@ -58,7 +58,7 @@
         </button>
         <button
           id="orderWorkspaceButton"
-          class="workspace-nav-item is-active"
+          class="workspace-nav-item"
           type="button"
           aria-label="Production Batch"
         >
@@ -106,7 +106,7 @@
       </aside>
 
       <section id="workspaceStage" class="workspace-stage">
-        <section id="ordersWorkspace" class="workspace-view is-active" aria-label="Order items workspace">
+        <section id="ordersWorkspace" class="workspace-view" aria-label="Order items workspace" hidden>
           <section class="production-workspace">
             <section
               id="initialBatchLoading"
@@ -521,7 +521,7 @@
           </section>
         </section>
 
-        <section id="databaseOrdersWorkspace" class="workspace-view" aria-label="Orders workspace" hidden>
+        <section id="databaseOrdersWorkspace" class="workspace-view is-active" aria-label="Orders workspace">
           <section class="production-workspace database-orders-workspace">
             <aside class="orders-panel database-orders-list-panel" aria-label="Orders navigation">
               <div class="batch-header">

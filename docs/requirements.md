@@ -67,6 +67,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - The `Preset` control card in the selected-order editor must expose its secondary actions from an ellipses menu in the card header rather than showing them as always-visible buttons.
 - The `Presets` dropdown must offer these production presets: `All Candlepin`, `Candlepin, Skywalk`, `Skywalk, Somekind`, and `Skywalk, Candlepin`.
 - The app should add a top-level left navigation bar with workspace items ordered as `Orders`, `Production Batch`, `Presets`, `Fonts`, and `Size Guides`.
+- The app should open the `Orders` workspace by default on initial page load.
 - The left navigation bar should be collapsible between an expanded icon-plus-label state and a collapsed icon-only state.
 - The left navigation bar should remember its expanded or collapsed state across browser refreshes.
 - `Production Batch` should open the existing production batch workspace with the production batch and selected-order editor.
