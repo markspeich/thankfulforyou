@@ -295,21 +295,32 @@ async function installDefaultProductionBatchRoutes(page) {
       }),
     });
   });
-  await page.route("**/api/production-batch?batchId=batch-1", async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json; charset=utf-8",
-      body: JSON.stringify(savedProductionBatchSnapshot),
-    });
-  });
-  await page.route("**/api/production-batch", async (route) => {
-    if (route.request().method() !== "PUT") {
-      await route.fallback();
-      return;
+  await page.route("**/api/production-batch**", async (route) => {
+    const method = route.request().method();
+    if (method === "PUT") {
+      const requestSnapshot = route.request().postDataJSON()?.snapshot;
+      savedProductionBatchSnapshot = requestSnapshot || savedProductionBatchSnapshot;
+    } else if (method === "POST") {
+      const requestBody = route.request().postDataJSON();
+      if (requestBody?.action === "archive-item") {
+        const orderItems = savedProductionBatchSnapshot.orderItems
+          .filter((order) => order.id !== requestBody.orderItemId);
+        savedProductionBatchSnapshot = {
+          ...savedProductionBatchSnapshot,
+          activeOrderItemId: orderItems.some((order) => order.id === requestBody.activeOrderItemId)
+            ? requestBody.activeOrderItemId
+            : orderItems[0]?.id || null,
+          orderItems,
+        };
+      } else {
+        savedProductionBatchSnapshot = {
+          ...savedProductionBatchSnapshot,
+          activeOrderItemId: null,
+          orderItems: [],
+        };
+      }
     }
 
-    const requestSnapshot = route.request().postDataJSON()?.snapshot;
-    savedProductionBatchSnapshot = requestSnapshot || savedProductionBatchSnapshot;
     productionBatchSnapshots.set(page, savedProductionBatchSnapshot);
     await route.fulfill({
       status: 200,
@@ -343,6 +354,16 @@ async function installDefaultProductionBatchRoutes(page) {
 
 async function expectSavedProductionBatchSnapshot(page, predicate) {
   await expect.poll(() => Boolean(predicate(productionBatchSnapshots.get(page)))).toBe(true);
+}
+
+async function waitForProductionBatchStartup(page) {
+  await expect(page.locator("#initialBatchLoading")).toBeHidden();
+  await expect.poll(async () => {
+    const value = await page.locator("#importStatus").textContent();
+    return value === null
+      || value === ""
+      || value.includes("Restored");
+  }).toBe(true);
 }
 
 async function expectWorkflowAlertMessage(page, ...messageParts) {
@@ -450,26 +471,17 @@ test.beforeEach(async ({ page, request }, testInfo) => {
     return;
   }
 
-  async function waitForStartup() {
-    await expect.poll(async () => {
-      const value = await page.locator("#importStatus").textContent();
-      return value === null
-        || value === ""
-        || value.includes("Restored");
-    }).toBe(true);
-  }
-
   await installSupabaseSession(page);
   await installDefaultProductionBatchRoutes(page);
   await request.delete("/api/batch-snapshot?workspaceKey=primary").catch(() => null);
-  await page.goto("/");
-  await waitForStartup();
+  await page.goto("/production-batch");
+  await waitForProductionBatchStartup(page);
   await page.evaluate(() => {
     window.localStorage.clear();
     window.sessionStorage.clear();
   });
   await page.reload();
-  await waitForStartup();
+  await waitForProductionBatchStartup(page);
 
   const orderCount = page.locator("#orderCountOutput");
 
@@ -633,6 +645,7 @@ test("coalesces rapid slider input into a single deferred preview rebuild", asyn
   });
 
   await page.reload();
+  await waitForProductionBatchStartup(page);
 
   const orderCount = page.locator("#orderCountOutput");
   if ((await orderCount.textContent()) !== "0") {
@@ -686,6 +699,7 @@ test("avoids redundant preview image encodes during a settled slider render", as
   });
 
   await page.reload();
+  await waitForProductionBatchStartup(page);
 
   const orderCount = page.locator("#orderCountOutput");
   if ((await orderCount.textContent()) !== "0") {
@@ -849,7 +863,7 @@ test(PRODUCTION_BATCH_REMOTE_RESTORE_TEST_TITLE, async ({ page }) => {
     snapshot: staleLocalSnapshot,
   });
 
-  await page.goto("/");
+  await page.goto("/production-batch");
 
   await expect.poll(() => batchSessionRequests).toBe(1);
   await expect.poll(() => productionBatchRequests).toBe(1);
@@ -948,7 +962,7 @@ test(PRODUCTION_BATCH_CONFLICT_TEST_TITLE, async ({ page }) => {
     });
   });
 
-  await page.goto("/");
+  await page.goto("/production-batch");
   await expect(page.locator("#textInput")).toHaveValue("Remote Shared");
 
   await page.locator("#textInput").fill("Remote Shared Updated");
@@ -1046,7 +1060,7 @@ test(PRODUCTION_BATCH_PAGEHIDE_TEST_TITLE, async ({ page }) => {
     });
   });
 
-  await page.goto("/");
+  await page.goto("/production-batch");
   await expect(page.locator("#textInput")).toHaveValue("Remote Shared");
 
   await page.locator("#textInput").fill("Remote Shared Draft 1");
@@ -1377,6 +1391,9 @@ test("renders lock text height inline without its own bordered section", async (
 });
 
 test("renders the preview guide with thin solid blue outer and inner lines", async ({ page }) => {
+  await expect(page.locator("#preview rect.preview-guide-box")).toHaveCount(1);
+  await expect(page.locator("#preview circle.preview-guide-box")).toHaveCount(1);
+
   const guideStyles = await page.evaluate(() => {
     const box = document.querySelector("#preview rect.preview-guide-box");
     const circle = document.querySelector("#preview circle.preview-guide-box");

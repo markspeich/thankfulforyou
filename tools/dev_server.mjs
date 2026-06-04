@@ -32,6 +32,7 @@ const contentTypes = {
   ".ttf": "font/ttf",
 };
 const presetSnapshots = new Map();
+const appRouteRoots = new Set(["orders", "production-batch", "presets", "fonts", "size-guides"]);
 
 function sendJson(response, statusCode, payload) {
   response.writeHead(statusCode, { "Content-Type": "application/json; charset=utf-8" });
@@ -119,6 +120,11 @@ function resolvePath(url) {
     if (existsSync(withJsExtension)) {
       return withJsExtension;
     }
+  }
+
+  const routeRoot = requested.split("/").filter(Boolean)[0] || "";
+  if (!existsSync(normalized) && !extname(requested) && appRouteRoots.has(routeRoot)) {
+    return join(root, "index.html");
   }
 
   return normalized;

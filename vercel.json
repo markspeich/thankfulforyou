@@ -11,6 +11,10 @@
     {
       "source": "/api/layout-analyze",
       "destination": "/api/layout_analyze"
+    },
+    {
+      "source": "/(orders|production-batch|presets|fonts|size-guides)(/.*)?",
+      "destination": "/index.html"
     }
   ],
   "functions": {
