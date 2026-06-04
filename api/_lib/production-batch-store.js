@@ -27,56 +27,6 @@ function normalizeBatchRow(row) {
   };
 }
 
-async function moveArchivedBatchItemsOutOfPositions(supabase, {
-  batchId,
-  workspaceId,
-  reservedPositions,
-}) {
-  if (!reservedPositions?.size) {
-    return;
-  }
-
-  const { data: batchItems, error: batchItemsLoadError } = await supabase
-    .from("batch_items")
-    .select("order_item_id, batch_position, status")
-    .eq("batch_id", batchId)
-    .eq("workspace_id", workspaceId)
-    .order("batch_position", { ascending: true });
-
-  if (batchItemsLoadError) {
-    throw batchItemsLoadError;
-  }
-
-  const existingPositions = (batchItems || [])
-    .map((item) => Number(item.batch_position))
-    .filter((position) => Number.isFinite(position));
-  const relocatedPositionStart = existingPositions.length
-    ? Math.max(...existingPositions) + 1
-    : 0;
-  const collidingArchivedItems = (batchItems || []).filter((item) => {
-    const position = Number(item?.batch_position);
-    return item?.status === "archived"
-      && Number.isFinite(position)
-      && reservedPositions.has(position);
-  });
-
-  for (const [index, item] of collidingArchivedItems.entries()) {
-    const { error: batchItemsError } = await supabase
-      .from("batch_items")
-      .update({
-        status: "archived",
-        batch_position: relocatedPositionStart + index,
-      })
-      .eq("batch_id", batchId)
-      .eq("workspace_id", workspaceId)
-      .eq("order_item_id", item.order_item_id);
-
-    if (batchItemsError) {
-      throw batchItemsError;
-    }
-  }
-}
-
 export async function loadProductionBatch({ batchId, workspaceId }) {
   const supabase = createSupabaseAdminClient();
   const { data: batch, error: batchError } = await supabase
@@ -293,12 +243,6 @@ export async function saveProductionBatch({ snapshot, userId, changedOrderItemId
   if (changedOrderItemIdSet) {
     const changedBatchItems = rows.batchItems.filter((item) => shouldSaveOrderItem(item.order_item_id));
     if (changedBatchItems.length) {
-      await moveArchivedBatchItemsOutOfPositions(supabase, {
-        batchId: snapshot.batch.id,
-        workspaceId: snapshot.batch.workspaceId,
-        reservedPositions: new Set(changedBatchItems.map((item) => item.batch_position)),
-      });
-
       const { error: batchItemsError } = await supabase
         .from("batch_items")
         .upsert(changedBatchItems, { onConflict: "batch_id,order_item_id" });
@@ -384,7 +328,7 @@ export async function saveProductionBatch({ snapshot, userId, changedOrderItemId
   });
 }
 
-export async function archiveProductionBatch({ batchId, workspaceId, userId }) {
+export async function completeProductionBatch({ batchId, workspaceId, userId }) {
   const supabase = createSupabaseAdminClient();
   const savedAt = new Date().toISOString();
 
@@ -419,24 +363,32 @@ export async function archiveProductionBatch({ batchId, workspaceId, userId }) {
     throw batchItemsLoadError;
   }
 
-  const existingPositions = (batchItems || [])
-    .map((item) => Number(item.batch_position))
-    .filter((position) => Number.isFinite(position));
-  const archivedPositionStart = existingPositions.length
-    ? Math.max(...existingPositions) + 1
-    : 0;
   const activeBatchItems = (batchItems || []).filter((item) => item?.status !== "archived");
+  const activeOrderItemIds = activeBatchItems
+    .map((item) => item?.order_item_id)
+    .filter((orderItemId) => typeof orderItemId === "string" && orderItemId.trim());
 
-  for (const [index, item] of activeBatchItems.entries()) {
+  if (activeOrderItemIds.length) {
+    const { error: orderItemsError } = await supabase
+      .from("order_items")
+      .update({
+        status: "complete",
+        updated_at: savedAt,
+        updated_by: userId || null,
+      })
+      .eq("workspace_id", workspaceId)
+      .in("id", activeOrderItemIds);
+
+    if (orderItemsError) {
+      throw orderItemsError;
+    }
+
     const { error: batchItemsError } = await supabase
       .from("batch_items")
-      .update({
-        status: "archived",
-        batch_position: archivedPositionStart + index,
-      })
+      .delete()
       .eq("batch_id", batchId)
       .eq("workspace_id", workspaceId)
-      .eq("order_item_id", item.order_item_id);
+      .in("order_item_id", activeOrderItemIds);
 
     if (batchItemsError) {
       throw batchItemsError;
@@ -446,7 +398,7 @@ export async function archiveProductionBatch({ batchId, workspaceId, userId }) {
   return loadProductionBatch({ batchId, workspaceId });
 }
 
-export async function archiveProductionBatchItem({
+export async function removeProductionBatchItem({
   batchId,
   orderItemId,
   workspaceId,
@@ -476,30 +428,9 @@ export async function archiveProductionBatchItem({
     return null;
   }
 
-  const { data: batchItems, error: batchItemsLoadError } = await supabase
-    .from("batch_items")
-    .select("order_item_id, batch_position, status")
-    .eq("batch_id", batchId)
-    .eq("workspace_id", workspaceId)
-    .order("batch_position", { ascending: true });
-
-  if (batchItemsLoadError) {
-    throw batchItemsLoadError;
-  }
-
-  const existingPositions = (batchItems || [])
-    .map((item) => Number(item.batch_position))
-    .filter((position) => Number.isFinite(position));
-  const archivedPosition = existingPositions.length
-    ? Math.max(...existingPositions) + 1
-    : 0;
-
   const { error: batchItemsError } = await supabase
     .from("batch_items")
-    .update({
-      status: "archived",
-      batch_position: archivedPosition,
-    })
+    .delete()
     .eq("batch_id", batchId)
     .eq("workspace_id", workspaceId)
     .eq("order_item_id", orderItemId);

@@ -299,6 +299,55 @@ describe("orders store", () => {
     });
   });
 
+  it("defaults to open workspace orders and can include complete orders on request", async () => {
+    resetDb({
+      order_items: [
+        {
+          id: "item-open",
+          workspace_id: "workspace-1",
+          status: "open",
+          order_number: "2001",
+          buyer_name: "Ada",
+          source_json: {},
+          quantity: 1,
+        },
+        {
+          id: "item-complete",
+          workspace_id: "workspace-1",
+          status: "complete",
+          order_number: "2002",
+          buyer_name: "Grace",
+          source_json: {},
+          quantity: 1,
+        },
+      ],
+    });
+    const { listWorkspaceOrders } = await import("../../api/_lib/orders-store.js");
+
+    await expect(listWorkspaceOrders({
+      workspaceId: "workspace-1",
+      activeBatchId: "batch-1",
+    })).resolves.toMatchObject({
+      orders: [{ id: "order:2001" }],
+    });
+
+    await expect(listWorkspaceOrders({
+      workspaceId: "workspace-1",
+      activeBatchId: "batch-1",
+      statusFilter: "complete",
+    })).resolves.toMatchObject({
+      orders: [{ id: "order:2002" }],
+    });
+
+    const allResult = await listWorkspaceOrders({
+      workspaceId: "workspace-1",
+      activeBatchId: "batch-1",
+      statusFilter: "all",
+    });
+
+    expect(allResult.orders.map((order) => order.id)).toEqual(["order:2001", "order:2002"]);
+  });
+
   it("imports order items into a production batch and inserts only missing active memberships", async () => {
     resetDb({
       batch_items: [
@@ -395,7 +444,7 @@ describe("orders store", () => {
       workspace_id: "workspace-1",
       order_number: "3001",
       buyer_name: "Ada",
-      status: "active",
+      status: "open",
       updated_by: "user-1",
     });
     expect(designsUpsert.payload[0]).toMatchObject({

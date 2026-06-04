@@ -174,7 +174,7 @@ describe("production batch api client", () => {
     }));
   });
 
-  it("archives a production batch through the shared API route", async () => {
+  it("completes a production batch through the shared API route", async () => {
     const snapshot = {
       batch: { id: "batch-1", workspaceId: "workspace-1" },
       activeOrderItemId: null,
@@ -187,9 +187,9 @@ describe("production batch api client", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    const { archiveProductionBatch } = await import("../../src/production-batch-api.js");
+    const { completeProductionBatch } = await import("../../src/production-batch-api.js");
 
-    await expect(archiveProductionBatch("batch-1", { accessToken: "token-1" })).resolves.toEqual(snapshot);
+    await expect(completeProductionBatch("batch-1", { accessToken: "token-1" })).resolves.toEqual(snapshot);
     expect(fetchMock).toHaveBeenCalledWith("/api/production-batch", {
       method: "POST",
       headers: {
@@ -198,13 +198,13 @@ describe("production batch api client", () => {
         Authorization: "Bearer token-1",
       },
       body: JSON.stringify({
-        action: "archive",
+        action: "complete",
         batchId: "batch-1",
       }),
     });
   });
 
-  it("archives one production batch item through the shared API route", async () => {
+  it("removes one production batch item through the shared API route", async () => {
     const snapshot = {
       batch: { id: "batch-1", workspaceId: "workspace-1" },
       activeOrderItemId: "order-2",
@@ -217,9 +217,9 @@ describe("production batch api client", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    const { archiveProductionBatchItem } = await import("../../src/production-batch-api.js");
+    const { removeProductionBatchItem } = await import("../../src/production-batch-api.js");
 
-    await expect(archiveProductionBatchItem("batch-1", "order-1", { accessToken: "token-1" })).resolves.toEqual(snapshot);
+    await expect(removeProductionBatchItem("batch-1", "order-1", { accessToken: "token-1" })).resolves.toEqual(snapshot);
     expect(fetchMock).toHaveBeenCalledWith("/api/production-batch", {
       method: "POST",
       headers: {
@@ -228,7 +228,7 @@ describe("production batch api client", () => {
         Authorization: "Bearer token-1",
       },
       body: JSON.stringify({
-        action: "archive-item",
+        action: "remove-item",
         batchId: "batch-1",
         orderItemId: "order-1",
       }),

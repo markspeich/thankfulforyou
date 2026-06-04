@@ -29,6 +29,11 @@ function normalizeString(value) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function normalizeStatusFilter(value) {
+  const normalized = normalizeString(value);
+  return ["open", "complete", "all"].includes(normalized) ? normalized : "open";
+}
+
 function isJsonObject(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
@@ -56,10 +61,11 @@ function sendBadRequest(res, error) {
   res.status(400).json({ error });
 }
 
-async function loadOrdersResponse({ workspaceId, batchId }) {
+async function loadOrdersResponse({ workspaceId, batchId, statusFilter = "open" }) {
   return listWorkspaceOrders({
     workspaceId,
     activeBatchId: batchId || null,
+    statusFilter,
   });
 }
 
@@ -181,9 +187,11 @@ export default async function handler(req, res) {
 
     if (req.method === "GET") {
       const batchId = normalizeString(req.query?.batchId);
+      const statusFilter = normalizeStatusFilter(req.query?.status);
       const ordersPayload = await loadOrdersResponse({
         workspaceId: auth.workspaceId,
         batchId,
+        statusFilter,
       });
 
       res.status(200).json(ordersPayload);

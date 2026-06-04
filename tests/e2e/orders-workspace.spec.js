@@ -469,6 +469,57 @@ test("renders grouped database orders and selected order item cards", async ({ p
   await expect(inBatchItemCard.getByRole("button", { name: "Add to Production Batch" })).toBeDisabled();
 });
 
+test("filters database orders by search text, batch membership, and status", async ({ page }) => {
+  await installSupabaseSession(page);
+  await installProductionBatchRoutes(page);
+  const requestedOrderUrls = [];
+  const ordersPayload = {
+    orders: [
+      ...buildOrdersPayload().orders.map((order) => ({ ...order, status: "open" })),
+      {
+        id: "order:1003",
+        orderNumber: "1003",
+        buyerName: "Katherine Johnson",
+        status: "complete",
+        isInActiveBatch: false,
+        items: [{
+          id: "item-1003",
+          listingTitle: "Retired badge reel",
+          status: "complete",
+          isInActiveBatch: false,
+          design: {
+            text: "Katherine RN",
+            lines: [{ lineIndex: 0, text: "Katherine RN", fontId: "candlepin" }],
+          },
+        }],
+      },
+    ],
+  };
+  await installOrdersWorkspaceRoutes(page, { ordersPayload });
+  await page.route("**/api/orders**", async (route) => {
+    requestedOrderUrls.push(route.request().url());
+    await route.fallback();
+  });
+
+  await page.goto("/");
+
+  const ordersWorkspace = page.locator("#databaseOrdersWorkspace");
+  await expect(ordersWorkspace.locator(".database-order-row")).toHaveCount(2);
+
+  await page.locator("#databaseOrdersSearchInput").fill("grace");
+  await expect(ordersWorkspace.locator(".database-order-row")).toHaveCount(1);
+  await expect(ordersWorkspace.locator(".database-order-row")).toContainText("Order 1002");
+
+  await page.locator("#databaseOrdersSearchInput").fill("");
+  await page.locator("#databaseOrdersBatchFilter").selectOption("notInBatch");
+  await expect(ordersWorkspace.locator(".database-order-row")).toHaveCount(1);
+  await expect(ordersWorkspace.locator(".database-order-row")).not.toContainText("Order 1002");
+
+  await page.locator("#databaseOrdersStatusFilter").selectOption("complete");
+  await expect.poll(() => requestedOrderUrls.some((url) => url.includes("status=complete"))).toBe(true);
+  await expect(ordersWorkspace.locator(".database-order-row")).toContainText("Order 1003");
+});
+
 test("loads database orders on initial app startup", async ({ page }) => {
   await installSupabaseSession(page);
   await installProductionBatchRoutes(page);

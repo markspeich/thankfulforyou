@@ -246,7 +246,7 @@
                           <path d="M10 11v5M14 11v5" />
                         </svg>
                       </span>
-                      <span class="batch-tool-label">Archive Batch</span>
+                      <span class="batch-tool-label">Complete Production Batch</span>
                     </button>
                   </div>
                 </div>
@@ -551,6 +551,30 @@
                   </details>
                 </div>
               </div>
+              <section class="database-orders-filters" aria-label="Order filters">
+                <label class="search-field">
+                  <span class="visually-hidden">Search orders</span>
+                  <input id="databaseOrdersSearchInput" type="search" autocomplete="off" placeholder="Search orders...">
+                </label>
+                <div class="database-orders-filter-row">
+                  <label class="filter-field">
+                    <span>Status</span>
+                    <select id="databaseOrdersStatusFilter">
+                      <option value="open" selected>Open</option>
+                      <option value="complete">Complete</option>
+                      <option value="all">All</option>
+                    </select>
+                  </label>
+                  <label class="filter-field">
+                    <span>Batch</span>
+                    <select id="databaseOrdersBatchFilter">
+                      <option value="all" selected>All</option>
+                      <option value="inBatch">In Batch</option>
+                      <option value="notInBatch">Not In Batch</option>
+                    </select>
+                  </label>
+                </div>
+              </section>
               <section class="database-orders-list-shell" aria-label="Orders list">
                 <div class="section-heading">Orders list</div>
                 <p class="batch-tools-note">No orders loaded.</p>

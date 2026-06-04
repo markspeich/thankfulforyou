@@ -65,7 +65,7 @@ function buildOrderItemRow(item, { workspaceId, userId }) {
   return {
     id: buildImportedOrderItemId(item),
     workspace_id: workspaceId,
-    status: "active",
+    status: "open",
     order_number: nullableString(source.orderNumber),
     buyer_name: nullableString(source.buyerName),
     listing_id: nullableString(source.listingId),
@@ -205,6 +205,7 @@ function appendOrderItemToGroups(groups, orderItem) {
       id: groupId,
       orderNumber: orderItem.orderNumber,
       buyerName: orderItem.buyerName,
+      status: "open",
       isInActiveBatch: false,
       items: [],
     };
@@ -213,6 +214,9 @@ function appendOrderItemToGroups(groups, orderItem) {
 
   group.items.push(orderItem);
   group.isInActiveBatch = group.isInActiveBatch || orderItem.isInActiveBatch;
+  group.status = group.items.length > 0 && group.items.every((item) => item.status === "complete")
+    ? "complete"
+    : "open";
 }
 
 async function queryBatchItems({ supabase, workspaceId, batchId }) {
@@ -254,15 +258,24 @@ async function queryVerifiedOrderItemIds({ supabase, workspaceId, orderItemIds }
   return ids.filter((id) => verifiedIds.has(id));
 }
 
-export async function listWorkspaceOrders({ workspaceId, activeBatchId = null }) {
+export async function listWorkspaceOrders({ workspaceId, activeBatchId = null, statusFilter = "open" }) {
   const supabase = createSupabaseAdminClient();
-  const { data: orderItems, error: orderItemsError } = await supabase
+  let orderItemsQuery = supabase
     .from("order_items")
     .select("id, workspace_id, status, order_number, buyer_name, listing_id, transaction_id, imported_color, quantity, source_json, revision, updated_at, updated_by")
-    .eq("workspace_id", workspaceId)
-    .neq("status", "archived")
+    .eq("workspace_id", workspaceId);
+  if (statusFilter === "complete") {
+    orderItemsQuery = orderItemsQuery.eq("status", "complete");
+  } else if (statusFilter !== "all") {
+    orderItemsQuery = orderItemsQuery
+      .neq("status", "complete")
+      .neq("status", "archived");
+  }
+  orderItemsQuery = orderItemsQuery
     .order("order_number", { ascending: true })
     .order("created_at", { ascending: true });
+
+  const { data: orderItems, error: orderItemsError } = await orderItemsQuery;
 
   if (orderItemsError) {
     throw orderItemsError;

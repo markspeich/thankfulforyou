@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  filterGroupedOrders,
   getCheckedOrderIdsForBulkAction,
   getCopyableSavedBuild,
   getSelectedGroupedOrder,
@@ -125,6 +126,61 @@ describe("orders workspace helpers", () => {
       "order:4003",
       "order:4004",
     ]);
+  });
+
+  it("filters grouped orders by search text, status, and active batch membership", () => {
+    const orders = [
+      {
+        id: "order:1001",
+        orderNumber: "1001",
+        buyerName: "Ada Lovelace",
+        status: "open",
+        isInActiveBatch: true,
+        items: [{
+          id: "item-1",
+          listingId: "listing-1",
+          transactionId: "txn-1",
+          importedColor: "Pink",
+          isInActiveBatch: true,
+          design: { text: "Ada RN", lines: [{ text: "Ada" }, { text: "RN" }] },
+          source: { listingTitle: "Badge Reel" },
+        }],
+      },
+      {
+        id: "order:1002",
+        orderNumber: "1002",
+        buyerName: "Grace Hopper",
+        status: "complete",
+        isInActiveBatch: false,
+        items: [{
+          id: "item-2",
+          listingId: "listing-2",
+          transactionId: "txn-2",
+          importedColor: "Blue",
+          isInActiveBatch: false,
+          design: { text: "Grace MD", lines: [{ text: "Grace" }, { text: "MD" }] },
+          source: { listingTitle: "Stethoscope Badge" },
+        }],
+      },
+    ];
+
+    expect(filterGroupedOrders(orders, {
+      searchTerm: "stethoscope",
+      statusFilter: "all",
+      batchFilter: "all",
+    }).map((order) => order.id)).toEqual(["order:1002"]);
+
+    expect(filterGroupedOrders(orders, {
+      searchTerm: "",
+      statusFilter: "open",
+      batchFilter: "inBatch",
+    }).map((order) => order.id)).toEqual(["order:1001"]);
+
+    expect(filterGroupedOrders(orders, {
+      searchTerm: "",
+      statusFilter: "complete",
+      batchFilter: "notInBatch",
+    }).map((order) => order.id)).toEqual(["order:1002"]);
   });
 
   it("detects copyable saved builds from cachedBuild or previousCompletedBuild", () => {

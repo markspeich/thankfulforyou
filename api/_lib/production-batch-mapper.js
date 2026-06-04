@@ -68,7 +68,7 @@ function buildOrderItemRow(orderItem, { workspaceId, updatedBy }) {
   return {
     id: orderItem.id,
     workspace_id: workspaceId,
-    status: "active",
+    status: "open",
     order_number: source.orderNumber || null,
     buyer_name: source.buyerName || null,
     listing_id: source.listingId || null,

@@ -2,14 +2,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const loadProductionBatchMock = vi.fn();
 const saveProductionBatchMock = vi.fn();
-const archiveProductionBatchMock = vi.fn();
-const archiveProductionBatchItemMock = vi.fn();
+const completeProductionBatchMock = vi.fn();
+const removeProductionBatchItemMock = vi.fn();
 const resolveProductionBatchAuthMock = vi.fn();
 
 vi.mock("../../api/_lib/production-batch-store.js", () => ({
-  archiveProductionBatch: archiveProductionBatchMock,
-  archiveProductionBatchItem: archiveProductionBatchItemMock,
+  completeProductionBatch: completeProductionBatchMock,
   loadProductionBatch: loadProductionBatchMock,
+  removeProductionBatchItem: removeProductionBatchItemMock,
   saveProductionBatch: saveProductionBatchMock,
 }));
 
@@ -43,8 +43,8 @@ beforeEach(() => {
   vi.resetModules();
   loadProductionBatchMock.mockReset();
   saveProductionBatchMock.mockReset();
-  archiveProductionBatchMock.mockReset();
-  archiveProductionBatchItemMock.mockReset();
+  completeProductionBatchMock.mockReset();
+  removeProductionBatchItemMock.mockReset();
   resolveProductionBatchAuthMock.mockReset();
 });
 
@@ -344,12 +344,12 @@ describe("production batch api route", () => {
     });
   });
 
-  it("archives the current production batch for a valid POST request", async () => {
+  it("completes the current production batch for a valid POST request", async () => {
     resolveProductionBatchAuthMock.mockResolvedValue({
       userId: "user-1",
       workspaceId: "workspace-1",
     });
-    archiveProductionBatchMock.mockResolvedValue({
+    completeProductionBatchMock.mockResolvedValue({
       batch: { id: "batch-1", workspaceId: "workspace-1" },
       activeOrderItemId: null,
       orderItems: [],
@@ -362,12 +362,12 @@ describe("production batch api route", () => {
       method: "POST",
       headers: { authorization: "Bearer token-1" },
       body: {
-        action: "archive",
+        action: "complete",
         batchId: "batch-1",
       },
     }, response);
 
-    expect(archiveProductionBatchMock).toHaveBeenCalledWith({
+    expect(completeProductionBatchMock).toHaveBeenCalledWith({
       batchId: "batch-1",
       workspaceId: "workspace-1",
       userId: "user-1",
@@ -380,12 +380,12 @@ describe("production batch api route", () => {
     });
   });
 
-  it("archives a single production batch item for a valid POST request", async () => {
+  it("removes a single production batch item for a valid POST request", async () => {
     resolveProductionBatchAuthMock.mockResolvedValue({
       userId: "user-1",
       workspaceId: "workspace-1",
     });
-    archiveProductionBatchItemMock.mockResolvedValue({
+    removeProductionBatchItemMock.mockResolvedValue({
       batch: { id: "batch-1", workspaceId: "workspace-1" },
       activeOrderItemId: "order-2",
       orderItems: [{ id: "order-2", revision: 1 }],
@@ -398,13 +398,13 @@ describe("production batch api route", () => {
       method: "POST",
       headers: { authorization: "Bearer token-1" },
       body: {
-        action: "archive-item",
+        action: "remove-item",
         batchId: "batch-1",
         orderItemId: "order-1",
       },
     }, response);
 
-    expect(archiveProductionBatchItemMock).toHaveBeenCalledWith({
+    expect(removeProductionBatchItemMock).toHaveBeenCalledWith({
       batchId: "batch-1",
       orderItemId: "order-1",
       workspaceId: "workspace-1",
@@ -436,8 +436,8 @@ describe("production batch api route", () => {
       },
     }, response);
 
-    expect(archiveProductionBatchMock).not.toHaveBeenCalled();
-    expect(archiveProductionBatchItemMock).not.toHaveBeenCalled();
+    expect(completeProductionBatchMock).not.toHaveBeenCalled();
+    expect(removeProductionBatchItemMock).not.toHaveBeenCalled();
     expect(response.statusCode).toBe(400);
     expect(response.body).toEqual({
       error: "Unsupported production batch action.",
@@ -450,7 +450,7 @@ describe("production batch api route", () => {
       userId: "user-1",
       workspaceId: "workspace-1",
     });
-    archiveProductionBatchMock.mockRejectedValue({
+    completeProductionBatchMock.mockRejectedValue({
       message: 'new row for relation "batch_items" violates check constraint "batch_items_status_check"',
       code: "23514",
       details: "Failing row contains archived status.",
@@ -464,7 +464,7 @@ describe("production batch api route", () => {
       method: "POST",
       headers: { authorization: "Bearer token-1" },
       body: {
-        action: "archive",
+        action: "complete",
         batchId: "batch-1",
       },
     }, response);

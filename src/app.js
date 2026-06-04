@@ -51,11 +51,11 @@ import {
 } from "./layout-controls-clipboard.js";
 import { buildReloadedPresetSettings } from "./preset-selection.js";
 import {
-  archiveProductionBatch,
-  archiveProductionBatchItem,
+  completeProductionBatch,
   fetchProductionBatchSnapshot,
   fetchBatchSession,
   ProductionBatchConflictError,
+  removeProductionBatchItem,
   saveProductionBatchSnapshot,
 } from "./production-batch-api.js";
 import {
@@ -65,6 +65,7 @@ import {
   importWorkspaceOrders,
 } from "./orders-api.js";
 import {
+  filterGroupedOrders,
   getCheckedOrderIdsForBulkAction,
   getCopyableSavedBuild,
   getSelectedGroupedOrder,
@@ -198,6 +199,9 @@ const copyCompletedButton = document.querySelector("#copyCompletedButton");
 const batchToolsMenu = document.querySelector(".batch-tools-menu");
 const ordersToolsMenu = document.querySelector("#ordersToolsMenu");
 const pasteOrdersButton = document.querySelector("#pasteOrdersButton");
+const databaseOrdersSearchInput = document.querySelector("#databaseOrdersSearchInput");
+const databaseOrdersStatusFilter = document.querySelector("#databaseOrdersStatusFilter");
+const databaseOrdersBatchFilter = document.querySelector("#databaseOrdersBatchFilter");
 const databaseOrdersListShell = document.querySelector(".database-orders-list-shell");
 const databaseOrderItemsShell = document.querySelector(".database-order-items-shell");
 const selectedDatabaseOrderTitle = document.querySelector(".database-order-items-panel .editor-header h2");
@@ -345,6 +349,9 @@ let databaseOrdersLoading = false;
 let databaseOrdersImporting = false;
 let databaseOrdersMutationVersion = 0;
 let loadedDatabaseOrdersKey = null;
+let databaseOrdersSearchTerm = "";
+let databaseOrdersStatusFilterValue = "open";
+let databaseOrdersBatchFilterValue = "all";
 let selectedFontId = "candlepin";
 let navCollapsed = readNavCollapsedPreference();
 let presetEditorDraft = null;
@@ -4678,7 +4685,7 @@ function updateDatabaseOrdersFromPayload(payload, options = {}) {
     selectedOrderId: selectedDatabaseOrderId,
     checkedOrderIds: options.checkedOrderIds ?? checkedDatabaseOrderIds,
   }));
-  loadedDatabaseOrdersKey = getActiveProductionBatchId();
+  loadedDatabaseOrdersKey = `${getActiveProductionBatchId() || ""}|${databaseOrdersStatusFilterValue}`;
   renderDatabaseOrdersWorkspace();
   return true;
 }
@@ -4727,7 +4734,7 @@ async function loadDatabaseOrders({ force = false } = {}) {
   }
 
   const batchId = productionBatchContext?.id || null;
-  const loadKey = batchId || "";
+  const loadKey = `${batchId || ""}|${databaseOrdersStatusFilterValue}`;
   if (databaseOrdersLoading || (!force && loadedDatabaseOrdersKey === loadKey)) {
     return;
   }
@@ -4744,6 +4751,7 @@ async function loadDatabaseOrders({ force = false } = {}) {
   try {
     const payload = await fetchWorkspaceOrders({
       batchId,
+      statusFilter: databaseOrdersStatusFilterValue,
       accessToken: productionBatchAccessToken,
     });
     if (loadMutationVersion !== databaseOrdersMutationVersion) {
@@ -4800,6 +4808,14 @@ function selectDatabaseOrder(orderId, options = {}) {
   return true;
 }
 
+function getVisibleDatabaseOrders() {
+  return filterGroupedOrders(databaseOrders, {
+    searchTerm: databaseOrdersSearchTerm,
+    statusFilter: databaseOrdersStatusFilterValue,
+    batchFilter: databaseOrdersBatchFilterValue,
+  });
+}
+
 function renderDatabaseOrdersWorkspace() {
   if (!databaseOrdersListShell || !addCheckedOrdersToBatchButton) {
     return;
@@ -4812,7 +4828,10 @@ function renderDatabaseOrdersWorkspace() {
   if (pasteOrdersButton) {
     pasteOrdersButton.disabled = databaseOrdersImporting || !productionBatchAccessToken;
   }
-  addCheckedOrdersToBatchButton.disabled = databaseOrdersLoading || checkedDatabaseOrderIds.size === 0;
+  const visibleOrders = getVisibleDatabaseOrders();
+  const visibleOrderIds = new Set(visibleOrders.map((order) => order.id));
+  const visibleCheckedOrderCount = [...checkedDatabaseOrderIds].filter((orderId) => visibleOrderIds.has(orderId)).length;
+  addCheckedOrdersToBatchButton.disabled = databaseOrdersLoading || visibleCheckedOrderCount === 0;
 
   if (databaseOrdersLoading) {
     const loading = document.createElement("p");
@@ -4834,7 +4853,17 @@ function renderDatabaseOrdersWorkspace() {
     return;
   }
 
-  databaseOrders.forEach((order) => {
+  if (!visibleOrders.length) {
+    const empty = document.createElement("p");
+    empty.className = "batch-tools-note";
+    empty.textContent = "No orders match the current filters.";
+    databaseOrdersListShell.append(empty);
+    restoreElementScrollState(databaseOrdersListShell, listScrollState);
+    renderSelectedDatabaseOrderItems();
+    return;
+  }
+
+  visibleOrders.forEach((order) => {
     const orderNumber = getDatabaseOrderNumber(order);
     const row = document.createElement("div");
     row.className = "database-order-row";
@@ -4952,7 +4981,8 @@ function renderSelectedDatabaseOrderItems() {
   }
 
   databaseOrderItemsShell.replaceChildren();
-  const selectedOrder = getSelectedGroupedOrder(databaseOrders, selectedDatabaseOrderId);
+  const visibleOrders = getVisibleDatabaseOrders();
+  const selectedOrder = getSelectedGroupedOrder(visibleOrders, selectedDatabaseOrderId);
 
   if (selectedDatabaseOrderTitle) {
     selectedDatabaseOrderTitle.textContent = selectedOrder
@@ -5117,7 +5147,9 @@ async function addCheckedDatabaseOrdersToBatch() {
     return;
   }
 
-  const orderIds = getCheckedOrderIdsForBulkAction(checkedDatabaseOrderIds);
+  const visibleOrderIds = new Set(getVisibleDatabaseOrders().map((order) => order.id));
+  const orderIds = getCheckedOrderIdsForBulkAction(checkedDatabaseOrderIds)
+    .filter((orderId) => visibleOrderIds.has(orderId));
   if (!orderIds.length) {
     updateWorkflowAlert("Select one or more orders before adding them to the production batch.", "error");
     return;
@@ -6685,7 +6717,7 @@ async function deleteOrder(orderId) {
   const nextActiveOrderItemId = activeOrderItemId === orderId
     ? orders[orderIndex + 1]?.id || orders[orderIndex - 1]?.id || null
     : activeOrderItemId;
-  let archivedRemoteSnapshot = null;
+  let removedRemoteSnapshot = null;
 
   if (canAttemptProductionBatchSave() && productionBatchContext?.id) {
     try {
@@ -6694,7 +6726,7 @@ async function deleteOrder(orderId) {
         throw new Error("Authentication required.");
       }
       productionBatchAccessToken = accessToken;
-      archivedRemoteSnapshot = await archiveProductionBatchItem(productionBatchContext.id, orderId, {
+      removedRemoteSnapshot = await removeProductionBatchItem(productionBatchContext.id, orderId, {
         accessToken,
         activeOrderItemId: nextActiveOrderItemId,
       });
@@ -6720,22 +6752,22 @@ async function deleteOrder(orderId) {
     }
   }
 
-  if (archivedRemoteSnapshot?.batch) {
-    enableProductionBatchSync(archivedRemoteSnapshot.batch);
-    mergeProductionBatchPublishedStateFromSnapshot(archivedRemoteSnapshot);
+  if (removedRemoteSnapshot?.batch) {
+    enableProductionBatchSync(removedRemoteSnapshot.batch);
+    mergeProductionBatchPublishedStateFromSnapshot(removedRemoteSnapshot);
   }
 
-  if (archivedRemoteSnapshot) {
+  if (removedRemoteSnapshot) {
     lastProductionBatchSaveKey = buildProductionBatchSaveKey(buildProductionBatchSnapshot());
   }
 
   if (!orders.length) {
     activeOrderItemId = null;
     orderSequence = 1;
-    persistBatchState({ skipRemoteSave: Boolean(archivedRemoteSnapshot) });
+    persistBatchState({ skipRemoteSave: Boolean(removedRemoteSnapshot) });
     updateWorkflowAlert(isProductionBatchSyncEnabled() ? "Production batch cleared." : "Batch cleared.", "pending");
   } else {
-    persistBatchState({ skipRemoteSave: Boolean(archivedRemoteSnapshot) });
+    persistBatchState({ skipRemoteSave: Boolean(removedRemoteSnapshot) });
   }
 
   renderOrderList();
@@ -6744,20 +6776,28 @@ async function deleteOrder(orderId) {
   }
 }
 
-async function archiveAllOrders() {
+function getIncompleteProductionBatchOrders() {
+  return orders.filter((order) => (
+    order.status !== "captured"
+    && order.status !== "exported"
+  ) || !isOrderReadyForExport(order));
+}
+
+async function completeCurrentProductionBatch() {
   saveActiveOrderDraft();
   if (!orders.length) {
     return;
   }
 
+  const incompleteOrders = getIncompleteProductionBatchOrders();
   const confirmed = await showConfirmationDialog({
-    title: "Archive Batch?",
-    description: isProductionBatchSyncEnabled()
-      ? "Archive the current production batch in Supabase? Archived designs stay in the database and are hidden from the active queue."
-      : "Archive the current in-memory batch?",
-    confirmLabel: "Confirm",
+    title: incompleteOrders.length ? "Complete Production Batch With Incomplete Items?" : "Complete Production Batch?",
+    description: incompleteOrders.length
+      ? `${incompleteOrders.length} of ${orders.length} batch item${orders.length === 1 ? "" : "s"} ${incompleteOrders.length === 1 ? "is" : "are"} not complete or export-ready. Complete this production batch anyway?`
+      : "Mark every order in this production batch complete and remove the batch from the active view?",
+    confirmLabel: "Complete Batch",
     cancelLabel: "Keep Batch",
-    isDanger: true,
+    isDanger: incompleteOrders.length > 0,
   });
   if (!confirmed) {
     return;
@@ -6773,13 +6813,13 @@ async function archiveAllOrders() {
   resetEditorToEmptyState();
   renderOrderList();
 
-  let archivedRemoteSnapshot = null;
+  let completedRemoteSnapshot = null;
   if (isProductionBatchSyncEnabled()) {
     try {
-      const archiveBatchId = productionBatchContext.id;
+      const completeBatchId = productionBatchContext.id;
       const accessToken = productionBatchAccessToken || readProductionBatchAccessTokenOverride() || await getAccessToken();
       productionBatchAccessToken = accessToken;
-      archivedRemoteSnapshot = await archiveProductionBatch(archiveBatchId, { accessToken });
+      completedRemoteSnapshot = await completeProductionBatch(completeBatchId, { accessToken });
     } catch (error) {
       orders.splice(0, orders.length, ...previousOrders);
       activeOrderItemId = previousActiveOrderItemId;
@@ -6793,7 +6833,7 @@ async function archiveAllOrders() {
       renderOrderList();
       render();
       updateWorkflowAlert(
-        error instanceof Error ? error.message : "Unable to archive the production batch.",
+        error instanceof Error ? error.message : "Unable to complete the production batch.",
         "error",
       );
       return;
@@ -6801,15 +6841,16 @@ async function archiveAllOrders() {
   }
 
   productionBatchAutosavePending = false;
-  if (archivedRemoteSnapshot?.batch) {
-    enableProductionBatchSync(archivedRemoteSnapshot.batch);
+  if (completedRemoteSnapshot?.batch) {
+    enableProductionBatchSync(completedRemoteSnapshot.batch);
   }
-  lastProductionBatchSaveKey = buildProductionBatchSaveKey(archivedRemoteSnapshot || buildProductionBatchSnapshot());
+  lastProductionBatchSaveKey = buildProductionBatchSaveKey(completedRemoteSnapshot || buildProductionBatchSnapshot());
   persistBatchState({ skipRemoteSave: true });
+  invalidateDatabaseOrders();
   updateWorkflowAlert(
     isProductionBatchSyncEnabled()
-      ? "Production batch archived in Supabase."
-      : "Batch archived.",
+      ? "Production batch completed in Supabase."
+      : "Production batch completed.",
     "pending",
   );
   renderOrderList();
@@ -8428,7 +8469,23 @@ navCollapseButton.addEventListener("click", () => {
 
 addOrderButton.addEventListener("click", addOrder);
 importClipboardButton.addEventListener("click", importFromClipboard);
-clearBatchButton.addEventListener("click", archiveAllOrders);
+clearBatchButton.addEventListener("click", completeCurrentProductionBatch);
+databaseOrdersSearchInput?.addEventListener("input", () => {
+  databaseOrdersSearchTerm = databaseOrdersSearchInput.value;
+  renderDatabaseOrdersWorkspace();
+});
+databaseOrdersStatusFilter?.addEventListener("change", () => {
+  databaseOrdersStatusFilterValue = databaseOrdersStatusFilter.value;
+  selectedDatabaseOrderId = null;
+  checkedDatabaseOrderIds.clear();
+  invalidateDatabaseOrders();
+  renderDatabaseOrdersWorkspace();
+  void loadDatabaseOrders({ force: true });
+});
+databaseOrdersBatchFilter?.addEventListener("change", () => {
+  databaseOrdersBatchFilterValue = databaseOrdersBatchFilter.value;
+  renderDatabaseOrdersWorkspace();
+});
 showColorCountsButton?.addEventListener("click", openBatchColorCountsDialog);
 exportCompletedButton.addEventListener("click", exportAllOrders);
 copyCompletedButton.addEventListener("click", copyAllOrders);

@@ -2,9 +2,9 @@ import { beforeAll, describe, expect, it } from "vitest";
 
 import { loadEnvFile } from "../../tools/env_file.mjs";
 import {
-  archiveProductionBatch,
-  archiveProductionBatchItem,
+  completeProductionBatch,
   loadProductionBatch,
+  removeProductionBatchItem,
   saveProductionBatch,
 } from "../../api/_lib/production-batch-store.js";
 import { createSupabaseAdminClient } from "../../api/_lib/supabase-admin.js";
@@ -43,7 +43,7 @@ describe("production batch store database integration", () => {
     });
   });
 
-  it("saves, reloads, and archives a production batch without deleting order records", async () => {
+  it("saves, reloads, and completes a production batch without deleting design records", async () => {
     const suffix = Date.now().toString(36);
     const batchId = "33333333-3333-4333-8333-333333333333";
     const orderItemId = `db-test-order-${suffix}`;
@@ -152,12 +152,12 @@ describe("production batch store database integration", () => {
     expect(reloaded?.orderItems).toHaveLength(1);
     expect(reloaded?.orderItems[0]?.id).toBe(orderItemId);
 
-    const archived = await archiveProductionBatch({
+    const completed = await completeProductionBatch({
       batchId,
       workspaceId: PRIMARY_WORKSPACE_ID,
       userId: null,
     });
-    expect(archived).toMatchObject({
+    expect(completed).toMatchObject({
       batch: { id: batchId },
       activeOrderItemId: null,
       orderItems: [],
@@ -170,7 +170,7 @@ describe("production batch store database integration", () => {
     ] = await Promise.all([
       supabase
         .from("order_items")
-        .select("id")
+        .select("id, status")
         .eq("id", orderItemId)
         .maybeSingle(),
       supabase
@@ -182,14 +182,14 @@ describe("production batch store database integration", () => {
 
     expect(orderItemError).toBeNull();
     expect(designError).toBeNull();
-    expect(orderItem).toEqual({ id: orderItemId });
+    expect(orderItem).toEqual({ id: orderItemId, status: "complete" });
     expect(design).toEqual({ order_item_id: orderItemId });
   });
 
-  it("saves a new active batch item after archived items moved out of active positions", async () => {
+  it("saves a new active batch item after a completed batch is removed from the active positions", async () => {
     const suffix = Date.now().toString(36);
     const batchId = "44444444-4444-4444-8444-444444444444";
-    const archivedOrderItemId = `db-test-archived-${suffix}`;
+    const completedOrderItemId = `db-test-completed-${suffix}`;
     const activeOrderItemId = `db-test-active-${suffix}`;
 
     await saveProductionBatch({
@@ -198,16 +198,16 @@ describe("production batch store database integration", () => {
         batch: {
           id: batchId,
           workspaceId: PRIMARY_WORKSPACE_ID,
-          name: "Archive Position Batch",
+          name: "Complete Position Batch",
           status: "active",
         },
-        activeOrderItemId: archivedOrderItemId,
+        activeOrderItemId: completedOrderItemId,
         orderItems: [{
-          id: archivedOrderItemId,
+          id: completedOrderItemId,
           revision: 1,
           text: "Old",
           status: "captured",
-          source: { orderNumber: `ARCHIVED-${suffix}` },
+          source: { orderNumber: `COMPLETE-${suffix}` },
           settings: {
             text: "Old",
             presetId: "preset-c3e8a1d7f520",
@@ -218,7 +218,7 @@ describe("production batch store database integration", () => {
       },
     });
 
-    await archiveProductionBatch({
+    await completeProductionBatch({
       batchId,
       workspaceId: PRIMARY_WORKSPACE_ID,
       userId: null,
@@ -231,7 +231,7 @@ describe("production batch store database integration", () => {
         batch: {
           id: batchId,
           workspaceId: PRIMARY_WORKSPACE_ID,
-          name: "Archive Position Batch",
+          name: "Complete Position Batch",
           status: "active",
         },
         activeOrderItemId,
@@ -264,14 +264,14 @@ describe("production batch store database integration", () => {
     expect(error).toBeNull();
     expect(batchItems).toEqual(expect.arrayContaining([
       { order_item_id: activeOrderItemId, batch_position: 0, status: "active" },
-      { order_item_id: archivedOrderItemId, batch_position: 1, status: "archived" },
     ]));
+    expect(batchItems.some((item) => item.order_item_id === completedOrderItemId)).toBe(false);
   });
 
-  it("archives one batch item so it stays hidden after reload while preserving saved design records", async () => {
+  it("removes one batch item so it stays hidden after reload while preserving saved design records", async () => {
     const suffix = Date.now().toString(36);
     const batchId = "55555555-5555-4555-8555-555555555555";
-    const archivedOrderItemId = `db-test-archive-one-${suffix}`;
+    const removedOrderItemId = `db-test-remove-one-${suffix}`;
     const activeOrderItemId = `db-test-keep-one-${suffix}`;
 
     await saveProductionBatch({
@@ -280,19 +280,19 @@ describe("production batch store database integration", () => {
         batch: {
           id: batchId,
           workspaceId: PRIMARY_WORKSPACE_ID,
-          name: "Single Archive Batch",
+          name: "Single Remove Batch",
           status: "active",
         },
-        activeOrderItemId: archivedOrderItemId,
+        activeOrderItemId: removedOrderItemId,
         orderItems: [
           {
-            id: archivedOrderItemId,
+            id: removedOrderItemId,
             revision: 1,
-            text: "Archive Me",
+            text: "Remove Me",
             status: "captured",
-            source: { orderNumber: `DELETE-${suffix}` },
+            source: { orderNumber: `REMOVE-${suffix}` },
             settings: {
-              text: "Archive Me",
+              text: "Remove Me",
               presetId: "preset-c3e8a1d7f520",
               boundingSizePresetId: "size-2-2x1-5",
               lines: [{ fontId: "skywalk" }],
@@ -315,20 +315,20 @@ describe("production batch store database integration", () => {
       },
     });
 
-    const archived = await archiveProductionBatchItem({
+    const removed = await removeProductionBatchItem({
       batchId,
-      orderItemId: archivedOrderItemId,
+      orderItemId: removedOrderItemId,
       activeOrderItemId,
       workspaceId: PRIMARY_WORKSPACE_ID,
       userId: null,
     });
 
-    expect(archived).toMatchObject({
+    expect(removed).toMatchObject({
       batch: { id: batchId },
       activeOrderItemId,
       orderItems: [{ id: activeOrderItemId }],
     });
-    expect(archived?.orderItems.map((orderItem) => orderItem.id)).not.toContain(archivedOrderItemId);
+    expect(removed?.orderItems.map((orderItem) => orderItem.id)).not.toContain(removedOrderItemId);
 
     const reloaded = await loadProductionBatch({
       batchId,
@@ -351,23 +351,22 @@ describe("production batch store database integration", () => {
       supabase
         .from("order_items")
         .select("id")
-        .eq("id", archivedOrderItemId)
+        .eq("id", removedOrderItemId)
         .maybeSingle(),
       supabase
         .from("designs")
         .select("order_item_id")
-        .eq("order_item_id", archivedOrderItemId)
+        .eq("order_item_id", removedOrderItemId)
         .maybeSingle(),
     ]);
 
     expect(batchItemsError).toBeNull();
     expect(orderItemError).toBeNull();
     expect(designError).toBeNull();
-    expect(batchItems).toEqual(expect.arrayContaining([
-      { order_item_id: archivedOrderItemId, batch_position: 2, status: "archived" },
+    expect(batchItems).toEqual([
       { order_item_id: activeOrderItemId, batch_position: 1, status: "active" },
-    ]));
-    expect(orderItem).toEqual({ id: archivedOrderItemId });
-    expect(design).toEqual({ order_item_id: archivedOrderItemId });
+    ]);
+    expect(orderItem).toEqual({ id: removedOrderItemId });
+    expect(design).toEqual({ order_item_id: removedOrderItemId });
   });
 });

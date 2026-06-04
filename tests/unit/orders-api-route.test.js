@@ -76,6 +76,7 @@ describe("orders api route", () => {
     expect(listWorkspaceOrdersMock).toHaveBeenCalledWith({
       workspaceId: "workspace-1",
       activeBatchId: "batch-1",
+      statusFilter: "open",
     });
     expect(response.statusCode).toBe(200);
     expect(response.body).toEqual({
@@ -120,6 +121,7 @@ describe("orders api route", () => {
     expect(listWorkspaceOrdersMock).toHaveBeenCalledWith({
       workspaceId: "workspace-1",
       activeBatchId: null,
+      statusFilter: "open",
     });
     expect(response.statusCode).toBe(200);
     expect(response.body).toEqual({
@@ -127,6 +129,32 @@ describe("orders api route", () => {
       addedOrderItemCount: 0,
       orders: [{ id: "order:1001", items: [{ id: "item-1" }] }],
     });
+  });
+
+  it("passes complete status filters to the orders store", async () => {
+    resolveProductionBatchAuthMock.mockResolvedValue({
+      userId: "user-1",
+      workspaceId: "workspace-1",
+    });
+    listWorkspaceOrdersMock.mockResolvedValue({
+      orders: [{ id: "order:1002", items: [{ id: "item-2", status: "complete" }] }],
+    });
+
+    const { default: handler } = await import("../../api/orders.js");
+    const response = createResponseRecorder();
+
+    await handler({
+      method: "GET",
+      headers: { authorization: "Bearer token-1" },
+      query: { batchId: "batch-1", status: " complete " },
+    }, response);
+
+    expect(listWorkspaceOrdersMock).toHaveBeenCalledWith({
+      workspaceId: "workspace-1",
+      activeBatchId: "batch-1",
+      statusFilter: "complete",
+    });
+    expect(response.statusCode).toBe(200);
   });
 
   it("returns the store's production batch add count when importing clipboard items to a batch", async () => {
@@ -249,6 +277,7 @@ describe("orders api route", () => {
     expect(listWorkspaceOrdersMock).toHaveBeenCalledWith({
       workspaceId: "workspace-1",
       activeBatchId: "batch-1",
+      statusFilter: "open",
     });
     expect(response.statusCode).toBe(200);
     expect(response.body).toEqual({

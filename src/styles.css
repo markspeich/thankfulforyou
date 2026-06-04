@@ -1776,6 +1776,29 @@ button:disabled {
   border-radius: 12px;
 }
 
+.filter-field {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.filter-field span {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.filter-field select {
+  width: 100%;
+  min-height: 36px;
+  padding: 7px 9px;
+  color: var(--ink);
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
 .editor-top-card {
   margin-top: 4px;
   padding: 0;
@@ -2244,7 +2267,18 @@ button:disabled {
 }
 
 .database-orders-list-panel {
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
+}
+
+.database-orders-filters {
+  display: grid;
+  gap: 10px;
+}
+
+.database-orders-filter-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
 }
 
 .database-orders-list-shell,
