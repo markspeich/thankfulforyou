@@ -390,6 +390,7 @@ Future-facing product ideas and optional later-phase workflow enhancements are t
 - Automated checks against a protected Vercel preview should use Vercel Protection Bypass for Automation so smoke tests can keep Deployment Protection enabled while still exercising the hosted UI and API routes.
 - Local development and browser automation should share one deterministic per-worktree port-resolution helper so multiple git worktrees can run in parallel without port collisions or hardcoded test URLs drifting from the local server.
 - In the current Windows Codex worktree environment, local server launch workflow should prefer a foreground or otherwise persistent terminal session over a detached hidden process, because detached launches may exit early and break browser connectivity.
+- Local app startup and initialization guidance should be documented as an explicit checklist so Codex can start `npm run start:local`, use the printed app URL, verify HTTP connectivity, run local initialization, and verify `/api/batch-session` without improvising.
 - When the operator asks Codex to `finish this worktree`, Codex should treat that as the standard post-feature workflow: merge latest `main` into the current worktree and resolve conflicts, run appropriate verification, commit the worktree changes to the current feature branch, merge that feature branch into `main`, and push `main`.
 
 ## Open Questions

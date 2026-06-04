@@ -59,6 +59,23 @@ When the user provides new product, workflow, material, manufacturing, design, o
 - Capture assumptions explicitly in `docs/requirements.md`.
 - Keep changes scoped and avoid unrelated refactors.
 - When the user says `finish this worktree`, complete the standard post-feature workflow: merge latest `main` into the current worktree and resolve conflicts, run appropriate verification, commit the worktree changes to the current feature branch, merge that feature branch into `main`, push `main`, and delete the finished feature branch.
+
+## Standard Local App Startup
+
+When the user asks to start the app, start a server, or initialize the app, follow this exact local workflow unless they explicitly ask for remote:
+
+1. Read `AGENTS.md` and `docs/requirements.md` if they have not already been read this turn.
+2. Start the local dev server from the repository root with `npm run start:local`.
+3. In Windows Codex worktrees, prefer a visible persistent PowerShell window for the server:
+   `Start-Process -FilePath 'powershell.exe' -ArgumentList @('-NoExit','-Command','cd "<repo root>"; npm run start:local')`
+4. Do not use detached hidden server launches or redirected-log background launches for the dev server unless the user explicitly asks for a background-only server.
+5. Read the printed `Badge reel layout tool: http://localhost:...` line and use that exact URL.
+6. Verify the server with `(Invoke-WebRequest -UseBasicParsing '<printed URL>/').StatusCode`.
+7. If `localhost` resolves to IPv6 and fails in scripted checks, retry verification with `http://127.0.0.1:<port>`.
+8. For `Initialize app`, run `npm run initialize:local`.
+9. Verify initialization by signing in as `test.operator@example.com` and calling `<printed URL>/api/batch-session` with the access token.
+10. Report the server URL, HTTP status, operator, workspace, and batch.
+
 - When the user says `start a server`, start the local dev server unless they explicitly ask for remote.
 - To start the local dev server in this worktree, run `npm run start:local` from the repository root.
 - To start the remote-backed dev server, run `npm run start:remote` only when the user explicitly asks for remote.
