@@ -188,9 +188,9 @@ describe("orders store database integration", () => {
     ]));
   });
 
-  it("hides archived orders and preserves saved designs on duplicate imports", async () => {
+  it("hides complete orders by default and preserves saved designs on duplicate imports", async () => {
     const suffix = Date.now().toString(36);
-    const archivedId = `transaction:txn-archived-${suffix}`;
+    const completeId = `transaction:txn-complete-${suffix}`;
     const savedId = `transaction:txn-saved-${suffix}`;
     const cachedBuild = {
       signature: `saved-${suffix}`,
@@ -205,11 +205,11 @@ describe("orders store database integration", () => {
       target: "orders",
       items: [
         {
-          text: "Archived",
+          text: "Complete",
           source: {
-            orderNumber: `ARCHIVED-${suffix}`,
-            transactionId: `txn-archived-${suffix}`,
-            buyerName: "Archived Buyer",
+            orderNumber: `COMPLETE-${suffix}`,
+            transactionId: `txn-complete-${suffix}`,
+            buyerName: "Complete Buyer",
           },
         },
         {
@@ -227,12 +227,12 @@ describe("orders store database integration", () => {
 
     expect(importResult.importedCount).toBe(2);
 
-    const { error: archiveError } = await supabase
+    const { error: completeError } = await supabase
       .from("order_items")
-      .update({ status: "archived" })
-      .eq("id", archivedId);
+      .update({ status: "complete" })
+      .eq("id", completeId);
 
-    expect(archiveError).toBeNull();
+    expect(completeError).toBeNull();
 
     const { error: savedError } = await supabase
       .from("designs")
@@ -268,7 +268,7 @@ describe("orders store database integration", () => {
       activeBatchId: PRIMARY_BATCH_ID,
     });
 
-    expect(listed.orders.some((order) => order.orderNumber === `ARCHIVED-${suffix}`)).toBe(false);
+    expect(listed.orders.some((order) => order.orderNumber === `COMPLETE-${suffix}`)).toBe(false);
     const savedOrder = listed.orders.find((order) => order.orderNumber === `SAVED-${suffix}`);
     expect(savedOrder?.items[0].design).toMatchObject({
       text: "Saved",

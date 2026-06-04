@@ -20,8 +20,8 @@ describe("orders api client", () => {
 
     const { fetchWorkspaceOrders } = await import("../../src/orders-api.js");
 
-    await expect(fetchWorkspaceOrders({ batchId: "batch-1", accessToken: "token-1" })).resolves.toEqual(payload);
-    expect(fetchMock).toHaveBeenCalledWith("/api/orders?batchId=batch-1", {
+    await expect(fetchWorkspaceOrders({ batchId: "batch-1", statusFilter: "complete", accessToken: "token-1" })).resolves.toEqual(payload);
+    expect(fetchMock).toHaveBeenCalledWith("/api/orders?batchId=batch-1&status=complete", {
       headers: {
         Accept: "application/json",
         Authorization: "Bearer token-1",
@@ -188,6 +188,24 @@ describe("orders api client", () => {
 
     await expect(fetchWorkspaceOrders({})).resolves.toEqual(payload);
     expect(fetchMock).toHaveBeenCalledWith("/api/orders", {
+      headers: {
+        Accept: "application/json",
+      },
+    });
+  });
+
+  it("requests all orders without adding empty query parameters", async () => {
+    const payload = { orders: [] };
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => payload,
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { fetchWorkspaceOrders } = await import("../../src/orders-api.js");
+
+    await expect(fetchWorkspaceOrders({ statusFilter: "all" })).resolves.toEqual(payload);
+    expect(fetchMock).toHaveBeenCalledWith("/api/orders?status=all", {
       headers: {
         Accept: "application/json",
       },

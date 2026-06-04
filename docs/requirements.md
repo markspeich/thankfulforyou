@@ -292,12 +292,12 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Operators should create a `production_batch` from a subset of order items, produce that batch, and then move on to a new batch.
 - A production batch should contain order items through `batch_items` so an order item can appear in later remake, rework, replacement, or test batches without losing its original order-item history.
 - The app should provide a top-level left navigation item named `Orders` for browsing saved database orders outside the active production batch.
-- The `Orders` workspace should show only non-archived orders and order items by default.
+- The `Orders` workspace should show only open orders and order items by default.
 - The `Orders` workspace should use a calm production layout with an orders column and a selected-order items column.
 - The first `Orders` workspace column should show one row per Etsy order, grouped by order number where available.
 - Each order row on the `Orders` workspace should include a checkbox so operators can select orders for bulk actions.
 - The orders column should include an ellipsis menu with an action to add all checked orders to the active production batch.
-- Clicking an order row in the `Orders` workspace should show one card for each non-archived order item in that order.
+- Clicking an order row in the `Orders` workspace should show one card for each order item in that order that matches the active Orders status filter.
 - Each order item card on the `Orders` workspace should include the saved design when available.
 - Each order item card on the `Orders` workspace should include an ellipsis menu with actions for `Copy Design` and `Add to Production Batch`.
 - `Copy Design` from the `Orders` workspace should copy the saved design output when export-ready geometry is available and otherwise clearly report that the design must be completed before copying.
@@ -329,9 +329,9 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - In the selected-order editor, show the imported Etsy quantity as a read-only label directly below the `Color` label whenever imported quantity metadata is available.
 - If the imported color name contains the word `White`, highlight that displayed color name in the editor.
 - The app should provide a batch action to delete a single design without affecting the rest of the current batch.
-- The app should provide an `Archive Batch` action when the operator is ready to start a new batch.
-- Archiving a batch should hide all current batch items from the active design queue after refresh while preserving the underlying hosted order-item and design records in Supabase for later retrieval.
-- Archived batch memberships should use `batch_items.status = 'archived'`; completed batch items that have not been archived should still appear in the active design queue after refresh.
+- The app should provide a `Complete Production Batch` action when the operator is ready to finish the current batch and remove it from the active production batch view.
+- Completing a batch should hide all current batch items from the active design queue after refresh while preserving the underlying hosted order-item and design records in Supabase for later retrieval.
+- Completed order items should use `order_items.status = 'complete'`; open order items should use `order_items.status = 'open'`.
 - In the selected-order editor, when imported listing title and 75 by 75 image data are available, show the listing title above the listing image and place both above the main text-entry controls.
 - SVG export should place the face text layer and offset backing layer side by side, with the backing layer to the right of the text layer.
 - In batch export SVG output, each order's face and backing paths should appear below the previous order's paths in a single vertically stacked file.
@@ -500,6 +500,15 @@ For batch Etsy order sessions, the preferred workflow is:
 8. Export all batched orders with text from the order navigation when a batch SVG is needed.
 9. Delete a single batch item when it should be excluded from the batch.
 10. Clear the full batch and its saved local batch state when starting a new batch.
+
+- Orders should use a single durable lifecycle status on `order_items`: `open` for active work and `complete` for work finished through production batching.
+- The app should stop using `archived` as an order or batch-membership lifecycle status for new workflow behavior.
+- Completing a production batch should mark every order item currently in the batch as `complete` and remove those items from the active production batch view.
+- If any current production batch items are not visibly complete/exported or lack export-ready saved geometry where that can be checked, completing the production batch should show an explicit warning confirmation before proceeding.
+- The Orders workspace should default to showing only open orders.
+- The Orders workspace should provide a status filter with `Open`, `Complete`, and `All` options.
+- The Orders workspace should provide a search field matching order number, buyer, listing, transaction, color, and design text.
+- The Orders workspace should provide a batch-membership filter for all orders, orders in the active batch, and orders not in the active batch.
 
 - Clicking `Save` should immediately mark the current design as finished for editing, even if connectedness analysis is still running in the background.
 - After clicking `Save`, both `Save` and `Save & Next` should stay disabled for that design until the operator changes the text or layout settings again.

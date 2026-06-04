@@ -17,11 +17,18 @@ function normalizeString(value) {
   return typeof value === "string" ? value.trim() : "";
 }
 
-function buildOrdersUrl(batchId) {
+function buildOrdersUrl(batchId, statusFilter = null) {
   const normalizedBatchId = normalizeString(batchId);
-  return normalizedBatchId
-    ? `/api/orders?batchId=${encodeURIComponent(normalizedBatchId)}`
-    : "/api/orders";
+  const normalizedStatusFilter = normalizeString(statusFilter);
+  const params = new URLSearchParams();
+  if (normalizedBatchId) {
+    params.set("batchId", normalizedBatchId);
+  }
+  if (normalizedStatusFilter) {
+    params.set("status", normalizedStatusFilter);
+  }
+  const query = params.toString();
+  return query ? `/api/orders?${query}` : "/api/orders";
 }
 
 async function readOrdersResponse(response, fallbackError) {
@@ -34,8 +41,8 @@ async function readOrdersResponse(response, fallbackError) {
   return payload;
 }
 
-export async function fetchWorkspaceOrders({ batchId = null, accessToken = null } = {}) {
-  const response = await fetch(buildOrdersUrl(batchId), {
+export async function fetchWorkspaceOrders({ batchId = null, statusFilter = null, accessToken = null } = {}) {
+  const response = await fetch(buildOrdersUrl(batchId, statusFilter), {
     headers: buildAuthHeaders(accessToken, {
       Accept: "application/json",
     }),

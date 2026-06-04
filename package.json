@@ -9,6 +9,7 @@
   "scripts": {
     "build": "node tools/build_static.mjs",
     "setup:worktree": "node tools/setup_worktree_env.mjs",
+    "initialize:local": "node tools/run_with_supabase_env.mjs --env local -- node tools/initialize_app.mjs",
     "start": "node tools/setup_worktree_env.mjs && node --watch tools/dev_server.mjs",
     "start:local": "node tools/run_with_supabase_env.mjs --env local -- node --watch tools/dev_server.mjs",
     "start:remote": "node tools/run_with_supabase_env.mjs --env remote -- node --watch tools/dev_server.mjs",

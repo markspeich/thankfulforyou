@@ -94,7 +94,7 @@ export async function saveProductionBatchSnapshot(snapshot, options = {}) {
   return payload;
 }
 
-export async function archiveProductionBatch(batchId, options = {}) {
+export async function completeProductionBatch(batchId, options = {}) {
   const { accessToken = null } = options;
   const response = await fetch("/api/production-batch", {
     method: "POST",
@@ -103,20 +103,20 @@ export async function archiveProductionBatch(batchId, options = {}) {
       Accept: "application/json",
     }),
     body: JSON.stringify({
-      action: "archive",
+      action: "complete",
       batchId,
     }),
   });
   const payload = await readJsonOrFallback(response, {});
 
   if (!response.ok) {
-    throw new Error(payload.error || "Unable to archive the production batch.");
+    throw new Error(payload.error || "Unable to complete the production batch.");
   }
 
   return payload;
 }
 
-export async function archiveProductionBatchItem(batchId, orderItemId, options = {}) {
+export async function removeProductionBatchItem(batchId, orderItemId, options = {}) {
   const { accessToken = null, activeOrderItemId = null } = options;
   const response = await fetch("/api/production-batch", {
     method: "POST",
@@ -125,7 +125,7 @@ export async function archiveProductionBatchItem(batchId, orderItemId, options =
       Accept: "application/json",
     }),
     body: JSON.stringify({
-      action: "archive-item",
+      action: "remove-item",
       batchId,
       orderItemId,
       ...(typeof activeOrderItemId === "string" ? { activeOrderItemId } : {}),
@@ -134,7 +134,7 @@ export async function archiveProductionBatchItem(batchId, orderItemId, options =
   const payload = await readJsonOrFallback(response, {});
 
   if (!response.ok) {
-    throw new Error(payload.error || "Unable to archive the production batch item.");
+    throw new Error(payload.error || "Unable to remove the production batch item.");
   }
 
   return payload;

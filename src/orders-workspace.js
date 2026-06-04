@@ -43,6 +43,74 @@ export function getSelectedGroupedOrder(orders, selectedOrderId) {
   return orders.find((order) => order.id === selectedOrderId) || orders[0];
 }
 
+function getOrderSearchText(order) {
+  const parts = [
+    order?.id,
+    order?.orderNumber,
+    order?.buyerName,
+  ];
+  for (const item of Array.isArray(order?.items) ? order.items : []) {
+    parts.push(
+      item?.id,
+      item?.orderNumber,
+      item?.buyerName,
+      item?.listingId,
+      item?.transactionId,
+      item?.importedColor,
+      item?.source?.listingTitle,
+      item?.source?.title,
+      item?.design?.text,
+    );
+    for (const line of Array.isArray(item?.design?.lines) ? item.design.lines : []) {
+      parts.push(line?.text);
+    }
+  }
+  return parts
+    .filter((value) => typeof value === "string" && value.trim())
+    .join(" ")
+    .toLowerCase();
+}
+
+function getOrderLifecycleStatus(order) {
+  if (order?.status === "complete") {
+    return "complete";
+  }
+  const items = Array.isArray(order?.items) ? order.items : [];
+  return items.length > 0 && items.every((item) => item?.status === "complete")
+    ? "complete"
+    : "open";
+}
+
+export function filterGroupedOrders(orders, {
+  searchTerm = "",
+  statusFilter = "open",
+  batchFilter = "all",
+} = {}) {
+  const normalizedSearchTerm = typeof searchTerm === "string" ? searchTerm.trim().toLowerCase() : "";
+  return (Array.isArray(orders) ? orders : []).filter((order) => {
+    if (normalizedSearchTerm && !getOrderSearchText(order).includes(normalizedSearchTerm)) {
+      return false;
+    }
+
+    const lifecycleStatus = getOrderLifecycleStatus(order);
+    if (statusFilter === "open" && lifecycleStatus !== "open") {
+      return false;
+    }
+    if (statusFilter === "complete" && lifecycleStatus !== "complete") {
+      return false;
+    }
+
+    if (batchFilter === "inBatch" && !order?.isInActiveBatch) {
+      return false;
+    }
+    if (batchFilter === "notInBatch" && order?.isInActiveBatch) {
+      return false;
+    }
+
+    return true;
+  });
+}
+
 export function normalizeOrdersWorkspaceState({
   orders: directOrders,
   payload,

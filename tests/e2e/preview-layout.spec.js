@@ -302,7 +302,7 @@ async function installDefaultProductionBatchRoutes(page) {
       savedProductionBatchSnapshot = requestSnapshot || savedProductionBatchSnapshot;
     } else if (method === "POST") {
       const requestBody = route.request().postDataJSON();
-      if (requestBody?.action === "archive-item") {
+      if (requestBody?.action === "remove-item") {
         const orderItems = savedProductionBatchSnapshot.orderItems
           .filter((order) => order.id !== requestBody.orderItemId);
         savedProductionBatchSnapshot = {
@@ -486,8 +486,8 @@ test.beforeEach(async ({ page, request }, testInfo) => {
   const orderCount = page.locator("#orderCountOutput");
 
   if ((await orderCount.textContent()) !== "0") {
-    await clickBatchAction(page, "Archive Batch");
-    await confirmBatchDialog(page, "Archive Batch?");
+    await clickBatchAction(page, "Complete Production Batch");
+    await confirmBatchDialog(page, /Complete Production Batch/);
     await expect(orderCount).toHaveText("0");
   }
 
@@ -649,8 +649,8 @@ test("coalesces rapid slider input into a single deferred preview rebuild", asyn
 
   const orderCount = page.locator("#orderCountOutput");
   if ((await orderCount.textContent()) !== "0") {
-    await clickBatchAction(page, "Archive Batch");
-    await confirmBatchDialog(page, "Archive Batch?");
+    await clickBatchAction(page, "Complete Production Batch");
+    await confirmBatchDialog(page, /Complete Production Batch/);
     await expect(orderCount).toHaveText("0");
   }
 
@@ -703,8 +703,8 @@ test("avoids redundant preview image encodes during a settled slider render", as
 
   const orderCount = page.locator("#orderCountOutput");
   if ((await orderCount.textContent()) !== "0") {
-    await clickBatchAction(page, "Archive Batch");
-    await confirmBatchDialog(page, "Archive Batch?");
+    await clickBatchAction(page, "Complete Production Batch");
+    await confirmBatchDialog(page, /Complete Production Batch/);
     await expect(orderCount).toHaveText("0");
   }
 
@@ -1584,7 +1584,7 @@ test("keeps a longer two-line layout inside the guide", async ({ page }) => {
   expect(metrics.textHeightMm).toBeLessThanOrEqual(metrics.guideHeightMm + 0.01);
 });
 
-test("restores the current batch after refresh and archives it when requested", async ({ page }) => {
+test("restores the current batch after refresh and completes it when requested", async ({ page }) => {
   await page.route("**/api/layout-analyze", async (route) => {
     await route.fulfill({
       status: 200,
@@ -1607,11 +1607,11 @@ test("restores the current batch after refresh and archives it when requested", 
   await expect(page.locator("#backingInput")).toHaveValue("4.2");
   await expect(page.locator("#weldExportedDesignInput")).not.toBeChecked();
 
-  await clickBatchAction(page, "Archive Batch");
+  await clickBatchAction(page, "Complete Production Batch");
   await expect(page.locator("#confirmationDialogDescription")).toContainText(
-    /Archive the current in-memory batch|Archive the current production batch/,
+    /Mark every order in this production batch complete|not complete or export-ready/,
   );
-  await confirmBatchDialog(page, "Archive Batch?");
+  await confirmBatchDialog(page, /Complete Production Batch/);
 
   await expect(page.locator("#orderCountOutput")).toHaveText("0");
   await expect(page.getByLabel("Selected design editor")).toHaveClass(/is-hidden/);
@@ -2361,13 +2361,13 @@ test("shows a row save error when completed analysis cannot be persisted", async
   await page.route("**/api/production-batch**", async (route) => {
     if (route.request().method() === "POST") {
       const payload = route.request().postDataJSON() || {};
-      if (payload.action === "archive") {
+      if (payload.action === "complete") {
         savedProductionBatchSnapshot = {
           ...savedProductionBatchSnapshot,
           activeOrderItemId: null,
           orderItems: [],
         };
-      } else if (payload.action === "archive-item") {
+      } else if (payload.action === "remove-item") {
         const remainingOrderItems = savedProductionBatchSnapshot.orderItems
           .filter((order) => order.id !== payload.orderItemId);
         savedProductionBatchSnapshot = {

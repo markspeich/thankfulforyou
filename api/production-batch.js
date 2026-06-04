@@ -1,8 +1,8 @@
 import { resolveProductionBatchAuth } from "./_lib/production-batch-auth.js";
 import {
-  archiveProductionBatch,
-  archiveProductionBatchItem,
+  completeProductionBatch,
   loadProductionBatch,
+  removeProductionBatchItem,
   saveProductionBatch,
 } from "./_lib/production-batch-store.js";
 
@@ -227,7 +227,7 @@ export default async function handler(req, res) {
       const orderItemId = typeof rawOrderItemId === "string" ? rawOrderItemId.trim() : "";
       const activeOrderItemId = typeof rawActiveOrderItemId === "string" ? rawActiveOrderItemId.trim() : null;
 
-      if (action !== "archive" && action !== "archive-item") {
+      if (action !== "complete" && action !== "remove-item") {
         res.status(400).json({ error: "Unsupported production batch action." });
         return;
       }
@@ -237,20 +237,20 @@ export default async function handler(req, res) {
         return;
       }
 
-      if (action === "archive-item" && !orderItemId) {
+      if (action === "remove-item" && !orderItemId) {
         res.status(400).json({ error: "orderItemId is required." });
         return;
       }
 
-      const savedSnapshot = action === "archive-item"
-        ? await archiveProductionBatchItem({
+      const savedSnapshot = action === "remove-item"
+        ? await removeProductionBatchItem({
           batchId,
           orderItemId,
           ...(typeof activeOrderItemId === "string" ? { activeOrderItemId } : {}),
           workspaceId: req.auth.workspaceId,
           userId: req.auth.userId,
         })
-        : await archiveProductionBatch({
+        : await completeProductionBatch({
           batchId,
           workspaceId: req.auth.workspaceId,
           userId: req.auth.userId,

@@ -57,7 +57,7 @@ function createDeleteChain() {
   return {
     eq() {
       eqCount += 1;
-      return eqCount >= 2 ? Promise.resolve({ error: null }) : this;
+      return eqCount >= 3 ? Promise.resolve({ error: null }) : this;
     },
     in() {
       return Promise.resolve({ error: null });
@@ -69,6 +69,9 @@ function createUpdateChain() {
   return {
     eq() {
       return this;
+    },
+    in() {
+      return Promise.resolve({ error: null });
     },
     neq() {
       return Promise.resolve({ error: null });
@@ -296,65 +299,19 @@ describe("production batch store", () => {
     expect(designsUpsert.payload[0].size_guide_id).toBeNull();
   });
 
-  it("moves archived memberships out of reused positions before scoped batch item upserts", async () => {
-    supabaseMock.batchItems = [
-      { order_item_id: "archived-order-1", batch_position: 0, status: "archived" },
-      { order_item_id: "archived-order-2", batch_position: 1, status: "archived" },
-    ];
-    const { saveProductionBatch } = await import("../../api/_lib/production-batch-store.js");
+  it("completes order items and removes batch memberships without writing archived status", async () => {
+    const { completeProductionBatch } = await import("../../api/_lib/production-batch-store.js");
 
-    await saveProductionBatch({
-      userId: "user-1",
-      changedOrderItemIds: ["order-1"],
-      snapshot: {
-        batch: { id: "batch-1", workspaceId: "workspace-1" },
-        activeOrderItemId: "order-1",
-        orderItems: [
-          {
-            id: "order-1",
-            revision: 1,
-            text: "New Import",
-            status: "in-progress",
-            source: {},
-            settings: {
-              text: "New Import",
-              presetId: null,
-              boundingSizePresetId: null,
-              lines: [{ fontId: "candlepin" }],
-            },
-          },
-        ],
-      },
-    });
-
-    const batchItemUpdates = supabaseMock.calls.filter((call) => call.table === "batch_items" && call.operation === "update");
-    const batchItemsUpsert = supabaseMock.calls.find((call) => call.table === "batch_items" && call.operation === "upsert");
-    const lastRelocationIndex = supabaseMock.calls.findLastIndex((call) => call.table === "batch_items" && call.operation === "update");
-    const upsertIndex = supabaseMock.calls.findIndex((call) => call.table === "batch_items" && call.operation === "upsert");
-
-    expect(batchItemUpdates).toHaveLength(1);
-    expect(batchItemUpdates[0].payload).toMatchObject({
-      status: "archived",
-      batch_position: 2,
-    });
-    expect(lastRelocationIndex).toBeLessThan(upsertIndex);
-    expect(batchItemsUpsert.payload[0]).toMatchObject({
-      order_item_id: "order-1",
-      batch_position: 0,
-    });
-  });
-
-  it("archives batch memberships without deleting saved order or design records", async () => {
-    const { archiveProductionBatch } = await import("../../api/_lib/production-batch-store.js");
-
-    await archiveProductionBatch({
+    await completeProductionBatch({
       batchId: "batch-1",
       workspaceId: "workspace-1",
       userId: "user-1",
     });
 
     const batchUpdate = supabaseMock.calls.find((call) => call.table === "production_batches" && call.operation === "update");
-    const batchItemsUpdate = supabaseMock.calls.find((call) => call.table === "batch_items" && call.operation === "update");
+    const orderItemsUpdate = supabaseMock.calls.find((call) => call.table === "order_items" && call.operation === "update");
+    const batchItemsDelete = supabaseMock.calls.find((call) => call.table === "batch_items" && call.operation === "delete");
+    const archivedWrite = supabaseMock.calls.find((call) => JSON.stringify(call.payload || {}).includes("archived"));
     const orderItemsDelete = supabaseMock.calls.find((call) => call.table === "order_items" && call.operation === "delete");
     const designsDelete = supabaseMock.calls.find((call) => call.table === "designs" && call.operation === "delete");
 
@@ -362,15 +319,20 @@ describe("production batch store", () => {
       active_order_item_id: null,
       updated_by: "user-1",
     });
-    expect(batchItemsUpdate.payload).toMatchObject({ status: "archived" });
+    expect(orderItemsUpdate.payload).toMatchObject({
+      status: "complete",
+      updated_by: "user-1",
+    });
+    expect(batchItemsDelete).toBeDefined();
+    expect(archivedWrite).toBeUndefined();
     expect(orderItemsDelete).toBeUndefined();
     expect(designsDelete).toBeUndefined();
   });
 
-  it("archives one batch membership without deleting saved order or design records", async () => {
-    const { archiveProductionBatchItem } = await import("../../api/_lib/production-batch-store.js");
+  it("removes one batch membership without deleting saved order or design records", async () => {
+    const { removeProductionBatchItem } = await import("../../api/_lib/production-batch-store.js");
 
-    await archiveProductionBatchItem({
+    await removeProductionBatchItem({
       batchId: "batch-1",
       orderItemId: "order-1",
       workspaceId: "workspace-1",
@@ -378,7 +340,8 @@ describe("production batch store", () => {
     });
 
     const batchUpdate = supabaseMock.calls.find((call) => call.table === "production_batches" && call.operation === "update");
-    const batchItemsUpdate = supabaseMock.calls.find((call) => call.table === "batch_items" && call.operation === "update");
+    const batchItemsDelete = supabaseMock.calls.find((call) => call.table === "batch_items" && call.operation === "delete");
+    const archivedWrite = supabaseMock.calls.find((call) => JSON.stringify(call.payload || {}).includes("archived"));
     const orderItemsDelete = supabaseMock.calls.find((call) => call.table === "order_items" && call.operation === "delete");
     const designsDelete = supabaseMock.calls.find((call) => call.table === "designs" && call.operation === "delete");
 
@@ -386,30 +349,9 @@ describe("production batch store", () => {
       active_order_item_id: null,
       updated_by: "user-1",
     });
-    expect(batchItemsUpdate.payload).toMatchObject({
-      status: "archived",
-      batch_position: expect.any(Number),
-    });
-    expect(batchItemsUpdate.payload.batch_position).toBeGreaterThan(0);
+    expect(batchItemsDelete).toBeDefined();
+    expect(archivedWrite).toBeUndefined();
     expect(orderItemsDelete).toBeUndefined();
     expect(designsDelete).toBeUndefined();
-  });
-
-  it("moves archived batch memberships out of the active position range", async () => {
-    const { archiveProductionBatch } = await import("../../api/_lib/production-batch-store.js");
-
-    await archiveProductionBatch({
-      batchId: "batch-1",
-      workspaceId: "workspace-1",
-      userId: "user-1",
-    });
-
-    const batchItemsUpdate = supabaseMock.calls.find((call) => call.table === "batch_items" && call.operation === "update");
-
-    expect(batchItemsUpdate.payload).toMatchObject({
-      status: "archived",
-      batch_position: expect.any(Number),
-    });
-    expect(batchItemsUpdate.payload.batch_position).toBeGreaterThan(0);
   });
 });
