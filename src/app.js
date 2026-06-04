@@ -330,6 +330,8 @@ let databaseOrders = [];
 let selectedDatabaseOrderId = null;
 let checkedDatabaseOrderIds = new Set();
 let databaseOrdersLoading = false;
+let databaseOrdersImporting = false;
+let databaseOrdersMutationVersion = 0;
 let loadedDatabaseOrdersKey = null;
 let selectedFontId = "candlepin";
 let navCollapsed = readNavCollapsedPreference();
@@ -4532,6 +4534,10 @@ async function refreshOrdersAndProductionBatch({ payload = null, accessToken, re
     await refreshProductionBatchSnapshot(accessToken);
   }
 
+  if (payload) {
+    databaseOrdersMutationVersion += 1;
+  }
+
   if (!updateDatabaseOrdersFromPayload(payload)) {
     invalidateDatabaseOrders();
     await loadDatabaseOrders({ force: true });
@@ -4554,6 +4560,7 @@ async function loadDatabaseOrders({ force = false } = {}) {
   }
 
   databaseOrdersLoading = true;
+  const loadMutationVersion = databaseOrdersMutationVersion;
   renderDatabaseOrdersWorkspace();
   updateWorkflowAlert("Loading orders...", "pending", { autoHideMs: 0 });
 
@@ -4562,6 +4569,9 @@ async function loadDatabaseOrders({ force = false } = {}) {
       batchId,
       accessToken: productionBatchAccessToken,
     });
+    if (loadMutationVersion !== databaseOrdersMutationVersion) {
+      return;
+    }
     updateDatabaseOrdersState(normalizeOrdersWorkspaceState({
       payload,
       selectedOrderId: selectedDatabaseOrderId,
@@ -4589,13 +4599,8 @@ function renderDatabaseOrdersWorkspace() {
   databaseOrdersListShell.id ||= "databaseOrdersList";
   databaseOrdersListShell.replaceChildren();
 
-  const heading = document.createElement("div");
-  heading.className = "section-heading";
-  heading.textContent = "Orders list";
-  databaseOrdersListShell.append(heading);
-
   if (pasteOrdersButton) {
-    pasteOrdersButton.disabled = databaseOrdersLoading || !productionBatchAccessToken;
+    pasteOrdersButton.disabled = databaseOrdersImporting || !productionBatchAccessToken;
   }
   addCheckedOrdersToBatchButton.disabled = databaseOrdersLoading || checkedDatabaseOrderIds.size === 0;
 
@@ -4665,6 +4670,69 @@ function renderDatabaseOrdersWorkspace() {
   renderSelectedDatabaseOrderItems();
 }
 
+function toPositivePreviewNumber(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : null;
+}
+
+function createDatabaseOrderItemPreviewGraphic(savedBuild) {
+  const layout = savedBuild?.layout && typeof savedBuild.layout === "object" ? savedBuild.layout : null;
+  if (!layout) {
+    return null;
+  }
+
+  const widthMm = toPositivePreviewNumber(layout.widthMm);
+  const heightMm = toPositivePreviewNumber(layout.heightMm);
+  if (!widthMm || !heightMm) {
+    return null;
+  }
+
+  const svg = makeSvgElement("svg", {
+    class: "database-order-item-preview-svg",
+    viewBox: `0 0 ${widthMm} ${heightMm}`,
+    "aria-hidden": "true",
+    focusable: "false",
+    preserveAspectRatio: "xMidYMid meet",
+  });
+
+  const analysis = savedBuild?.analysis && typeof savedBuild.analysis === "object" ? savedBuild.analysis : null;
+  if (typeof analysis?.backingPath === "string" && typeof analysis?.facePath === "string") {
+    svg.append(
+      makeSvgElement("path", {
+        d: analysis.backingPath,
+        fill: "rgb(255, 0, 0)",
+      }),
+      makeSvgElement("path", {
+        d: analysis.facePath,
+        fill: "#f8fbfc",
+      }),
+    );
+    return svg;
+  }
+
+  if (Array.isArray(layout.letters) && layout.letters.length) {
+    svg.append(
+      makeSvgElement("image", {
+        href: createBackingImage(layout.letters, widthMm, heightMm, Number(layout.backingMm) || 0),
+        x: 0,
+        y: 0,
+        width: widthMm,
+        height: heightMm,
+      }),
+      makeSvgElement("image", {
+        href: createFaceImage(layout.letters, widthMm, heightMm).href,
+        x: 0,
+        y: 0,
+        width: widthMm,
+        height: heightMm,
+      }),
+    );
+    return svg;
+  }
+
+  return null;
+}
+
 function renderSelectedDatabaseOrderItems() {
   if (!databaseOrderItemsShell) {
     return;
@@ -4684,11 +4752,6 @@ function renderSelectedDatabaseOrderItems() {
       : "Select an order to review its items before adding designs to the production batch.";
   }
 
-  const heading = document.createElement("div");
-  heading.className = "section-heading";
-  heading.textContent = selectedOrder ? `Order ${getDatabaseOrderNumber(selectedOrder)}` : "Selected order items";
-  databaseOrderItemsShell.append(heading);
-
   if (!selectedOrder) {
     const empty = document.createElement("p");
     empty.className = "note";
@@ -4696,11 +4759,6 @@ function renderSelectedDatabaseOrderItems() {
     databaseOrderItemsShell.append(empty);
     return;
   }
-
-  const meta = document.createElement("p");
-  meta.className = "database-order-selected-meta";
-  meta.textContent = getDatabaseOrderMeta(selectedOrder);
-  databaseOrderItemsShell.append(meta);
 
   const items = Array.isArray(selectedOrder.items) ? selectedOrder.items : [];
   if (!items.length) {
@@ -4782,15 +4840,21 @@ function renderSelectedDatabaseOrderItems() {
       ? "Order item preview: export-ready design available"
       : "Order item preview: design needs completion");
 
-    const previewLabel = document.createElement("span");
-    previewLabel.className = "database-order-item-preview-label";
-    previewLabel.textContent = "Preview";
+    const previewGraphic = createDatabaseOrderItemPreviewGraphic(savedBuild);
+    if (previewGraphic) {
+      preview.classList.add("has-preview");
+      preview.append(previewGraphic);
+    } else {
+      const previewLabel = document.createElement("span");
+      previewLabel.className = "database-order-item-preview-label";
+      previewLabel.textContent = "Preview";
 
-    const previewStatus = document.createElement("span");
-    previewStatus.className = "database-order-item-preview-status";
-    previewStatus.textContent = savedBuild ? "Export-ready design available" : "Design needs completion";
+      const previewStatus = document.createElement("span");
+      previewStatus.className = "database-order-item-preview-status";
+      previewStatus.textContent = savedBuild ? "Export-ready design available" : "Design needs completion";
 
-    preview.append(previewLabel, previewStatus);
+      preview.append(previewLabel, previewStatus);
+    }
 
     card.append(cardHeader, preview, lineText, status, savedDesign);
     databaseOrderItemsShell.append(card);
@@ -4861,7 +4925,7 @@ async function addCheckedDatabaseOrdersToBatch() {
     );
 
     updateDatabaseOrdersFromPayload(payload, { checkedOrderIds: nextCheckedOrderIds });
-    await refreshOrdersAndProductionBatch({ payload, accessToken });
+    await refreshOrdersAndProductionBatch({ payload, accessToken, refreshBatch: true });
     checkedDatabaseOrderIds = nextCheckedOrderIds;
     renderDatabaseOrdersWorkspace();
     updateWorkflowAlert(buildAddedToBatchMessage(payload), "success");
@@ -6578,6 +6642,7 @@ async function importOrdersFromClipboard() {
     return;
   }
 
+  databaseOrdersImporting = true;
   pasteOrdersButton.disabled = true;
   setBatchActionLabel(pasteOrdersButton, "Pasting...");
 
@@ -6601,6 +6666,7 @@ async function importOrdersFromClipboard() {
       "Production batch session expired. Sign in again to continue importing orders.",
     );
   } finally {
+    databaseOrdersImporting = false;
     pasteOrdersButton.disabled = false;
     setBatchActionLabel(pasteOrdersButton, "Paste");
     renderDatabaseOrdersWorkspace();

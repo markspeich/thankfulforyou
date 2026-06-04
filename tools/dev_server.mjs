@@ -151,6 +151,7 @@ const server = createServer(async (request, response) => {
 
   if (
     requestUrl.pathname === "/api/batch-session"
+    || requestUrl.pathname === "/api/orders"
     || requestUrl.pathname === "/api/production-batch"
     || requestUrl.pathname === "/api/fonts"
   ) {
@@ -171,6 +172,7 @@ const server = createServer(async (request, response) => {
     try {
       const modulePathByPathname = {
         "/api/batch-session": "../api/batch-session.js",
+        "/api/orders": "../api/orders.js",
         "/api/production-batch": "../api/production-batch.js",
         "/api/fonts": "../api/fonts.js",
       };

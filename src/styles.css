@@ -1626,7 +1626,7 @@ button {
   font-weight: 700;
 }
 
-button:hover:not(:disabled):not(.order-item):not(.batch-tool-button):not(.confirmation-dialog-button):not(.confirmation-dialog-close) {
+button:hover:not(:disabled):not(.order-item):not(.database-order-row-button):not(.batch-tool-button):not(.confirmation-dialog-button):not(.confirmation-dialog-close) {
   background: var(--button-enabled-hover);
 }
 
@@ -2253,21 +2253,26 @@ button:disabled {
   align-content: start;
   gap: 12px;
   min-height: 0;
-  padding: 14px;
-  border: 1px solid var(--line);
-  border-radius: var(--card-radius);
   background: #fff;
 }
 
 .database-orders-list-shell {
+  gap: 10px;
   overflow: auto;
+  padding: 0;
 }
 
 .database-order-row {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: 28px minmax(0, 1fr);
   align-items: center;
-  gap: 10px;
+  gap: 8px;
+  padding: 0 0 0 6px;
+  border: 1px solid var(--line);
+  border-left: 4px solid transparent;
+  border-radius: 12px;
+  background: #fff;
+  transition: background-color 120ms ease, border-color 120ms ease;
 }
 
 .database-order-checkbox {
@@ -2280,21 +2285,38 @@ button:disabled {
 .database-order-row-button {
   display: grid;
   gap: 4px;
+  width: 100%;
   min-width: 0;
-  padding: 10px 12px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #fff;
+  padding: 10px 12px 10px 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   color: var(--ink);
   text-align: left;
   cursor: pointer;
 }
 
-.database-order-row.is-selected .database-order-row-button,
+.database-order-row:hover,
+.database-order-row:focus-within {
+  border-color: #dbeceb;
+  border-left-color: #00807c;
+  background: #f4fbfa;
+}
+
+.database-order-row.is-selected {
+  border-color: #cce4e2;
+  border-left-color: #00807c;
+  background: #eaf7f6;
+}
+
 .database-order-row-button:hover,
 .database-order-row-button:focus-visible {
-  border-color: var(--ink);
-  background: #f8fafc;
+  background: transparent;
+}
+
+.database-order-row-button:focus-visible {
+  outline: 2px solid var(--button-focus);
+  outline-offset: -2px;
 }
 
 .database-order-row-title {
@@ -2361,7 +2383,7 @@ button:disabled {
 .database-order-item-preview {
   display: grid;
   gap: 4px;
-  min-height: 76px;
+  min-height: 96px;
   align-content: center;
   justify-items: center;
   padding: 12px;
@@ -2370,6 +2392,16 @@ button:disabled {
   background: #f8fafc;
   color: var(--ink);
   text-align: center;
+}
+
+.database-order-item-preview.has-preview {
+  padding: 8px;
+}
+
+.database-order-item-preview-svg {
+  width: 100%;
+  height: 112px;
+  max-height: 18vh;
 }
 
 .database-order-item-preview-label {
