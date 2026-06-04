@@ -88,6 +88,22 @@ The app now populates `window.__APP_CONFIG__` from `/app-config.js`.
 - `npm run build` loads `.env.local` when present, then writes `dist/app-config.js` from the same environment variables
 - the browser key prefers `SUPABASE_PUBLISHABLE_KEY` and falls back to `SUPABASE_ANON_KEY`
 
+## Database Admin Commands
+
+Use the explicit database admin scripts for order-data maintenance instead of reusing app startup env modes. The scripts report counts and destructive operations default to dry-run.
+
+```powershell
+npm run db:local:orders:count
+npm run db:local:orders:purge -- --dry-run
+npm run db:local:orders:purge -- --execute
+
+npm run db:prod:orders:count
+npm run db:prod:orders:purge -- --dry-run
+npm run db:prod:orders:purge -- --execute --confirm=oezjskcygvfyezvoulzw
+```
+
+Production order purge is guarded to the live Supabase project ref `oezjskcygvfyezvoulzw`. It re-links the Supabase CLI to that project before running SQL, clears `production_batches.active_order_item_id`, deletes `order_items`, and relies on database cascades for `batch_items`, `designs`, `design_lines`, and `design_analysis_cache`.
+
 Operators sign in through the app with invite-only email-and-password Supabase Auth accounts. The app does not expose self-service sign-up for production batch access.
 
 If browser Supabase config is missing or the current production batch session expires, the app shows a blocking sign-in or configuration state instead of falling back to local-only batch persistence.

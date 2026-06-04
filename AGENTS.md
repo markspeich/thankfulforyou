@@ -68,6 +68,16 @@ When the user provides new product, workflow, material, manufacturing, design, o
 - `npm start` first runs `tools/setup_worktree_env.mjs`, which fills missing shared-queue Supabase keys in the worktree `.env.local` from the machine-local seed file at `C:\Users\Mark\CodexProjects\thankfulforyou\.env.local.shared`.
 - Keep `C:\Users\Mark\CodexProjects\thankfulforyou\.env.local.shared` out of git. It is the local source of truth for secrets that Vercel CLI cannot pull into new worktrees, especially `SUPABASE_SERVICE_ROLE_KEY`.
 - `npm start` loads `.env.local` automatically when present, so do not wrap it in a custom env-loading command unless a specific task needs different values.
+- Do not use `npm run start:remote`, `tools/run_with_supabase_env.mjs --env remote`, `.env.local`, or Vercel env pulls as proof that a command is targeting the live production database. Worktree env files can point at local Supabase.
+- For order-data database administration, use the explicit admin scripts:
+  - `npm run db:local:orders:count`
+  - `npm run db:local:orders:purge -- --dry-run`
+  - `npm run db:local:orders:purge -- --execute`
+  - `npm run db:prod:orders:count`
+  - `npm run db:prod:orders:purge -- --dry-run`
+  - `npm run db:prod:orders:purge -- --execute --confirm=oezjskcygvfyezvoulzw`
+- Production order-data admin scripts are guarded to the live Supabase project ref `oezjskcygvfyezvoulzw`; they re-link the Supabase CLI before running SQL and destructive production runs require the project ref confirmation token.
+- Before and after any destructive database operation, report counts for `order_items`, `batch_items`, `designs`, `design_lines`, `design_analysis_cache`, and `production_batches.active_order_item_id` references.
 - When shared queue auth or shared queue API routes must work from Codex, start the chosen dev server command with escalated/network permissions. A sandboxed dev server can serve the frontend but fail Supabase token verification, which appears to the user as an expired shared queue session.
 - The dev server port is determined by `tools/dev_port.mjs`. Do not hardcode or guess a worktree URL from `AGENTS.md`.
 - After starting the server, read the printed `Badge reel layout tool: http://localhost:...` line and use that exact URL.
