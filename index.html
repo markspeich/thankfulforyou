@@ -48,6 +48,15 @@
           <span class="workspace-nav-toggle-icon" aria-hidden="true"></span>
         </button>
         <button
+          id="databaseOrdersWorkspaceButton"
+          class="workspace-nav-item"
+          type="button"
+          aria-label="Orders"
+        >
+          <span class="workspace-nav-icon workspace-nav-icon-database-orders" aria-hidden="true"></span>
+          <span class="workspace-nav-label">Orders</span>
+        </button>
+        <button
           id="orderWorkspaceButton"
           class="workspace-nav-item is-active"
           type="button"
@@ -509,6 +518,59 @@
             </section>
           </div>
         </section>
+          </section>
+        </section>
+
+        <section id="databaseOrdersWorkspace" class="workspace-view" aria-label="Orders workspace" hidden>
+          <section class="production-workspace database-orders-workspace">
+            <aside class="orders-panel database-orders-list-panel" aria-label="Orders navigation">
+              <div class="batch-header">
+                <h1>Orders</h1>
+                <div class="batch-header-actions">
+                  <button
+                    id="pasteOrdersButton"
+                    class="batch-primary-action"
+                    type="button"
+                    aria-label="Paste orders"
+                    disabled
+                  >
+                    <span class="batch-tool-label">Paste</span>
+                  </button>
+                  <details id="ordersToolsMenu" class="orders-tools-menu">
+                    <summary class="orders-tools-toggle" aria-label="Orders tools"></summary>
+                    <div class="batch-tools-popover">
+                      <div class="batch-tools-actions" role="menu" aria-label="Orders actions">
+                        <div class="batch-tools-group" aria-label="Orders batch actions">
+                          <p class="batch-tools-heading">Orders</p>
+                          <button id="addCheckedOrdersToBatchButton" class="batch-tool-button" type="button" disabled>
+                            <span class="batch-tool-label">Add Checked to Production Batch</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </details>
+                </div>
+              </div>
+              <section class="database-orders-list-shell" aria-label="Orders list">
+                <div class="section-heading">Orders list</div>
+                <p class="batch-tools-note">No orders loaded.</p>
+              </section>
+            </aside>
+            <section class="editor-panel database-order-items-panel" aria-label="Selected order items">
+              <header class="editor-header">
+                <div>
+                  <p class="eyebrow">Order Workspace</p>
+                  <h2>Selected order items</h2>
+                  <p class="editor-meta">Select an order to review its items before adding designs to the production batch.</p>
+                </div>
+              </header>
+              <div class="editor-body">
+                <section class="database-order-items-shell">
+                  <div class="section-heading">Selected order items</div>
+                  <p class="note">No order selected.</p>
+                </section>
+              </div>
+            </section>
           </section>
         </section>
 

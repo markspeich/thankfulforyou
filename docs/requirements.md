@@ -66,7 +66,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Add a `Presets` dropdown directly below the `Order Text` field.
 - The `Preset` control card in the selected-order editor must expose its secondary actions from an ellipses menu in the card header rather than showing them as always-visible buttons.
 - The `Presets` dropdown must offer these production presets: `All Candlepin`, `Candlepin, Skywalk`, `Skywalk, Somekind`, and `Skywalk, Candlepin`.
-- The app should add a top-level left navigation bar with three items: `Production Batch`, `Presets`, and `Size Guides`.
+- The app should add a top-level left navigation bar with workspace items ordered as `Orders`, `Production Batch`, `Presets`, `Fonts`, and `Size Guides`.
 - The left navigation bar should be collapsible between an expanded icon-plus-label state and a collapsed icon-only state.
 - The left navigation bar should remember its expanded or collapsed state across browser refreshes.
 - `Production Batch` should open the existing production batch workspace with the production batch and selected-order editor.
@@ -82,8 +82,8 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - A preset JSON definition should include the preset id, preset name, base line defaults, per-line rules, and any listing-specific overrides that belong to that preset.
 - Preset ids should remain stable once in use so saved batch data can continue resolving previously selected presets.
 - The app should allow editing an existing preset and saving changes back into Supabase Postgres.
-- The `Presets` page should follow the same two-pane production layout style as `Production Batch` and `Size Guides`: preset selection in a left navigation panel, with the preset editor in a right editor panel on desktop-width screens.
-- The `Presets` page should use row-based preset selection in the left navigation panel, matching the production batch and size guide row-selection pattern rather than presenting the operator-facing selector as a dropdown.
+- The `Presets` page should follow the shared two-pane production workspace layout style used by `Production Batch` and `Size Guides`: preset selection in a left navigation panel, with the preset editor in a right editor panel on desktop-width screens.
+- The `Presets` page should use row-based preset selection in the left navigation panel, matching the shared production workspace row-selection pattern rather than presenting the operator-facing selector as a dropdown.
 - The `Presets` page editor panel should contain the preset name, reusable global defaults, reusable line rules, listing assignments, actions, and status for the selected preset.
 - The `Presets` page editor actions should include `Save Preset`, `Cancel`, and `Delete Preset`; `Cancel` should be enabled only after starting a new preset draft or changing the selected preset, and should discard an unsaved preset draft or revert edits to the selected saved preset.
 - Starting a new preset draft from the Presets page should focus the preset name field and set its helper placeholder to `Enter preset name`.
@@ -108,7 +108,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Deleting an uploaded font should require an explicit in-app confirmation and should not silently break existing saved designs that already reference that font.
 - The `Fonts` workspace should allow overwriting an uploaded font by uploading a new version while keeping the same font identity for designs and presets that reference it.
 - Replacing an uploaded font should use a new stored file version rather than reusing the exact same asset path, so previews, analysis, export, and CDN caches can resolve the updated font reliably.
-- The `Fonts` workspace font rows should use the same shared two-pane selector row style as the `Presets` and `Size Guides` workspaces.
+- The `Fonts` workspace font rows should use the same shared production workspace selector row style as the `Presets` and `Size Guides` workspaces.
 - Allow horizontal-only stretching per line of text so operators can make a line wider without making it taller.
 - Per-line `Horizontal Stretch` controls should allow values up to `200%`.
 - Allow vertical-only stretching per line of text so operators can make a line taller without making it wider.
@@ -132,7 +132,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Each size guide must define a maximum rectangle. Minimum width and minimum height are optional; omitted minimum dimensions should be treated as unconstrained for authoring and default to the matching maximum dimension for stored geometry.
 - The size guide editor should live on its own `Size Guides` page rather than inside the preset editor.
 - The size guide editor should include a live preview of the max rectangle, optional min rectangle, dimension labels, and optional centered circle from the fields currently being edited.
-- The `Size Guides` page should follow the same two-pane production layout style as `Production Batch`: saved size guide rows in a left navigation panel, with the full size guide editor in a right editor panel on desktop-width screens. The editor panel should contain the number fields, preview, actions, and status.
+- The `Size Guides` page should follow the shared two-pane production workspace layout style: saved size guide rows in a left navigation panel, with the full size guide editor in a right editor panel on desktop-width screens. The editor panel should contain the number fields, preview, actions, and status.
 - Clicking a saved size guide row should load it into the editor directly; size guide rows should not include a separate `Edit` button.
 - The `New Guide` action should sit at the top of the left size-guide navigation panel. `Save Guide`, `Cancel`, and `Delete Guide` should sit at the top right of the size-guide editor panel.
 - `Cancel` should be enabled only after starting a new size-guide draft or changing the selected guide, and should discard an unsaved size-guide draft or revert edits to the selected saved size guide.
@@ -287,6 +287,20 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - The durable business object is an `order_item`. Each order item has one current `design` that stores its badge-reel artwork/layout state.
 - Operators should create a `production_batch` from a subset of order items, produce that batch, and then move on to a new batch.
 - A production batch should contain order items through `batch_items` so an order item can appear in later remake, rework, replacement, or test batches without losing its original order-item history.
+- The app should provide a top-level left navigation item named `Orders` for browsing saved database orders outside the active production batch.
+- The `Orders` workspace should show only non-archived orders and order items by default.
+- The `Orders` workspace should use a calm production layout with an orders column and a selected-order items column.
+- The first `Orders` workspace column should show one row per Etsy order, grouped by order number where available.
+- Each order row on the `Orders` workspace should include a checkbox so operators can select orders for bulk actions.
+- The orders column should include an ellipsis menu with an action to add all checked orders to the active production batch.
+- Clicking an order row in the `Orders` workspace should show one card for each non-archived order item in that order.
+- Each order item card on the `Orders` workspace should include the saved design when available.
+- Each order item card on the `Orders` workspace should include an ellipsis menu with actions for `Copy Design` and `Add to Production Batch`.
+- `Copy Design` from the `Orders` workspace should copy the saved design output when export-ready geometry is available and otherwise clearly report that the design must be completed before copying.
+- `Add to Production Batch` from the `Orders` workspace should add the order item to the active production batch through `batch_items` without duplicating an existing active batch membership.
+- Pasting/importing Etsy clipboard data from the `Production Batch` workspace should create or update the imported order items and add the imported items to the active production batch.
+- Pasting/importing Etsy clipboard data from the `Orders` workspace should create or update the imported order items in the workspace order list without adding them to the active production batch.
+- Pasting/importing Etsy clipboard data from either the `Production Batch` workspace or the `Orders` workspace should immediately write the imported order items and their initial designs to Supabase Postgres before reporting success.
 - Presets and size guides must be stored in Supabase Postgres and shared across environments for the authenticated workspace.
 - Presets should be stored as relational preset records plus line-rule records rather than one browser-local or remote JSON snapshot.
 - Size guides should be stored as relational size-guide records rather than inside a preset snapshot blob.
@@ -395,6 +409,11 @@ The website should be a practical production tool rather than a marketing site. 
 - Simple controls for adjusting overlap, line spacing, horizontal positioning, scale, and per-line font choice.
 - Export-ready output for production use.
 - A two-pane master-detail layout, with order navigation on the left and the selected order editor on the right.
+- Shared production workspace selector rows should use the same row-selection style across `Production Batch`, `Orders`, `Presets`, `Fonts`, and `Size Guides`.
+- Shared production workspace selector lists should use 10px vertical spacing between rows.
+- Shared production workspace selector rows should use a 1px neutral border, 4px transparent left rail, 12px radius, white resting background, and transparent inner selection controls so rows do not read as nested cards.
+- Inactive shared production workspace selector rows should hover with `#f4fbfa` background, `#dbeceb` border, and `#00807c` left rail.
+- Selected shared production workspace selector rows should use `#eaf7f6` background, `#cce4e2` border, and `#00807c` left rail.
 - On a standard 1920 by 1080 production monitor, the selected-order editor must keep the preview meaningfully visible while also keeping the first two line-control groups available without hiding the preview below the fold.
 - On desktop, the left batch panel should use roughly the leftmost quarter of the screen instead of the previous narrow column, so batch rows can show more order context without taking over the editor workspace.
 - The left batch panel should keep only `Complete` and `In Progress` summary counters visible in the main panel; `Not Started` does not need a visible counter in the desktop layout.
@@ -463,7 +482,7 @@ The website should be a practical production tool rather than a marketing site. 
 - Keyboard focus-visible styling should remain distinct from the pressed state so accessibility feedback is not weakened while adding pointer/touch feedback.
 - Destructive confirmations such as deleting one batched design or clearing the full batch should use a styled in-app confirmation dialog rather than browser-default confirm popups.
 
-The selected UI direction is the refined B1 Production Batch layout. Use `docs/mockups/layout-option-b-refined.html` as the primary visual reference for the current desktop implementation pass. The mockup intent is a left-side order-item batch panel with compact batch tools and a right-side two-column editor where the left column holds listing details, design text, and preview while the right column holds global controls plus stacked line controls. Sample renders should use a white raised text layer over a red backing silhouette.
+The selected UI direction is the refined shared production workspace layout. Use `docs/mockups/layout-option-b-refined.html` as the primary visual reference for the current desktop implementation pass. The mockup intent is a left-side selector panel with compact workspace tools and a right-side two-column detail workspace where the left column holds listing details, design text, and preview while the right column holds global controls plus stacked line controls when the workspace is editing a badge reel design. Sample renders should use a white raised text layer over a red backing silhouette.
 
 For batch Etsy order sessions, the preferred workflow is:
 

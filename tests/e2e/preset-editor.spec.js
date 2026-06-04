@@ -314,6 +314,28 @@ async function installDefaultProductionBatchRoutes(page) {
       body: JSON.stringify(requestSnapshot),
     });
   });
+  await page.route("**/api/orders**", async (route) => {
+    if (route.request().method() === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json; charset=utf-8",
+        body: JSON.stringify({ orders: [] }),
+      });
+      return;
+    }
+
+    const requestBody = route.request().postDataJSON();
+    const itemCount = Array.isArray(requestBody?.items) ? requestBody.items.length : 0;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify({
+        importedOrderItemCount: itemCount,
+        addedOrderItemCount: requestBody?.target === "productionBatch" ? itemCount : 0,
+        orders: [],
+      }),
+    });
+  });
 }
 
 test.beforeEach(async ({ page, request }) => {
@@ -1052,7 +1074,7 @@ test("can create a new preset from order settings and update an existing preset"
 
   await setClipboardPayload(page, importPayload);
   await page.locator("#importClipboardButton").click();
-  await expect(page.locator("#importStatus")).toContainText("Imported 1 Etsy design from the clipboard.");
+  await expect(page.locator("#importStatus")).toContainText("Imported 1 Etsy design and added 1 to the production batch.");
   await expect(page.locator("#presetInput")).not.toHaveValue(createdPresetId);
 
   await page.locator("#presetInput").selectOption(createdPresetId);
@@ -1117,7 +1139,7 @@ test("assigning a preset to a completed imported order clears stale batch-export
 
   await setClipboardPayload(page, importPayload);
   await page.locator("#importClipboardButton").click();
-  await expect(page.locator("#importStatus")).toContainText("Imported 1 Etsy design from the clipboard.");
+  await expect(page.locator("#importStatus")).toContainText("Imported 1 Etsy design and added 1 to the production batch.");
 
   await page.locator("#presetInput").selectOption(createdPresetId);
   await setRangeValue(page, "#backingInput", 1.1);
@@ -1215,7 +1237,7 @@ test("shows assigned listings for a preset and lets operators unassign them", as
 
   await setClipboardPayload(page, importPayload);
   await page.locator("#importClipboardButton").click();
-  await expect(page.locator("#importStatus")).toContainText("Imported 1 Etsy design from the clipboard.");
+  await expect(page.locator("#importStatus")).toContainText("Imported 1 Etsy design and added 1 to the production batch.");
   await expect(page.locator("#presetInput")).toHaveValue("preset-c3e8a1d7f520");
   await expect(page.locator("#presetListingIndicator")).toHaveText("Linked");
 
@@ -1242,7 +1264,7 @@ test("shows assigned listings for a preset and lets operators unassign them", as
 
   await setClipboardPayload(page, freshImportPayload);
   await page.locator("#importClipboardButton").click();
-  await expect(page.locator("#importStatus")).toContainText("Imported 1 Etsy design from the clipboard.");
+  await expect(page.locator("#importStatus")).toContainText("Imported 1 Etsy design and added 1 to the production batch.");
   await expect(page.locator("#presetInput")).not.toHaveValue("preset-c3e8a1d7f520");
 });
 
@@ -1271,7 +1293,7 @@ test("confirms before moving a listing id link to a different preset", async ({ 
 
   await setClipboardPayload(page, importPayload);
   await page.locator("#importClipboardButton").click();
-  await expect(page.locator("#importStatus")).toContainText("Imported 1 Etsy design from the clipboard.");
+  await expect(page.locator("#importStatus")).toContainText("Imported 1 Etsy design and added 1 to the production batch.");
   await page.locator("#presetInput").selectOption("preset-b7d2e9f4c318");
 
   await clickPresetAction(page, "Assign Preset to Listing");
@@ -1359,7 +1381,7 @@ test("marks listing-assigned presets inline beside the preset name label", async
 
   await setClipboardPayload(page, importPayload);
   await page.locator("#importClipboardButton").click();
-  await expect(page.locator("#importStatus")).toContainText("Imported 1 Etsy design from the clipboard.");
+  await expect(page.locator("#importStatus")).toContainText("Imported 1 Etsy design and added 1 to the production batch.");
   await expect(page.locator("#presetInput")).toHaveValue("preset-c3e8a1d7f520");
   await expect(page.locator("#presetListingIndicator")).toHaveText("Linked");
   await expect(page.locator("#presetListingIndicator")).toHaveAttribute("title", /assigned to the selected preset/);

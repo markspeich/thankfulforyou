@@ -138,7 +138,7 @@ select {
 
 .workspace-nav {
   display: grid;
-  grid-template-rows: auto auto auto auto auto 1fr auto;
+  grid-template-rows: auto auto auto auto auto auto 1fr auto;
   gap: 10px;
   padding: 14px 10px;
   background: linear-gradient(180deg, #163341 0%, #21495d 100%);
@@ -233,6 +233,22 @@ select {
   bottom: 2px;
   width: 2px;
   background: currentColor;
+}
+
+.workspace-nav-icon-database-orders::before {
+  inset: 2px 3px;
+  border: 2px solid currentColor;
+  border-radius: 50%;
+  box-shadow: 0 5px 0 -2px currentColor, 0 10px 0 -2px currentColor;
+}
+
+.workspace-nav-icon-database-orders::after {
+  left: 4px;
+  right: 4px;
+  top: 8px;
+  height: 2px;
+  background: currentColor;
+  box-shadow: 0 5px 0 currentColor;
 }
 
 .workspace-nav-icon-presets::before {
@@ -569,11 +585,13 @@ select {
 }
 
 .batch-tools-menu,
+.orders-tools-menu,
 .editor-tools-menu {
   position: static;
 }
 
 .batch-tools-toggle,
+.orders-tools-toggle,
 .editor-tools-toggle {
   position: relative;
   width: 42px;
@@ -586,11 +604,13 @@ select {
 }
 
 .batch-tools-toggle::-webkit-details-marker,
+.orders-tools-toggle::-webkit-details-marker,
 .editor-tools-toggle::-webkit-details-marker {
   display: none;
 }
 
 .batch-tools-toggle::before,
+.orders-tools-toggle::before,
 .editor-tools-toggle::before {
   content: "";
   position: absolute;
@@ -1606,7 +1626,7 @@ button {
   font-weight: 700;
 }
 
-button:hover:not(:disabled):not(.order-item):not(.batch-tool-button):not(.confirmation-dialog-button):not(.confirmation-dialog-close) {
+button:hover:not(:disabled):not(.order-item):not(.database-order-row-button):not(.batch-tool-button):not(.confirmation-dialog-button):not(.confirmation-dialog-close) {
   background: var(--button-enabled-hover);
 }
 
@@ -2217,6 +2237,243 @@ button:disabled {
   font-size: 2.6px;
   font-weight: 700;
   letter-spacing: 0.04em;
+}
+
+.database-orders-workspace {
+  background: #fff;
+}
+
+.database-orders-list-panel {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.database-orders-list-shell,
+.database-order-items-shell {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  min-height: 0;
+  background: #fff;
+}
+
+.database-orders-list-shell {
+  gap: 10px;
+  overflow: auto;
+  padding: 0;
+}
+
+.database-order-row {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  padding: 0 0 0 6px;
+  border: 1px solid var(--line);
+  border-left: 4px solid transparent;
+  border-radius: 12px;
+  background: #fff;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+.database-order-checkbox {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--ink);
+}
+
+.database-order-row-button {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  min-width: 0;
+  padding: 10px 12px 10px 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.database-order-row:hover,
+.database-order-row:focus-within {
+  border-color: #dbeceb;
+  border-left-color: #00807c;
+  background: #f4fbfa;
+}
+
+.database-order-row.is-selected {
+  border-color: #cce4e2;
+  border-left-color: #00807c;
+  background: #eaf7f6;
+}
+
+.database-order-row-button:hover,
+.database-order-row-button:focus-visible {
+  background: transparent;
+}
+
+.database-order-row-button:focus-visible {
+  outline: 2px solid var(--button-focus);
+  outline-offset: -2px;
+}
+
+.database-order-row-title {
+  overflow: hidden;
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.database-order-row-meta,
+.database-order-selected-meta,
+.database-order-item-listing,
+.database-order-item-lines,
+.database-order-item-status,
+.database-order-item-saved-design {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.35;
+}
+
+.database-order-items-panel .editor-body {
+  grid-template-rows: auto;
+  align-content: start;
+  overflow-y: auto;
+  padding: 18px 22px 22px 24px;
+  background: #fff;
+}
+
+.database-order-items-shell {
+  width: min(860px, 100%);
+}
+
+.database-order-item-card {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.database-order-item-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 12px;
+}
+
+.database-order-item-title-group {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.database-order-item-title-group h3 {
+  overflow-wrap: anywhere;
+  margin: 0;
+  color: var(--ink);
+  font-size: 1rem;
+  line-height: 1.25;
+}
+
+.database-order-item-preview {
+  display: grid;
+  gap: 4px;
+  min-height: 96px;
+  align-content: center;
+  justify-items: center;
+  padding: 12px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 8px;
+  background: #f8fafc;
+  color: var(--ink);
+  text-align: center;
+}
+
+.database-order-item-preview.has-preview {
+  padding: 8px;
+}
+
+.database-order-item-preview-svg {
+  width: 100%;
+  height: 112px;
+  max-height: 18vh;
+}
+
+.database-order-item-preview-label {
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.database-order-item-preview-status {
+  max-width: 26ch;
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.3;
+}
+
+.database-order-item-menu {
+  position: relative;
+}
+
+.database-order-item-menu-toggle {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+  font-weight: 800;
+  cursor: pointer;
+  list-style: none;
+}
+
+.database-order-item-menu-toggle::-webkit-details-marker {
+  display: none;
+}
+
+.database-order-item-menu-popover {
+  position: absolute;
+  z-index: 10;
+  top: calc(100% + 6px);
+  right: 0;
+  display: grid;
+  gap: 6px;
+  min-width: 190px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.16);
+}
+
+.database-order-item-menu-popover button {
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.database-order-item-menu-popover button:hover:not(:disabled),
+.database-order-item-menu-popover button:focus-visible {
+  background: #f1f5f9;
+}
+
+.database-order-item-menu-popover button:disabled {
+  color: var(--muted);
+  cursor: not-allowed;
 }
 
 .preset-workspace {

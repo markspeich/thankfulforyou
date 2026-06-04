@@ -41,13 +41,13 @@ function startDevServer(port) {
   });
 }
 
-function putMalformedPresetSnapshotJson(port) {
+function putMalformedJson(port, path) {
   return new Promise((resolve, reject) => {
     const req = request({
       method: "PUT",
       host: "127.0.0.1",
       port,
-      path: "/api/preset-snapshot",
+      path,
       headers: {
         "Content-Type": "application/json",
       },
@@ -59,6 +59,40 @@ function putMalformedPresetSnapshotJson(port) {
       });
       response.on("end", () => {
         resolve({
+          statusCode: response.statusCode,
+          body,
+        });
+      });
+    });
+
+    req.on("error", reject);
+    req.end("{not-json");
+  });
+}
+
+function putMalformedPresetSnapshotJson(port) {
+  return putMalformedJson(port, "/api/preset-snapshot");
+}
+
+function postMalformedOrdersJson(port) {
+  return new Promise((resolve, reject) => {
+    const req = request({
+      method: "POST",
+      host: "127.0.0.1",
+      port,
+      path: "/api/orders",
+      headers: {
+        "Content-Type": "application/json",
+      },
+    }, (response) => {
+      let body = "";
+      response.setEncoding("utf8");
+      response.on("data", (chunk) => {
+        body += chunk;
+      });
+      response.on("end", () => {
+        resolve({
+          contentType: response.headers["content-type"],
           statusCode: response.statusCode,
           body,
         });
@@ -88,5 +122,18 @@ describe("dev server preset api wrapper", () => {
 
     expect(response.statusCode).toBe(400);
     expect(JSON.parse(response.body)).toEqual({ error: "Preset snapshot payload must be valid JSON." });
+  }, 15000);
+});
+
+describe("dev server orders api wrapper", () => {
+  it("routes orders requests through the API handler instead of serving api/orders.js", async () => {
+    const port = 4892;
+    await startDevServer(port);
+
+    const response = await postMalformedOrdersJson(port);
+
+    expect(response.statusCode).toBe(400);
+    expect(response.contentType).toContain("application/json");
+    expect(JSON.parse(response.body)).toEqual({ error: "API payload must be valid JSON." });
   }, 15000);
 });
