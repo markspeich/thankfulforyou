@@ -59,19 +59,25 @@ When the user provides new product, workflow, material, manufacturing, design, o
 - Capture assumptions explicitly in `docs/requirements.md`.
 - Keep changes scoped and avoid unrelated refactors.
 - When the user says `finish this worktree`, complete the standard post-feature workflow: merge latest `main` into the current worktree and resolve conflicts, run appropriate verification, commit the worktree changes to the current feature branch, merge that feature branch into `main`, push `main`, and delete the finished feature branch.
-- To start the local dev server in this worktree, run `npm start` from the repository root.
-- Use `npm start` as the canonical dev entrypoint for this app instead of invoking `node` directly with a guessed script.
+- When the user says `start a server`, start the local dev server unless they explicitly ask for remote.
+- To start the local dev server in this worktree, run `npm run start:local` from the repository root.
+- To start the remote-backed dev server, run `npm run start:remote` only when the user explicitly asks for remote.
+- Use `npm run start:local` or `npm run start:remote` as the canonical dev entrypoints for this app instead of invoking `node` directly with a guessed script.
+- `npm run start:local` and `npm run start:remote` first run through `tools/run_with_supabase_env.mjs`, which selects the requested Supabase environment before launching the dev server.
+- Plain `npm start` is not the default Codex startup command for this worktree unless the user specifically asks for the generic start script.
 - `npm start` first runs `tools/setup_worktree_env.mjs`, which fills missing shared-queue Supabase keys in the worktree `.env.local` from the machine-local seed file at `C:\Users\Mark\CodexProjects\thankfulforyou\.env.local.shared`.
 - Keep `C:\Users\Mark\CodexProjects\thankfulforyou\.env.local.shared` out of git. It is the local source of truth for secrets that Vercel CLI cannot pull into new worktrees, especially `SUPABASE_SERVICE_ROLE_KEY`.
 - `npm start` loads `.env.local` automatically when present, so do not wrap it in a custom env-loading command unless a specific task needs different values.
-- When shared queue auth or shared queue API routes must work from Codex, start `npm start` with escalated/network permissions. A sandboxed dev server can serve the frontend but fail Supabase token verification, which appears to the user as an expired shared queue session.
+- When shared queue auth or shared queue API routes must work from Codex, start the chosen dev server command with escalated/network permissions. A sandboxed dev server can serve the frontend but fail Supabase token verification, which appears to the user as an expired shared queue session.
 - The dev server port is determined by `tools/dev_port.mjs`. Do not hardcode or guess a worktree URL from `AGENTS.md`.
 - After starting the server, read the printed `Badge reel layout tool: http://localhost:...` line and use that exact URL.
 - If the URL is needed before launch, compute it from the helper with `node --input-type=module -e "import { resolveDevBaseUrl } from './tools/dev_port.mjs'; console.log(resolveDevBaseUrl())"`.
-- If a different port is needed, set it explicitly in PowerShell with `$env:PORT = "4801"` and then run `npm start`.
+- If a different port is needed, set it explicitly in PowerShell with `$env:PORT = "4801"` and then run the chosen startup command.
 - Keep the dev server running in a foreground or other persistent terminal session. In this Windows Codex worktree setup, detached hidden launches can exit early and leave the browser unable to connect.
 - Do not assume `node_modules` must already exist before launching the dev server. In this repo, the HTTP dev server can start without an install, though tests and other tooling may still require dependencies.
 - After launch, verify the server with a quick HTTP request instead of trusting process startup alone.
+- When the user says `Initialize app`, initialize local app test data unless they explicitly ask for remote: create or update the local Supabase test operator `test.operator@example.com` with password `TestOperator123!`, ensure `Primary Workspace` exists with id `11111111-1111-4111-8111-111111111111`, ensure the operator has an `operator` membership in that workspace, ensure `Primary Batch` exists with id `22222222-2222-4222-8222-222222222222`, and refresh that batch's `updated_at` so it is the current active batch returned by `/api/batch-session`.
+- For `Initialize app`, run commands through `node tools/run_with_supabase_env.mjs --env local -- ...` by default so local Supabase URL and keys are used. Verify initialization by signing in as the test operator and calling the running local server's `/api/batch-session` endpoint with the access token; report the resolved operator, workspace, and batch.
 - Remember that the geometry API routes depend on Python. A running frontend server does not guarantee that export and analysis requests will succeed.
 - Prefer bash commands and examples over PowerShell unless PowerShell is absolutely necessary for the task or environment.
 - In this Windows worktree environment, `git` commands that touch worktree metadata such as `merge`, `add`, `commit`, and conflict resolution staging may require escalated permissions because `.git/worktrees/...` lockfiles can be blocked otherwise.

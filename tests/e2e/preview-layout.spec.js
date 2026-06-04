@@ -2341,7 +2341,41 @@ test("shows a row save error when completed analysis cannot be persisted", async
       body: JSON.stringify(buildMockAnalysisResponse()),
     });
   });
-  await page.route("**/api/production-batch", async (route) => {
+  await page.route("**/api/production-batch**", async (route) => {
+    if (route.request().method() === "POST") {
+      const payload = route.request().postDataJSON() || {};
+      if (payload.action === "archive") {
+        savedProductionBatchSnapshot = {
+          ...savedProductionBatchSnapshot,
+          activeOrderItemId: null,
+          orderItems: [],
+        };
+      } else if (payload.action === "archive-item") {
+        const remainingOrderItems = savedProductionBatchSnapshot.orderItems
+          .filter((order) => order.id !== payload.orderItemId);
+        savedProductionBatchSnapshot = {
+          ...savedProductionBatchSnapshot,
+          activeOrderItemId: payload.activeOrderItemId || remainingOrderItems[0]?.id || null,
+          orderItems: remainingOrderItems,
+        };
+      } else {
+        await route.fulfill({
+          status: 400,
+          contentType: "application/json; charset=utf-8",
+          body: JSON.stringify({ error: "Unsupported production batch action." }),
+        });
+        return;
+      }
+
+      productionBatchSnapshots.set(page, savedProductionBatchSnapshot);
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json; charset=utf-8",
+        body: JSON.stringify(savedProductionBatchSnapshot),
+      });
+      return;
+    }
+
     if (route.request().method() !== "PUT") {
       await route.fallback();
       return;

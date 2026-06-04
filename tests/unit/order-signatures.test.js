@@ -27,7 +27,7 @@ describe("order signatures", () => {
     });
 
     expect(JSON.parse(signature)).toMatchObject({
-      version: 2,
+      version: 3,
       lines: [
         {
           horizontalScale: 1.2,
@@ -57,12 +57,16 @@ describe("order signatures", () => {
       ],
     });
 
-    expect(candidates).toHaveLength(2);
+    expect(candidates).toHaveLength(3);
     expect(JSON.parse(candidates[0])).toMatchObject({
-      version: 2,
+      version: 3,
       lines: [{ horizontalScale: 1.2, lockTextHeight: true }],
     });
     expect(JSON.parse(candidates[1])).toMatchObject({
+      version: 2,
+      lines: [{ horizontalScale: 1.2, lockTextHeight: true }],
+    });
+    expect(JSON.parse(candidates[2])).toMatchObject({
       lines: [
         {
           fontId: "candlepin",
@@ -75,7 +79,36 @@ describe("order signatures", () => {
         },
       ],
     });
-    expect(JSON.parse(candidates[1]).lines[0]).not.toHaveProperty("lockTextHeight");
+    expect(JSON.parse(candidates[2]).lines[0]).not.toHaveProperty("lockTextHeight");
+  });
+
+  it("returns the pre-guide-fingerprint v2 signature for saved design compatibility", () => {
+    const candidates = getSettingsSignatureCandidates({
+      text: "Mark",
+      presetId: "preset-a1f4c8e2b601",
+      boundingSizePresetId: "size-2-2x1-5",
+      boundingSizePresetFingerprint: "size-2-2x1-5|2.2|1.5|1.6|1.1|1.25",
+      backingMm: 3.1,
+      weldExportedDesign: true,
+      lines: [
+        {
+          fontId: "candlepin",
+          bridgeMm: 0.5,
+          lineBridgeMm: 0.5,
+          offsetXMm: 0,
+          fontSizeMm: 34,
+          horizontalScale: 1,
+          verticalScale: 1,
+          lockTextHeight: false,
+        },
+      ],
+    });
+
+    expect(candidates.map((candidate) => JSON.parse(candidate))).toContainEqual(expect.objectContaining({
+      version: 2,
+      boundingSizePresetId: "size-2-2x1-5",
+      lines: [expect.objectContaining({ lockTextHeight: false })],
+    }));
   });
 
   it("changes the current settings signature when the size guide changes", () => {
@@ -91,6 +124,23 @@ describe("order signatures", () => {
     expect(buildSettingsSignature({
       ...baseSettings,
       boundingSizePresetId: "size-other",
+    })).not.toBe(buildSettingsSignature(baseSettings));
+  });
+
+  it("changes the current settings signature when a size guide keeps its id but changes dimensions", () => {
+    const baseSettings = {
+      text: "Mark",
+      presetId: "preset-a1f4c8e2b601",
+      boundingSizePresetId: "size-custom",
+      boundingSizePresetFingerprint: "size-custom|3|2|2|1.25|",
+      backingMm: 3.1,
+      weldExportedDesign: true,
+      lines: [],
+    };
+
+    expect(buildSettingsSignature({
+      ...baseSettings,
+      boundingSizePresetFingerprint: "size-custom|3.25|2|2|1.25|",
     })).not.toBe(buildSettingsSignature(baseSettings));
   });
 });

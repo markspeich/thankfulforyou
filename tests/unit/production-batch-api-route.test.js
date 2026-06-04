@@ -3,10 +3,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const loadProductionBatchMock = vi.fn();
 const saveProductionBatchMock = vi.fn();
 const archiveProductionBatchMock = vi.fn();
+const archiveProductionBatchItemMock = vi.fn();
 const resolveProductionBatchAuthMock = vi.fn();
 
 vi.mock("../../api/_lib/production-batch-store.js", () => ({
   archiveProductionBatch: archiveProductionBatchMock,
+  archiveProductionBatchItem: archiveProductionBatchItemMock,
   loadProductionBatch: loadProductionBatchMock,
   saveProductionBatch: saveProductionBatchMock,
 }));
@@ -42,6 +44,7 @@ beforeEach(() => {
   loadProductionBatchMock.mockReset();
   saveProductionBatchMock.mockReset();
   archiveProductionBatchMock.mockReset();
+  archiveProductionBatchItemMock.mockReset();
   resolveProductionBatchAuthMock.mockReset();
 });
 
@@ -377,6 +380,44 @@ describe("production batch api route", () => {
     });
   });
 
+  it("archives a single production batch item for a valid POST request", async () => {
+    resolveProductionBatchAuthMock.mockResolvedValue({
+      userId: "user-1",
+      workspaceId: "workspace-1",
+    });
+    archiveProductionBatchItemMock.mockResolvedValue({
+      batch: { id: "batch-1", workspaceId: "workspace-1" },
+      activeOrderItemId: "order-2",
+      orderItems: [{ id: "order-2", revision: 1 }],
+    });
+
+    const { default: handler } = await import("../../api/production-batch.js");
+    const response = createResponseRecorder();
+
+    await handler({
+      method: "POST",
+      headers: { authorization: "Bearer token-1" },
+      body: {
+        action: "archive-item",
+        batchId: "batch-1",
+        orderItemId: "order-1",
+      },
+    }, response);
+
+    expect(archiveProductionBatchItemMock).toHaveBeenCalledWith({
+      batchId: "batch-1",
+      orderItemId: "order-1",
+      workspaceId: "workspace-1",
+      userId: "user-1",
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toEqual({
+      batch: { id: "batch-1", workspaceId: "workspace-1" },
+      activeOrderItemId: "order-2",
+      orderItems: [{ id: "order-2", revision: 1 }],
+    });
+  });
+
   it("rejects unsupported POST actions", async () => {
     resolveProductionBatchAuthMock.mockResolvedValue({
       userId: "user-1",
@@ -396,6 +437,7 @@ describe("production batch api route", () => {
     }, response);
 
     expect(archiveProductionBatchMock).not.toHaveBeenCalled();
+    expect(archiveProductionBatchItemMock).not.toHaveBeenCalled();
     expect(response.statusCode).toBe(400);
     expect(response.body).toEqual({
       error: "Unsupported production batch action.",

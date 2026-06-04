@@ -52,6 +52,7 @@ import {
 import { buildReloadedPresetSettings } from "./preset-selection.js";
 import {
   archiveProductionBatch,
+  archiveProductionBatchItem,
   fetchProductionBatchSnapshot,
   fetchBatchSession,
   ProductionBatchConflictError,
@@ -84,6 +85,7 @@ import {
   createProductionBatchSnapshot,
 } from "./production-batch-model.js";
 import {
+  buildBoundingSizePresetFingerprint,
   DEFAULT_BOUNDING_SIZE_PRESET_ID,
   getBoundingSizePresetOptions,
   isBuiltInBoundingSizePresetId,
@@ -682,6 +684,11 @@ function normalizeSettings(settings = {}) {
     boundingSizePresetId: isValidBoundingSizePresetId(settings.boundingSizePresetId)
       ? settings.boundingSizePresetId
       : presetBaseSettings.boundingSizePresetId,
+    boundingSizePresetFingerprint: buildBoundingSizePresetFingerprint(
+      isValidBoundingSizePresetId(settings.boundingSizePresetId)
+        ? settings.boundingSizePresetId
+        : presetBaseSettings.boundingSizePresetId,
+    ),
     backingMm: Number.isFinite(Number(settings.backingMm)) ? Number(settings.backingMm) : presetBaseSettings.backingMm,
     weldExportedDesign: typeof settings.weldExportedDesign === "boolean"
       ? settings.weldExportedDesign
@@ -3382,6 +3389,42 @@ function refreshBoundingSizePresetUi(preferredSizePresetId = null) {
   render();
 }
 
+function invalidateOrdersUsingSizePreset(sizePresetId) {
+  const normalizedSizePresetId = typeof sizePresetId === "string" ? sizePresetId.trim() : "";
+  if (!normalizedSizePresetId) {
+    return [];
+  }
+
+  const affectedOrderIds = [];
+  orders.forEach((order) => {
+    if (order?.settings?.boundingSizePresetId !== normalizedSizePresetId) {
+      return;
+    }
+
+    order.settings = normalizeSettings(order.settings);
+    order.cachedBuild = null;
+    order.previousCompletedBuild = null;
+    order.capturedLayout = null;
+    order.savedSettingsSignature = null;
+    order.completedSettingsSignature = null;
+    order.analysisBadge = null;
+    order.pendingAnalysisSignature = null;
+    order.pendingAnalysisRequestId = null;
+    order.saveErrorMessage = null;
+    if (order.status === "captured" || order.status === "exported") {
+      order.status = "in-progress";
+    }
+    affectedOrderIds.push(order.id);
+  });
+
+  if (affectedOrderIds.includes(activeOrderItemId)) {
+    applySettings(getActiveOrder()?.settings || getCurrentSettings());
+    render();
+  }
+  scheduleRenderOrderList();
+  return affectedOrderIds;
+}
+
 async function saveSizePresetFromEditor() {
   if (saveSizePresetButton) {
     saveSizePresetButton.disabled = true;
@@ -3399,6 +3442,10 @@ async function saveSizePresetFromEditor() {
 
     try {
       await savePresetSnapshot(result.snapshot);
+      const affectedOrderIds = invalidateOrdersUsingSizePreset(previousId || result.preset.id);
+      if (affectedOrderIds.length) {
+        triggerProductionBatchAutosave({ publishOrderIds: affectedOrderIds });
+      }
       setSizePresetEditorStatus(`Saved ${result.preset.label}.`, "success");
     } catch (error) {
       setSizePresetEditorStatus(
@@ -3421,6 +3468,14 @@ async function deleteSelectedSizePreset() {
   }
 
   try {
+    const designUsageCount = orders.filter((order) => (
+      order?.settings?.boundingSizePresetId === selectedSizePresetId
+      || order?.publishedSnapshot?.settings?.boundingSizePresetId === selectedSizePresetId
+    )).length;
+    if (designUsageCount > 0) {
+      throw new Error(`Size guide is used by ${designUsageCount} design${designUsageCount === 1 ? "" : "s"} and cannot be deleted.`);
+    }
+
     const deletedDefinition = getBoundingSizePresetDefinitionsForEditor()
       .find((definition) => definition.id === selectedSizePresetId);
     const result = deleteBoundingSizePresetDefinitionLocally(selectedSizePresetId);
@@ -3741,7 +3796,7 @@ async function saveBatchSnapshotToRemote(options = {}) {
       return true;
     }
 
-    const accessToken = await getAccessToken();
+    const accessToken = productionBatchAccessToken || readProductionBatchAccessTokenOverride() || await getAccessToken();
     if (!accessToken) {
       throw new Error("Authentication required.");
     }
@@ -6329,10 +6384,35 @@ async function deleteOrder(orderId) {
     return;
   }
 
+  const nextActiveOrderItemId = activeOrderItemId === orderId
+    ? orders[orderIndex + 1]?.id || orders[orderIndex - 1]?.id || null
+    : activeOrderItemId;
+  let archivedRemoteSnapshot = null;
+
+  if (canAttemptProductionBatchSave() && productionBatchContext?.id) {
+    try {
+      const accessToken = productionBatchAccessToken || readProductionBatchAccessTokenOverride() || await getAccessToken();
+      if (!accessToken) {
+        throw new Error("Authentication required.");
+      }
+      productionBatchAccessToken = accessToken;
+      archivedRemoteSnapshot = await archiveProductionBatchItem(productionBatchContext.id, orderId, {
+        accessToken,
+        activeOrderItemId: nextActiveOrderItemId,
+      });
+    } catch (error) {
+      updateWorkflowAlert(
+        error instanceof Error ? error.message : "Unable to delete the design from the shared batch.",
+        "error",
+      );
+      return;
+    }
+  }
+
   orders.splice(orderIndex, 1);
 
   if (activeOrderItemId === orderId) {
-    activeOrderItemId = orders[orderIndex]?.id || orders[orderIndex - 1]?.id || null;
+    activeOrderItemId = nextActiveOrderItemId;
     if (activeOrderItemId) {
       const nextOrder = getActiveOrder();
       applySettings(nextOrder.settings);
@@ -6342,13 +6422,22 @@ async function deleteOrder(orderId) {
     }
   }
 
+  if (archivedRemoteSnapshot?.batch) {
+    enableProductionBatchSync(archivedRemoteSnapshot.batch);
+    mergeProductionBatchPublishedStateFromSnapshot(archivedRemoteSnapshot);
+  }
+
+  if (archivedRemoteSnapshot) {
+    lastProductionBatchSaveKey = buildProductionBatchSaveKey(buildProductionBatchSnapshot());
+  }
+
   if (!orders.length) {
     activeOrderItemId = null;
     orderSequence = 1;
-    persistBatchState();
+    persistBatchState({ skipRemoteSave: Boolean(archivedRemoteSnapshot) });
     updateWorkflowAlert(isProductionBatchSyncEnabled() ? "Production batch cleared." : "Batch cleared.", "pending");
   } else {
-    persistBatchState();
+    persistBatchState({ skipRemoteSave: Boolean(archivedRemoteSnapshot) });
   }
 
   renderOrderList();
