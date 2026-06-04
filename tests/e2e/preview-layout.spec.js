@@ -317,6 +317,28 @@ async function installDefaultProductionBatchRoutes(page) {
       body: JSON.stringify(savedProductionBatchSnapshot),
     });
   });
+  await page.route("**/api/orders**", async (route) => {
+    if (route.request().method() === "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json; charset=utf-8",
+        body: JSON.stringify({ orders: [] }),
+      });
+      return;
+    }
+
+    const requestBody = route.request().postDataJSON();
+    const itemCount = Array.isArray(requestBody?.items) ? requestBody.items.length : 0;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify({
+        importedOrderItemCount: itemCount,
+        addedOrderItemCount: requestBody?.target === "productionBatch" ? itemCount : 0,
+        orders: [],
+      }),
+    });
+  });
 }
 
 async function expectSavedProductionBatchSnapshot(page, predicate) {
@@ -2727,7 +2749,7 @@ test("skips already imported Etsy line items when importing another batch", asyn
   await expect(page.locator("#orderCountOutput")).toHaveText("3");
   await expect(page.locator(".batch-header .batch-tools-menu")).not.toHaveAttribute("open", "");
   await expect(page.locator("#importStatus")).toBeVisible();
-  await expect(page.locator("#importStatus")).toContainText("Imported 2 Etsy designs from the clipboard.");
+  await expect(page.locator("#importStatus")).toContainText("Imported 2 Etsy designs and added 2 to the production batch.");
   await expect.poll(async () => {
     return page.evaluate(() => {
       const alert = document.querySelector("#importStatus");
@@ -2764,7 +2786,7 @@ test("skips already imported Etsy line items when importing another batch", asyn
   await expect(page.locator("#orderCountOutput")).toHaveText("4");
   await expect(page.locator(".batch-header .batch-tools-menu")).not.toHaveAttribute("open", "");
   await expect(page.locator("#importStatus")).toBeVisible();
-  await expect(page.locator("#importStatus")).toContainText("Imported 1 new Etsy design and skipped 1 already in the batch.");
+  await expect(page.locator("#importStatus")).toContainText("Imported 1 Etsy design and added 1 to the production batch. Skipped 1 already in the batch.");
   await expect(page.locator("#orderList .order-row")).toContainText([
     "#4057600528",
     "#4057629148",
@@ -2990,6 +3012,8 @@ test("includes imported color and quantity in the export payload", async ({ page
   });
 
   await clickButtonBySelector(page, "#importClipboardButton");
+  await expect(page.locator("#importStatus")).toContainText("Imported 1 Etsy design and added 1 to the production batch.");
+  await expect(page.locator("#orderList .order-row").filter({ hasText: "#4057600528" })).toContainText("In progress");
   await completeDesign(page, "#4057600528");
   await clickOrderItemByText(page, "#4057600528");
   await clickEditorToolButton(page, "#downloadButton");

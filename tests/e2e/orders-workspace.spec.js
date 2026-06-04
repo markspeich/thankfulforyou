@@ -256,6 +256,7 @@ test("renders grouped database orders and selected order item cards", async ({ p
   const addCheckedButton = ordersWorkspace.getByRole("button", { name: "Add Checked to Production Batch" });
   await expect(addCheckedButton).toBeDisabled();
   await ordersWorkspace.getByLabel("Select order 1001").check();
+  await ordersWorkspace.getByLabel("Orders tools").click();
   await expect(addCheckedButton).toBeEnabled();
 
   await expect(ordersWorkspace.getByRole("heading", { name: "Order 1001" })).toBeVisible();

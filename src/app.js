@@ -183,6 +183,7 @@ const exportCompletedButton = document.querySelector("#exportCompletedButton");
 const showColorCountsButton = document.querySelector("#showColorCountsButton");
 const copyCompletedButton = document.querySelector("#copyCompletedButton");
 const batchToolsMenu = document.querySelector(".batch-tools-menu");
+const ordersToolsMenu = document.querySelector("#ordersToolsMenu");
 const pasteOrdersButton = document.querySelector("#pasteOrdersButton");
 const databaseOrdersListShell = document.querySelector(".database-orders-list-shell");
 const databaseOrderItemsShell = document.querySelector(".database-order-items-shell");
@@ -4384,6 +4385,41 @@ function filterNewProductionBatchImportItems(importedItems) {
   return { filteredItems, skippedCount };
 }
 
+function appendImportedItemsToProductionBatch(importedItems, { maxCount = importedItems.length } = {}) {
+  if (!Array.isArray(importedItems) || maxCount <= 0) {
+    return 0;
+  }
+
+  const { filteredItems } = filterNewProductionBatchImportItems(importedItems);
+  const itemsToAppend = filteredItems.slice(0, maxCount);
+
+  if (!itemsToAppend.length) {
+    return 0;
+  }
+
+  saveActiveOrderDraft();
+  let firstAppendedOrderId = null;
+  for (const item of itemsToAppend) {
+    const order = createBatchItem({
+      text: item.text || "",
+      status: "not-started",
+      presetId: item.presetId,
+      source: item.source,
+    });
+    orders.push(order);
+    firstAppendedOrderId = firstAppendedOrderId || order.id;
+  }
+
+  if (firstAppendedOrderId) {
+    selectOrder(firstAppendedOrderId);
+    render();
+  } else {
+    persistBatchState();
+    renderOrderList();
+  }
+  return itemsToAppend.length;
+}
+
 function handleOrdersMutationError(error, fallbackMessage, authDetail) {
   if (isProductionBatchAuthenticationError(error)) {
     const detail = authDetail || "Production batch session expired. Sign in again to continue.";
@@ -4770,7 +4806,7 @@ async function addCheckedDatabaseOrdersToBatch() {
     );
 
     updateDatabaseOrdersFromPayload(payload, { checkedOrderIds: nextCheckedOrderIds });
-    await refreshOrdersAndProductionBatch({ payload, accessToken, refreshBatch: true });
+    await refreshOrdersAndProductionBatch({ payload, accessToken });
     checkedDatabaseOrderIds = nextCheckedOrderIds;
     renderDatabaseOrdersWorkspace();
     updateWorkflowAlert(buildAddedToBatchMessage(payload), "success");
@@ -6423,7 +6459,10 @@ async function importFromClipboard() {
       items: filteredItems,
       accessToken,
     });
-    await refreshOrdersAndProductionBatch({ payload, accessToken, refreshBatch: true });
+    await refreshOrdersAndProductionBatch({ payload, accessToken });
+    appendImportedItemsToProductionBatch(filteredItems, {
+      maxCount: countFromPayload(payload, "addedOrderItemCount"),
+    });
     const message = skippedCount
       ? `${buildProductionBatchImportMessage(payload)} Skipped ${skippedCount} already in the batch.`
       : buildProductionBatchImportMessage(payload);
@@ -8013,11 +8052,18 @@ overwritePresetButton?.addEventListener("click", () => {
 assignPresetToListingButton?.addEventListener("click", () => {
   void assignSelectedPresetToActiveListing();
 });
-[addOrderButton, importClipboardButton, clearBatchButton, showColorCountsButton, exportCompletedButton, copyCompletedButton, pasteOrdersButton, addCheckedOrdersToBatchButton]
+[addOrderButton, importClipboardButton, clearBatchButton, showColorCountsButton, exportCompletedButton, copyCompletedButton]
   .filter(Boolean)
   .forEach((button) => {
     button.addEventListener("click", () => {
       batchToolsMenu?.removeAttribute("open");
+    });
+  });
+[pasteOrdersButton, addCheckedOrdersToBatchButton]
+  .filter(Boolean)
+  .forEach((button) => {
+    button.addEventListener("click", () => {
+      ordersToolsMenu?.removeAttribute("open");
     });
   });
 [copyButton, downloadButton]
@@ -8035,6 +8081,7 @@ assignPresetToListingButton?.addEventListener("click", () => {
     });
   });
 registerOutsideDismissableDetailsMenu(batchToolsMenu);
+registerOutsideDismissableDetailsMenu(ordersToolsMenu);
 registerOutsideDismissableDetailsMenu(presetToolsMenu);
 registerDatabaseOrderItemMenuDismissal(databaseOrdersWorkspace);
 closeColorCountsButton?.addEventListener("click", closeBatchColorCountsDialog);

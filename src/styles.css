@@ -585,11 +585,13 @@ select {
 }
 
 .batch-tools-menu,
+.orders-tools-menu,
 .editor-tools-menu {
   position: static;
 }
 
 .batch-tools-toggle,
+.orders-tools-toggle,
 .editor-tools-toggle {
   position: relative;
   width: 42px;
@@ -602,11 +604,13 @@ select {
 }
 
 .batch-tools-toggle::-webkit-details-marker,
+.orders-tools-toggle::-webkit-details-marker,
 .editor-tools-toggle::-webkit-details-marker {
   display: none;
 }
 
 .batch-tools-toggle::before,
+.orders-tools-toggle::before,
 .editor-tools-toggle::before {
   content: "";
   position: absolute;
