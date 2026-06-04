@@ -138,6 +138,17 @@ const PRESET_SYNC_LINE_SETTING_KEYS = Object.freeze([
   "lockTextHeight",
 ]);
 const WORKSPACE_NAV_COLLAPSED_STORAGE_KEY = "thankfulforyou.workspaceNavCollapsed";
+const DEFAULT_WORKSPACE = "databaseOrders";
+const WORKSPACE_ROUTE_SEGMENTS = Object.freeze({
+  databaseOrders: "orders",
+  orders: "production-batch",
+  presets: "presets",
+  fonts: "fonts",
+  sizeGuides: "size-guides",
+});
+const WORKSPACE_BY_ROUTE_SEGMENT = Object.freeze(
+  Object.fromEntries(Object.entries(WORKSPACE_ROUTE_SEGMENTS).map(([workspace, segment]) => [segment, workspace])),
+);
 
 const appShell = document.querySelector(".app-shell");
 const workspaceStage = document.querySelector("#workspaceStage");
@@ -325,9 +336,10 @@ let orderListRenderFrameId = null;
 let deferredPreviewRenderToken = 0;
 let suppressBatchSyncLocalNotice = false;
 let copiedLayoutControlsSnapshot = null;
-let activeWorkspace = "databaseOrders";
+const initialAppRoute = readAppRoute();
+let activeWorkspace = initialAppRoute.workspace;
 let databaseOrders = [];
-let selectedDatabaseOrderId = null;
+let selectedDatabaseOrderId = initialAppRoute.workspace === "databaseOrders" ? initialAppRoute.itemId : null;
 let checkedDatabaseOrderIds = new Set();
 let databaseOrdersLoading = false;
 let databaseOrdersImporting = false;
@@ -352,9 +364,159 @@ let productionBatchSyncDetail = "";
 let productionBatchConflictState = null;
 let productionBatchAccessToken = null;
 let workflowAlertActionHandler = null;
+let appRouteWriteCount = 0;
 
 function readProductionBatchAccessTokenOverride() {
   return globalThis.__TFU_TEST_PRODUCTION_BATCH_ACCESS_TOKEN__ ?? null;
+}
+
+function safeDecodeRouteSegment(value = "") {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+function readAppRoute() {
+  const segments = window.location.pathname
+    .split("/")
+    .filter(Boolean)
+    .map(safeDecodeRouteSegment);
+  const workspace = WORKSPACE_BY_ROUTE_SEGMENT[segments[0]] || DEFAULT_WORKSPACE;
+
+  return {
+    workspace,
+    itemId: typeof segments[1] === "string" && segments[1] ? segments[1] : null,
+  };
+}
+
+function buildAppPath(workspace = activeWorkspace, itemId = null) {
+  const routeSegment = WORKSPACE_ROUTE_SEGMENTS[workspace] || WORKSPACE_ROUTE_SEGMENTS[DEFAULT_WORKSPACE];
+  const normalizedItemId = typeof itemId === "string" && itemId.trim() ? itemId.trim() : "";
+  return normalizedItemId
+    ? `/${routeSegment}/${encodeURIComponent(normalizedItemId)}`
+    : `/${routeSegment}`;
+}
+
+function getWorkspaceRouteItemId(workspace = activeWorkspace) {
+  if (workspace === "databaseOrders") {
+    return selectedDatabaseOrderId;
+  }
+  if (workspace === "orders") {
+    return activeOrderItemId;
+  }
+  if (workspace === "presets") {
+    return presetEditorDraft?.preset?.id || null;
+  }
+  if (workspace === "fonts") {
+    return selectedFontId;
+  }
+  if (workspace === "sizeGuides") {
+    return selectedSizePresetId;
+  }
+
+  return null;
+}
+
+function writeAppRoute({ replace = false, workspace = activeWorkspace, itemId = getWorkspaceRouteItemId(workspace) } = {}) {
+  const nextPath = buildAppPath(workspace, itemId);
+  if (window.location.pathname === nextPath) {
+    return;
+  }
+
+  const method = replace ? "replaceState" : "pushState";
+  window.history[method]({}, "", nextPath);
+  appRouteWriteCount += 1;
+}
+
+function applyRouteWorkspace(route, options = {}) {
+  setActiveWorkspace(route?.workspace || DEFAULT_WORKSPACE, {
+    updateRoute: false,
+    ...options,
+  });
+}
+
+function applyRouteSelection(route, options = {}) {
+  const { replaceRoute = false } = options;
+  const workspace = route?.workspace || DEFAULT_WORKSPACE;
+  const itemId = route?.itemId || null;
+
+  applyRouteWorkspace({ workspace }, { updateRoute: false });
+
+  if (workspace === "databaseOrders") {
+    if (itemId) {
+      selectDatabaseOrder(itemId, { updateRoute: false });
+    } else {
+      renderDatabaseOrdersWorkspace();
+    }
+    writeAppRoute({ replace: replaceRoute, workspace, itemId: itemId && selectedDatabaseOrderId === itemId ? itemId : null });
+    return;
+  }
+
+  if (workspace === "orders") {
+    if (itemId && activeOrderItemId === itemId) {
+      const activeOrder = getActiveOrder();
+      if (activeOrder) {
+        applySettings(activeOrder.settings);
+        renderOrderList();
+      }
+    } else if (itemId) {
+      selectOrder(itemId, { updateRoute: false, persistSelection: false });
+    } else {
+      renderOrderList();
+    }
+    writeAppRoute({ replace: replaceRoute, workspace, itemId: itemId && activeOrderItemId === itemId ? itemId : null });
+    return;
+  }
+
+  if (workspace === "presets") {
+    if (itemId && getPresetDefinitionForEditor(itemId)) {
+      selectPresetEditorRow(itemId, { updateRoute: false });
+      writeAppRoute({ replace: replaceRoute, workspace, itemId });
+      return;
+    }
+    selectFirstPresetEditorRowIfNeeded();
+    writeAppRoute({ replace: replaceRoute, workspace, itemId: null });
+    return;
+  }
+
+  if (workspace === "fonts") {
+    if (itemId && FONT_BY_ID.has(itemId)) {
+      selectedFontId = itemId;
+    }
+    renderFontWorkspace();
+    writeAppRoute({
+      replace: replaceRoute,
+      workspace,
+      itemId: itemId && selectedFontId === itemId ? itemId : null,
+    });
+    return;
+  }
+
+  if (workspace === "sizeGuides") {
+    if (itemId && getBoundingSizePresetDefinitionsForEditor().some((preset) => preset.id === itemId)) {
+      selectSizePresetForEditing(itemId, { updateRoute: false });
+      writeAppRoute({ replace: replaceRoute, workspace, itemId });
+      return;
+    }
+    selectFirstSizePresetIfNeeded();
+    writeAppRoute({ replace: replaceRoute, workspace, itemId: null });
+  }
+}
+
+async function applyCurrentAppRoute(options = {}) {
+  const { replaceRoute = false, route = readAppRoute() } = options;
+
+  if (route.workspace === "databaseOrders" && route.itemId) {
+    selectedDatabaseOrderId = route.itemId;
+  }
+
+  if (route.workspace === "databaseOrders" && productionBatchAccessToken) {
+    await loadDatabaseOrders();
+  }
+
+  applyRouteSelection(route, { replaceRoute });
 }
 
 function setProductionBatchAuthError(message) {
@@ -1370,17 +1532,24 @@ function updatePresetSaveButtonState() {
   }
 }
 
-function selectPresetEditorRow(presetId) {
+function selectPresetEditorRow(presetId, options = {}) {
+  const { updateRoute = true, replaceRoute = false } = options;
   if (!presetId) {
     presetEditorDraft = createPresetEditorDraft(null, { previousId: null, generateNewId: true });
     renderPresetEditorDraft();
     setPresetEditorBaselineToCurrent();
     setPresetEditorStatus("Start a new preset draft or choose a saved preset.", "pending");
+    if (updateRoute) {
+      writeAppRoute({ replace: replaceRoute, workspace: "presets", itemId: null });
+    }
     presetDraftNameInput?.focus();
     return;
   }
 
   loadPresetEditorDraftFromRegistry(presetId);
+  if (updateRoute) {
+    writeAppRoute({ replace: replaceRoute, workspace: "presets", itemId: presetId });
+  }
 }
 
 function createPresetLibraryRow({ id, label, meta }, selectedPresetId) {
@@ -3212,7 +3381,8 @@ function startNewSizePresetDraft() {
   setSizePresetEditorBaselineToCurrent();
 }
 
-function selectSizePresetForEditing(presetId) {
+function selectSizePresetForEditing(presetId, options = {}) {
+  const { updateRoute = true, replaceRoute = false } = options;
   const definition = getBoundingSizePresetDefinitionsForEditor()
     .find((preset) => preset.id === presetId);
 
@@ -3250,17 +3420,24 @@ function selectSizePresetForEditing(presetId) {
   renderSizePresetEditorPreview();
   renderSizePresetList();
   setSizePresetEditorBaselineToCurrent();
+  if (updateRoute) {
+    writeAppRoute({
+      replace: replaceRoute,
+      workspace: "sizeGuides",
+      itemId: selectedSizePresetId,
+    });
+  }
 }
 
-function selectFirstSizePresetIfNeeded() {
+function selectFirstSizePresetIfNeeded(options = {}) {
   if (selectedSizePresetId && getBoundingSizePresetDefinitionsForEditor().some((preset) => preset.id === selectedSizePresetId)) {
-    selectSizePresetForEditing(selectedSizePresetId);
+    selectSizePresetForEditing(selectedSizePresetId, options);
     return;
   }
 
   const firstSizePresetId = getBoundingSizePresetDefinitionsForEditor()[0]?.id || "";
   if (firstSizePresetId) {
-    selectSizePresetForEditing(firstSizePresetId);
+    selectSizePresetForEditing(firstSizePresetId, options);
     return;
   }
 
@@ -4591,6 +4768,25 @@ async function loadDatabaseOrders({ force = false } = {}) {
   }
 }
 
+function selectDatabaseOrder(orderId, options = {}) {
+  const { updateRoute = true, replaceRoute = false } = options;
+  const order = databaseOrders.find((candidate) => candidate.id === orderId);
+  if (!order) {
+    return false;
+  }
+
+  selectedDatabaseOrderId = order.id;
+  renderDatabaseOrdersWorkspace();
+  if (updateRoute) {
+    writeAppRoute({
+      replace: replaceRoute,
+      workspace: "databaseOrders",
+      itemId: selectedDatabaseOrderId,
+    });
+  }
+  return true;
+}
+
 function renderDatabaseOrdersWorkspace() {
   if (!databaseOrdersListShell || !addCheckedOrdersToBatchButton) {
     return;
@@ -4650,8 +4846,7 @@ function renderDatabaseOrdersWorkspace() {
     button.type = "button";
     button.setAttribute("aria-pressed", String(order.id === selectedDatabaseOrderId));
     button.addEventListener("click", () => {
-      selectedDatabaseOrderId = order.id;
-      renderDatabaseOrdersWorkspace();
+      selectDatabaseOrder(order.id);
     });
 
     const title = document.createElement("span");
@@ -6237,12 +6432,14 @@ function renderFontWorkspace() {
     row.addEventListener("click", () => {
       selectedFontId = font.id;
       renderFontWorkspace();
+      writeAppRoute({ workspace: "fonts", itemId: selectedFontId });
     });
     row.addEventListener("keydown", (event) => {
       if (event.key === "Enter" || event.key === " ") {
         event.preventDefault();
         selectedFontId = font.id;
         renderFontWorkspace();
+        writeAppRoute({ workspace: "fonts", itemId: selectedFontId });
       }
     });
     fontLibraryList.append(row);
@@ -6260,8 +6457,10 @@ function renderFontWorkspace() {
     : "Uploaded fonts can be replaced with a new version or deleted from future selections.";
 }
 
-function setActiveWorkspace(workspace) {
-  activeWorkspace = ["orders", "databaseOrders", "presets", "fonts", "sizeGuides"].includes(workspace) ? workspace : "orders";
+function setActiveWorkspace(workspace, options = {}) {
+  const { updateRoute = true, replaceRoute = false } = options;
+  const hasRouteItemId = Object.prototype.hasOwnProperty.call(options, "routeItemId");
+  activeWorkspace = ["orders", "databaseOrders", "presets", "fonts", "sizeGuides"].includes(workspace) ? workspace : DEFAULT_WORKSPACE;
   appShell.dataset.workspace = activeWorkspace;
   ordersWorkspace.hidden = activeWorkspace !== "orders";
   databaseOrdersWorkspace.hidden = activeWorkspace !== "databaseOrders";
@@ -6289,7 +6488,13 @@ function setActiveWorkspace(workspace) {
     renderFontWorkspace();
   }
   if (activeWorkspace === "sizeGuides") {
-    selectFirstSizePresetIfNeeded();
+    selectFirstSizePresetIfNeeded({ updateRoute });
+  }
+  if (updateRoute) {
+    writeAppRoute({
+      replace: replaceRoute,
+      itemId: hasRouteItemId ? options.routeItemId : getWorkspaceRouteItemId(activeWorkspace),
+    });
   }
 }
 
@@ -6371,13 +6576,14 @@ function setNavCollapsed(nextCollapsed, options = {}) {
   }
 }
 
-function selectOrder(orderId) {
+function selectOrder(orderId, options = {}) {
+  const { updateRoute = true, replaceRoute = false, persistSelection = true } = options;
   const selectionScrollState = captureSelectionScrollState();
   saveActiveOrderDraft();
 
   const order = orders.find((candidate) => candidate.id === orderId);
   if (!order) {
-    return;
+    return false;
   }
 
   activeOrderItemId = order.id;
@@ -6387,13 +6593,23 @@ function selectOrder(orderId) {
 
   syncOrderPresetFromListing(order);
   applySettings(order.settings);
-  persistBatchState();
+  if (persistSelection) {
+    persistBatchState();
+  }
   renderOrderList();
+  if (updateRoute) {
+    writeAppRoute({
+      replace: replaceRoute,
+      workspace: "orders",
+      itemId: activeOrderItemId,
+    });
+  }
   restoreSelectionScrollState(selectionScrollState);
   scheduleDeferredPreviewRender();
   window.requestAnimationFrame(() => {
     restoreSelectionScrollState(selectionScrollState);
   });
+  return true;
 }
 
 function addOrder() {
@@ -8083,10 +8299,10 @@ weldExportedDesignInput.addEventListener("input", () => {
   updateActiveOrderFromControls();
 });
 orderWorkspaceButton.addEventListener("click", () => {
-  setActiveWorkspace("orders");
+  setActiveWorkspace("orders", { routeItemId: null });
 });
 databaseOrdersWorkspaceButton.addEventListener("click", () => {
-  setActiveWorkspace("databaseOrders");
+  setActiveWorkspace("databaseOrders", { routeItemId: null });
 });
 pasteOrdersButton?.addEventListener("click", () => {
   void importOrdersFromClipboard();
@@ -8095,10 +8311,10 @@ addCheckedOrdersToBatchButton?.addEventListener("click", () => {
   void addCheckedDatabaseOrdersToBatch();
 });
 presetWorkspaceButton.addEventListener("click", () => {
-  setActiveWorkspace("presets");
+  setActiveWorkspace("presets", { routeItemId: null });
 });
 fontWorkspaceButton.addEventListener("click", () => {
-  setActiveWorkspace("fonts");
+  setActiveWorkspace("fonts", { routeItemId: null });
 });
 newFontUploadButton?.addEventListener("click", () => {
   fontFileInput.dataset.mode = "create";
@@ -8115,7 +8331,7 @@ deleteFontButton?.addEventListener("click", () => {
   void handleDeleteSelectedFont();
 });
 sizeGuideWorkspaceButton.addEventListener("click", () => {
-  setActiveWorkspace("sizeGuides");
+  setActiveWorkspace("sizeGuides", { routeItemId: null });
 });
 productionBatchLogoutButton?.addEventListener("click", () => {
   void handleProductionBatchSignOut();
@@ -8363,11 +8579,14 @@ window.addEventListener("mouseup", (event) => {
   }
 });
 window.addEventListener("blur", endPreviewMiddlePan);
+window.addEventListener("popstate", () => {
+  void applyCurrentAppRoute();
+});
 window.addEventListener("pagehide", () => {
   flushPersistBatchState({ keepalive: true });
 });
 
-setActiveWorkspace(activeWorkspace);
+setActiveWorkspace(activeWorkspace, { updateRoute: false });
 setNavCollapsed(navCollapsed);
 renderProductionBatchLogoutButton();
 await checkFonts();
@@ -8380,10 +8599,16 @@ renderSizePresetEditorPreview();
 renderPresetEditorDraft();
 updateBackingOutput();
 productionBatchAccessToken = await bootstrapProductionBatchAccess();
-void refreshWorkspaceFonts(productionBatchAccessToken);
+await refreshWorkspaceFonts(productionBatchAccessToken);
 const restoredBatch = productionBatchAccessToken
   ? await restoreInitialBatchState(productionBatchAccessToken)
   : { source: null, count: 0 };
+if (appRouteWriteCount === 0) {
+  await applyCurrentAppRoute({
+    replaceRoute: window.location.pathname === "/",
+    route: initialAppRoute,
+  });
+}
 if ((!restoredBatch.source || restoredBatch.count === 0) && workflowAlert.dataset.state !== "error") {
   updateWorkflowAlert("", "pending");
 }

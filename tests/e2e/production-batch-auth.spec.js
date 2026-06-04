@@ -89,7 +89,7 @@ function installSupabaseSessionWithLogoutTracking(page, session) {
 test("shows an operator sign-in screen when no batch session exists", async ({ page }) => {
   await installSupabaseSession(page, null);
 
-  await page.goto("/");
+  await page.goto("/production-batch");
 
   await expect(page.getByRole("heading", { name: "Sign in to production batch" })).toBeVisible();
   await expect(page.locator("#productionBatchSignInForm")).toBeVisible();
@@ -108,7 +108,7 @@ test("shows a blocked configuration error when Supabase config is missing", asyn
     };
   });
 
-  await page.goto("/");
+  await page.goto("/production-batch");
 
   await expect(page.locator("#productionBatchSignInForm")).toBeHidden();
   await expect(page.locator("#productionBatchAuthError")).toContainText("Supabase browser config is missing.");
@@ -204,7 +204,7 @@ test("returns to the sign-in state when a production batch save gets a 401", asy
     });
   });
 
-  await page.goto("/");
+  await page.goto("/production-batch");
   await expect(page.locator("#textInput")).toHaveValue("Remote Shared");
 
   await page.locator("#textInput").fill("Expired Session");
@@ -271,7 +271,7 @@ test("logs out from the left nav and returns to the sign-in gate", async ({ page
     });
   });
 
-  await page.goto("/");
+  await page.goto("/production-batch");
   await expect(page.locator("#productionBatchLogoutButton")).toBeVisible();
 
   await page.locator("#productionBatchLogoutButton").click();
@@ -312,7 +312,7 @@ test("switches to the presets workspace from the left nav", async ({ page }) => 
     });
   });
 
-  await page.goto("/");
+  await page.goto("/production-batch");
   await expect(page.locator("#ordersWorkspace")).toBeVisible();
 
   await page.locator("#presetWorkspaceButton").click();
@@ -364,7 +364,7 @@ test("shows a loading skeleton while the initial production batch loads", async 
     });
   });
 
-  await page.goto("/");
+  await page.goto("/production-batch");
 
   await expect(page.locator("#initialBatchLoading")).toBeVisible();
   await expect(page.locator("#initialBatchLoading")).toContainText("Loading production batch");

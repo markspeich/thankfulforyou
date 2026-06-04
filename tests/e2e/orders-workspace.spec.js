@@ -303,6 +303,65 @@ test("opens the Orders workspace shell by default", async ({ page }) => {
   await expect(ordersWorkspace.getByLabel("Selected order items")).toBeVisible();
 });
 
+test("updates the URL when switching top-level workspaces", async ({ page }) => {
+  await installSupabaseSession(page);
+  await installProductionBatchRoutes(page);
+  await installOrdersWorkspaceRoutes(page);
+
+  await gotoAfterBatchLoads(page);
+
+  await page.getByRole("button", { name: "Production Batch", exact: true }).click();
+  await expect(page).toHaveURL(/\/production-batch$/);
+
+  await page.getByRole("button", { name: "Presets", exact: true }).click();
+  await expect(page).toHaveURL(/\/presets$/);
+
+  await page.getByRole("button", { name: "Fonts", exact: true }).click();
+  await expect(page).toHaveURL(/\/fonts$/);
+
+  await page.getByRole("button", { name: "Size Guides", exact: true }).click();
+  await expect(page).toHaveURL(/\/size-guides$/);
+
+  await page.getByRole("button", { name: "Orders", exact: true }).click();
+  await expect(page).toHaveURL(/\/orders$/);
+});
+
+test("opens a bookmarked production batch design URL", async ({ page }) => {
+  await installSupabaseSession(page);
+  await installProductionBatchRoutes(page, {
+    orderItems: [
+      buildAdaProductionBatchOrderItem(),
+      buildDuplicateBatchOrderItem(),
+    ],
+  });
+
+  await page.goto("/production-batch/local-duplicate");
+
+  await expect(page.getByRole("region", { name: "Order items workspace" })).toBeVisible();
+  await expect(page.locator("#textInput")).toHaveValue("Katherine RN");
+  await expect(page.locator("#orderList .order-row.active")).toContainText("Katherine RN");
+});
+
+test("updates and opens bookmarked Orders workspace order URLs", async ({ page }) => {
+  await installSupabaseSession(page);
+  await installProductionBatchRoutes(page);
+  await installOrdersWorkspaceRoutes(page);
+
+  await page.goto("/orders/order%3A1002");
+
+  const ordersWorkspace = page.getByRole("region", { name: "Orders workspace" });
+  await expect(ordersWorkspace.getByRole("heading", { name: "Order 1002" })).toBeVisible();
+  await expect(ordersWorkspace.locator(".database-order-row.is-selected")).toContainText("Order 1002");
+
+  await ordersWorkspace
+    .locator(".database-order-row")
+    .filter({ hasText: "Order 1001" })
+    .getByRole("button")
+    .click();
+
+  await expect(page).toHaveURL(/\/orders\/order%3A1001$/);
+});
+
 test("renders grouped database orders and selected order item cards", async ({ page }) => {
   await installSupabaseSession(page);
   await installProductionBatchRoutes(page);

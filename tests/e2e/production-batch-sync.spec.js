@@ -229,7 +229,7 @@ test("keeps a saved shared design complete when its linked listing preset differ
     });
   });
 
-  await page.goto("/");
+  await page.goto("/production-batch");
 
   const row = page.locator("#orderList .order-row").filter({ hasText: "Saved Linked" });
   await expect(row).toContainText("Complete");
@@ -342,7 +342,7 @@ test("discarding a conflicted local draft reloads the production batch without a
     });
   });
 
-  await page.goto("/");
+  await page.goto("/production-batch");
   await expect(page.locator("#textInput")).toHaveValue("Remote Shared");
 
   await page.locator("#textInput").fill("Remote Shared Updated");
@@ -485,7 +485,7 @@ test("shows stale design alerts only on the affected design", async ({ page }) =
     });
   });
 
-  await page.goto("/");
+  await page.goto("/production-batch");
   await page.locator("#textInput").fill("Conflict Design Updated");
   await page.getByRole("button", { name: "Save", exact: true }).click();
 
@@ -616,7 +616,7 @@ test("keeps autosave conflict alerts tied to the stale design after switching ro
     });
   });
 
-  await page.goto("/");
+  await page.goto("/production-batch");
   await page.locator("#textInput").fill("Conflict Design Draft");
   const stableRow = page.locator("#orderList .order-row").filter({ hasText: "Stable Design" });
   await stableRow.locator(".order-item").click();
@@ -688,7 +688,7 @@ test("cancel restores the last saved shared design state", async ({ page }) => {
       body: JSON.stringify(remoteSnapshot),
     });
   });
-  await page.goto("/");
+  await page.goto("/production-batch");
   await expect(page.locator("#cancelDesignButton")).toBeDisabled();
 
   await page.locator("#textInput").fill("Draft Change");
@@ -789,7 +789,7 @@ test("does not re-autosave immediately after a successful manual save merges rev
     });
   });
 
-  await page.goto("/");
+  await page.goto("/production-batch");
   await page.locator("#textInput").fill("Remote Shared Updated");
   await page.getByRole("button", { name: "Save", exact: true }).click();
 
@@ -873,7 +873,7 @@ test("save confirmation renders as a floating toast without entering the editor 
     });
   });
 
-  await page.goto("/");
+  await page.goto("/production-batch");
   await page.locator("#textInput").fill("Remote Shared Updated");
   await page.getByRole("button", { name: "Save", exact: true }).click();
 

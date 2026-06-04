@@ -173,6 +173,9 @@ async function installDelayedAnalysisRoute(page) {
 }
 
 async function openBatchTools(page) {
+  if (await page.locator("#ordersWorkspace").isHidden()) {
+    await page.getByRole("button", { name: "Production Batch", exact: true }).click();
+  }
   const menu = page.locator(".batch-header .batch-tools-menu");
   if (await menu.evaluate((node) => node.hasAttribute("open"))) {
     return;
@@ -185,6 +188,13 @@ async function openBatchTools(page) {
 async function clickBatchAction(page, name) {
   await openBatchTools(page);
   await page.getByRole("button", { name }).click();
+}
+
+async function pasteProductionBatchClipboard(page) {
+  if (await page.locator("#ordersWorkspace").isHidden()) {
+    await page.getByRole("button", { name: "Production Batch", exact: true }).click();
+  }
+  await page.locator("#importClipboardButton").click();
 }
 
 async function selectPresetEditorRow(page, name) {
@@ -438,6 +448,29 @@ test("switches between order items, presets, and size guides from the left nav",
 
   await page.getByRole("button", { name: "Collapse navigation" }).click();
   await expect(appShell).toHaveAttribute("data-nav-collapsed", "true");
+});
+
+test("opens bookmarked editor workspaces and updates URLs from second-column selections", async ({ page }) => {
+  await installPresetRoutes(page);
+
+  await page.goto("/presets/preset-c3e8a1d7f520");
+  await expect(page.getByRole("region", { name: "Preset editor workspace" })).toBeVisible();
+  await expect(page.locator("#presetDraftName")).toHaveValue("Skywalk, Somekind");
+  await expect(page.locator(".preset-library-row.is-selected")).toHaveAttribute("data-preset-id", "preset-c3e8a1d7f520");
+
+  await page.locator(".preset-library-row", { hasText: "Candlepin, Skywalk" }).click();
+  await expect(page).toHaveURL(/\/presets\/preset-b7d2e9f4c318$/);
+
+  await page.goto("/fonts/skywalk");
+  await expect(page.getByRole("region", { name: "Fonts workspace" })).toBeVisible();
+  await expect(page.locator("#selectedFontName")).toContainText("Skywalk");
+
+  await page.locator("#fontsWorkspace .font-library-row", { hasText: "Somekind" }).click();
+  await expect(page).toHaveURL(/\/fonts\/somekind$/);
+
+  await page.goto("/size-guides/size-2-2x1-5");
+  await expect(page.getByRole("region", { name: "Size guides workspace" })).toBeVisible();
+  await expect(page.locator("#sizePresetNameInput")).toHaveValue("2.2 x 1.5");
 });
 
 test("loads workspace fonts into the Fonts workspace and line controls", async ({ page }) => {
@@ -1080,7 +1113,7 @@ test("can create a new preset from order settings and update an existing preset"
   await expect(page.locator("#presetInput")).toHaveValue(createdPresetId);
 
   await setClipboardPayload(page, importPayload);
-  await page.locator("#importClipboardButton").click();
+  await pasteProductionBatchClipboard(page);
   await expect(page.locator("#importStatus")).toContainText("Imported 1 Etsy design and added 1 to the production batch.");
   await expect(page.locator("#presetInput")).not.toHaveValue(createdPresetId);
 
@@ -1145,7 +1178,7 @@ test("assigning a preset to a completed imported order clears stale batch-export
   await completeDesign(page, "Design 1");
 
   await setClipboardPayload(page, importPayload);
-  await page.locator("#importClipboardButton").click();
+  await pasteProductionBatchClipboard(page);
   await expect(page.locator("#importStatus")).toContainText("Imported 1 Etsy design and added 1 to the production batch.");
 
   await page.locator("#presetInput").selectOption(createdPresetId);
@@ -1243,7 +1276,7 @@ test("shows assigned listings for a preset and lets operators unassign them", as
   await page.goto("/");
 
   await setClipboardPayload(page, importPayload);
-  await page.locator("#importClipboardButton").click();
+  await pasteProductionBatchClipboard(page);
   await expect(page.locator("#importStatus")).toContainText("Imported 1 Etsy design and added 1 to the production batch.");
   await expect(page.locator("#presetInput")).toHaveValue("preset-c3e8a1d7f520");
   await expect(page.locator("#presetListingIndicator")).toHaveText("Linked");
@@ -1270,7 +1303,7 @@ test("shows assigned listings for a preset and lets operators unassign them", as
   await expect(page.locator("#downloadButton")).toBeDisabled();
 
   await setClipboardPayload(page, freshImportPayload);
-  await page.locator("#importClipboardButton").click();
+  await pasteProductionBatchClipboard(page);
   await expect(page.locator("#importStatus")).toContainText("Imported 1 Etsy design and added 1 to the production batch.");
   await expect(page.locator("#presetInput")).not.toHaveValue("preset-c3e8a1d7f520");
 });
@@ -1299,7 +1332,7 @@ test("confirms before moving a listing id link to a different preset", async ({ 
   await page.goto("/");
 
   await setClipboardPayload(page, importPayload);
-  await page.locator("#importClipboardButton").click();
+  await pasteProductionBatchClipboard(page);
   await expect(page.locator("#importStatus")).toContainText("Imported 1 Etsy design and added 1 to the production batch.");
   await page.locator("#presetInput").selectOption("preset-b7d2e9f4c318");
 
@@ -1387,7 +1420,7 @@ test("marks listing-assigned presets inline beside the preset name label", async
   await page.goto("/");
 
   await setClipboardPayload(page, importPayload);
-  await page.locator("#importClipboardButton").click();
+  await pasteProductionBatchClipboard(page);
   await expect(page.locator("#importStatus")).toContainText("Imported 1 Etsy design and added 1 to the production batch.");
   await expect(page.locator("#presetInput")).toHaveValue("preset-c3e8a1d7f520");
   await expect(page.locator("#presetListingIndicator")).toHaveText("Linked");
