@@ -4768,6 +4768,18 @@ async function loadDatabaseOrders({ force = false } = {}) {
   }
 }
 
+function updateDatabaseOrderSelectionRows() {
+  if (!databaseOrdersListShell) {
+    return;
+  }
+
+  databaseOrdersListShell.querySelectorAll(".database-order-row").forEach((row) => {
+    const isSelected = row instanceof HTMLElement && row.dataset.orderId === selectedDatabaseOrderId;
+    row.classList.toggle("is-selected", isSelected);
+    row.querySelector(".database-order-row-button")?.setAttribute("aria-pressed", String(isSelected));
+  });
+}
+
 function selectDatabaseOrder(orderId, options = {}) {
   const { updateRoute = true, replaceRoute = false } = options;
   const order = databaseOrders.find((candidate) => candidate.id === orderId);
@@ -4776,7 +4788,8 @@ function selectDatabaseOrder(orderId, options = {}) {
   }
 
   selectedDatabaseOrderId = order.id;
-  renderDatabaseOrdersWorkspace();
+  updateDatabaseOrderSelectionRows();
+  renderSelectedDatabaseOrderItems();
   if (updateRoute) {
     writeAppRoute({
       replace: replaceRoute,
@@ -4792,6 +4805,7 @@ function renderDatabaseOrdersWorkspace() {
     return;
   }
 
+  const listScrollState = captureElementScrollState(databaseOrdersListShell);
   databaseOrdersListShell.id ||= "databaseOrdersList";
   databaseOrdersListShell.replaceChildren();
 
@@ -4805,6 +4819,7 @@ function renderDatabaseOrdersWorkspace() {
     loading.className = "batch-tools-note";
     loading.textContent = "Loading orders...";
     databaseOrdersListShell.append(loading);
+    restoreElementScrollState(databaseOrdersListShell, listScrollState);
     renderSelectedDatabaseOrderItems();
     return;
   }
@@ -4814,6 +4829,7 @@ function renderDatabaseOrdersWorkspace() {
     empty.className = "batch-tools-note";
     empty.textContent = "No orders loaded.";
     databaseOrdersListShell.append(empty);
+    restoreElementScrollState(databaseOrdersListShell, listScrollState);
     renderSelectedDatabaseOrderItems();
     return;
   }
@@ -4822,6 +4838,7 @@ function renderDatabaseOrdersWorkspace() {
     const orderNumber = getDatabaseOrderNumber(order);
     const row = document.createElement("div");
     row.className = "database-order-row";
+    row.dataset.orderId = order.id;
     row.classList.toggle("is-selected", order.id === selectedDatabaseOrderId);
 
     const checkbox = document.createElement("input");
@@ -4862,6 +4879,7 @@ function renderDatabaseOrdersWorkspace() {
     databaseOrdersListShell.append(row);
   });
 
+  restoreElementScrollState(databaseOrdersListShell, listScrollState);
   renderSelectedDatabaseOrderItems();
 }
 

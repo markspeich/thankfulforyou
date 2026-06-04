@@ -46,6 +46,11 @@ function installClipboardText(page, text) {
 
 async function installProductionBatchRoutes(page, options = {}) {
   const { orderItems = [] } = options;
+  let productionBatchSnapshot = {
+    batch: { id: "batch-1", workspaceId: "workspace-1" },
+    activeOrderItemId: orderItems[0]?.id || null,
+    orderItems,
+  };
 
   await page.route("**/api/batch-session", async (route) => {
     await route.fulfill({
@@ -63,11 +68,21 @@ async function installProductionBatchRoutes(page, options = {}) {
     await route.fulfill({
       status: 200,
       contentType: "application/json; charset=utf-8",
-      body: JSON.stringify({
-        batch: { id: "batch-1", workspaceId: "workspace-1" },
-        activeOrderItemId: orderItems[0]?.id || null,
-        orderItems,
-      }),
+      body: JSON.stringify(productionBatchSnapshot),
+    });
+  });
+
+  await page.route("**/api/production-batch", async (route) => {
+    if (route.request().method() !== "PUT") {
+      await route.fallback();
+      return;
+    }
+
+    productionBatchSnapshot = route.request().postDataJSON()?.snapshot || productionBatchSnapshot;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify(productionBatchSnapshot),
     });
   });
 }
@@ -171,8 +186,35 @@ function buildOrdersPayloadWithImportedOrder() {
   };
 }
 
+function buildScrollableOrdersPayload() {
+  const firstOrder = buildOrdersPayload().orders[0];
+  return {
+    orders: Array.from({ length: 30 }, (_, index) => {
+      const orderNumber = String(2001 + index);
+      return {
+        ...firstOrder,
+        id: `order:${orderNumber}`,
+        orderNumber,
+        buyerName: `Buyer ${index + 1}`,
+        isInActiveBatch: index % 3 === 0,
+        items: firstOrder.items.map((item, itemIndex) => ({
+          ...item,
+          id: `item-${orderNumber}-${itemIndex + 1}`,
+        })),
+      };
+    }),
+  };
+}
+
 async function installOrdersWorkspaceRoutes(page, options = {}) {
-  const { getDelayMs = 0, onPost = null, posts = [], postStatus = 200, postBody = null } = options;
+  const {
+    getDelayMs = 0,
+    onPost = null,
+    ordersPayload = buildOrdersPayload(),
+    posts = [],
+    postStatus = 200,
+    postBody = null,
+  } = options;
 
   await page.route("**/api/orders**", async (route) => {
     const request = route.request();
@@ -200,7 +242,7 @@ async function installOrdersWorkspaceRoutes(page, options = {}) {
     await route.fulfill({
       status: 200,
       contentType: "application/json; charset=utf-8",
-      body: JSON.stringify(buildOrdersPayload()),
+      body: JSON.stringify(ordersPayload),
     });
   });
 }
@@ -425,6 +467,51 @@ test("renders grouped database orders and selected order item cards", async ({ p
   const inBatchItemCard = ordersWorkspace.locator(".database-order-item-card").filter({ hasText: "Grace" });
   await inBatchItemCard.getByRole("button", { name: "Item actions" }).click();
   await expect(inBatchItemCard.getByRole("button", { name: "Add to Production Batch" })).toBeDisabled();
+});
+
+test("loads database orders on initial app startup", async ({ page }) => {
+  await installSupabaseSession(page);
+  await installProductionBatchRoutes(page);
+  await installOrdersWorkspaceRoutes(page, { getDelayMs: 500 });
+
+  await gotoAfterBatchLoads(page);
+  const ordersWorkspace = page.getByRole("region", { name: "Orders workspace" });
+  const pasteOrdersButton = ordersWorkspace.getByRole("button", { name: "Paste orders" });
+
+  await expect(ordersWorkspace.getByText("Loading orders...")).toBeVisible();
+  await expect(pasteOrdersButton).toBeEnabled();
+  await expect(ordersWorkspace.getByRole("button", { name: /Order 1001/ })).toBeVisible();
+  await expect(ordersWorkspace.getByRole("button", { name: /Ada Lovelace/ })).toBeVisible();
+});
+
+test("selects a lower database order without rebuilding the Orders list", async ({ page }) => {
+  await installSupabaseSession(page);
+  await installProductionBatchRoutes(page);
+  await installOrdersWorkspaceRoutes(page, { ordersPayload: buildScrollableOrdersPayload() });
+
+  await gotoAfterBatchLoads(page);
+  const ordersWorkspace = page.getByRole("region", { name: "Orders workspace" });
+  await page.getByRole("button", { name: "Orders", exact: true }).click();
+  await expect(ordersWorkspace.getByRole("button", { name: /Order 2030/ })).toBeVisible();
+
+  const ordersList = ordersWorkspace.getByLabel("Orders list");
+  const initialScrollTop = await ordersList.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+    window.__databaseOrdersListMutationCount = 0;
+    const observer = new MutationObserver((mutations) => {
+      window.__databaseOrdersListMutationCount += mutations.filter((mutation) => mutation.type === "childList").length;
+    });
+    observer.observe(element, { childList: true });
+    window.__databaseOrdersListMutationObserver = observer;
+    return element.scrollTop;
+  });
+  expect(initialScrollTop).toBeGreaterThan(0);
+
+  await ordersWorkspace.getByRole("button", { name: /Order 2029/ }).click();
+
+  await expect.poll(() => ordersList.evaluate((element) => element.scrollTop)).toBe(initialScrollTop);
+  await expect.poll(() => page.evaluate(() => window.__databaseOrdersListMutationCount)).toBe(0);
+  await expect(ordersWorkspace.getByRole("heading", { name: "Order 2029" })).toBeVisible();
 });
 
 test("pastes imported Etsy items into the Orders workspace without adding them to the batch", async ({ page }) => {
