@@ -4491,6 +4491,17 @@ function getDatabaseOrderItemListingText(item) {
   return match ? match.trim() : "Untitled listing";
 }
 
+function getDatabaseOrderItemListingImageUrl(item) {
+  const candidates = [
+    item?.source?.listingImageUrl75x75,
+    item?.listingImageUrl75x75,
+    item?.listing?.imageUrl75x75,
+    item?.listing?.imageUrl,
+  ];
+  const match = candidates.find((value) => typeof value === "string" && value.trim());
+  return match ? match.trim() : "";
+}
+
 function getDatabaseOrderItemDesignText(item) {
   const design = item?.design && typeof item.design === "object" ? item.design : {};
   const directText = typeof design.text === "string" && design.text.trim()
@@ -4499,6 +4510,25 @@ function getDatabaseOrderItemDesignText(item) {
       ? item.text.trim()
       : "";
   return directText || "No design text";
+}
+
+function getDatabaseOrderItemColorText(item) {
+  const candidates = [
+    item?.source?.colorName,
+    item?.importedColor,
+    item?.colorName,
+  ];
+  const match = candidates.find((value) => typeof value === "string" && value.trim());
+  return match ? match.trim() : "No color";
+}
+
+function getDatabaseOrderItemQuantityText(item) {
+  const candidates = [
+    item?.source?.quantity,
+    item?.quantity,
+  ];
+  const match = candidates.find((value) => value != null && String(value).trim());
+  return match ? String(match).trim() : "1";
 }
 
 function getDatabaseOrderItemFlattenedLines(item) {
@@ -5062,11 +5092,30 @@ function renderSelectedDatabaseOrderItems() {
     menuBody.append(copyDesignButton, addToBatchButton);
     menu.append(summary, menuBody);
 
-    cardHeader.append(titleGroup, menu);
+    cardHeader.append(menu);
 
     const lineText = document.createElement("p");
     lineText.className = "database-order-item-lines";
     lineText.textContent = getDatabaseOrderItemFlattenedLines(item);
+
+    const listingMedia = document.createElement("div");
+    listingMedia.className = "database-order-item-listing-media";
+
+    const listingImageUrl = getDatabaseOrderItemListingImageUrl(item);
+    if (listingImageUrl) {
+      const listingImage = document.createElement("img");
+      listingImage.className = "database-order-item-listing-image";
+      listingImage.src = listingImageUrl;
+      listingImage.alt = getDatabaseOrderItemListingText(item);
+      listingImage.loading = "lazy";
+      listingMedia.append(listingImage);
+    } else {
+      const listingPlaceholder = document.createElement("div");
+      listingPlaceholder.className = "database-order-item-listing-image database-order-item-listing-image-placeholder";
+      listingPlaceholder.setAttribute("aria-hidden", "true");
+      listingPlaceholder.textContent = "No image";
+      listingMedia.append(listingPlaceholder);
+    }
 
     const status = document.createElement("p");
     status.className = "database-order-item-status";
@@ -5099,7 +5148,34 @@ function renderSelectedDatabaseOrderItems() {
       preview.append(previewLabel, previewStatus);
     }
 
-    card.append(cardHeader, preview, lineText, status, savedDesign);
+    const cardBody = document.createElement("div");
+    cardBody.className = "database-order-item-body";
+
+    const listingColumn = document.createElement("div");
+    listingColumn.className = "database-order-item-listing-column";
+    listingColumn.append(titleGroup, lineText, listingMedia);
+
+    const previewColumn = document.createElement("div");
+    previewColumn.className = "database-order-item-preview-column";
+    previewColumn.append(preview);
+
+    const meta = document.createElement("dl");
+    meta.className = "database-order-item-meta";
+
+    const colorTerm = document.createElement("dt");
+    colorTerm.textContent = "Color";
+    const colorValue = document.createElement("dd");
+    colorValue.textContent = getDatabaseOrderItemColorText(item);
+
+    const quantityTerm = document.createElement("dt");
+    quantityTerm.textContent = "Quantity";
+    const quantityValue = document.createElement("dd");
+    quantityValue.textContent = getDatabaseOrderItemQuantityText(item);
+
+    meta.append(colorTerm, colorValue, quantityTerm, quantityValue);
+
+    cardBody.append(listingColumn, previewColumn);
+    card.append(cardHeader, cardBody, status, savedDesign, meta);
     databaseOrderItemsShell.append(card);
   });
 }

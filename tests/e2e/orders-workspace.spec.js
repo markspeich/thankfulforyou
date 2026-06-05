@@ -100,6 +100,11 @@ function buildOrdersPayload() {
             id: "item-1",
             listingTitle: "Custom badge reel",
             isInActiveBatch: false,
+            source: {
+              colorName: "Red Glitter",
+              quantity: "2",
+              listingImageUrl75x75: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='75' height='75'%3E%3Crect width='75' height='75' fill='%23d92d20'/%3E%3C/svg%3E",
+            },
             design: {
               text: "Ada RN",
               lines: [
@@ -449,6 +454,14 @@ test("renders grouped database orders and selected order item cards", async ({ p
   await expect(ordersWorkspace.getByText("Already in active batch")).toBeVisible();
 
   const firstItemCard = ordersWorkspace.locator(".database-order-item-card").filter({ hasText: "Ada RN" });
+  await expect(firstItemCard.locator(".database-order-item-listing-column")).toContainText("Ada RN");
+  await expect(firstItemCard.getByRole("img", { name: "Custom badge reel" })).toBeVisible();
+  await expect(firstItemCard.locator(".database-order-item-meta")).toContainText("Color");
+  await expect(firstItemCard.locator(".database-order-item-meta")).toContainText("Red Glitter");
+  await expect(firstItemCard.locator(".database-order-item-meta")).toContainText("Quantity");
+  await expect(firstItemCard.locator(".database-order-item-meta")).toContainText("2");
+  await expect(firstItemCard.locator(".database-order-item-preview-column .database-order-item-preview")).toBeVisible();
+  await expect(firstItemCard.locator(".database-order-item-body > *")).toHaveCount(2);
   await expect(
     firstItemCard.locator(".database-order-item-preview").getByText("Export-ready design available"),
   ).toHaveCount(0);
