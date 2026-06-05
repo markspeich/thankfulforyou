@@ -37,6 +37,7 @@ import {
 } from "./presets.js";
 import { savePresetSnapshot } from "./preset-api.js";
 import { computeLineMaskMetrics } from "./text-metrics.js";
+import { findPairOffsetPx } from "./bridge-geometry.js";
 import {
   buildSettingsSignature,
   getSettingsSignatureCandidates,
@@ -7366,43 +7367,12 @@ function buildOpaqueRows(imageData, width, height) {
   return rows;
 }
 
-function getOverlapWidthPx(leftMask, rightMask, dxPx) {
-  const baselineDelta = leftMask.baseline - rightMask.baseline;
-  let minX = Infinity;
-  let maxX = -Infinity;
-
-  for (let rightY = 0; rightY < rightMask.height; rightY += 1) {
-    const row = rightMask.opaqueRows?.[rightY];
-    if (!row) {
-      continue;
-    }
-
-    const leftY = rightY + baselineDelta;
-    if (leftY < 0 || leftY >= leftMask.height) {
-      continue;
-    }
-
-    for (const rightX of row) {
-      const leftX = rightX + dxPx;
-      if (maskHasInk(leftMask, leftX, leftY)) {
-        minX = Math.min(minX, leftX);
-        maxX = Math.max(maxX, leftX);
-      }
-    }
-  }
-
-  return Number.isFinite(minX) ? maxX - minX + 1 : 0;
-}
-
 function findPairOffsetMm(leftMask, rightMask, bridgeMm) {
   const targetPx = Math.max(1, Math.round(bridgeMm * PX_PER_MM * MASK_SCALE));
-  const start = leftMask.width + rightMask.width;
-  const end = -rightMask.width;
+  const offsetPx = findPairOffsetPx(leftMask, rightMask, targetPx);
 
-  for (let dx = start; dx >= end; dx -= 1) {
-    if (getOverlapWidthPx(leftMask, rightMask, dx) >= targetPx) {
-      return dx / MASK_SCALE / PX_PER_MM;
-    }
+  if (Number.isFinite(offsetPx)) {
+    return offsetPx / MASK_SCALE / PX_PER_MM;
   }
 
   return (leftMask.rightMm + rightMask.leftMm) - bridgeMm;

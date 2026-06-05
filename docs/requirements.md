@@ -125,6 +125,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Remove the current non-functional `Font (Line 1)` and `Font (Line 2)` dropdowns from below the order text field once the per-line control groups exist.
 - Allow controlled overlap between adjacent letters.
 - Treat 0.5 mm as the current default target for the connecting tab or bridge between neighboring letters in Candlepin layouts.
+- Interpret the letter bridge target as the minimum length of the largest connected overlap tab between adjacent letter shapes, measured along that overlap component's longest horizontal or vertical span, rather than as the overlap's horizontal width. The placement engine should stop at the first offset that creates a long enough connected tab so letters remain legible and do not blend together more than needed.
 - Allow controlled overlap or contact between multiple text lines.
 - Treat 0.5 mm as the current default target for the connecting bridge between neighboring lines in Candlepin layouts.
 - For multi-line Candlepin layouts, slide each lower line upward until the actual visible line shapes overlap by the configured line-bridge target.
