@@ -45,7 +45,7 @@ function installClipboardText(page, text) {
 }
 
 async function installProductionBatchRoutes(page, options = {}) {
-  const { orderItems = [] } = options;
+  const { orderItems = [], onGet = null } = options;
   let productionBatchSnapshot = {
     batch: { id: "batch-1", workspaceId: "workspace-1" },
     activeOrderItemId: orderItems[0]?.id || null,
@@ -65,6 +65,7 @@ async function installProductionBatchRoutes(page, options = {}) {
   });
 
   await page.route("**/api/production-batch?batchId=batch-1", async (route) => {
+    await onGet?.(productionBatchSnapshot);
     await route.fulfill({
       status: 200,
       contentType: "application/json; charset=utf-8",
@@ -630,9 +631,22 @@ test("keeps Orders paste available while workspace orders are loading", async ({
 
 test("pastes imported Etsy items into the active production batch", async ({ page }) => {
   const orderPosts = [];
+  let productionBatchGetCount = 0;
+  let releaseSecondProductionBatchGet = null;
+  const holdSecondProductionBatchGet = new Promise((resolve) => {
+    releaseSecondProductionBatchGet = resolve;
+  });
   await installSupabaseSession(page);
   await installClipboardText(page, buildClipboardPayload());
-  await installProductionBatchRoutes(page);
+  await installProductionBatchRoutes(page, {
+    onGet: () => {
+      productionBatchGetCount += 1;
+      if (productionBatchGetCount === 2) {
+        return holdSecondProductionBatchGet;
+      }
+      return null;
+    },
+  });
   await installOrdersWorkspaceRoutes(page, { posts: orderPosts });
 
   await gotoAfterBatchLoads(page);
@@ -646,6 +660,10 @@ test("pastes imported Etsy items into the active production batch", async ({ pag
     target: "productionBatch",
     batchId: "batch-1",
   });
+  await expect.poll(() => productionBatchGetCount).toBe(2);
+  await expect(page.locator("#importClipboardButton")).toBeDisabled();
+  releaseSecondProductionBatchGet?.();
+  await expect(page.getByRole("button", { name: "Paste", exact: true })).toBeEnabled();
 });
 
 test("skips duplicate production batch clipboard items without posting to orders", async ({ page }) => {

@@ -347,6 +347,7 @@ let selectedDatabaseOrderId = initialAppRoute.workspace === "databaseOrders" ? i
 let checkedDatabaseOrderIds = new Set();
 let databaseOrdersLoading = false;
 let databaseOrdersImporting = false;
+let ordersDatabaseMutationInFlight = false;
 let databaseOrdersMutationVersion = 0;
 let loadedDatabaseOrdersKey = null;
 let databaseOrdersSearchTerm = "";
@@ -5191,6 +5192,8 @@ async function addDatabaseOrderItemToBatch(item, button = null) {
     button.disabled = true;
     button.textContent = "Adding...";
   }
+  ordersDatabaseMutationInFlight = true;
+  render();
 
   try {
     const accessToken = await resolveProductionBatchMutationAccessToken();
@@ -5209,11 +5212,13 @@ async function addDatabaseOrderItemToBatch(item, button = null) {
       "Production batch session expired. Sign in again to continue adding orders.",
     );
   } finally {
+    ordersDatabaseMutationInFlight = false;
     if (button) {
       button.disabled = Boolean(item?.isInActiveBatch);
       button.textContent = "Add to Production Batch";
     }
     renderDatabaseOrdersWorkspace();
+    render();
   }
 }
 
@@ -5233,6 +5238,8 @@ async function addCheckedDatabaseOrdersToBatch() {
 
   addCheckedOrdersToBatchButton.disabled = true;
   setBatchActionLabel(addCheckedOrdersToBatchButton, "Adding...");
+  ordersDatabaseMutationInFlight = true;
+  render();
 
   try {
     const accessToken = await resolveProductionBatchMutationAccessToken();
@@ -5257,8 +5264,10 @@ async function addCheckedDatabaseOrdersToBatch() {
       "Production batch session expired. Sign in again to continue adding orders.",
     );
   } finally {
+    ordersDatabaseMutationInFlight = false;
     setBatchActionLabel(addCheckedOrdersToBatchButton, "Add Checked to Production Batch");
     renderDatabaseOrdersWorkspace();
+    render();
   }
 }
 
@@ -6274,7 +6283,7 @@ function updateCaptureButtonState(activeOrder) {
   setEditorActionLabel(cancelDesignButton, "Cancel");
   setEditorActionLabel(completeNextButton, "Save & Next");
 
-  if (!activeOrder) {
+  if (!activeOrder || ordersDatabaseMutationInFlight) {
     captureButton.disabled = true;
     captureButton.removeAttribute("aria-busy");
     cancelDesignButton.disabled = true;
@@ -6945,6 +6954,8 @@ async function importFromClipboard() {
 
   importClipboardButton.disabled = true;
   setBatchActionLabel(importClipboardButton, "Pasting...");
+  ordersDatabaseMutationInFlight = true;
+  render();
 
   try {
     const clipboardText = await navigator.clipboard.readText();
@@ -6963,7 +6974,7 @@ async function importFromClipboard() {
       items: filteredItems,
       accessToken,
     });
-    await refreshOrdersAndProductionBatch({ payload, accessToken });
+    await refreshOrdersAndProductionBatch({ payload, accessToken, refreshBatch: true });
     appendImportedItemsToProductionBatch(filteredItems, {
       maxCount: countFromPayload(payload, "addedOrderItemCount"),
     });
@@ -6978,8 +6989,10 @@ async function importFromClipboard() {
       "Production batch session expired. Sign in again to continue importing orders.",
     );
   } finally {
+    ordersDatabaseMutationInFlight = false;
     importClipboardButton.disabled = false;
     setBatchActionLabel(importClipboardButton, "Paste");
+    render();
   }
 }
 
@@ -6996,6 +7009,8 @@ async function importOrdersFromClipboard() {
   databaseOrdersImporting = true;
   pasteOrdersButton.disabled = true;
   setBatchActionLabel(pasteOrdersButton, "Pasting...");
+  ordersDatabaseMutationInFlight = true;
+  render();
 
   try {
     const clipboardText = await navigator.clipboard.readText();
@@ -7020,9 +7035,11 @@ async function importOrdersFromClipboard() {
     );
   } finally {
     databaseOrdersImporting = false;
+    ordersDatabaseMutationInFlight = false;
     pasteOrdersButton.disabled = false;
     setBatchActionLabel(pasteOrdersButton, "Paste");
     renderDatabaseOrdersWorkspace();
+    render();
   }
 }
 
