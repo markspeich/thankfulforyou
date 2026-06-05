@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { loadEnvFile } from "./env_file.mjs";
 import { setupWorktreeEnv } from "./setup_worktree_env.mjs";
+import { generateSupabaseWorktreeConfig } from "./supabase_worktree_config.mjs";
 
 export const REQUIRED_SUPABASE_ENV_KEYS = [
   "SUPABASE_URL",
@@ -53,8 +54,20 @@ export function spawnCommand(command, args, options = {}) {
     : spawnSync(command, args, options);
 }
 
-export function readLocalSupabaseEnv() {
-  const result = spawnCommand("npx", ["supabase", "status", "--output", "env"], {
+export async function readLocalSupabaseEnv({
+  cwd = process.cwd(),
+  generateConfig = generateSupabaseWorktreeConfig,
+  spawn = spawnCommand,
+} = {}) {
+  const config = await generateConfig({ cwd });
+  const result = spawn("npx", [
+    "supabase",
+    "--workdir",
+    config.workdir,
+    "status",
+    "--output",
+    "env",
+  ], {
     encoding: "utf8",
   });
 
@@ -109,7 +122,7 @@ export function parseSupabaseEnvMode(argv, fallback = "local") {
 
 export async function resolveSupabaseEnv(mode, options = {}) {
   if (mode === "local") {
-    return readLocalSupabaseEnv();
+    return readLocalSupabaseEnv(options);
   }
 
   if (mode === "remote") {

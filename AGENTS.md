@@ -65,22 +65,26 @@ When the user provides new product, workflow, material, manufacturing, design, o
 When the user asks to start the app, start a server, or initialize the app, follow this exact local workflow unless they explicitly ask for remote:
 
 1. Read `AGENTS.md` and `docs/requirements.md` if they have not already been read this turn.
-2. Start the local dev server from the repository root with `npm run start:local`.
-3. In Windows Codex worktrees, prefer a visible persistent PowerShell window for the server:
+2. When the worktree needs its own local Supabase environment prepared or refreshed, run `npm run prepare:local` from the repository root. This reusable command generates the per-worktree Supabase workdir, starts that isolated stack, resets local schema and seed data, initializes the test operator/workspace/batch, and prints the local Supabase env.
+3. Start the local dev server from the repository root with `npm run start:local`.
+4. In Windows Codex worktrees, prefer a visible persistent PowerShell window for the server:
    `Start-Process -FilePath 'powershell.exe' -ArgumentList @('-NoExit','-Command','cd "<repo root>"; npm run start:local')`
-4. Do not use detached hidden server launches or redirected-log background launches for the dev server unless the user explicitly asks for a background-only server.
-5. Read the printed `Badge reel layout tool: http://localhost:...` line and use that exact URL.
-6. Verify the server with `(Invoke-WebRequest -UseBasicParsing '<printed URL>/').StatusCode`.
-7. If `localhost` resolves to IPv6 and fails in scripted checks, retry verification with `http://127.0.0.1:<port>`.
-8. For `Initialize app`, run `npm run initialize:local`.
-9. Verify initialization by signing in as `test.operator@example.com` and calling `<printed URL>/api/batch-session` with the access token.
-10. Report the server URL, HTTP status, operator, workspace, and batch.
+5. Do not use detached hidden server launches or redirected-log background launches for the dev server unless the user explicitly asks for a background-only server.
+6. Read the printed `Badge reel layout tool: http://localhost:...` line and use that exact URL.
+7. Verify the server with `(Invoke-WebRequest -UseBasicParsing '<printed URL>/').StatusCode`.
+8. If `localhost` resolves to IPv6 and fails in scripted checks, retry verification with `http://127.0.0.1:<port>`.
+9. For `Initialize app`, run `npm run initialize:local` when the local Supabase stack is already prepared; run `npm run prepare:local` when the worktree needs the full local stack start/reset/init sequence.
+10. Verify initialization by signing in as `test.operator@example.com` and calling `<printed URL>/api/batch-session` with the access token.
+11. Whenever starting or reporting a local server, include the server URL, the test login `test.operator@example.com`, the test password `TestOperator123!`, and the local Supabase Studio URL for this worktree.
+12. Report the server URL, HTTP status, operator, workspace, batch, test login, test password, and Supabase Studio URL.
 
 - When the user says `start a server`, start the local dev server unless they explicitly ask for remote.
 - To start the local dev server in this worktree, run `npm run start:local` from the repository root.
+- To prepare or refresh this worktree's isolated local Supabase environment, run `npm run prepare:local` from the repository root.
 - To start the remote-backed dev server, run `npm run start:remote` only when the user explicitly asks for remote.
 - Use `npm run start:local` or `npm run start:remote` as the canonical dev entrypoints for this app instead of invoking `node` directly with a guessed script.
 - `npm run start:local` and `npm run start:remote` first run through `tools/run_with_supabase_env.mjs`, which selects the requested Supabase environment before launching the dev server.
+- `npm run prepare:local` runs through `tools/prepare_local_env.mjs`, which uses the generated per-worktree Supabase workdir instead of rewriting the tracked `supabase/config.toml`.
 - Plain `npm start` is not the default Codex startup command for this worktree unless the user specifically asks for the generic start script.
 - `npm start` first runs `tools/setup_worktree_env.mjs`, which fills missing shared-queue Supabase keys in the worktree `.env.local` from the machine-local seed file at `C:\Users\Mark\CodexProjects\thankfulforyou\.env.local.shared`.
 - Keep `C:\Users\Mark\CodexProjects\thankfulforyou\.env.local.shared` out of git. It is the local source of truth for secrets that Vercel CLI cannot pull into new worktrees, especially `SUPABASE_SERVICE_ROLE_KEY`.
@@ -98,6 +102,7 @@ When the user asks to start the app, start a server, or initialize the app, foll
 - When shared queue auth or shared queue API routes must work from Codex, start the chosen dev server command with escalated/network permissions. A sandboxed dev server can serve the frontend but fail Supabase token verification, which appears to the user as an expired shared queue session.
 - The dev server port is determined by `tools/dev_port.mjs`. Do not hardcode or guess a worktree URL from `AGENTS.md`.
 - After starting the server, read the printed `Badge reel layout tool: http://localhost:...` line and use that exact URL.
+- The dev server startup banner prints the server URL, test login, test password, and local Supabase Studio URL. Include those values in the response whenever you start or restart the server for the user.
 - If the URL is needed before launch, compute it from the helper with `node --input-type=module -e "import { resolveDevBaseUrl } from './tools/dev_port.mjs'; console.log(resolveDevBaseUrl())"`.
 - If a different port is needed, set it explicitly in PowerShell with `$env:PORT = "4801"` and then run the chosen startup command.
 - Keep the dev server running in a foreground or other persistent terminal session. In this Windows Codex worktree setup, detached hidden launches can exit early and leave the browser unable to connect.

@@ -8,6 +8,7 @@ import { randomUUID } from "node:crypto";
 import { buildPublicAppConfigScript } from "./app_config.mjs";
 import { resolveDevPort } from "./dev_port.mjs";
 import { loadEnvFile } from "./env_file.mjs";
+import { buildLocalServerInfo, formatLocalServerInfo } from "./local_server_info.mjs";
 
 const port = resolveDevPort();
 const root = process.cwd();
@@ -384,6 +385,9 @@ server.listen(port, async () => {
   try {
     presetSnapshots.set("primary", await loadBundledPresetSnapshot());
     console.log(`Badge reel layout tool: http://localhost:${port}`);
+    for (const line of formatLocalServerInfo(buildLocalServerInfo())) {
+      console.log(line);
+    }
   } catch (error) {
     console.error(error instanceof Error ? error.message : error);
     server.close();

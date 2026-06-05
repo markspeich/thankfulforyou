@@ -4,6 +4,7 @@ import {
   resolveSupabaseEnv,
   spawnCommand,
 } from "./supabase_env.mjs";
+import { generateSupabaseWorktreeConfig } from "./supabase_worktree_config.mjs";
 
 function run(command, args, options = {}) {
   const result = spawnCommand(command, args, {
@@ -19,7 +20,8 @@ function run(command, args, options = {}) {
 const mode = parseSupabaseEnvMode(process.argv.slice(2), "local");
 
 if (mode === "local") {
-  run("npx", ["supabase", "db", "reset", "--local"]);
+  const config = await generateSupabaseWorktreeConfig();
+  run("npx", ["supabase", "--workdir", config.workdir, "db", "reset", "--local"]);
 }
 
 const supabaseEnv = await resolveSupabaseEnv(mode);

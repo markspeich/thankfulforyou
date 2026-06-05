@@ -7,6 +7,7 @@ import {
   buildLocalSupabaseEnv,
   buildWindowsShellCommand,
   parseSupabaseStatusEnv,
+  readLocalSupabaseEnv,
   resolveRemoteSupabaseEnv,
   validateSupabaseEnv,
 } from "../../tools/supabase_env.mjs";
@@ -46,6 +47,41 @@ describe("Supabase environment mode helpers", () => {
       SERVICE_ROLE_KEY: "local-service",
     })).toEqual({
       SUPABASE_URL: "http://127.0.0.1:54321",
+      SUPABASE_PUBLISHABLE_KEY: "local-anon",
+      SUPABASE_ANON_KEY: "local-anon",
+      SUPABASE_SERVICE_ROLE_KEY: "local-service",
+    });
+  });
+
+  it("reads local Supabase env from the generated worktree status", async () => {
+    const calls = [];
+    const resolved = await readLocalSupabaseEnv({
+      cwd: "C:/Users/Mark/.codex/worktrees/42f4/thankfulforyou",
+      generateConfig: async () => ({ workdir: "C:/repo/.local/supabase/42f4" }),
+      spawn: (command, args, options) => {
+        calls.push({ command, args, options });
+        return {
+          status: 0,
+          stdout: [
+            'API_URL="http://127.0.0.1:55000"',
+            'ANON_KEY="local-anon"',
+            'SERVICE_ROLE_KEY="local-service"',
+          ].join("\n"),
+        };
+      },
+    });
+
+    expect(calls[0].command).toBe("npx");
+    expect(calls[0].args).toEqual([
+      "supabase",
+      "--workdir",
+      "C:/repo/.local/supabase/42f4",
+      "status",
+      "--output",
+      "env",
+    ]);
+    expect(resolved).toEqual({
+      SUPABASE_URL: "http://127.0.0.1:55000",
       SUPABASE_PUBLISHABLE_KEY: "local-anon",
       SUPABASE_ANON_KEY: "local-anon",
       SUPABASE_SERVICE_ROLE_KEY: "local-service",

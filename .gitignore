@@ -9,6 +9,7 @@ build/
 out/
 
 # Local environment
+.local/
 .env
 .env.*
 !.env.example
