@@ -599,6 +599,33 @@ test("pastes imported Etsy items into the Orders workspace without adding them t
   });
 });
 
+test("shows an Orders paste summary with imported and duplicate counts", async ({ page }) => {
+  await installSupabaseSession(page);
+  await installClipboardText(page, buildClipboardPayload());
+  await installProductionBatchRoutes(page);
+  await installOrdersWorkspaceRoutes(page, {
+    postBody: {
+      ...buildOrdersPayloadWithImportedOrder(),
+      importedOrderItemCount: 1,
+      addedOrderItemCount: 0,
+      skippedOrderItemCount: 2,
+    },
+  });
+
+  await gotoAfterBatchLoads(page);
+  const ordersWorkspace = page.getByRole("region", { name: "Orders workspace" });
+  await page.getByRole("button", { name: "Orders", exact: true }).click();
+  await ordersWorkspace.getByRole("button", { name: "Paste orders" }).click();
+
+  const dialog = page.locator("#pasteSummaryDialog");
+  await expect(dialog).toBeVisible();
+  await expect(dialog.locator("#pasteSummaryTitle")).toHaveText("Paste Summary");
+  await expect(dialog.locator("#pasteSummaryTarget")).toHaveText("Orders");
+  await expect(dialog.locator("#pasteSummaryImportedCount")).toHaveText("1");
+  await expect(dialog.locator("#pasteSummarySkippedCount")).toHaveText("2");
+  await expect(dialog.locator("#pasteSummaryAddedCount")).toHaveText("0");
+});
+
 test("keeps Orders paste available while workspace orders are loading", async ({ page }) => {
   const orderPosts = [];
   await installSupabaseSession(page);
@@ -682,6 +709,9 @@ test("skips duplicate production batch clipboard items without posting to orders
   await expect(page.locator("#workflowAlertText")).toHaveText(
     "Skipped 1 Etsy design already in the batch. No new designs were added.",
   );
+  await expect(page.locator("#pasteSummaryDialog")).toBeVisible();
+  await expect(page.locator("#pasteSummaryImportedCount")).toHaveText("0");
+  await expect(page.locator("#pasteSummarySkippedCount")).toHaveText("1");
 });
 
 test("rejects empty Orders clipboard import without posting to orders", async ({ page }) => {

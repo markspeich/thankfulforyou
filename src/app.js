@@ -216,6 +216,13 @@ const batchActionLabelByButton = new Map(
 );
 const colorCountsDialog = document.querySelector("#colorCountsDialog");
 const closeColorCountsButton = document.querySelector("#closeColorCountsButton");
+const pasteSummaryDialog = document.querySelector("#pasteSummaryDialog");
+const pasteSummaryTarget = document.querySelector("#pasteSummaryTarget");
+const pasteSummaryImportedCount = document.querySelector("#pasteSummaryImportedCount");
+const pasteSummarySkippedCount = document.querySelector("#pasteSummarySkippedCount");
+const pasteSummaryAddedCount = document.querySelector("#pasteSummaryAddedCount");
+const closePasteSummaryButton = document.querySelector("#closePasteSummaryButton");
+const pasteSummaryDoneButton = document.querySelector("#pasteSummaryDoneButton");
 const presetAssignmentDialog = document.querySelector("#presetAssignmentDialog");
 const presetAssignmentDescription = document.querySelector("#presetAssignmentDescription");
 const closePresetAssignmentDialogButton = document.querySelector("#closePresetAssignmentDialogButton");
@@ -4624,6 +4631,38 @@ function buildSkippedBatchImportMessage(skippedCount) {
   return `Skipped ${skippedCount} Etsy ${designNoun(skippedCount)} already in the batch. No new designs were added.`;
 }
 
+function showPasteSummaryDialog({
+  targetLabel = "Orders",
+  importedCount = 0,
+  skippedDuplicateCount = 0,
+  addedToBatchCount = 0,
+} = {}) {
+  if (!(pasteSummaryDialog instanceof HTMLDialogElement)) {
+    return;
+  }
+
+  if (pasteSummaryTarget) {
+    pasteSummaryTarget.textContent = targetLabel;
+  }
+  if (pasteSummaryImportedCount) {
+    pasteSummaryImportedCount.textContent = String(Math.max(0, importedCount));
+  }
+  if (pasteSummarySkippedCount) {
+    pasteSummarySkippedCount.textContent = String(Math.max(0, skippedDuplicateCount));
+  }
+  if (pasteSummaryAddedCount) {
+    pasteSummaryAddedCount.textContent = String(Math.max(0, addedToBatchCount));
+  }
+
+  pasteSummaryDialog.showModal();
+}
+
+function closePasteSummaryDialog() {
+  if (pasteSummaryDialog instanceof HTMLDialogElement && pasteSummaryDialog.open) {
+    pasteSummaryDialog.close();
+  }
+}
+
 function assertImportableItems(importedItems) {
   if (!Array.isArray(importedItems) || importedItems.length === 0) {
     throw new Error("Clipboard data did not include any importable Etsy designs.");
@@ -6964,6 +7003,12 @@ async function importFromClipboard() {
     const { filteredItems, skippedCount } = filterNewProductionBatchImportItems(importedItems);
     if (!filteredItems.length) {
       updateWorkflowAlert(buildSkippedBatchImportMessage(skippedCount), "success");
+      showPasteSummaryDialog({
+        targetLabel: "Production Batch",
+        importedCount: 0,
+        skippedDuplicateCount: skippedCount,
+        addedToBatchCount: 0,
+      });
       return;
     }
 
@@ -6982,6 +7027,12 @@ async function importFromClipboard() {
       ? `${buildProductionBatchImportMessage(payload)} Skipped ${skippedCount} already in the batch.`
       : buildProductionBatchImportMessage(payload);
     updateWorkflowAlert(message, "success");
+    showPasteSummaryDialog({
+      targetLabel: "Production Batch",
+      importedCount: countFromPayload(payload, "importedOrderItemCount"),
+      skippedDuplicateCount: skippedCount + countFromPayload(payload, "skippedOrderItemCount"),
+      addedToBatchCount: countFromPayload(payload, "addedOrderItemCount"),
+    });
   } catch (error) {
     handleOrdersMutationError(
       error,
@@ -7027,6 +7078,12 @@ async function importOrdersFromClipboard() {
 
     await refreshOrdersAndProductionBatch({ payload, accessToken });
     updateWorkflowAlert(buildOrdersImportMessage(payload), "success");
+    showPasteSummaryDialog({
+      targetLabel: "Orders",
+      importedCount: countFromPayload(payload, "importedOrderItemCount"),
+      skippedDuplicateCount: countFromPayload(payload, "skippedOrderItemCount"),
+      addedToBatchCount: countFromPayload(payload, "addedOrderItemCount"),
+    });
   } catch (error) {
     handleOrdersMutationError(
       error,
@@ -8629,6 +8686,13 @@ closeColorCountsButton?.addEventListener("click", closeBatchColorCountsDialog);
 colorCountsDialog?.addEventListener("click", (event) => {
   if (event.target === colorCountsDialog) {
     closeBatchColorCountsDialog();
+  }
+});
+closePasteSummaryButton?.addEventListener("click", closePasteSummaryDialog);
+pasteSummaryDoneButton?.addEventListener("click", closePasteSummaryDialog);
+pasteSummaryDialog?.addEventListener("click", (event) => {
+  if (event.target === pasteSummaryDialog) {
+    closePasteSummaryDialog();
   }
 });
 confirmationDialogCancelButton?.addEventListener("click", () => {
