@@ -6926,9 +6926,11 @@ async function importOrdersFromClipboard() {
     const importedItems = parseImportedItems(clipboardText, { getPresetIdForListingId });
     assertImportableItems(importedItems);
     const accessToken = await resolveProductionBatchMutationAccessToken();
+    const batchId = getActiveProductionBatchId();
     const payload = await importWorkspaceOrders({
       target: "orders",
       items: importedItems,
+      ...(batchId ? { batchId } : {}),
       accessToken,
     });
 

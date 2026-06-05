@@ -509,6 +509,8 @@ For batch Etsy order sessions, the preferred workflow is:
 - The Orders workspace should provide a status filter with `Open`, `Complete`, and `All` options.
 - The Orders workspace should provide a search field matching order number, buyer, listing, transaction, color, and design text.
 - The Orders workspace should provide a batch-membership filter for all orders, orders in the active batch, and orders not in the active batch.
+- Pasting Etsy line items should be idempotent by durable imported order-item id: items already present in the order database should not be re-imported, re-counted as new imports, reopened from `complete` to `open`, or have their existing design data overwritten. Production Batch paste may still add an existing open database item to the active batch when it is not already in that batch.
+- Orders workspace paste may send the active production batch id as read-only membership context so the returned Orders list preserves accurate `In batch` labels; it must still import to Orders only and must not create batch memberships.
 
 - Clicking `Save` should immediately mark the current design as finished for editing, even if connectedness analysis is still running in the background.
 - After clicking `Save`, both `Save` and `Save & Next` should stay disabled for that design until the operator changes the text or layout settings again.

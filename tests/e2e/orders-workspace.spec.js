@@ -581,8 +581,8 @@ test("pastes imported Etsy items into the Orders workspace without adding them t
   expect(orderPosts[0]).toMatchObject({
     action: "importClipboardItems",
     target: "orders",
+    batchId: "batch-1",
   });
-  expect(orderPosts[0]).not.toHaveProperty("batchId");
 });
 
 test("keeps Orders paste available while workspace orders are loading", async ({ page }) => {
