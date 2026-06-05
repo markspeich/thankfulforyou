@@ -297,7 +297,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - The `Orders` workspace should use a calm production layout with an orders column and a selected-order items column.
 - The first `Orders` workspace column should show one row per Etsy order, grouped by order number where available.
 - Each order row on the `Orders` workspace should include a checkbox so operators can select orders for bulk actions.
-- The orders column should include an ellipsis menu with an action to add all checked orders to the active production batch.
+- The orders column should include an ellipsis menu with actions to add checked orders to the active production batch, skip checked orders, and reopen checked skipped orders.
 - Clicking an order row in the `Orders` workspace should show one card for each order item in that order that matches the active Orders status filter.
 - Each order item card on the `Orders` workspace should include the saved design when available.
 - Each order item card on the `Orders` workspace should include an ellipsis menu with actions for `Copy Design` and `Add to Production Batch`.
@@ -507,11 +507,18 @@ For batch Etsy order sessions, the preferred workflow is:
 10. Clear the full batch and its saved local batch state when starting a new batch.
 
 - Orders should use a single durable lifecycle status on `order_items`: `open` for active work and `complete` for work finished through production batching.
+- Orders may also use `skipped` as a durable `order_items` lifecycle status when an imported order should be intentionally excluded from production batching without being completed.
+- Skipped orders should not be eligible for adding to the active production batch through item actions, bulk checked-order actions, or API batch-add mutations.
+- Skipping an order item should remove any active production batch membership for that order item so it is not included in a production batch, after the operator confirms removal from the batch.
+- The Orders workspace should provide a `Skip Order Item` action for individual open order items, ask for confirmation, and then move that item to skipped status.
+- The Orders workspace should provide a selected-order-level `Skip Order` action that skips every item in the selected order.
+- If any selected-order items are already in the active production batch, `Skip Order` must ask the operator to confirm removing those order items from the batch before skipping the full order.
+- The Orders workspace should provide `Reopen Order` actions for skipped order items and fully skipped selected orders so accidental skips can be reversed and returned to open status.
 - The app should stop using `archived` as an order or batch-membership lifecycle status for new workflow behavior.
 - Completing a production batch should mark every order item currently in the batch as `complete` and remove those items from the active production batch view.
 - If any current production batch items are not visibly complete/exported or lack export-ready saved geometry where that can be checked, completing the production batch should show an explicit warning confirmation before proceeding.
 - The Orders workspace should default to showing only open orders.
-- The Orders workspace should provide a status filter with `Open`, `Complete`, and `All` options.
+- The Orders workspace should provide a status filter with `Open`, `Skipped`, `Complete`, and `All` options.
 - The Orders workspace should provide a search field matching order number, buyer, listing, transaction, color, and design text.
 - The Orders workspace should provide a batch-membership filter for all orders, orders in the active batch, and orders not in the active batch.
 - Pasting Etsy line items should be idempotent by durable imported order-item id: items already present in the order database should not be re-imported, re-counted as new imports, reopened from `complete` to `open`, or have their existing design data overwritten. Production Batch paste may still add an existing open database item to the active batch when it is not already in that batch.

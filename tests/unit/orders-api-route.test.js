@@ -4,6 +4,9 @@ const addOrderGroupsToProductionBatchMock = vi.fn();
 const addOrderItemsToProductionBatchMock = vi.fn();
 const importWorkspaceOrderItemsMock = vi.fn();
 const listWorkspaceOrdersMock = vi.fn();
+const updateOrderGroupStatusMock = vi.fn();
+const updateOrderGroupsStatusMock = vi.fn();
+const updateOrderItemStatusMock = vi.fn();
 const resolveProductionBatchAuthMock = vi.fn();
 
 vi.mock("../../api/_lib/orders-store.js", () => ({
@@ -11,6 +14,9 @@ vi.mock("../../api/_lib/orders-store.js", () => ({
   addOrderItemsToProductionBatch: addOrderItemsToProductionBatchMock,
   importWorkspaceOrderItems: importWorkspaceOrderItemsMock,
   listWorkspaceOrders: listWorkspaceOrdersMock,
+  updateOrderGroupStatus: updateOrderGroupStatusMock,
+  updateOrderGroupsStatus: updateOrderGroupsStatusMock,
+  updateOrderItemStatus: updateOrderItemStatusMock,
 }));
 
 vi.mock("../../api/_lib/production-batch-auth.js", () => ({
@@ -42,6 +48,9 @@ beforeEach(() => {
   addOrderItemsToProductionBatchMock.mockReset();
   importWorkspaceOrderItemsMock.mockReset();
   listWorkspaceOrdersMock.mockReset();
+  updateOrderGroupStatusMock.mockReset();
+  updateOrderGroupsStatusMock.mockReset();
+  updateOrderItemStatusMock.mockReset();
   resolveProductionBatchAuthMock.mockReset();
 });
 
@@ -82,6 +91,33 @@ describe("orders api route", () => {
     expect(response.body).toEqual({
       orders: [{ id: "order:1001", items: [{ id: "item-1" }] }],
     });
+  });
+
+  it("loads skipped workspace orders when requested", async () => {
+    resolveProductionBatchAuthMock.mockResolvedValue({
+      userId: "user-1",
+      workspaceId: "workspace-1",
+    });
+    listWorkspaceOrdersMock.mockResolvedValue({
+      orders: [{ id: "order:1003", status: "skipped", items: [{ id: "item-3", status: "skipped" }] }],
+    });
+
+    const { default: handler } = await import("../../api/orders.js");
+    const response = createResponseRecorder();
+
+    await handler({
+      method: "GET",
+      headers: { authorization: "Bearer token-1" },
+      query: { batchId: "batch-1", status: "skipped" },
+    }, response);
+
+    expect(listWorkspaceOrdersMock).toHaveBeenCalledWith({
+      workspaceId: "workspace-1",
+      activeBatchId: "batch-1",
+      statusFilter: "skipped",
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.body.orders[0]).toMatchObject({ status: "skipped" });
   });
 
   it("imports clipboard items to workspace orders and returns counts with refreshed orders", async () => {
@@ -372,6 +408,201 @@ describe("orders api route", () => {
       addedOrderItemCount: 2,
       orders: [{ id: "order:1001", isInActiveBatch: true, items: [{ id: "item-1" }, { id: "item-2" }] }],
     });
+  });
+
+  it("marks an order item skipped and returns refreshed skipped orders", async () => {
+    resolveProductionBatchAuthMock.mockResolvedValue({
+      userId: "user-1",
+      workspaceId: "workspace-1",
+    });
+    updateOrderItemStatusMock.mockResolvedValue({ orderItemId: "item-1", status: "skipped" });
+    listWorkspaceOrdersMock.mockResolvedValue({
+      orders: [{ id: "order:1001", status: "skipped", items: [{ id: "item-1", status: "skipped" }] }],
+    });
+
+    const { default: handler } = await import("../../api/orders.js");
+    const response = createResponseRecorder();
+
+    await handler({
+      method: "POST",
+      headers: { authorization: "Bearer token-1" },
+      body: {
+        action: "skipOrderItem",
+        batchId: " batch-1 ",
+        orderItemId: " item-1 ",
+      },
+    }, response);
+
+    expect(updateOrderItemStatusMock).toHaveBeenCalledWith({
+      workspaceId: "workspace-1",
+      userId: "user-1",
+      orderItemId: "item-1",
+      status: "skipped",
+    });
+    expect(listWorkspaceOrdersMock).toHaveBeenCalledWith({
+      workspaceId: "workspace-1",
+      activeBatchId: "batch-1",
+      statusFilter: "skipped",
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.body.orders[0]).toMatchObject({ status: "skipped" });
+  });
+
+  it("reopens a skipped order item and returns refreshed open orders", async () => {
+    resolveProductionBatchAuthMock.mockResolvedValue({
+      userId: "user-1",
+      workspaceId: "workspace-1",
+    });
+    updateOrderItemStatusMock.mockResolvedValue({ orderItemId: "item-1", status: "open" });
+    listWorkspaceOrdersMock.mockResolvedValue({
+      orders: [{ id: "order:1001", status: "open", items: [{ id: "item-1", status: "open" }] }],
+    });
+
+    const { default: handler } = await import("../../api/orders.js");
+    const response = createResponseRecorder();
+
+    await handler({
+      method: "POST",
+      headers: { authorization: "Bearer token-1" },
+      body: {
+        action: "reopenOrderItem",
+        batchId: "batch-1",
+        orderItemId: "item-1",
+      },
+    }, response);
+
+    expect(updateOrderItemStatusMock).toHaveBeenCalledWith({
+      workspaceId: "workspace-1",
+      userId: "user-1",
+      orderItemId: "item-1",
+      status: "open",
+    });
+    expect(listWorkspaceOrdersMock).toHaveBeenCalledWith({
+      workspaceId: "workspace-1",
+      activeBatchId: "batch-1",
+      statusFilter: "open",
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.body.orders[0]).toMatchObject({ status: "open" });
+  });
+
+  it("marks every item in an order skipped and returns refreshed skipped orders", async () => {
+    resolveProductionBatchAuthMock.mockResolvedValue({
+      userId: "user-1",
+      workspaceId: "workspace-1",
+    });
+    updateOrderGroupStatusMock.mockResolvedValue({ orderItemIds: ["item-1", "item-2"], status: "skipped" });
+    listWorkspaceOrdersMock.mockResolvedValue({
+      orders: [{
+        id: "order:1001",
+        status: "skipped",
+        items: [{ id: "item-1", status: "skipped" }, { id: "item-2", status: "skipped" }],
+      }],
+    });
+
+    const { default: handler } = await import("../../api/orders.js");
+    const response = createResponseRecorder();
+
+    await handler({
+      method: "POST",
+      headers: { authorization: "Bearer token-1" },
+      body: {
+        action: "skipOrder",
+        batchId: "batch-1",
+        orderId: " order:1001 ",
+      },
+    }, response);
+
+    expect(updateOrderGroupStatusMock).toHaveBeenCalledWith({
+      workspaceId: "workspace-1",
+      userId: "user-1",
+      orderId: "order:1001",
+      status: "skipped",
+    });
+    expect(listWorkspaceOrdersMock).toHaveBeenCalledWith({
+      workspaceId: "workspace-1",
+      activeBatchId: "batch-1",
+      statusFilter: "skipped",
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.body.orders[0]).toMatchObject({ status: "skipped" });
+  });
+
+  it("reopens every skipped item in an order and returns refreshed open orders", async () => {
+    resolveProductionBatchAuthMock.mockResolvedValue({
+      userId: "user-1",
+      workspaceId: "workspace-1",
+    });
+    updateOrderGroupStatusMock.mockResolvedValue({ orderItemIds: ["item-1", "item-2"], status: "open" });
+    listWorkspaceOrdersMock.mockResolvedValue({
+      orders: [{
+        id: "order:1001",
+        status: "open",
+        items: [{ id: "item-1", status: "open" }, { id: "item-2", status: "open" }],
+      }],
+    });
+
+    const { default: handler } = await import("../../api/orders.js");
+    const response = createResponseRecorder();
+
+    await handler({
+      method: "POST",
+      headers: { authorization: "Bearer token-1" },
+      body: {
+        action: "reopenOrder",
+        batchId: "batch-1",
+        orderId: "order:1001",
+      },
+    }, response);
+
+    expect(updateOrderGroupStatusMock).toHaveBeenCalledWith({
+      workspaceId: "workspace-1",
+      userId: "user-1",
+      orderId: "order:1001",
+      status: "open",
+    });
+    expect(listWorkspaceOrdersMock).toHaveBeenCalledWith({
+      workspaceId: "workspace-1",
+      activeBatchId: "batch-1",
+      statusFilter: "open",
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.body.orders[0]).toMatchObject({ status: "open" });
+  });
+
+  it("marks checked orders skipped and returns refreshed skipped orders", async () => {
+    resolveProductionBatchAuthMock.mockResolvedValue({
+      userId: "user-1",
+      workspaceId: "workspace-1",
+    });
+    updateOrderGroupsStatusMock.mockResolvedValue({ orderItemIds: ["item-1", "item-2"], status: "skipped" });
+    listWorkspaceOrdersMock.mockResolvedValue({ orders: [{ id: "order:1001", status: "skipped" }] });
+
+    const { default: handler } = await import("../../api/orders.js");
+    const response = createResponseRecorder();
+
+    await handler({
+      method: "POST",
+      headers: { authorization: "Bearer token-1" },
+      body: {
+        action: "skipOrders",
+        batchId: "batch-1",
+        orderIds: [" order:1001 ", "", "order:1002"],
+      },
+    }, response);
+
+    expect(updateOrderGroupsStatusMock).toHaveBeenCalledWith({
+      workspaceId: "workspace-1",
+      userId: "user-1",
+      orderIds: ["order:1001", "order:1002"],
+      status: "skipped",
+    });
+    expect(listWorkspaceOrdersMock).toHaveBeenCalledWith({
+      workspaceId: "workspace-1",
+      activeBatchId: "batch-1",
+      statusFilter: "skipped",
+    });
+    expect(response.statusCode).toBe(200);
   });
 
   it("rejects unsupported POST actions", async () => {

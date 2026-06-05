@@ -162,6 +162,23 @@ describe("orders workspace helpers", () => {
           source: { listingTitle: "Stethoscope Badge" },
         }],
       },
+      {
+        id: "order:1003",
+        orderNumber: "1003",
+        buyerName: "Katherine Johnson",
+        status: "skipped",
+        isInActiveBatch: false,
+        items: [{
+          id: "item-3",
+          listingId: "listing-3",
+          transactionId: "txn-3",
+          importedColor: "Green",
+          isInActiveBatch: false,
+          status: "skipped",
+          design: { text: "Katherine RN", lines: [{ text: "Katherine" }, { text: "RN" }] },
+          source: { listingTitle: "Skipped Badge" },
+        }],
+      },
     ];
 
     expect(filterGroupedOrders(orders, {
@@ -181,6 +198,18 @@ describe("orders workspace helpers", () => {
       statusFilter: "complete",
       batchFilter: "notInBatch",
     }).map((order) => order.id)).toEqual(["order:1002"]);
+
+    expect(filterGroupedOrders(orders, {
+      searchTerm: "",
+      statusFilter: "skipped",
+      batchFilter: "notInBatch",
+    }).map((order) => order.id)).toEqual(["order:1003"]);
+
+    expect(filterGroupedOrders(orders, {
+      searchTerm: "",
+      statusFilter: "open",
+      batchFilter: "all",
+    }).map((order) => order.id)).toEqual(["order:1001"]);
   });
 
   it("detects copyable saved builds from cachedBuild or previousCompletedBuild", () => {

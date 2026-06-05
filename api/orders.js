@@ -4,6 +4,9 @@ import {
   addOrderItemsToProductionBatch,
   importWorkspaceOrderItems,
   listWorkspaceOrders,
+  updateOrderGroupStatus,
+  updateOrderGroupsStatus,
+  updateOrderItemStatus,
 } from "./_lib/orders-store.js";
 
 function readJsonBody(req) {
@@ -31,7 +34,7 @@ function normalizeString(value) {
 
 function normalizeStatusFilter(value) {
   const normalized = normalizeString(value);
-  return ["open", "complete", "all"].includes(normalized) ? normalized : "open";
+  return ["open", "skipped", "complete", "all"].includes(normalized) ? normalized : "open";
 }
 
 function isJsonObject(value) {
@@ -182,6 +185,90 @@ async function handleAddOrdersToProductionBatch({ res, auth, body }) {
   });
 }
 
+async function handleUpdateOrderItemStatus({ res, auth, body, status, responseStatusFilter }) {
+  const batchId = normalizeString(body.batchId);
+  const orderItemId = normalizeString(body.orderItemId);
+
+  if (!orderItemId) {
+    sendBadRequest(res, "orderItemId is required.");
+    return;
+  }
+
+  await updateOrderItemStatus({
+    workspaceId: auth.workspaceId,
+    userId: auth.userId,
+    orderItemId,
+    status,
+  });
+  const ordersPayload = await loadOrdersResponse({
+    workspaceId: auth.workspaceId,
+    batchId: batchId || null,
+    statusFilter: responseStatusFilter,
+  });
+
+  res.status(200).json({
+    importedOrderItemCount: 0,
+    addedOrderItemCount: 0,
+    ...ordersPayload,
+  });
+}
+
+async function handleUpdateOrderGroupStatus({ res, auth, body, status, responseStatusFilter }) {
+  const batchId = normalizeString(body.batchId);
+  const orderId = normalizeString(body.orderId);
+
+  if (!orderId) {
+    sendBadRequest(res, "orderId is required.");
+    return;
+  }
+
+  await updateOrderGroupStatus({
+    workspaceId: auth.workspaceId,
+    userId: auth.userId,
+    orderId,
+    status,
+  });
+  const ordersPayload = await loadOrdersResponse({
+    workspaceId: auth.workspaceId,
+    batchId: batchId || null,
+    statusFilter: responseStatusFilter,
+  });
+
+  res.status(200).json({
+    importedOrderItemCount: 0,
+    addedOrderItemCount: 0,
+    ...ordersPayload,
+  });
+}
+
+async function handleUpdateOrderGroupsStatus({ res, auth, body, status, responseStatusFilter }) {
+  const batchId = normalizeString(body.batchId);
+  const orderIds = normalizeStringArray(body.orderIds);
+
+  if (!orderIds.length) {
+    sendBadRequest(res, "orderIds must include at least one order id.");
+    return;
+  }
+
+  await updateOrderGroupsStatus({
+    workspaceId: auth.workspaceId,
+    userId: auth.userId,
+    orderIds,
+    status,
+  });
+  const ordersPayload = await loadOrdersResponse({
+    workspaceId: auth.workspaceId,
+    batchId: batchId || null,
+    statusFilter: responseStatusFilter,
+  });
+
+  res.status(200).json({
+    importedOrderItemCount: 0,
+    addedOrderItemCount: 0,
+    ...ordersPayload,
+  });
+}
+
 export default async function handler(req, res) {
   try {
     const auth = await resolveProductionBatchAuth(req);
@@ -221,6 +308,72 @@ export default async function handler(req, res) {
 
       if (action === "addOrdersToProductionBatch") {
         await handleAddOrdersToProductionBatch({ res, auth, body });
+        return;
+      }
+
+      if (action === "skipOrderItem") {
+        await handleUpdateOrderItemStatus({
+          res,
+          auth,
+          body,
+          status: "skipped",
+          responseStatusFilter: "skipped",
+        });
+        return;
+      }
+
+      if (action === "reopenOrderItem") {
+        await handleUpdateOrderItemStatus({
+          res,
+          auth,
+          body,
+          status: "open",
+          responseStatusFilter: "open",
+        });
+        return;
+      }
+
+      if (action === "skipOrder") {
+        await handleUpdateOrderGroupStatus({
+          res,
+          auth,
+          body,
+          status: "skipped",
+          responseStatusFilter: "skipped",
+        });
+        return;
+      }
+
+      if (action === "reopenOrder") {
+        await handleUpdateOrderGroupStatus({
+          res,
+          auth,
+          body,
+          status: "open",
+          responseStatusFilter: "open",
+        });
+        return;
+      }
+
+      if (action === "skipOrders") {
+        await handleUpdateOrderGroupsStatus({
+          res,
+          auth,
+          body,
+          status: "skipped",
+          responseStatusFilter: "skipped",
+        });
+        return;
+      }
+
+      if (action === "reopenOrders") {
+        await handleUpdateOrderGroupsStatus({
+          res,
+          auth,
+          body,
+          status: "open",
+          responseStatusFilter: "open",
+        });
         return;
       }
 

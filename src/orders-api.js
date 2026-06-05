@@ -116,3 +116,30 @@ export async function addOrdersToProductionBatch({
 
   return readOrdersResponse(response, "Unable to add orders to the production batch.");
 }
+
+export async function updateOrderItemLifecycleStatus({
+  action,
+  batchId = null,
+  orderItemId,
+  orderId,
+  orderIds,
+  accessToken = null,
+}) {
+  const normalizedBatchId = normalizeString(batchId);
+  const response = await fetch("/api/orders", {
+    method: "POST",
+    headers: buildAuthHeaders(accessToken, {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    }),
+    body: JSON.stringify({
+      action,
+      ...(orderItemId ? { orderItemId } : {}),
+      ...(orderId ? { orderId } : {}),
+      ...(Array.isArray(orderIds) ? { orderIds } : {}),
+      ...(normalizedBatchId ? { batchId: normalizedBatchId } : {}),
+    }),
+  });
+
+  return readOrdersResponse(response, "Unable to update the order status.");
+}
