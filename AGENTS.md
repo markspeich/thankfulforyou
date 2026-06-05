@@ -132,6 +132,8 @@ When the user asks to start the app, start a server, or initialize the app, foll
 - Before and after any destructive database operation, report counts for `order_items`, `batch_items`, `designs`, `design_lines`, `design_analysis_cache`, and `production_batches.active_order_item_id` references.
 - When shared queue auth or shared queue API routes must work from Codex, start the chosen dev server command with escalated/network permissions. A sandboxed dev server can serve the frontend but fail Supabase token verification, which appears to the user as an expired shared queue session.
 - The dev server port is determined by `tools/dev_port.mjs`. Do not hardcode or guess a worktree URL from `AGENTS.md`.
+- Each worktree should keep a stable app server port in `.local/dev-server.json`; once assigned, reuse that port whenever starting the server in that worktree unless `PORT` is explicitly set.
+- To stop this worktree's local dev server, run `npm run stop:local` from the repository root. Do not stop servers by killing every process whose command line contains `tools/dev_server.mjs`, because that can stop servers from other worktrees.
 - After starting the server, read the printed `Badge reel layout tool: http://localhost:...` line and use that exact URL.
 - The dev server startup banner prints the server URL, test login, test password, and local Supabase Studio URL. Include those values in the response whenever you start or restart the server for the user.
 - If the URL is needed before launch, compute it from the helper with `node --input-type=module -e "import { resolveDevBaseUrl } from './tools/dev_port.mjs'; console.log(resolveDevBaseUrl())"`.
