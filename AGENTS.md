@@ -62,6 +62,37 @@ When the user provides new product, workflow, material, manufacturing, design, o
 
 ## Standard Local App Startup
 
+### Local Supabase Shorthand
+
+When the user says `local up`, treat it as shorthand for:
+
+`Initialize this worktree's local Supabase environment, then start the local app server. Follow AGENTS.md exactly and report the app URL, test user, test password, and Supabase Studio URL.`
+
+For `local up`, do not run raw `supabase start`, edit `supabase/config.toml`, or guess ports.
+
+Run from the repository root:
+
+`npm run prepare:local`
+
+This command:
+
+- Generates this worktree's git-ignored Supabase workdir under `.local/supabase/<worktree-id>`.
+- Starts the isolated local Supabase stack.
+- Resets schema and seed data.
+- Initializes `test.operator@example.com`.
+- Prints the app URL, test password, and Supabase Studio URL.
+
+After that, start the app with:
+
+`npm run start:local`
+
+Whenever reporting a started server, include:
+
+- App URL.
+- Test user: `test.operator@example.com`.
+- Test password: `TestOperator123!`.
+- Local Supabase Studio URL.
+
 When the user asks to start the app, start a server, or initialize the app, follow this exact local workflow unless they explicitly ask for remote:
 
 1. Read `AGENTS.md` and `docs/requirements.md` if they have not already been read this turn.
