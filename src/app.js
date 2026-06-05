@@ -216,6 +216,13 @@ const batchActionLabelByButton = new Map(
 );
 const colorCountsDialog = document.querySelector("#colorCountsDialog");
 const closeColorCountsButton = document.querySelector("#closeColorCountsButton");
+const pasteSummaryDialog = document.querySelector("#pasteSummaryDialog");
+const pasteSummaryTarget = document.querySelector("#pasteSummaryTarget");
+const pasteSummaryImportedCount = document.querySelector("#pasteSummaryImportedCount");
+const pasteSummarySkippedCount = document.querySelector("#pasteSummarySkippedCount");
+const pasteSummaryAddedCount = document.querySelector("#pasteSummaryAddedCount");
+const closePasteSummaryButton = document.querySelector("#closePasteSummaryButton");
+const pasteSummaryDoneButton = document.querySelector("#pasteSummaryDoneButton");
 const presetAssignmentDialog = document.querySelector("#presetAssignmentDialog");
 const presetAssignmentDescription = document.querySelector("#presetAssignmentDescription");
 const closePresetAssignmentDialogButton = document.querySelector("#closePresetAssignmentDialogButton");
@@ -347,6 +354,7 @@ let selectedDatabaseOrderId = initialAppRoute.workspace === "databaseOrders" ? i
 let checkedDatabaseOrderIds = new Set();
 let databaseOrdersLoading = false;
 let databaseOrdersImporting = false;
+let ordersDatabaseMutationInFlight = false;
 let databaseOrdersMutationVersion = 0;
 let loadedDatabaseOrdersKey = null;
 let databaseOrdersSearchTerm = "";
@@ -4491,6 +4499,17 @@ function getDatabaseOrderItemListingText(item) {
   return match ? match.trim() : "Untitled listing";
 }
 
+function getDatabaseOrderItemListingImageUrl(item) {
+  const candidates = [
+    item?.source?.listingImageUrl75x75,
+    item?.listingImageUrl75x75,
+    item?.listing?.imageUrl75x75,
+    item?.listing?.imageUrl,
+  ];
+  const match = candidates.find((value) => typeof value === "string" && value.trim());
+  return match ? match.trim() : "";
+}
+
 function getDatabaseOrderItemDesignText(item) {
   const design = item?.design && typeof item.design === "object" ? item.design : {};
   const directText = typeof design.text === "string" && design.text.trim()
@@ -4499,6 +4518,25 @@ function getDatabaseOrderItemDesignText(item) {
       ? item.text.trim()
       : "";
   return directText || "No design text";
+}
+
+function getDatabaseOrderItemColorText(item) {
+  const candidates = [
+    item?.source?.colorName,
+    item?.importedColor,
+    item?.colorName,
+  ];
+  const match = candidates.find((value) => typeof value === "string" && value.trim());
+  return match ? match.trim() : "No color";
+}
+
+function getDatabaseOrderItemQuantityText(item) {
+  const candidates = [
+    item?.source?.quantity,
+    item?.quantity,
+  ];
+  const match = candidates.find((value) => value != null && String(value).trim());
+  return match ? String(match).trim() : "1";
 }
 
 function getDatabaseOrderItemFlattenedLines(item) {
@@ -4591,6 +4629,38 @@ function buildAddedToBatchMessage(payload) {
 
 function buildSkippedBatchImportMessage(skippedCount) {
   return `Skipped ${skippedCount} Etsy ${designNoun(skippedCount)} already in the batch. No new designs were added.`;
+}
+
+function showPasteSummaryDialog({
+  targetLabel = "Orders",
+  importedCount = 0,
+  skippedDuplicateCount = 0,
+  addedToBatchCount = 0,
+} = {}) {
+  if (!(pasteSummaryDialog instanceof HTMLDialogElement)) {
+    return;
+  }
+
+  if (pasteSummaryTarget) {
+    pasteSummaryTarget.textContent = targetLabel;
+  }
+  if (pasteSummaryImportedCount) {
+    pasteSummaryImportedCount.textContent = String(Math.max(0, importedCount));
+  }
+  if (pasteSummarySkippedCount) {
+    pasteSummarySkippedCount.textContent = String(Math.max(0, skippedDuplicateCount));
+  }
+  if (pasteSummaryAddedCount) {
+    pasteSummaryAddedCount.textContent = String(Math.max(0, addedToBatchCount));
+  }
+
+  pasteSummaryDialog.showModal();
+}
+
+function closePasteSummaryDialog() {
+  if (pasteSummaryDialog instanceof HTMLDialogElement && pasteSummaryDialog.open) {
+    pasteSummaryDialog.close();
+  }
 }
 
 function assertImportableItems(importedItems) {
@@ -5062,11 +5132,30 @@ function renderSelectedDatabaseOrderItems() {
     menuBody.append(copyDesignButton, addToBatchButton);
     menu.append(summary, menuBody);
 
-    cardHeader.append(titleGroup, menu);
+    cardHeader.append(menu);
 
     const lineText = document.createElement("p");
     lineText.className = "database-order-item-lines";
     lineText.textContent = getDatabaseOrderItemFlattenedLines(item);
+
+    const listingMedia = document.createElement("div");
+    listingMedia.className = "database-order-item-listing-media";
+
+    const listingImageUrl = getDatabaseOrderItemListingImageUrl(item);
+    if (listingImageUrl) {
+      const listingImage = document.createElement("img");
+      listingImage.className = "database-order-item-listing-image";
+      listingImage.src = listingImageUrl;
+      listingImage.alt = getDatabaseOrderItemListingText(item);
+      listingImage.loading = "lazy";
+      listingMedia.append(listingImage);
+    } else {
+      const listingPlaceholder = document.createElement("div");
+      listingPlaceholder.className = "database-order-item-listing-image database-order-item-listing-image-placeholder";
+      listingPlaceholder.setAttribute("aria-hidden", "true");
+      listingPlaceholder.textContent = "No image";
+      listingMedia.append(listingPlaceholder);
+    }
 
     const status = document.createElement("p");
     status.className = "database-order-item-status";
@@ -5099,7 +5188,34 @@ function renderSelectedDatabaseOrderItems() {
       preview.append(previewLabel, previewStatus);
     }
 
-    card.append(cardHeader, preview, lineText, status, savedDesign);
+    const cardBody = document.createElement("div");
+    cardBody.className = "database-order-item-body";
+
+    const listingColumn = document.createElement("div");
+    listingColumn.className = "database-order-item-listing-column";
+    listingColumn.append(titleGroup, lineText, listingMedia);
+
+    const previewColumn = document.createElement("div");
+    previewColumn.className = "database-order-item-preview-column";
+    previewColumn.append(preview);
+
+    const meta = document.createElement("dl");
+    meta.className = "database-order-item-meta";
+
+    const colorTerm = document.createElement("dt");
+    colorTerm.textContent = "Color";
+    const colorValue = document.createElement("dd");
+    colorValue.textContent = getDatabaseOrderItemColorText(item);
+
+    const quantityTerm = document.createElement("dt");
+    quantityTerm.textContent = "Quantity";
+    const quantityValue = document.createElement("dd");
+    quantityValue.textContent = getDatabaseOrderItemQuantityText(item);
+
+    meta.append(colorTerm, colorValue, quantityTerm, quantityValue);
+
+    cardBody.append(listingColumn, previewColumn);
+    card.append(cardHeader, cardBody, status, savedDesign, meta);
     databaseOrderItemsShell.append(card);
   });
 }
@@ -5115,6 +5231,8 @@ async function addDatabaseOrderItemToBatch(item, button = null) {
     button.disabled = true;
     button.textContent = "Adding...";
   }
+  ordersDatabaseMutationInFlight = true;
+  render();
 
   try {
     const accessToken = await resolveProductionBatchMutationAccessToken();
@@ -5133,11 +5251,13 @@ async function addDatabaseOrderItemToBatch(item, button = null) {
       "Production batch session expired. Sign in again to continue adding orders.",
     );
   } finally {
+    ordersDatabaseMutationInFlight = false;
     if (button) {
       button.disabled = Boolean(item?.isInActiveBatch);
       button.textContent = "Add to Production Batch";
     }
     renderDatabaseOrdersWorkspace();
+    render();
   }
 }
 
@@ -5157,6 +5277,8 @@ async function addCheckedDatabaseOrdersToBatch() {
 
   addCheckedOrdersToBatchButton.disabled = true;
   setBatchActionLabel(addCheckedOrdersToBatchButton, "Adding...");
+  ordersDatabaseMutationInFlight = true;
+  render();
 
   try {
     const accessToken = await resolveProductionBatchMutationAccessToken();
@@ -5181,8 +5303,10 @@ async function addCheckedDatabaseOrdersToBatch() {
       "Production batch session expired. Sign in again to continue adding orders.",
     );
   } finally {
+    ordersDatabaseMutationInFlight = false;
     setBatchActionLabel(addCheckedOrdersToBatchButton, "Add Checked to Production Batch");
     renderDatabaseOrdersWorkspace();
+    render();
   }
 }
 
@@ -6198,7 +6322,7 @@ function updateCaptureButtonState(activeOrder) {
   setEditorActionLabel(cancelDesignButton, "Cancel");
   setEditorActionLabel(completeNextButton, "Save & Next");
 
-  if (!activeOrder) {
+  if (!activeOrder || ordersDatabaseMutationInFlight) {
     captureButton.disabled = true;
     captureButton.removeAttribute("aria-busy");
     cancelDesignButton.disabled = true;
@@ -6869,6 +6993,8 @@ async function importFromClipboard() {
 
   importClipboardButton.disabled = true;
   setBatchActionLabel(importClipboardButton, "Pasting...");
+  ordersDatabaseMutationInFlight = true;
+  render();
 
   try {
     const clipboardText = await navigator.clipboard.readText();
@@ -6877,6 +7003,12 @@ async function importFromClipboard() {
     const { filteredItems, skippedCount } = filterNewProductionBatchImportItems(importedItems);
     if (!filteredItems.length) {
       updateWorkflowAlert(buildSkippedBatchImportMessage(skippedCount), "success");
+      showPasteSummaryDialog({
+        targetLabel: "Production Batch",
+        importedCount: 0,
+        skippedDuplicateCount: skippedCount,
+        addedToBatchCount: 0,
+      });
       return;
     }
 
@@ -6887,7 +7019,7 @@ async function importFromClipboard() {
       items: filteredItems,
       accessToken,
     });
-    await refreshOrdersAndProductionBatch({ payload, accessToken });
+    await refreshOrdersAndProductionBatch({ payload, accessToken, refreshBatch: true });
     appendImportedItemsToProductionBatch(filteredItems, {
       maxCount: countFromPayload(payload, "addedOrderItemCount"),
     });
@@ -6895,6 +7027,12 @@ async function importFromClipboard() {
       ? `${buildProductionBatchImportMessage(payload)} Skipped ${skippedCount} already in the batch.`
       : buildProductionBatchImportMessage(payload);
     updateWorkflowAlert(message, "success");
+    showPasteSummaryDialog({
+      targetLabel: "Production Batch",
+      importedCount: countFromPayload(payload, "importedOrderItemCount"),
+      skippedDuplicateCount: skippedCount + countFromPayload(payload, "skippedOrderItemCount"),
+      addedToBatchCount: countFromPayload(payload, "addedOrderItemCount"),
+    });
   } catch (error) {
     handleOrdersMutationError(
       error,
@@ -6902,8 +7040,10 @@ async function importFromClipboard() {
       "Production batch session expired. Sign in again to continue importing orders.",
     );
   } finally {
+    ordersDatabaseMutationInFlight = false;
     importClipboardButton.disabled = false;
     setBatchActionLabel(importClipboardButton, "Paste");
+    render();
   }
 }
 
@@ -6920,20 +7060,30 @@ async function importOrdersFromClipboard() {
   databaseOrdersImporting = true;
   pasteOrdersButton.disabled = true;
   setBatchActionLabel(pasteOrdersButton, "Pasting...");
+  ordersDatabaseMutationInFlight = true;
+  render();
 
   try {
     const clipboardText = await navigator.clipboard.readText();
     const importedItems = parseImportedItems(clipboardText, { getPresetIdForListingId });
     assertImportableItems(importedItems);
     const accessToken = await resolveProductionBatchMutationAccessToken();
+    const batchId = getActiveProductionBatchId();
     const payload = await importWorkspaceOrders({
       target: "orders",
       items: importedItems,
+      ...(batchId ? { batchId } : {}),
       accessToken,
     });
 
     await refreshOrdersAndProductionBatch({ payload, accessToken });
     updateWorkflowAlert(buildOrdersImportMessage(payload), "success");
+    showPasteSummaryDialog({
+      targetLabel: "Orders",
+      importedCount: countFromPayload(payload, "importedOrderItemCount"),
+      skippedDuplicateCount: countFromPayload(payload, "skippedOrderItemCount"),
+      addedToBatchCount: countFromPayload(payload, "addedOrderItemCount"),
+    });
   } catch (error) {
     handleOrdersMutationError(
       error,
@@ -6942,9 +7092,11 @@ async function importOrdersFromClipboard() {
     );
   } finally {
     databaseOrdersImporting = false;
+    ordersDatabaseMutationInFlight = false;
     pasteOrdersButton.disabled = false;
     setBatchActionLabel(pasteOrdersButton, "Paste");
     renderDatabaseOrdersWorkspace();
+    render();
   }
 }
 
@@ -8534,6 +8686,13 @@ closeColorCountsButton?.addEventListener("click", closeBatchColorCountsDialog);
 colorCountsDialog?.addEventListener("click", (event) => {
   if (event.target === colorCountsDialog) {
     closeBatchColorCountsDialog();
+  }
+});
+closePasteSummaryButton?.addEventListener("click", closePasteSummaryDialog);
+pasteSummaryDoneButton?.addEventListener("click", closePasteSummaryDialog);
+pasteSummaryDialog?.addEventListener("click", (event) => {
+  if (event.target === pasteSummaryDialog) {
+    closePasteSummaryDialog();
   }
 });
 confirmationDialogCancelButton?.addEventListener("click", () => {

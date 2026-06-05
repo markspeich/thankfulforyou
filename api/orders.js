@@ -108,10 +108,12 @@ async function handleImportClipboardItems({ res, auth, body }) {
     mutationResult?.addedToBatchCount,
     countIds(mutationResult?.addedOrderItemIds),
   );
+  const skippedOrderItemCount = Math.max(0, items.length - importedOrderItemCount);
 
   res.status(200).json({
     importedOrderItemCount,
     addedOrderItemCount: target === "productionBatch" ? addedOrderItemCount : 0,
+    skippedOrderItemCount,
     ...ordersPayload,
   });
 }

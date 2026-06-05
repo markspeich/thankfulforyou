@@ -420,6 +420,58 @@ describe("orders store", () => {
     });
   });
 
+  it("adds existing database order items to a production batch without counting them as imports", async () => {
+    resetDb({
+      order_items: [{
+        id: "transaction:txn-existing-order",
+        workspace_id: "workspace-1",
+        status: "open",
+        order_number: "2501",
+        buyer_name: "Ada",
+        transaction_id: "txn-existing-order",
+        source_json: { orderNumber: "2501", transactionId: "txn-existing-order", buyerName: "Ada" },
+        quantity: 1,
+      }],
+      designs: [{
+        id: "design-existing-order",
+        workspace_id: "workspace-1",
+        order_item_id: "transaction:txn-existing-order",
+        design_text: "Existing",
+        production_status: "draft",
+      }],
+    });
+    const { importWorkspaceOrderItems } = await import("../../api/_lib/orders-store.js");
+
+    const result = await importWorkspaceOrderItems({
+      workspaceId: "workspace-1",
+      userId: "user-1",
+      target: "productionBatch",
+      batchId: "batch-1",
+      items: [{
+        text: "Existing overwrite",
+        source: { orderNumber: "2501", transactionId: "txn-existing-order", buyerName: "Ada" },
+      }],
+    });
+
+    const orderItemsUpsert = supabaseMock.calls.find((call) => call.table === "order_items" && call.operation === "upsert");
+    const batchItemsUpsert = supabaseMock.calls.find((call) => call.table === "batch_items" && call.operation === "upsert");
+
+    expect(orderItemsUpsert).toBeUndefined();
+    expect(batchItemsUpsert.payload).toEqual([expect.objectContaining({
+      workspace_id: "workspace-1",
+      batch_id: "batch-1",
+      order_item_id: "transaction:txn-existing-order",
+      batch_position: 0,
+      status: "active",
+    })]);
+    expect(result).toMatchObject({
+      importedCount: 0,
+      importedOrderItemIds: [],
+      addedToBatchCount: 1,
+      addedOrderItemIds: ["transaction:txn-existing-order"],
+    });
+  });
+
   it("imports order items to the orders workspace without inserting batch memberships", async () => {
     resetDb();
     const { importWorkspaceOrderItems } = await import("../../api/_lib/orders-store.js");
@@ -460,7 +512,88 @@ describe("orders store", () => {
     });
   });
 
-  it("replaces old imported design lines when re-imported text has fewer lines", async () => {
+  it("skips existing database order items on paste without reopening complete duplicates", async () => {
+    resetDb({
+      order_items: [
+        {
+          id: "transaction:txn-complete-duplicate",
+          workspace_id: "workspace-1",
+          status: "complete",
+          order_number: "3201",
+          buyer_name: "Ada",
+          transaction_id: "txn-complete-duplicate",
+          source_json: { orderNumber: "3201", transactionId: "txn-complete-duplicate", buyerName: "Ada" },
+          quantity: 1,
+        },
+        {
+          id: "transaction:txn-open-duplicate",
+          workspace_id: "workspace-1",
+          status: "open",
+          order_number: "3202",
+          buyer_name: "Grace",
+          transaction_id: "txn-open-duplicate",
+          source_json: { orderNumber: "3202", transactionId: "txn-open-duplicate", buyerName: "Grace" },
+          quantity: 1,
+        },
+      ],
+      designs: [
+        {
+          id: "design-complete-duplicate",
+          workspace_id: "workspace-1",
+          order_item_id: "transaction:txn-complete-duplicate",
+          design_text: "Complete",
+          production_status: "saved",
+        },
+        {
+          id: "design-open-duplicate",
+          workspace_id: "workspace-1",
+          order_item_id: "transaction:txn-open-duplicate",
+          design_text: "Open",
+          production_status: "draft",
+        },
+      ],
+    });
+    const { importWorkspaceOrderItems } = await import("../../api/_lib/orders-store.js");
+
+    const result = await importWorkspaceOrderItems({
+      workspaceId: "workspace-1",
+      userId: "user-1",
+      target: "orders",
+      items: [
+        {
+          text: "Complete overwrite",
+          source: { orderNumber: "3201", transactionId: "txn-complete-duplicate", buyerName: "Ada" },
+        },
+        {
+          text: "Open overwrite",
+          source: { orderNumber: "3202", transactionId: "txn-open-duplicate", buyerName: "Grace" },
+        },
+        {
+          text: "New",
+          source: { orderNumber: "3203", transactionId: "txn-new-import", buyerName: "Katherine" },
+        },
+      ],
+    });
+
+    const orderItemsUpsert = supabaseMock.calls.find((call) => call.table === "order_items" && call.operation === "upsert");
+    const designsUpsert = supabaseMock.calls.find((call) => call.table === "designs" && call.operation === "upsert");
+
+    expect(orderItemsUpsert.payload).toEqual([
+      expect.objectContaining({ id: "transaction:txn-new-import", status: "open" }),
+    ]);
+    expect(designsUpsert.payload).toEqual([
+      expect.objectContaining({ order_item_id: "transaction:txn-new-import", design_text: "New" }),
+    ]);
+    expect(supabaseMock.db.order_items.find((item) => item.id === "transaction:txn-complete-duplicate").status).toBe("complete");
+    expect(supabaseMock.db.designs.find((design) => design.order_item_id === "transaction:txn-open-duplicate").design_text).toBe("Open");
+    expect(result).toMatchObject({
+      importedCount: 1,
+      importedOrderItemIds: ["transaction:txn-new-import"],
+    });
+    expect(result.orders.map((order) => order.id)).toEqual(["order:3202", "order:3203"]);
+  });
+
+  it("does not replace existing draft design lines when a duplicate item is pasted", async () => {
     resetDb({
       order_items: [{
         id: "transaction:txn-reimport",
@@ -495,18 +628,18 @@ describe("orders store", () => {
       }],
     });
 
+    const designUpsert = supabaseMock.calls.find((call) => call.table === "designs" && call.operation === "upsert");
     const designLinesDelete = supabaseMock.calls.find((call) => call.table === "design_lines" && call.operation === "delete");
     const designLinesUpsert = supabaseMock.calls.find((call) => call.table === "design_lines" && call.operation === "upsert");
     const importedItem = result.orders[0].items[0];
 
-    expect(designLinesDelete).toMatchObject({
-      table: "design_lines",
-      operation: "delete",
-      filters: [{ type: "in", column: "design_id", values: ["design-transaction:txn-reimport"] }],
-    });
-    expect(supabaseMock.calls.indexOf(designLinesDelete)).toBeLessThan(supabaseMock.calls.indexOf(designLinesUpsert));
+    expect(designUpsert).toBeUndefined();
+    expect(designLinesDelete).toBeUndefined();
+    expect(designLinesUpsert).toBeUndefined();
+    expect(result.importedCount).toBe(0);
     expect(importedItem.design.lines).toEqual([
       expect.objectContaining({ lineIndex: 0, text: "Name", fontId: "skywalk" }),
+      expect.objectContaining({ lineIndex: 1, text: "RN", fontId: "somekind" }),
     ]);
   });
 
@@ -629,7 +762,7 @@ describe("orders store", () => {
         {
           id: "item-1",
           workspace_id: "workspace-1",
-          status: "active",
+          status: "open",
           order_number: "4001",
           buyer_name: "Ada",
           source_json: {},
@@ -638,7 +771,7 @@ describe("orders store", () => {
         {
           id: "item-2",
           workspace_id: "workspace-1",
-          status: "active",
+          status: "open",
           order_number: "4001",
           buyer_name: "Ada",
           source_json: {},
@@ -647,7 +780,7 @@ describe("orders store", () => {
         {
           id: "item-3",
           workspace_id: "workspace-1",
-          status: "active",
+          status: "open",
           order_number: "4002",
           buyer_name: "Grace",
           source_json: {},
@@ -691,13 +824,13 @@ describe("orders store", () => {
     })]);
   });
 
-  it("filters direct batch item additions to active order items in the workspace", async () => {
+  it("filters direct batch item additions to open order items in the workspace", async () => {
     resetDb({
       order_items: [
         {
           id: "item-valid",
           workspace_id: "workspace-1",
-          status: "active",
+          status: "open",
           order_number: "5001",
           source_json: {},
           quantity: 1,
@@ -705,15 +838,15 @@ describe("orders store", () => {
         {
           id: "item-other-workspace",
           workspace_id: "workspace-2",
-          status: "active",
+          status: "open",
           order_number: "5002",
           source_json: {},
           quantity: 1,
         },
         {
-          id: "item-archived",
+          id: "item-complete",
           workspace_id: "workspace-1",
-          status: "archived",
+          status: "complete",
           order_number: "5003",
           source_json: {},
           quantity: 1,
@@ -726,7 +859,7 @@ describe("orders store", () => {
       workspaceId: "workspace-1",
       userId: "user-1",
       batchId: "batch-1",
-      orderItemIds: ["item-valid", "item-other-workspace", "item-archived", "item-missing"],
+      orderItemIds: ["item-valid", "item-other-workspace", "item-complete", "item-missing"],
     });
 
     const batchItemsUpsert = supabaseMock.calls.find((call) => call.table === "batch_items" && call.operation === "upsert");

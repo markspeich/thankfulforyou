@@ -127,7 +127,93 @@ describe("orders api route", () => {
     expect(response.body).toEqual({
       importedOrderItemCount: 1,
       addedOrderItemCount: 0,
+      skippedOrderItemCount: 0,
       orders: [{ id: "order:1001", items: [{ id: "item-1" }] }],
+    });
+  });
+
+  it("reports skipped duplicate clipboard items from import counts", async () => {
+    resolveProductionBatchAuthMock.mockResolvedValue({
+      userId: "user-1",
+      workspaceId: "workspace-1",
+    });
+    importWorkspaceOrderItemsMock.mockResolvedValue({
+      importedCount: 1,
+      importedOrderItemIds: ["item-3"],
+      addedToBatchCount: 0,
+    });
+    listWorkspaceOrdersMock.mockResolvedValue({ orders: [] });
+
+    const { default: handler } = await import("../../api/orders.js");
+    const response = createResponseRecorder();
+
+    await handler({
+      method: "POST",
+      headers: { authorization: "Bearer token-1" },
+      body: {
+        action: "importClipboardItems",
+        target: "orders",
+        items: [
+          { id: "item-1", text: "Duplicate" },
+          { id: "item-2", text: "Duplicate" },
+          { id: "item-3", text: "New" },
+        ],
+      },
+    }, response);
+
+    expect(response.body).toEqual({
+      importedOrderItemCount: 1,
+      addedOrderItemCount: 0,
+      skippedOrderItemCount: 2,
+      orders: [],
+    });
+  });
+
+  it("uses batch id as membership context when importing clipboard items to workspace orders", async () => {
+    resolveProductionBatchAuthMock.mockResolvedValue({
+      userId: "user-1",
+      workspaceId: "workspace-1",
+    });
+    importWorkspaceOrderItemsMock.mockResolvedValue({
+      importedCount: 0,
+      addedToBatchCount: 0,
+    });
+    listWorkspaceOrdersMock.mockResolvedValue({
+      orders: [{ id: "order:1001", isInActiveBatch: true, items: [{ id: "item-1", isInActiveBatch: true }] }],
+    });
+
+    const { default: handler } = await import("../../api/orders.js");
+    const response = createResponseRecorder();
+    const items = [{ id: "item-1", text: "Mark" }];
+
+    await handler({
+      method: "POST",
+      headers: { authorization: "Bearer token-1" },
+      body: {
+        action: "importClipboardItems",
+        target: "orders",
+        batchId: " batch-1 ",
+        items,
+      },
+    }, response);
+
+    expect(importWorkspaceOrderItemsMock).toHaveBeenCalledWith({
+      workspaceId: "workspace-1",
+      userId: "user-1",
+      items,
+      target: "orders",
+      batchId: "batch-1",
+    });
+    expect(listWorkspaceOrdersMock).toHaveBeenCalledWith({
+      workspaceId: "workspace-1",
+      activeBatchId: "batch-1",
+      statusFilter: "open",
+    });
+    expect(response.body).toEqual({
+      importedOrderItemCount: 0,
+      addedOrderItemCount: 0,
+      skippedOrderItemCount: 1,
+      orders: [{ id: "order:1001", isInActiveBatch: true, items: [{ id: "item-1", isInActiveBatch: true }] }],
     });
   });
 
@@ -200,6 +286,7 @@ describe("orders api route", () => {
     expect(response.body).toEqual({
       importedOrderItemCount: 3,
       addedOrderItemCount: 1,
+      skippedOrderItemCount: 0,
       orders: [{ id: "order:1001", isInActiveBatch: true, items: [{ id: "item-1" }] }],
     });
   });

@@ -45,7 +45,7 @@ function installClipboardText(page, text) {
 }
 
 async function installProductionBatchRoutes(page, options = {}) {
-  const { orderItems = [] } = options;
+  const { orderItems = [], onGet = null } = options;
   let productionBatchSnapshot = {
     batch: { id: "batch-1", workspaceId: "workspace-1" },
     activeOrderItemId: orderItems[0]?.id || null,
@@ -65,6 +65,7 @@ async function installProductionBatchRoutes(page, options = {}) {
   });
 
   await page.route("**/api/production-batch?batchId=batch-1", async (route) => {
+    await onGet?.(productionBatchSnapshot);
     await route.fulfill({
       status: 200,
       contentType: "application/json; charset=utf-8",
@@ -100,6 +101,11 @@ function buildOrdersPayload() {
             id: "item-1",
             listingTitle: "Custom badge reel",
             isInActiveBatch: false,
+            source: {
+              colorName: "Red Glitter",
+              quantity: "2",
+              listingImageUrl75x75: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='75' height='75'%3E%3Crect width='75' height='75' fill='%23d92d20'/%3E%3C/svg%3E",
+            },
             design: {
               text: "Ada RN",
               lines: [
@@ -449,6 +455,14 @@ test("renders grouped database orders and selected order item cards", async ({ p
   await expect(ordersWorkspace.getByText("Already in active batch")).toBeVisible();
 
   const firstItemCard = ordersWorkspace.locator(".database-order-item-card").filter({ hasText: "Ada RN" });
+  await expect(firstItemCard.locator(".database-order-item-listing-column")).toContainText("Ada RN");
+  await expect(firstItemCard.getByRole("img", { name: "Custom badge reel" })).toBeVisible();
+  await expect(firstItemCard.locator(".database-order-item-meta")).toContainText("Color");
+  await expect(firstItemCard.locator(".database-order-item-meta")).toContainText("Red Glitter");
+  await expect(firstItemCard.locator(".database-order-item-meta")).toContainText("Quantity");
+  await expect(firstItemCard.locator(".database-order-item-meta")).toContainText("2");
+  await expect(firstItemCard.locator(".database-order-item-preview-column .database-order-item-preview")).toBeVisible();
+  await expect(firstItemCard.locator(".database-order-item-body > *")).toHaveCount(2);
   await expect(
     firstItemCard.locator(".database-order-item-preview").getByText("Export-ready design available"),
   ).toHaveCount(0);
@@ -581,8 +595,35 @@ test("pastes imported Etsy items into the Orders workspace without adding them t
   expect(orderPosts[0]).toMatchObject({
     action: "importClipboardItems",
     target: "orders",
+    batchId: "batch-1",
   });
-  expect(orderPosts[0]).not.toHaveProperty("batchId");
+});
+
+test("shows an Orders paste summary with imported and duplicate counts", async ({ page }) => {
+  await installSupabaseSession(page);
+  await installClipboardText(page, buildClipboardPayload());
+  await installProductionBatchRoutes(page);
+  await installOrdersWorkspaceRoutes(page, {
+    postBody: {
+      ...buildOrdersPayloadWithImportedOrder(),
+      importedOrderItemCount: 1,
+      addedOrderItemCount: 0,
+      skippedOrderItemCount: 2,
+    },
+  });
+
+  await gotoAfterBatchLoads(page);
+  const ordersWorkspace = page.getByRole("region", { name: "Orders workspace" });
+  await page.getByRole("button", { name: "Orders", exact: true }).click();
+  await ordersWorkspace.getByRole("button", { name: "Paste orders" }).click();
+
+  const dialog = page.locator("#pasteSummaryDialog");
+  await expect(dialog).toBeVisible();
+  await expect(dialog.locator("#pasteSummaryTitle")).toHaveText("Paste Summary");
+  await expect(dialog.locator("#pasteSummaryTarget")).toHaveText("Orders");
+  await expect(dialog.locator("#pasteSummaryImportedCount")).toHaveText("1");
+  await expect(dialog.locator("#pasteSummarySkippedCount")).toHaveText("2");
+  await expect(dialog.locator("#pasteSummaryAddedCount")).toHaveText("0");
 });
 
 test("keeps Orders paste available while workspace orders are loading", async ({ page }) => {
@@ -617,9 +658,22 @@ test("keeps Orders paste available while workspace orders are loading", async ({
 
 test("pastes imported Etsy items into the active production batch", async ({ page }) => {
   const orderPosts = [];
+  let productionBatchGetCount = 0;
+  let releaseSecondProductionBatchGet = null;
+  const holdSecondProductionBatchGet = new Promise((resolve) => {
+    releaseSecondProductionBatchGet = resolve;
+  });
   await installSupabaseSession(page);
   await installClipboardText(page, buildClipboardPayload());
-  await installProductionBatchRoutes(page);
+  await installProductionBatchRoutes(page, {
+    onGet: () => {
+      productionBatchGetCount += 1;
+      if (productionBatchGetCount === 2) {
+        return holdSecondProductionBatchGet;
+      }
+      return null;
+    },
+  });
   await installOrdersWorkspaceRoutes(page, { posts: orderPosts });
 
   await gotoAfterBatchLoads(page);
@@ -633,6 +687,10 @@ test("pastes imported Etsy items into the active production batch", async ({ pag
     target: "productionBatch",
     batchId: "batch-1",
   });
+  await expect.poll(() => productionBatchGetCount).toBe(2);
+  await expect(page.locator("#importClipboardButton")).toBeDisabled();
+  releaseSecondProductionBatchGet?.();
+  await expect(page.getByRole("button", { name: "Paste", exact: true })).toBeEnabled();
 });
 
 test("skips duplicate production batch clipboard items without posting to orders", async ({ page }) => {
@@ -651,6 +709,9 @@ test("skips duplicate production batch clipboard items without posting to orders
   await expect(page.locator("#workflowAlertText")).toHaveText(
     "Skipped 1 Etsy design already in the batch. No new designs were added.",
   );
+  await expect(page.locator("#pasteSummaryDialog")).toBeVisible();
+  await expect(page.locator("#pasteSummaryImportedCount")).toHaveText("0");
+  await expect(page.locator("#pasteSummarySkippedCount")).toHaveText("1");
 });
 
 test("rejects empty Orders clipboard import without posting to orders", async ({ page }) => {

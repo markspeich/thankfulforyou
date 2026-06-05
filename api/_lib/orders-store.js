@@ -247,7 +247,7 @@ async function queryVerifiedOrderItemIds({ supabase, workspaceId, orderItemIds }
     .from("order_items")
     .select("id")
     .eq("workspace_id", workspaceId)
-    .neq("status", "archived")
+    .eq("status", "open")
     .in("id", ids);
 
   if (error) {
@@ -256,6 +256,25 @@ async function queryVerifiedOrderItemIds({ supabase, workspaceId, orderItemIds }
 
   const verifiedIds = new Set((data || []).map((item) => item.id));
   return ids.filter((id) => verifiedIds.has(id));
+}
+
+async function queryExistingOrderItemIds({ supabase, workspaceId, orderItemIds }) {
+  const ids = [...new Set((orderItemIds || []).filter((id) => typeof id === "string" && id))];
+  if (!ids.length) {
+    return new Set();
+  }
+
+  const { data, error } = await supabase
+    .from("order_items")
+    .select("id")
+    .eq("workspace_id", workspaceId)
+    .in("id", ids);
+
+  if (error) {
+    throw error;
+  }
+
+  return new Set((data || []).map((item) => item.id));
 }
 
 export async function listWorkspaceOrders({ workspaceId, activeBatchId = null, statusFilter = "open" }) {
@@ -440,20 +459,30 @@ export async function importWorkspaceOrderItems({
 
   const supabase = createSupabaseAdminClient();
   const orderRows = importItems.map((item) => buildOrderItemRow(item, { workspaceId, userId }));
-  const { error: orderItemsError } = await supabase
-    .from("order_items")
-    .upsert(orderRows, { onConflict: "id" });
+  const requestedOrderItemIds = orderRows.map((row) => row.id);
+  const existingOrderItemIds = await queryExistingOrderItemIds({
+    supabase,
+    workspaceId,
+    orderItemIds: requestedOrderItemIds,
+  });
+  const newOrderRows = orderRows.filter((row) => !existingOrderItemIds.has(row.id));
 
-  if (orderItemsError) {
-    throw orderItemsError;
+  if (newOrderRows.length) {
+    const { error: orderItemsError } = await supabase
+      .from("order_items")
+      .upsert(newOrderRows, { onConflict: "id" });
+
+    if (orderItemsError) {
+      throw orderItemsError;
+    }
   }
 
-  const importedOrderItemIds = orderRows.map((row) => row.id);
+  const importedOrderItemIds = newOrderRows.map((row) => row.id);
   const { data: existingDesigns, error: existingDesignsError } = await supabase
     .from("designs")
     .select("id, order_item_id, production_status, saved_settings_signature, completed_settings_signature")
     .eq("workspace_id", workspaceId)
-    .in("order_item_id", importedOrderItemIds);
+    .in("order_item_id", requestedOrderItemIds);
 
   if (existingDesignsError) {
     throw existingDesignsError;
@@ -462,7 +491,8 @@ export async function importWorkspaceOrderItems({
   const existingDesignByOrderItemId = new Map((existingDesigns || []).map((design) => [design.order_item_id, design]));
   const mutableItems = importItems.filter((item) => {
     const orderItemId = buildImportedOrderItemId(item);
-    return !isProtectedDesign(existingDesignByOrderItemId.get(orderItemId));
+    return importedOrderItemIds.includes(orderItemId)
+      && !isProtectedDesign(existingDesignByOrderItemId.get(orderItemId));
   });
   const designRows = mutableItems.map((item) => buildDesignRow(item, { workspaceId, userId }));
   let savedDesigns = [];
@@ -521,7 +551,7 @@ export async function importWorkspaceOrderItems({
       workspaceId,
       userId,
       batchId,
-      orderItemIds: importedOrderItemIds,
+      orderItemIds: requestedOrderItemIds,
     });
     addedOrderItemIds = Array.isArray(addResult?.addedOrderItemIds) ? addResult.addedOrderItemIds : [];
   }

@@ -842,6 +842,43 @@
       </div>
     </dialog>
 
+    <dialog id="pasteSummaryDialog" class="batch-summary-dialog paste-summary-dialog" aria-labelledby="pasteSummaryTitle">
+      <div class="batch-summary-card">
+        <header class="batch-summary-header">
+          <div>
+            <h2 id="pasteSummaryTitle">Paste Summary</h2>
+            <p id="pasteSummaryDescription" class="batch-summary-description">
+              Clipboard import results for <span id="pasteSummaryTarget">Orders</span>.
+            </p>
+          </div>
+          <button id="closePasteSummaryButton" class="batch-summary-close" type="button" aria-label="Close paste summary">
+            <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+              <path d="M6 6l12 12M18 6 6 18" />
+            </svg>
+          </button>
+        </header>
+        <dl class="paste-summary-counts">
+          <div>
+            <dt>Imported</dt>
+            <dd id="pasteSummaryImportedCount">0</dd>
+          </div>
+          <div>
+            <dt>Skipped duplicates</dt>
+            <dd id="pasteSummarySkippedCount">0</dd>
+          </div>
+          <div>
+            <dt>Added to batch</dt>
+            <dd id="pasteSummaryAddedCount">0</dd>
+          </div>
+        </dl>
+        <div class="confirmation-dialog-actions">
+          <button id="pasteSummaryDoneButton" class="confirmation-dialog-button confirmation-dialog-confirm" type="button">
+            Done
+          </button>
+        </div>
+      </div>
+    </dialog>
+
     <div
       id="confirmationDialog"
       class="confirmation-dialog"
