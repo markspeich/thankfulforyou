@@ -38,7 +38,7 @@ describe("prepare local env tool", () => {
       id: "42f4",
       workdir: "C:/repo/.local/supabase/42f4",
       projectId: "thankfulforyou-42f4",
-      ports: { api: 58920, db: 58921 },
+      ports: { api: 58920, db: 58921, studio: 58923 },
       appBaseUrl: "http://127.0.0.1:4668",
     });
     const spawn = vi.fn((command, args, options) => {
