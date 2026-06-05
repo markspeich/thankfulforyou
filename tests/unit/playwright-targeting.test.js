@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { resolveDevBaseUrl } from "../../tools/dev_port.mjs";
 import { resolvePlaywrightRuntimeOptions } from "../../tools/playwright_targeting.mjs";
 
 const rootCwd = "C:/Users/Mark/CodexProjects/thankfulforyou";
@@ -16,7 +17,7 @@ describe("playwright targeting", () => {
     });
 
     expect(result.baseURL).toBe(result.localBaseUrl);
-    expect(result.baseURL).toBe("http://127.0.0.1:4590");
+    expect(result.baseURL).toBe(resolveDevBaseUrl({ cwd: rootCwd, env: {} }));
     expect(result.usePreviewTarget).toBe(false);
   });
 

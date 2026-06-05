@@ -37,14 +37,8 @@ describe("dev port helper", () => {
   });
 
   it("falls back to a deterministic path hash outside a worktree", () => {
-    const first = resolveDevPort({
-      cwd: "C:/Users/Mark/CodexProjects/thankfulforyou",
-      env: {},
-    });
-    const second = resolveDevPort({
-      cwd: "C:/Users/Mark/CodexProjects/thankfulforyou",
-      env: {},
-    });
+    const first = computeWorktreePort("C:/Users/Mark/CodexProjects/thankfulforyou");
+    const second = computeWorktreePort("C:/Users/Mark/CodexProjects/thankfulforyou");
 
     expect(first).toBe(second);
     expect(first).toBeGreaterThanOrEqual(WORKTREE_PORT_BASE);
