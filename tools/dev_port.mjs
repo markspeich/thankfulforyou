@@ -1,4 +1,9 @@
 import path from "node:path";
+import net from "node:net";
+import {
+  readDevServerState,
+  mergeDevServerState,
+} from "./dev_server_state.mjs";
 
 export const DEFAULT_DEV_PORT = 4173;
 export const WORKTREE_PORT_BASE = 4300;
@@ -30,14 +35,21 @@ export function extractWorktreeId(workspacePath) {
     return null;
   }
 
-  const match = workspacePath.match(/[\\/]worktrees[\\/](\d+)(?:[\\/]|$)/i);
-  return match ? Number(match[1]) : null;
+  const match = workspacePath.match(/[\\/]worktrees[\\/]([^\\/]+)(?:[\\/]|$)/i);
+  if (!match) {
+    return null;
+  }
+
+  return /^\d+$/.test(match[1]) ? Number(match[1]) : match[1];
 }
 
 export function computeWorktreePort(workspacePath) {
   const worktreeId = extractWorktreeId(workspacePath);
   if (worktreeId !== null) {
-    return WORKTREE_PORT_BASE + (worktreeId % WORKTREE_PORT_SPAN);
+    const worktreePortOffset = typeof worktreeId === "number"
+      ? worktreeId % WORKTREE_PORT_SPAN
+      : hashString(worktreeId) % WORKTREE_PORT_SPAN;
+    return WORKTREE_PORT_BASE + worktreePortOffset;
   }
 
   if (typeof workspacePath === "string" && workspacePath.trim()) {
@@ -49,9 +61,66 @@ export function computeWorktreePort(workspacePath) {
 }
 
 export function resolveDevPort({ cwd = process.cwd(), env = process.env } = {}) {
-  return parsePort(env?.PORT) ?? computeWorktreePort(cwd);
+  const explicitPort = parsePort(env?.PORT);
+  if (explicitPort) {
+    return explicitPort;
+  }
+
+  if (typeof cwd !== "string" || !cwd.trim()) {
+    return DEFAULT_DEV_PORT;
+  }
+
+  const statePort = parsePort(readDevServerState({ cwd })?.port);
+  return statePort ?? computeWorktreePort(cwd);
 }
 
 export function resolveDevBaseUrl({ cwd = process.cwd(), env = process.env, hostname = "127.0.0.1" } = {}) {
   return `http://${hostname}:${resolveDevPort({ cwd, env })}`;
+}
+
+export async function isPortAvailable(port, host = "127.0.0.1") {
+  return new Promise((resolveAvailability) => {
+    const server = net.createServer();
+    server.once("error", () => resolveAvailability(false));
+    server.once("listening", () => {
+      server.close(() => resolveAvailability(true));
+    });
+    server.listen(port, host);
+  });
+}
+
+export async function allocateDevPort({
+  cwd = process.cwd(),
+  env = process.env,
+  readState = () => readDevServerState({ cwd }),
+  writeState = (state) => mergeDevServerState(state, { cwd }),
+  isPortAvailable: isCandidatePortAvailable = isPortAvailable,
+} = {}) {
+  const explicitPort = parsePort(env?.PORT);
+  if (explicitPort) {
+    return explicitPort;
+  }
+
+  const statePort = parsePort(readState()?.port);
+  if (statePort) {
+    return statePort;
+  }
+
+  const firstCandidate = computeWorktreePort(cwd);
+  const startOffset = firstCandidate - WORKTREE_PORT_BASE;
+
+  for (let attempt = 0; attempt < WORKTREE_PORT_SPAN; attempt += 1) {
+    const offset = (startOffset + attempt) % WORKTREE_PORT_SPAN;
+    const candidate = WORKTREE_PORT_BASE + offset;
+    if (await isCandidatePortAvailable(candidate)) {
+      writeState({
+        worktreeRoot: cwd,
+        port: candidate,
+        assignedAt: new Date().toISOString(),
+      });
+      return candidate;
+    }
+  }
+
+  throw new Error(`No available dev server ports in ${WORKTREE_PORT_BASE}-${WORKTREE_PORT_BASE + WORKTREE_PORT_SPAN - 1}.`);
 }

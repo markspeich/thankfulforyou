@@ -3868,6 +3868,10 @@ function applyPersistedBatchState(parsed) {
       force: typeof order.savedSettingsSignature !== "string",
     });
   });
+  const activeOrder = getActiveOrder();
+  if (activeOrder) {
+    applySettings(activeOrder.settings);
+  }
   return restoredOrders.length > 0;
 }
 

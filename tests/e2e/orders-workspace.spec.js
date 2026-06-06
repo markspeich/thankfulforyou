@@ -942,6 +942,33 @@ test("adds an individual order item to the active production batch from the item
   });
 });
 
+test("hydrates the selected production batch item after adding from Orders", async ({ page }) => {
+  const productionBatchOrderItems = [];
+  await installSupabaseSession(page);
+  await installProductionBatchRoutes(page, { orderItems: productionBatchOrderItems });
+  await installOrdersWorkspaceRoutes(page, {
+    onPost(post) {
+      if (post.action === "addOrderItemToProductionBatch") {
+        productionBatchOrderItems.push(buildAdaProductionBatchOrderItem());
+      }
+    },
+  });
+
+  await gotoAfterBatchLoads(page);
+  const ordersWorkspace = page.getByRole("region", { name: "Orders workspace" });
+  await page.getByRole("button", { name: "Orders", exact: true }).click();
+  await expect(ordersWorkspace.getByText("Ada RN")).toBeVisible();
+
+  const firstItemCard = ordersWorkspace.locator(".database-order-item-card").filter({ hasText: "Ada RN" });
+  await firstItemCard.getByRole("button", { name: "Item actions" }).click();
+  await firstItemCard.getByRole("button", { name: "Add to Production Batch" }).click();
+  await page.getByRole("button", { name: "Production Batch", exact: true }).click();
+
+  const productionWorkspace = page.getByRole("region", { name: "Order items workspace" });
+  await expect(productionWorkspace.locator(".order-row.active")).toContainText("Personalization: Ada RN");
+  await expect(page.locator("#textInput")).toHaveValue("Ada RN");
+});
+
 test("shows the production batch auth gate when an orders mutation requires authentication", async ({ page }) => {
   await installSupabaseSession(page);
   await installProductionBatchRoutes(page);
@@ -993,7 +1020,7 @@ test("adds checked orders to the active production batch", async ({ page }) => {
 
   await page.getByRole("button", { name: "Production Batch", exact: true }).click();
   const productionWorkspace = page.getByRole("region", { name: "Order items workspace" });
-  await expect(productionWorkspace.getByText("Ada RN")).toBeVisible();
+  await expect(productionWorkspace.locator(".order-row.active")).toContainText("Personalization: Ada RN");
 });
 
 test("copying an incomplete order item design shows a completion-needed status", async ({ page }) => {

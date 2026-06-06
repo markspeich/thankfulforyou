@@ -21,6 +21,7 @@
     "start": "node tools/setup_worktree_env.mjs && node --watch tools/dev_server.mjs",
     "start:local": "node tools/run_with_supabase_env.mjs --env local -- node --watch tools/dev_server.mjs",
     "start:remote": "node tools/run_with_supabase_env.mjs --env remote -- node --watch tools/dev_server.mjs",
+    "stop:local": "node tools/stop_dev_server.mjs",
     "test": "npm run test:unit && npm run test:e2e",
     "test:unit": "vitest run",
     "test:db": "node tools/run_db_tests.mjs",

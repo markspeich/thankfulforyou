@@ -6,11 +6,12 @@ import { dirname, extname, join, normalize } from "node:path";
 import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
 import { buildPublicAppConfigScript } from "./app_config.mjs";
-import { resolveDevPort } from "./dev_port.mjs";
+import { allocateDevPort } from "./dev_port.mjs";
+import { clearDevServerPid, mergeDevServerState } from "./dev_server_state.mjs";
 import { loadEnvFile } from "./env_file.mjs";
 import { buildLocalServerInfo, formatLocalServerInfo } from "./local_server_info.mjs";
 
-const port = resolveDevPort();
+const port = await allocateDevPort();
 const root = process.cwd();
 const productionBatchLogPath = process.env.PRODUCTION_BATCH_LOG_PATH
   || join(process.platform === "win32" ? "C:\\tmp" : "/tmp", "thankfulforyou-production-batch.log");
@@ -383,6 +384,12 @@ const server = createServer(async (request, response) => {
 
 server.listen(port, async () => {
   try {
+    mergeDevServerState({
+      worktreeRoot: root,
+      port,
+      pid: process.pid,
+      startedAt: new Date().toISOString(),
+    }, { cwd: root });
     presetSnapshots.set("primary", await loadBundledPresetSnapshot());
     console.log(`Badge reel layout tool: http://localhost:${port}`);
     for (const line of formatLocalServerInfo(buildLocalServerInfo())) {
@@ -392,4 +399,18 @@ server.listen(port, async () => {
     console.error(error instanceof Error ? error.message : error);
     server.close();
   }
+});
+
+function shutdown() {
+  clearDevServerPid({ cwd: root });
+}
+
+process.once("exit", shutdown);
+process.once("SIGINT", () => {
+  shutdown();
+  process.exit(130);
+});
+process.once("SIGTERM", () => {
+  shutdown();
+  process.exit(143);
 });
