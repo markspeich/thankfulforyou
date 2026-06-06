@@ -39,6 +39,24 @@ function exportSvg(payload) {
   return result.stdout;
 }
 
+function runPythonSnippet(source) {
+  const args = process.env.PYTHON
+    ? ["-c", source]
+    : process.platform === "win32"
+      ? ["-3.11", "-c", source]
+      : ["-c", source];
+  const result = spawnSync(pythonCommand, args, {
+    cwd: process.cwd(),
+    encoding: "utf8",
+  });
+
+  if (result.status !== 0) {
+    throw new Error(result.stderr || result.stdout || "python snippet failed");
+  }
+
+  return result.stdout;
+}
+
 function countPathCommands(path, command) {
   const matches = path.match(new RegExp(command, "g"));
   return matches ? matches.length : 0;
@@ -443,6 +461,17 @@ describe("export_svg face tracing", () => {
       text: "Cached",
       widthMm: 40,
       heightMm: 20,
+      fixedSvgs: [
+        {
+          id: "nurse-cross",
+          name: "Nurse Cross",
+          svgText: "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 20 10\"><path id=\"cross-mark\" d=\"M8 0 H12 V4 H20 V6 H12 V10 H8 V6 H0 V4 H8 Z\"/></svg>",
+          xMm: 17,
+          yMm: 4,
+          widthMm: 16,
+          heightMm: 8,
+        },
+      ],
       colorName: "Red",
       quantity: "2",
       analysis: {
@@ -459,12 +488,154 @@ describe("export_svg face tracing", () => {
     expect(svg).toContain("Text: Cached");
     expect(svg).toContain('height="71.562mm"');
     expect(svg).toContain('id="order-1-copy-1-name-group" transform="translate(0.000 0.000)"');
+    expect(svg).toContain('id="order-1-copy-1-fixed-svg-nurse-cross"');
+    expect(svg).toContain('transform="translate(17.000 4.000) scale(0.800000 0.800000)"');
+    expect(svg).toContain('id="cross-mark"');
     expect(svg).toContain('id="order-1-copy-1-backing-border" d="M20 0 L30 0 L30 10 Z" transform="translate(50.000 0.000)"');
     expect(svg).toContain('id="order-1-copy-2-name-group" transform="translate(0.000 51.562)"');
+    expect(svg).toContain('id="order-1-copy-2-fixed-svg-nurse-cross"');
+    expect(svg).toContain('transform="translate(17.000 55.562) scale(0.800000 0.800000)"');
     expect(svg).toContain('id="order-1-copy-2-backing-border" d="M20 0 L30 0 L30 10 Z" transform="translate(50.000 51.562)"');
     expect(svg).toContain('id="order-1-copy-1-color-label"');
     expect(svg).toContain('font-family="Arial"');
     expect(svg).toContain(">Red</text>");
+  });
+
+  test("sanitizes fixed SVG vector markup before export", () => {
+    const svg = exportSvg({
+      text: "Safe",
+      widthMm: 40,
+      heightMm: 20,
+      fixedSvgs: [
+        {
+          id: "unsafe-art",
+          name: "Unsafe Art",
+          svgText: `
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 10" onload="alert(1)">
+              <style>path { fill: url(javascript:alert(1)); }</style>
+              <g onclick="alert(2)" style="fill: url(https://evil.example/pattern.svg); stroke: blue">
+                <script>alert(3)</script>
+                <foreignObject><div>html</div></foreignObject>
+                <image href="https://evil.example/pixel.png" />
+                <path id="safe-path" d="M0 0 H20 V10 Z" fill="blue" stroke="green" onmouseover="alert(4)" />
+              </g>
+            </svg>`,
+          xMm: 1,
+          yMm: 2,
+          widthMm: 20,
+          heightMm: 10,
+        },
+      ],
+      analysis: {
+        exportFacePath: "M0 0 L10 0 L10 10 Z",
+        backingPath: "M20 0 L30 0 L30 10 Z",
+        connectedComponentCount: 1,
+      },
+    });
+
+    expect(svg).toContain('id="safe-path"');
+    expect(svg).not.toMatch(/script/i);
+    expect(svg).not.toMatch(/foreignObject/i);
+    expect(svg).not.toMatch(/<style/i);
+    expect(svg).not.toMatch(/<image/i);
+    expect(svg).not.toMatch(/\son[a-z]+=/i);
+    expect(svg).not.toMatch(/javascript:/i);
+    expect(svg).not.toMatch(/url\(/i);
+    expect(svg).not.toContain('fill="blue"');
+    expect(svg).not.toContain('stroke="green"');
+    expect(svg).not.toContain('style=');
+    expect(svg).toContain('fill="rgb(255, 0, 0)" stroke="none"');
+  });
+
+  test("skips fixed SVG public URLs that are not allowed for server-side fetch", () => {
+    const svg = exportSvg({
+      text: "Urls",
+      widthMm: 40,
+      heightMm: 20,
+      fixedSvgs: [
+        {
+          id: "plain-http",
+          name: "Plain HTTP",
+          publicUrl: "http://127.0.0.1:9/internal.svg",
+          xMm: 1,
+          yMm: 2,
+          widthMm: 20,
+          heightMm: 10,
+        },
+        {
+          id: "internal-https",
+          name: "Internal HTTPS",
+          publicUrl: "https://127.0.0.1/internal.svg",
+          xMm: 1,
+          yMm: 2,
+          widthMm: 20,
+          heightMm: 10,
+        },
+      ],
+      analysis: {
+        exportFacePath: "M0 0 L10 0 L10 10 Z",
+        backingPath: "M20 0 L30 0 L30 10 Z",
+        connectedComponentCount: 1,
+      },
+    });
+
+    expect(svg).not.toContain("fixed-svg-plain-http");
+    expect(svg).not.toContain("fixed-svg-internal-https");
+  });
+
+  test("rejects fixed SVG redirects before following them", () => {
+    const stdout = runPythonSnippet(`
+import urllib.error
+import urllib.request
+from email.message import Message
+from tools.export_svg import FixedSvgNoRedirectHandler
+
+request = urllib.request.Request("https://allowed.example/redirect.svg")
+headers = Message()
+headers["Location"] = "http://169.254.169.254/latest/meta-data"
+try:
+    FixedSvgNoRedirectHandler().http_error_302(
+        request,
+        None,
+        302,
+        "Found",
+        headers,
+    )
+except urllib.error.HTTPError as error:
+    print(f"{error.code} {error.headers.get('Location')}")
+else:
+    raise SystemExit("redirect was followed")
+`);
+
+    expect(stdout.trim()).toBe("302 http://169.254.169.254/latest/meta-data");
+  });
+
+  test("preserves rectangular fixed SVG aspect ratio with uniform export scaling", () => {
+    const svg = exportSvg({
+      text: "Rect",
+      widthMm: 40,
+      heightMm: 20,
+      fixedSvgs: [
+        {
+          id: "wide-art",
+          name: "Wide Art",
+          svgText: "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 40 20\"><rect id=\"wide-rect\" width=\"40\" height=\"20\" /></svg>",
+          xMm: 4,
+          yMm: 5,
+          widthMm: 24,
+          heightMm: 24,
+        },
+      ],
+      analysis: {
+        exportFacePath: "M0 0 L10 0 L10 10 Z",
+        backingPath: "M20 0 L30 0 L30 10 Z",
+        connectedComponentCount: 1,
+      },
+    });
+
+    expect(svg).toContain('id="order-1-copy-1-fixed-svg-wide-art"');
+    expect(svg).toContain('transform="translate(4.000 5.000) scale(0.600000 0.600000)"');
+    expect(svg).toContain('id="wide-rect"');
   });
 
   test("stacks batch exports on a 2.03 inch start-to-start pitch", () => {

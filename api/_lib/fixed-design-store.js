@@ -98,6 +98,47 @@ export function validateSvgContent(svgText) {
   return true;
 }
 
+function parsePositiveNumber(value) {
+  const match = String(value || "").trim().match(/^-?\d+(?:\.\d+)?/);
+  if (!match) {
+    return null;
+  }
+  const parsed = Number(match[0]);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function extractSvgAttribute(svgText, attributeName) {
+  const withoutPreamble = stripSvgPreamble(svgText);
+  const svgOpenTag = withoutPreamble.match(/^<svg\b[^>]*>/i)?.[0] || "";
+  const pattern = new RegExp(`${attributeName}\\s*=\\s*([\"'])(.*?)\\1`, "i");
+  return svgOpenTag.match(pattern)?.[2] || null;
+}
+
+export function extractSvgMetadata(svgText) {
+  const viewBox = extractSvgAttribute(svgText, "viewBox");
+  if (viewBox) {
+    const parts = viewBox.trim().split(/[\s,]+/).map(Number);
+    if (parts.length === 4 && parts.every(Number.isFinite) && parts[2] > 0 && parts[3] > 0) {
+      return {
+        viewBox: parts.map((part) => Number.isInteger(part) ? String(part) : String(part)).join(" "),
+        aspectRatio: parts[2] / parts[3],
+      };
+    }
+  }
+
+  const width = parsePositiveNumber(extractSvgAttribute(svgText, "width"));
+  const height = parsePositiveNumber(extractSvgAttribute(svgText, "height"));
+  if (width && height) {
+    return {
+      width,
+      height,
+      aspectRatio: width / height,
+    };
+  }
+
+  return {};
+}
+
 export function normalizeSvgUploadFile(file) {
   const fileName = typeof file?.name === "string" ? file.name.trim() : "";
   const fileFormat = extname(fileName).replace(".", "").toLowerCase();
@@ -107,6 +148,7 @@ export function normalizeSvgUploadFile(file) {
     throw createFixedDesignStoreError(400, "Unsupported file type. Upload an SVG file.");
   }
 
+  const metadata = typeof file?.text === "string" ? extractSvgMetadata(file.text) : {};
   if (typeof file?.text === "string") {
     validateSvgContent(file.text);
   }
@@ -116,6 +158,7 @@ export function normalizeSvgUploadFile(file) {
     fileFormat,
     contentType: contentType || "image/svg+xml",
     size: Number(file?.size) || 0,
+    metadata,
   };
 }
 
@@ -256,7 +299,7 @@ export async function createWorkspaceFixedDesign({ workspaceId, displayName, fil
     public_url: publicUrl,
     file_name: upload.fileName,
     version,
-    metadata_json: {},
+    metadata_json: upload.metadata,
     deleted_at: null,
   };
 
@@ -312,6 +355,7 @@ export async function replaceWorkspaceFixedDesign({ workspaceId, fixedDesignId, 
       public_url: publicUrl,
       file_name: upload.fileName,
       version,
+      metadata_json: upload.metadata,
       deleted_at: null,
       updated_at: new Date().toISOString(),
     })

@@ -997,6 +997,168 @@ function isFixedSvgLineSettings(lineSettings) {
   return lineSettings?.kind === "fixedSvg";
 }
 
+function settingsIncludeFixedSvg(settings = {}) {
+  return normalizeSettings(settings).lines.some(isFixedSvgLineSettings);
+}
+
+function restoredOrdersIncludeFixedSvgs() {
+  return orders.some((order) => settingsIncludeFixedSvg(order.settings));
+}
+
+function countFixedSvgLines(settings = {}) {
+  return normalizeSettings(settings).lines.filter(isFixedSvgLineSettings).length;
+}
+
+function parseSvgViewBoxAspectRatio(fixedDesign) {
+  const metadataAspectRatio = Number(fixedDesign?.metadata?.aspectRatio);
+  if (Number.isFinite(metadataAspectRatio) && metadataAspectRatio > 0) {
+    return metadataAspectRatio;
+  }
+
+  const metadataWidth = Number(fixedDesign?.metadata?.width);
+  const metadataHeight = Number(fixedDesign?.metadata?.height);
+  if (Number.isFinite(metadataWidth) && metadataWidth > 0 && Number.isFinite(metadataHeight) && metadataHeight > 0) {
+    return metadataWidth / metadataHeight;
+  }
+
+  const viewBox = typeof fixedDesign?.metadata?.viewBox === "string"
+    ? fixedDesign.metadata.viewBox
+    : "";
+  const parts = viewBox.trim().split(/[\s,]+/).map(Number);
+  if (parts.length === 4 && parts.every(Number.isFinite) && parts[2] > 0 && parts[3] > 0) {
+    return parts[2] / parts[3];
+  }
+
+  return 1;
+}
+
+function buildFixedSvgLayoutItems(lines, layoutWidthMm, layoutHeightMm) {
+  const centerX = layoutWidthMm / 2;
+  const centerY = layoutHeightMm / 2;
+
+  return lines
+    .filter(isFixedSvgLineSettings)
+    .map((line) => {
+      const fixedDesign = resolveFixedDesignReference(line, fixedDesignRecords);
+      const sizeMm = Math.max(1, Number(line.svgSizeMm) || 32);
+      const aspectRatio = parseSvgViewBoxAspectRatio(fixedDesign);
+      const widthMm = aspectRatio >= 1 ? sizeMm : sizeMm * aspectRatio;
+      const heightMm = aspectRatio >= 1 ? sizeMm / aspectRatio : sizeMm;
+
+      return {
+        id: fixedDesign.id || line.fixedDesignId || "",
+        name: fixedDesign.displayName || line.fixedDesignName || "Fixed design",
+        version: fixedDesign.version || line.fixedDesignVersion || 1,
+        publicUrl: fixedDesign.publicUrl || null,
+        state: fixedDesign.state || "missing",
+        stateLabel: fixedDesign.stateLabel || "Missing",
+        xMm: centerX + Number(line.offsetXMm || 0) - widthMm / 2,
+        yMm: centerY + Number(line.offsetYMm || 0) - heightMm / 2,
+        widthMm,
+        heightMm,
+        svgSizeMm: sizeMm,
+        offsetXMm: Number(line.offsetXMm || 0),
+        offsetYMm: Number(line.offsetYMm || 0),
+      };
+    });
+}
+
+function expandLayoutForFixedSvgs({ widthMm, heightMm, textBoundsMm, letters, fixedSvgs }) {
+  if (!fixedSvgs.length) {
+    return {
+      widthMm,
+      heightMm,
+      textBoundsMm,
+      letters,
+      fixedSvgs,
+    };
+  }
+
+  const minX = Math.min(0, ...fixedSvgs.map((item) => item.xMm));
+  const minY = Math.min(0, ...fixedSvgs.map((item) => item.yMm));
+  const maxX = Math.max(widthMm, ...fixedSvgs.map((item) => item.xMm + item.widthMm));
+  const maxY = Math.max(heightMm, ...fixedSvgs.map((item) => item.yMm + item.heightMm));
+  const shiftX = -minX;
+  const shiftY = -minY;
+
+  return {
+    widthMm: maxX - minX,
+    heightMm: maxY - minY,
+    textBoundsMm: {
+      ...textBoundsMm,
+      left: textBoundsMm.left + shiftX,
+      top: textBoundsMm.top + shiftY,
+    },
+    letters: letters.map((letter) => ({
+      ...letter,
+      x: letter.x + shiftX,
+      y: letter.y + shiftY,
+    })),
+    fixedSvgs: fixedSvgs.map((item) => ({
+      ...item,
+      xMm: item.xMm + shiftX,
+      yMm: item.yMm + shiftY,
+    })),
+  };
+}
+
+function layoutNeedsFixedSvgEnrichment(layout, settings = {}) {
+  const expectedCount = countFixedSvgLines(settings);
+  if (!expectedCount) {
+    return false;
+  }
+
+  const fixedSvgs = Array.isArray(layout?.fixedSvgs) ? layout.fixedSvgs : [];
+  if (fixedSvgs.length < expectedCount) {
+    return true;
+  }
+
+  return fixedSvgs.some((fixedSvg) => {
+    const fixedDesign = fixedDesignRecords.find((record) => record.id === fixedSvg.id);
+    return fixedDesign?.publicUrl && fixedSvg.publicUrl !== fixedDesign.publicUrl;
+  });
+}
+
+function enrichCachedLayoutWithFixedSvgs(layout, settings = {}) {
+  if (!layoutNeedsFixedSvgEnrichment(layout, settings)) {
+    return layout;
+  }
+
+  const normalized = normalizeSettings(settings);
+  const widthMm = Number.isFinite(Number(layout?.widthMm)) ? Number(layout.widthMm) : 1;
+  const heightMm = Number.isFinite(Number(layout?.heightMm)) ? Number(layout.heightMm) : 1;
+  const fixedSvgs = buildFixedSvgLayoutItems(normalized.lines, widthMm, heightMm);
+  const expanded = expandLayoutForFixedSvgs({
+    widthMm,
+    heightMm,
+    textBoundsMm: layout?.textBoundsMm && typeof layout.textBoundsMm === "object"
+      ? layout.textBoundsMm
+      : { left: 0, top: 0, width: widthMm, height: heightMm },
+    letters: Array.isArray(layout?.letters) ? layout.letters : [],
+    fixedSvgs,
+  });
+
+  return {
+    ...layout,
+    widthMm: expanded.widthMm,
+    heightMm: expanded.heightMm,
+    textBoundsMm: expanded.textBoundsMm,
+    letters: expanded.letters,
+    fixedSvgs: expanded.fixedSvgs,
+  };
+}
+
+function enrichCachedBuildForOrder(order, build) {
+  if (!build?.layout) {
+    return build;
+  }
+
+  return {
+    ...build,
+    layout: enrichCachedLayoutWithFixedSvgs(build.layout, order?.settings),
+  };
+}
+
 function getTextLineItemsFromSettings(settings = {}) {
   const normalized = normalizeSettings(settings);
   const rawLines = getRawTextLines(normalized.text);
@@ -1181,7 +1343,7 @@ function getCachedBuild(order, signature = getOrderSettingsSignatureCandidates(o
     return null;
   }
 
-  return getStoredBuildForSignature(order.cachedBuild, null, signature);
+  return enrichCachedBuildForOrder(order, getStoredBuildForSignature(order.cachedBuild, null, signature));
 }
 
 function getBuildForSignature(order, signature) {
@@ -1192,7 +1354,7 @@ function getBuildForSignature(order, signature) {
 
   const storedBuild = getStoredBuildForSignature(order.cachedBuild, order.previousCompletedBuild, signatureCandidates);
   if (storedBuild) {
-    return storedBuild;
+    return enrichCachedBuildForOrder(order, storedBuild);
   }
 
   if (
@@ -1208,7 +1370,7 @@ function getBuildForSignature(order, signature) {
 
     return {
       signature: order.savedSettingsSignature,
-      layout,
+      layout: enrichCachedLayoutWithFixedSvgs(layout, order.settings),
       analysis,
     };
   }
@@ -1247,6 +1409,7 @@ function buildExportPayload(layout, analysis = layout?.analysis || null, source 
       heightMm: layout.heightMm,
       backingMm: layout.backingMm,
       weldExportedDesign: layout.weldExportedDesign,
+      fixedSvgs: Array.isArray(layout.fixedSvgs) ? layout.fixedSvgs : [],
       colorName,
       quantity,
       analysis: {
@@ -9433,6 +9596,51 @@ function createFaceImage(letters, widthMm, heightMm) {
   };
 }
 
+function createFixedSvgPreviewElements(fixedSvgs = [], frame) {
+  return fixedSvgs.map((fixedSvg) => {
+    const commonAttributes = {
+      "data-fixed-svg-id": fixedSvg.id,
+      "data-fixed-svg-name": fixedSvg.name,
+    };
+    const x = frame.designX + fixedSvg.xMm;
+    const y = frame.designY + fixedSvg.yMm;
+
+    if (fixedSvg.publicUrl) {
+      return makeSvgElement("image", {
+        ...commonAttributes,
+        href: fixedSvg.publicUrl,
+        x,
+        y,
+        width: fixedSvg.widthMm,
+        height: fixedSvg.heightMm,
+      });
+    }
+
+    const group = makeSvgElement("g", {
+      ...commonAttributes,
+      transform: `translate(${x} ${y})`,
+    });
+    const rect = makeSvgElement("rect", {
+      width: fixedSvg.widthMm,
+      height: fixedSvg.heightMm,
+      fill: "none",
+      stroke: "#9ca3af",
+      "stroke-dasharray": "2 1.5",
+    });
+    const label = makeSvgElement("text", {
+      x: fixedSvg.widthMm / 2,
+      y: fixedSvg.heightMm / 2,
+      "text-anchor": "middle",
+      "dominant-baseline": "middle",
+      fill: "#6b7280",
+      "font-size": "3",
+    });
+    label.textContent = fixedSvg.stateLabel || "Missing";
+    group.append(rect, label);
+    return group;
+  });
+}
+
 function renderPreviewFromLayout(layout) {
   const analysis = layout.analysis || null;
   const facePreview = createFaceImage(layout.letters, layout.widthMm, layout.heightMm);
@@ -9482,7 +9690,7 @@ function renderPreviewFromLayout(layout) {
         height: layout.heightMm,
       });
 
-  preview.append(backingLayer, faceLayer);
+  preview.append(backingLayer, ...createFixedSvgPreviewElements(layout.fixedSvgs || [], frame), faceLayer);
   appendPreviewGuide(frame.previewBoxX, frame.previewBoxY, layout.guide);
 }
 
@@ -9819,22 +10027,31 @@ function assembleOrderLayout(normalized, sourceLines, fitScale, fitted, guide) {
       verticalScale: line.settings.verticalScale,
     }));
   });
+  const fixedSvgs = buildFixedSvgLayoutItems(normalized.lines, widthMm, heightMm);
+  const expanded = expandLayoutForFixedSvgs({
+    widthMm,
+    heightMm,
+    textBoundsMm,
+    letters: absoluteLetters,
+    fixedSvgs,
+  });
 
   return {
     text,
-    widthMm,
-    heightMm,
+    widthMm: expanded.widthMm,
+    heightMm: expanded.heightMm,
     backingMm,
     weldExportedDesign: normalized.weldExportedDesign,
     boundingSizePresetId: normalized.boundingSizePresetId,
     guide,
-    textBoundsMm,
+    textBoundsMm: expanded.textBoundsMm,
     fit: {
       fitScale,
       lineScaleFactors,
       overflowsGuide,
     },
-    letters: absoluteLetters,
+    letters: expanded.letters,
+    fixedSvgs: expanded.fixedSvgs,
   };
 }
 
@@ -10467,6 +10684,9 @@ if (initialAppRoute.workspace === "fixedDesigns") {
 const restoredBatch = productionBatchAccessToken
   ? await restoreInitialBatchState(productionBatchAccessToken)
   : { source: null, count: 0 };
+if (productionBatchAccessToken && !fixedDesignsLoaded && restoredOrdersIncludeFixedSvgs()) {
+  await refreshWorkspaceFixedDesigns(productionBatchAccessToken);
+}
 if (appRouteWriteCount === 0) {
   await applyCurrentAppRoute({
     replaceRoute: window.location.pathname === "/",

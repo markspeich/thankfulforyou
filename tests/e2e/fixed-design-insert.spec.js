@@ -1,4 +1,5 @@
 import { expect, test } from "playwright/test";
+import { buildLegacySettingsSignature } from "../../src/order-signatures.js";
 
 const FIRST_SVG = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 20 20\"><path d=\"M10 18 2 9a5 5 0 0 1 8-6 5 5 0 0 1 8 6Z\" fill=\"#0f766e\"/></svg>";
 const SECOND_SVG = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><circle cx=\"12\" cy=\"12\" r=\"10\" fill=\"#be123c\"/></svg>";
@@ -41,8 +42,8 @@ function installSupabaseSession(page) {
   });
 }
 
-async function installProductionBatchRoutes(page) {
-  let savedSnapshot = {
+function buildDefaultProductionBatchSnapshot() {
+  return {
     batch: { id: "batch-1", workspaceId: "workspace-1" },
     activeOrderItemId: "order-1",
     orderItems: [
@@ -76,6 +77,10 @@ async function installProductionBatchRoutes(page) {
       },
     ],
   };
+}
+
+async function installProductionBatchRoutes(page, initialSnapshot = buildDefaultProductionBatchSnapshot()) {
+  let savedSnapshot = initialSnapshot;
 
   await page.route("**/api/batch-session", async (route) => {
     await route.fulfill({
@@ -235,9 +240,33 @@ test.beforeEach(async ({ page }) => {
 });
 
 test("inserts a fixed SVG design from the preset tools menu with SVG-only controls", async ({ page }) => {
+  const analyzedLayouts = [];
+  await page.route("**/api/layout-analyze", async (route) => {
+    analyzedLayouts.push(route.request().postDataJSON()?.layout);
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify({
+        text: "Ava",
+        widthMm: 40,
+        heightMm: 20,
+        backingMm: 3.1,
+        facePath: "M0 0 L10 0 L10 10 Z",
+        faceBoundsMm: { left: 0, top: 0, width: 10, height: 10 },
+        exportFacePath: "M0 0 L10 0 L10 10 Z",
+        backingPath: "M20 0 L30 0 L30 10 Z",
+        connectedComponentCount: 1,
+        isConnected: true,
+      }),
+    });
+  });
+
   await page.goto("/production-batch");
   await expect(page.locator("#initialBatchLoading")).toBeHidden();
   await expect(page.locator("#textInput")).toHaveValue("Ava");
+  await page.locator("#captureButton").click();
+  await expect.poll(() => analyzedLayouts.length).toBe(1);
+  const textOnlyAnalysisLayout = analyzedLayouts[0];
 
   const presetPanel = page.getByLabel("Preset selection controls");
   await expect(presetPanel.locator(":scope > button", { hasText: "Insert Fixed Design" })).toHaveCount(0);
@@ -276,10 +305,210 @@ test("inserts a fixed SVG design from the preset tools menu with SVG-only contro
 
   await expect(page.locator('.line-control-card[data-line-kind="text"][data-line-index="0"]').getByText("Font").first()).toBeVisible();
 
+  const fixedPreview = page.locator('#preview [data-fixed-svg-id="fixed-design-2"]');
+  await expect(fixedPreview).toBeVisible();
+  await expect(fixedPreview).toHaveAttribute("href", /paw-print\.svg/);
+  const initialPreviewBox = await fixedPreview.evaluate((element) => ({
+    x: Number(element.getAttribute("x")),
+    y: Number(element.getAttribute("y")),
+    width: Number(element.getAttribute("width")),
+  }));
+
+  await fixedCard.locator('[data-setting="svgSizeMm"]').evaluate((input) => {
+    input.value = "40";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  await fixedCard.locator('[data-setting="offsetXMm"]').evaluate((input) => {
+    input.value = "7";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  await fixedCard.locator('[data-setting="offsetYMm"]').evaluate((input) => {
+    input.value = "-6";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+
+  await expect.poll(async () => fixedPreview.evaluate((element) => Number(element.getAttribute("width")))).toBe(40);
+  const adjustedPreviewBox = await fixedPreview.evaluate((element) => ({
+    x: Number(element.getAttribute("x")),
+    y: Number(element.getAttribute("y")),
+  }));
+  expect(adjustedPreviewBox.x).toBeGreaterThan(initialPreviewBox.x);
+  expect(adjustedPreviewBox.y).toBeLessThan(initialPreviewBox.y);
+
+  await page.locator("#captureButton").click();
+  await expect.poll(() => analyzedLayouts.length).toBe(2);
+  const fixedSvgAnalysisLayout = analyzedLayouts[1];
+  expect(fixedSvgAnalysisLayout.letters.map((letter) => letter.character).join("")).toBe("Ava");
+  expect(fixedSvgAnalysisLayout.textBoundsMm.width).toBeCloseTo(textOnlyAnalysisLayout.textBoundsMm.width, 6);
+  expect(fixedSvgAnalysisLayout.textBoundsMm.height).toBeCloseTo(textOnlyAnalysisLayout.textBoundsMm.height, 6);
+  expect(fixedSvgAnalysisLayout.fit.fitScale).toBeCloseTo(textOnlyAnalysisLayout.fit.fitScale, 6);
+  expect(fixedSvgAnalysisLayout.fit.overflowsGuide).toBe(textOnlyAnalysisLayout.fit.overflowsGuide);
+  expect(fixedSvgAnalysisLayout.fixedSvgs).toEqual([
+    expect.objectContaining({
+      id: "fixed-design-2",
+      name: "Paw Print",
+      publicUrl: fixedDesignPublicUrl("paw-print.svg"),
+      widthMm: 40,
+      heightMm: 40,
+      offsetXMm: 7,
+      offsetYMm: -6,
+    }),
+  ]);
+
   await fixedCard.locator(".fixed-design-line-toggle").click();
   await fixedCard.getByRole("button", { name: "Remove Fixed Design" }).click();
   await expect(page.locator(".line-control-card", { hasText: "Fixed Design: Paw Print" })).toHaveCount(0);
   await expect(page.locator('.line-control-card[data-line-kind="text"][data-line-index="0"]').getByText("Font").first()).toBeVisible();
+});
+
+test("enriches legacy cached fixed SVG layouts for preview and export", async ({ page }) => {
+  await page.unroute("**/api/batch-session");
+  await page.unroute("**/api/production-batch**");
+
+  const settings = {
+    text: "Ava",
+    presetId: "preset-a1f4c8e2b601",
+    boundingSizePresetId: "size-2-2x1-5",
+    backingMm: 3.1,
+    weldExportedDesign: true,
+    lines: [
+      {
+        kind: "text",
+        fontId: "candlepin",
+        bridgeMm: 0.5,
+        lineBridgeMm: 0.5,
+        offsetXMm: 0,
+        fontSizeMm: 32,
+        horizontalScale: 1,
+        verticalScale: 1,
+        lockTextHeight: false,
+      },
+      {
+        kind: "fixedSvg",
+        fixedDesignId: "fixed-design-2",
+        fixedDesignName: "Paw Print",
+        fixedDesignVersion: 1,
+        svgSizeMm: 36,
+        offsetXMm: -30,
+        offsetYMm: -20,
+      },
+    ],
+  };
+  const signature = buildLegacySettingsSignature(settings);
+  await installProductionBatchRoutes(page, {
+    batch: { id: "batch-1", workspaceId: "workspace-1" },
+    activeOrderItemId: "order-legacy",
+    orderItems: [
+      {
+        id: "order-legacy",
+        text: "Ava",
+        status: "captured",
+        settings,
+        source: null,
+        cachedBuild: {
+          signature,
+          layout: {
+            text: "Ava",
+            widthMm: 40,
+            heightMm: 24,
+            backingMm: 3.1,
+            weldExportedDesign: true,
+            boundingSizePresetId: "size-2-2x1-5",
+            textBoundsMm: { left: 6.1, top: 6.1, width: 27.8, height: 11.8 },
+            fit: { fitScale: 1, lineScaleFactors: [1], overflowsGuide: false },
+            letters: [
+              {
+                character: "A",
+                x: 7,
+                y: 18,
+                fontId: "candlepin",
+                fontPath: "public/fonts/Candlepin-Laser.otf",
+                fontSizeMm: 32,
+                horizontalScale: 1,
+                verticalScale: 1,
+              },
+              {
+                character: "v",
+                x: 17,
+                y: 18,
+                fontId: "candlepin",
+                fontPath: "public/fonts/Candlepin-Laser.otf",
+                fontSizeMm: 32,
+                horizontalScale: 1,
+                verticalScale: 1,
+              },
+              {
+                character: "a",
+                x: 27,
+                y: 18,
+                fontId: "candlepin",
+                fontPath: "public/fonts/Candlepin-Laser.otf",
+                fontSizeMm: 32,
+                horizontalScale: 1,
+                verticalScale: 1,
+              },
+            ],
+          },
+          analysis: {
+            exportFacePath: "M0 0 L10 0 L10 10 Z",
+            facePath: "M0 0 L10 0 L10 10 Z",
+            backingPath: "M20 0 L30 0 L30 10 Z",
+            faceBoundsMm: { left: 0, top: 0, width: 10, height: 10 },
+            connectedComponentCount: 1,
+            isConnected: true,
+          },
+        },
+        previousCompletedBuild: null,
+        savedSettingsSignature: signature,
+        completedSettingsSignature: signature,
+        analysisBadge: { state: "ok", shortLabel: "1", fullLabel: "Analysis complete: 1 connected face piece" },
+      },
+    ],
+  });
+
+  let exportedPayload = null;
+  await page.route("**/api/export-svg", async (route) => {
+    exportedPayload = route.request().postDataJSON();
+    await route.fulfill({
+      status: 200,
+      contentType: "image/svg+xml; charset=utf-8",
+      body: "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>",
+    });
+  });
+
+  await page.goto("/production-batch");
+  await expect(page.locator("#initialBatchLoading")).toBeHidden();
+  const fixedPreview = page.locator('#preview [data-fixed-svg-id="fixed-design-2"]');
+  await expect(fixedPreview).toBeVisible();
+  await expect(fixedPreview).toHaveAttribute("href", /paw-print\.svg/);
+  await expect(fixedPreview).toHaveAttribute("width", "36");
+
+  await page.evaluate(() => {
+    const button = document.querySelector("#downloadButton");
+    if (!(button instanceof HTMLButtonElement)) {
+      throw new Error("Export button not found");
+    }
+    button.click();
+  });
+  await expect.poll(() => exportedPayload).not.toBeNull();
+  expect(exportedPayload.fixedSvgs).toEqual([
+    expect.objectContaining({
+      id: "fixed-design-2",
+      name: "Paw Print",
+      publicUrl: fixedDesignPublicUrl("paw-print.svg"),
+      xMm: 0,
+      yMm: 0,
+      widthMm: 36,
+      heightMm: 36,
+      offsetXMm: -30,
+      offsetYMm: -20,
+    }),
+  ]);
+  expect(exportedPayload.widthMm).toBeGreaterThan(60);
+  expect(exportedPayload.heightMm).toBe(50);
 });
 
 test("keeps newer fixed design picker results when an older load fails later", async ({ page }) => {

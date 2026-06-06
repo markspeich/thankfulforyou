@@ -1,11 +1,13 @@
 import json
 import hashlib
+import ipaddress
 import os
 import sys
 import tempfile
 import urllib.parse
 import urllib.request
 import unicodedata
+import xml.etree.ElementTree as ET
 from collections import defaultdict, deque
 from pathlib import Path
 
@@ -23,6 +25,45 @@ COLOR_LABEL_MARGIN_MM = 3.0
 COLOR_LABEL_FONT_SIZE_MM = 6.0
 COLOR_LABEL_LINE_HEIGHT_MM = 4.8
 REMOTE_FONT_MAX_BYTES = 2 * 1024 * 1024
+REMOTE_SVG_MAX_BYTES = 2 * 1024 * 1024
+BLOCKED_FIXED_SVG_TAGS = {
+    "animate",
+    "animatemotion",
+    "animatetransform",
+    "audio",
+    "discard",
+    "embed",
+    "foreignobject",
+    "iframe",
+    "image",
+    "link",
+    "meta",
+    "mpath",
+    "object",
+    "script",
+    "set",
+    "style",
+    "unknown",
+    "video",
+}
+BLOCKED_FIXED_SVG_ATTRS = {
+    "class",
+    "clip-path",
+    "color",
+    "cursor",
+    "filter",
+    "fill",
+    "marker-end",
+    "marker-mid",
+    "marker-start",
+    "mask",
+    "opacity",
+    "pointer-events",
+    "stroke",
+    "style",
+}
+
+ET.register_namespace("", "http://www.w3.org/2000/svg")
 
 
 def svg_escape(value):
@@ -33,6 +74,74 @@ def svg_escape(value):
         .replace("<", "&lt;")
         .replace(">", "&gt;")
     )
+
+
+def svg_id_token(value, fallback="fixed-svg"):
+    token = "".join(
+        character.lower() if character.isalnum() else "-"
+        for character in str(value or fallback)
+    ).strip("-")
+    token = "-".join(part for part in token.split("-") if part)
+    return token or fallback
+
+
+def parse_svg_dimension(value):
+    if value is None:
+        return None
+
+    raw = str(value).strip()
+    if not raw:
+        return None
+
+    number = ""
+    for character in raw:
+        if character.isdigit() or character in ".-":
+            number += character
+        elif number:
+            break
+
+    try:
+        parsed = float(number)
+    except ValueError:
+        return None
+
+    return parsed if parsed > 0 else None
+
+
+def local_svg_name(element):
+    return str(element.tag).split("}")[-1].lower()
+
+
+def local_attr_name(name):
+    return str(name).split("}")[-1].lower()
+
+
+def is_unsafe_svg_attr(name, value):
+    attr_name = local_attr_name(name)
+    attr_value = str(value or "").strip().lower()
+    if attr_name.startswith("on"):
+        return True
+    if attr_name in BLOCKED_FIXED_SVG_ATTRS:
+        return True
+    if attr_name in {"href", "src"} or name.endswith("}href"):
+        return True
+    if "javascript:" in attr_value or "data:" in attr_value or "url(" in attr_value:
+        return True
+    return False
+
+
+def sanitize_fixed_svg_element(element):
+    for child in list(element):
+        if local_svg_name(child) in BLOCKED_FIXED_SVG_TAGS:
+            element.remove(child)
+            continue
+        sanitize_fixed_svg_element(child)
+
+    for attr_name in list(element.attrib):
+        if is_unsafe_svg_attr(attr_name, element.attrib[attr_name]):
+            del element.attrib[attr_name]
+
+    return element
 
 
 def parse_export_quantity(value):
@@ -366,6 +475,181 @@ def cache_remote_font(font_ref):
 
     cache_path.write_bytes(font_bytes)
     return cache_path
+
+
+def configured_fixed_svg_allowed_hosts():
+    hosts = set()
+    raw_hosts = os.environ.get("THANKFULFORYOU_FIXED_SVG_ALLOWED_HOSTS", "")
+    for host in raw_hosts.split(","):
+        normalized = host.strip().lower()
+        if normalized:
+            hosts.add(normalized)
+
+    for env_key in ("SUPABASE_URL", "THANKFULFORYOU_ASSET_BASE_URL"):
+        parsed = urllib.parse.urlparse(os.environ.get(env_key, "").strip())
+        if parsed.hostname:
+            hosts.add(parsed.hostname.lower())
+
+    return hosts
+
+
+def is_private_or_internal_host(hostname):
+    if not hostname:
+        return True
+
+    normalized = hostname.strip().lower().rstrip(".")
+    if normalized in {"localhost", "0.0.0.0"} or normalized.endswith(".localhost") or normalized.endswith(".local"):
+        return True
+
+    try:
+        address = ipaddress.ip_address(normalized.strip("[]"))
+    except ValueError:
+        return False
+
+    return address.is_private or address.is_loopback or address.is_link_local or address.is_reserved or address.is_unspecified
+
+
+def is_allowed_fixed_svg_url(svg_url):
+    parsed = urllib.parse.urlparse(str(svg_url or "").strip())
+    if parsed.scheme != "https" or not parsed.hostname:
+        return False
+
+    hostname = parsed.hostname.lower()
+    if is_private_or_internal_host(hostname):
+        return False
+
+    return hostname in configured_fixed_svg_allowed_hosts()
+
+
+class FixedSvgNoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise urllib.error.HTTPError(
+            req.full_url,
+            code,
+            "Fixed SVG redirects are not allowed",
+            headers,
+            fp,
+        )
+
+
+def read_remote_svg(svg_url):
+    svg_url = str(svg_url or "").strip()
+    if not is_allowed_fixed_svg_url(svg_url):
+        return None
+
+    cache_dir = Path(tempfile.gettempdir()) / "thankfulforyou-fixed-svgs"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    cache_name = hashlib.sha256(svg_url.encode("utf-8")).hexdigest()
+    cache_path = cache_dir / f"{cache_name}.svg"
+    if cache_path.exists():
+        return cache_path.read_text(encoding="utf-8")
+
+    request = urllib.request.Request(svg_url)
+    opener = urllib.request.build_opener(FixedSvgNoRedirectHandler)
+    with opener.open(request, timeout=10) as response:
+        svg_bytes = response.read(REMOTE_SVG_MAX_BYTES + 1)
+
+    if len(svg_bytes) > REMOTE_SVG_MAX_BYTES:
+        raise ValueError(f"Remote fixed SVG exceeded {REMOTE_SVG_MAX_BYTES} bytes: {svg_url}")
+
+    svg_text = svg_bytes.decode("utf-8")
+    cache_path.write_text(svg_text, encoding="utf-8")
+    return svg_text
+
+
+def parse_svg_markup(svg_text):
+    if not isinstance(svg_text, str) or not svg_text.strip():
+        return None
+
+    try:
+        root = ET.fromstring(svg_text)
+    except ET.ParseError:
+        return None
+
+    if root.tag.split("}")[-1].lower() != "svg":
+        return None
+
+    view_box = root.attrib.get("viewBox") or root.attrib.get("viewbox")
+    view_box_values = []
+    if view_box:
+        try:
+            view_box_values = [float(part) for part in view_box.replace(",", " ").split()]
+        except ValueError:
+            view_box_values = []
+
+    if len(view_box_values) == 4 and view_box_values[2] > 0 and view_box_values[3] > 0:
+        source_x = view_box_values[0]
+        source_y = view_box_values[1]
+        source_width = view_box_values[2]
+        source_height = view_box_values[3]
+    else:
+        source_x = 0.0
+        source_y = 0.0
+        source_width = parse_svg_dimension(root.attrib.get("width")) or 1.0
+        source_height = parse_svg_dimension(root.attrib.get("height")) or source_width
+
+    children = []
+    for child in list(root):
+        if local_svg_name(child) in BLOCKED_FIXED_SVG_TAGS:
+            continue
+        sanitized_child = sanitize_fixed_svg_element(child)
+        children.append(ET.tostring(sanitized_child, encoding="unicode"))
+
+    if not children:
+        return None
+
+    return {
+        "source_x": source_x,
+        "source_y": source_y,
+        "source_width": source_width,
+        "source_height": source_height,
+        "markup": "\n    ".join(children),
+    }
+
+
+def resolve_fixed_svg_markup(fixed_svg):
+    svg_text = fixed_svg.get("svgText")
+    if not svg_text and fixed_svg.get("publicUrl"):
+        svg_text = read_remote_svg(fixed_svg.get("publicUrl"))
+
+    return parse_svg_markup(svg_text)
+
+
+def normalize_fixed_svgs(payload):
+    fixed_svgs = []
+    for index, fixed_svg in enumerate(payload.get("fixedSvgs") or []):
+        if not isinstance(fixed_svg, dict):
+            continue
+
+        try:
+            width = float(fixed_svg.get("widthMm"))
+            height = float(fixed_svg.get("heightMm"))
+            x = float(fixed_svg.get("xMm"))
+            y = float(fixed_svg.get("yMm"))
+        except (TypeError, ValueError):
+            continue
+
+        if width <= 0 or height <= 0:
+            continue
+
+        try:
+            parsed_svg = resolve_fixed_svg_markup(fixed_svg)
+        except Exception:
+            parsed_svg = None
+        if not parsed_svg:
+            continue
+
+        fixed_svgs.append({
+            "id": svg_id_token(fixed_svg.get("id") or fixed_svg.get("fixedDesignId") or index + 1),
+            "name": svg_escape(fixed_svg.get("name") or fixed_svg.get("fixedDesignName") or "Fixed SVG"),
+            "x": x,
+            "y": y,
+            "width": width,
+            "height": height,
+            **parsed_svg,
+        })
+
+    return fixed_svgs
 
 
 def find_font_path(root, font_ref):
@@ -740,6 +1024,7 @@ def build_precomputed_order_paths(payload):
         "backing_x": width + EXPORT_GAP_MM,
         "face_path": export_face_path,
         "backing_path": backing_path,
+        "fixed_svgs": normalize_fixed_svgs(payload),
         "text": svg_escape(payload.get("text", "")),
         "connected_component_count": int(analysis.get("connectedComponentCount", 0)),
         "color_name": color_name,
@@ -769,6 +1054,7 @@ def build_single_order_paths(root, payload):
         "backing_x": backing_x,
         "face_path": analysis["exportFacePath"],
         "backing_path": analysis["backingPath"],
+        "fixed_svgs": normalize_fixed_svgs(payload),
         "text": svg_escape(analysis["text"]),
         "connected_component_count": analysis["connectedComponentCount"],
         "color_name": color_name,
@@ -799,6 +1085,24 @@ def build_color_label(order, instance_id, translate_y, x=None, y=None, center_ve
         f'font-family="Arial" font-size="{COLOR_LABEL_FONT_SIZE_MM:.3f}mm" '
         f'fill="rgb(255, 0, 0)" text-anchor="middle"{baseline}>{color_name}</text>'
     )
+
+
+def build_fixed_svg_layers(order, instance_id, face_x, item_y):
+    parts = []
+    for fixed_svg in order.get("fixed_svgs", []):
+        scale = min(
+            fixed_svg["width"] / fixed_svg["source_width"],
+            fixed_svg["height"] / fixed_svg["source_height"],
+        )
+        translate_x = face_x + fixed_svg["x"] - fixed_svg["source_x"] * scale
+        translate_y = item_y + fixed_svg["y"] - fixed_svg["source_y"] * scale
+        parts.append(
+            f"""  <g id="{instance_id}-fixed-svg-{fixed_svg["id"]}" data-fixed-svg-name="{fixed_svg["name"]}" transform="translate({translate_x:.3f} {translate_y:.3f}) scale({scale:.6f} {scale:.6f})" fill="rgb(255, 0, 0)" stroke="none">
+    {fixed_svg["markup"]}
+  </g>"""
+        )
+
+    return "\n".join(parts)
 
 
 def expand_export_instances(order_paths):
@@ -858,8 +1162,13 @@ def build_svg_document(title, desc, instances, fixed_columns=False):
         parts.append(
             f"""  <g id="{instance_id}-name-group" transform="translate({face_x:.3f} {item_y:.3f})" fill="{export_fill}" stroke="none">
     <path d="{order["face_path"]}"/>
-  </g>
-  <path id="{instance_id}-backing-border" d="{order["backing_path"]}" transform="translate({backing_x:.3f} {item_y:.3f})" fill="{export_fill}" stroke="none"/>"""
+  </g>"""
+        )
+        fixed_svg_layers = build_fixed_svg_layers(order, instance_id, face_x, item_y)
+        if fixed_svg_layers:
+            parts.append(fixed_svg_layers)
+        parts.append(
+            f"""  <path id="{instance_id}-backing-border" d="{order["backing_path"]}" transform="translate({backing_x:.3f} {item_y:.3f})" fill="{export_fill}" stroke="none"/>"""
         )
         color_label = build_color_label(
             order,

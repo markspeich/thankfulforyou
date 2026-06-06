@@ -21,8 +21,15 @@ describe("fixed design store helpers", () => {
     expect(normalizeSvgUploadFile({
       name: "Nurse Cross.svg",
       type: "image/svg+xml",
-      text: "<svg viewBox=\"0 0 10 10\"></svg>",
-    })).toMatchObject({ fileName: "Nurse Cross.svg", contentType: "image/svg+xml" });
+      text: "<svg viewBox=\"0 0 40 20\"></svg>",
+    })).toMatchObject({
+      fileName: "Nurse Cross.svg",
+      contentType: "image/svg+xml",
+      metadata: {
+        viewBox: "0 0 40 20",
+        aspectRatio: 2,
+      },
+    });
   });
 
   it("rejects files without an svg root", () => {
