@@ -27,7 +27,8 @@
     "test:db": "node tools/run_db_tests.mjs",
     "test:db:local": "node tools/run_db_tests.mjs --env local",
     "test:db:remote": "node tools/run_db_tests.mjs --env remote",
-    "test:e2e": "playwright test",
+    "test:e2e": "node tools/run_playwright.mjs",
+    "test:e2e:raw": "playwright test",
     "test:e2e:preview": "node tools/run_playwright.mjs preview"
   },
   "devDependencies": {

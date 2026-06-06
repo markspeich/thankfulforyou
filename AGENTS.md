@@ -141,6 +141,19 @@ When the user asks to start the app, start a server, or initialize the app, foll
 - Keep the dev server running in a foreground or other persistent terminal session. In this Windows Codex worktree setup, detached hidden launches can exit early and leave the browser unable to connect.
 - Do not assume `node_modules` must already exist before launching the dev server. In this repo, the HTTP dev server can start without an install, though tests and other tooling may still require dependencies.
 - After launch, verify the server with a quick HTTP request instead of trusting process startup alone.
+
+### Testing And Port Isolation
+
+- Automated tests that start or target the web app must follow the same per-worktree port discipline as manual dev-server startup.
+- Use `npm run test:e2e` for local browser/e2e tests. That script runs `tools/run_playwright.mjs`, resolves this checkout's dev-server URL, and exports `PLAYWRIGHT_BASE_URL` and `PORT` for the test process.
+- Use `npm run test:e2e:raw` or direct `npx playwright test` only when you explicitly need to bypass the safe runner, and only after setting `PLAYWRIGHT_BASE_URL` and `PORT` yourself.
+- Before running Playwright, e2e tests, or any test that may start `tools/dev_server.mjs`, resolve this worktree's URL with:
+  `node --input-type=module -e "import { resolveDevBaseUrl } from './tools/dev_port.mjs'; console.log(resolveDevBaseUrl())"`
+- Pass that resolved URL to browser/e2e test commands with `PLAYWRIGHT_BASE_URL` instead of letting a test process guess or bind a shared/default port.
+- If verifying from a different checkout or worktree, resolve and use that checkout's own `tools/dev_port.mjs` result. Do not reuse a URL printed by another worktree.
+- Do not run `npm test`, `npm run test:e2e`, `npx playwright test`, or ad hoc Playwright scripts from a different checkout unless you have first resolved and exported that checkout's own test URL.
+- Never stop or kill a process merely because it owns the port a test wanted. First determine whether that process belongs to the current worktree. If it belongs to another worktree, leave it running and choose this worktree's resolved test URL or set an explicit non-conflicting `PORT` for the current command.
+- If a test fails with `EADDRINUSE`, treat it as a test setup error, not as permission to kill the port holder. Resolve the current worktree URL, set `PLAYWRIGHT_BASE_URL`/`PORT` consistently for the retry, and report the collision.
 - When the user says `Initialize app`, initialize local app test data unless they explicitly ask for remote: create or update the local Supabase test operator `test.operator@example.com` with password `TestOperator123!`, ensure `Primary Workspace` exists with id `11111111-1111-4111-8111-111111111111`, ensure the operator has an `operator` membership in that workspace, ensure `Primary Batch` exists with id `22222222-2222-4222-8222-222222222222`, and refresh that batch's `updated_at` so it is the current active batch returned by `/api/batch-session`.
 - For `Initialize app`, run commands through `node tools/run_with_supabase_env.mjs --env local -- ...` by default so local Supabase URL and keys are used. Verify initialization by signing in as the test operator and calling the running local server's `/api/batch-session` endpoint with the access token; report the resolved operator, workspace, and batch.
 - Remember that the geometry API routes depend on Python. A running frontend server does not guarantee that export and analysis requests will succeed.

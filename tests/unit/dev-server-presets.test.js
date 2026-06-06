@@ -2,7 +2,34 @@ import { spawn } from "node:child_process";
 import { request } from "node:http";
 import { afterEach, describe, expect, it } from "vitest";
 
+import {
+  WORKTREE_PORT_BASE,
+  WORKTREE_PORT_SPAN,
+  computeWorktreePort,
+  isPortAvailable,
+} from "../../tools/dev_port.mjs";
+
 const sessions = [];
+const reservedPorts = new Set();
+
+async function reserveAvailableDevServerTestPort() {
+  const firstCandidate = computeWorktreePort(process.cwd());
+  const startOffset = firstCandidate - WORKTREE_PORT_BASE;
+
+  for (let attempt = 0; attempt < WORKTREE_PORT_SPAN; attempt += 1) {
+    const candidate = WORKTREE_PORT_BASE + ((startOffset + attempt) % WORKTREE_PORT_SPAN);
+    if (
+      !reservedPorts.has(candidate)
+      && await isPortAvailable(candidate, "127.0.0.1")
+      && await isPortAvailable(candidate, "::")
+    ) {
+      reservedPorts.add(candidate);
+      return candidate;
+    }
+  }
+
+  throw new Error("No available dev server test port found.");
+}
 
 function startDevServer(port) {
   return new Promise((resolve, reject) => {
@@ -115,7 +142,7 @@ afterEach(() => {
 
 describe("dev server preset api wrapper", () => {
   it("returns 400 for malformed preset snapshot json payloads", async () => {
-    const port = 4891;
+    const port = await reserveAvailableDevServerTestPort();
     await startDevServer(port);
 
     const response = await putMalformedPresetSnapshotJson(port);
@@ -127,7 +154,7 @@ describe("dev server preset api wrapper", () => {
 
 describe("dev server orders api wrapper", () => {
   it("routes orders requests through the API handler instead of serving api/orders.js", async () => {
-    const port = 4892;
+    const port = await reserveAvailableDevServerTestPort();
     await startDevServer(port);
 
     const response = await postMalformedOrdersJson(port);
