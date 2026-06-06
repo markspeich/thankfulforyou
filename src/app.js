@@ -5456,12 +5456,18 @@ async function updateDatabaseOrderItemStatus({
       accessToken,
     });
 
-    databaseOrdersStatusFilterValue = nextFilter;
-    if (databaseOrdersStatusFilter) {
-      databaseOrdersStatusFilter.value = nextFilter;
+    if (nextFilter) {
+      databaseOrdersStatusFilterValue = nextFilter;
+      if (databaseOrdersStatusFilter) {
+        databaseOrdersStatusFilter.value = nextFilter;
+      }
     }
     checkedDatabaseOrderIds.clear();
-    await refreshOrdersAndProductionBatch({ payload, accessToken, refreshBatch: action === "skipOrderItem" });
+    await refreshOrdersAndProductionBatch({
+      payload: nextFilter ? payload : null,
+      accessToken,
+      refreshBatch: action === "skipOrderItem",
+    });
     updateWorkflowAlert(successMessage, "success");
   } catch (error) {
     handleOrdersMutationError(
@@ -5496,7 +5502,7 @@ async function skipDatabaseOrderItem(item, button = null) {
   await updateDatabaseOrderItemStatus({
     item,
     action: "skipOrderItem",
-    nextFilter: "skipped",
+    nextFilter: null,
     pendingLabel: "Skipping...",
     successMessage: "Order skipped.",
     fallbackMessage: "Unable to skip the order.",
@@ -5551,12 +5557,18 @@ async function updateDatabaseOrderStatus({
       accessToken,
     });
 
-    databaseOrdersStatusFilterValue = nextFilter;
-    if (databaseOrdersStatusFilter) {
-      databaseOrdersStatusFilter.value = nextFilter;
+    if (nextFilter) {
+      databaseOrdersStatusFilterValue = nextFilter;
+      if (databaseOrdersStatusFilter) {
+        databaseOrdersStatusFilter.value = nextFilter;
+      }
     }
     checkedDatabaseOrderIds.clear();
-    await refreshOrdersAndProductionBatch({ payload, accessToken, refreshBatch: action === "skipOrder" });
+    await refreshOrdersAndProductionBatch({
+      payload: nextFilter ? payload : null,
+      accessToken,
+      refreshBatch: action === "skipOrder",
+    });
     updateWorkflowAlert(successMessage, "success");
   } catch (error) {
     handleOrdersMutationError(
@@ -5595,7 +5607,7 @@ async function skipSelectedDatabaseOrder() {
   await updateDatabaseOrderStatus({
     order: selectedOrder,
     action: "skipOrder",
-    nextFilter: "skipped",
+    nextFilter: null,
     pendingLabel: "Skipping...",
     successMessage: "Order skipped.",
     fallbackMessage: "Unable to skip the order.",
@@ -5653,12 +5665,18 @@ async function updateCheckedDatabaseOrdersStatus({
       accessToken,
     });
 
-    databaseOrdersStatusFilterValue = nextFilter;
-    if (databaseOrdersStatusFilter) {
-      databaseOrdersStatusFilter.value = nextFilter;
+    if (nextFilter) {
+      databaseOrdersStatusFilterValue = nextFilter;
+      if (databaseOrdersStatusFilter) {
+        databaseOrdersStatusFilter.value = nextFilter;
+      }
     }
     checkedDatabaseOrderIds.clear();
-    await refreshOrdersAndProductionBatch({ payload, accessToken, refreshBatch: action === "skipOrders" });
+    await refreshOrdersAndProductionBatch({
+      payload: nextFilter ? payload : null,
+      accessToken,
+      refreshBatch: action === "skipOrders",
+    });
     updateWorkflowAlert(successMessage, "success");
   } catch (error) {
     handleOrdersMutationError(
@@ -5697,7 +5715,7 @@ async function skipCheckedDatabaseOrders() {
 
   await updateCheckedDatabaseOrdersStatus({
     action: "skipOrders",
-    nextFilter: "skipped",
+    nextFilter: null,
     pendingLabel: "Skipping...",
     successMessage: "Orders skipped.",
     fallbackMessage: "Unable to skip the selected orders.",

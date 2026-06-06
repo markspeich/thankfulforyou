@@ -570,11 +570,11 @@ test("skips and reopens an order item from the Orders screen", async ({ page }) 
     posts,
     postBody: (post) => {
       if (post.action === "skipOrderItem") {
-        ordersPayload = buildStatusPayload("skipped");
+        Object.assign(ordersPayload, buildStatusPayload("skipped"));
         return ordersPayload;
       }
       if (post.action === "reopenOrderItem") {
-        ordersPayload = buildStatusPayload("open");
+        Object.assign(ordersPayload, buildStatusPayload("open"));
         return ordersPayload;
       }
       return ordersPayload;
@@ -592,7 +592,10 @@ test("skips and reopens an order item from the Orders screen", async ({ page }) 
   await page.locator("#confirmationDialogConfirmButton").click();
 
   await expect.poll(() => posts.some((post) => post.action === "skipOrderItem" && post.orderItemId === "item-1")).toBe(true);
-  await expect(page.locator("#databaseOrdersStatusFilter")).toHaveValue("skipped");
+  await expect(page.locator("#databaseOrdersStatusFilter")).toHaveValue("open");
+  await expect(ordersWorkspace.locator(".database-order-row")).toHaveCount(0);
+
+  await page.locator("#databaseOrdersStatusFilter").selectOption("skipped");
   await expect(ordersWorkspace.locator(".database-order-row")).toContainText("Order 1001 (Skipped)");
   await expect(firstItemCard.locator(".database-order-item-status")).toHaveText("Skipped");
   await firstItemCard.getByRole("button", { name: "Item actions" }).click();
@@ -639,11 +642,11 @@ test("skips and reopens an entire selected order from the Orders screen", async 
     posts,
     postBody: (post) => {
       if (post.action === "skipOrder") {
-        ordersPayload = buildStatusPayload("skipped");
+        Object.assign(ordersPayload, buildStatusPayload("skipped"));
         return ordersPayload;
       }
       if (post.action === "reopenOrder") {
-        ordersPayload = buildStatusPayload("open");
+        Object.assign(ordersPayload, buildStatusPayload("open"));
         return ordersPayload;
       }
       return ordersPayload;
@@ -661,6 +664,10 @@ test("skips and reopens an entire selected order from the Orders screen", async 
   await page.locator("#confirmationDialogConfirmButton").click();
 
   await expect.poll(() => posts.some((post) => post.action === "skipOrder" && post.orderId === "order:1001")).toBe(true);
+  await expect(page.locator("#databaseOrdersStatusFilter")).toHaveValue("open");
+  await expect(ordersWorkspace.locator(".database-order-row")).toHaveCount(0);
+
+  await page.locator("#databaseOrdersStatusFilter").selectOption("skipped");
   await expect(page.locator("#databaseOrdersStatusFilter")).toHaveValue("skipped");
   await expect(ordersWorkspace.locator(".database-order-row")).toContainText("Order 1001 (Skipped)");
   await expect(ordersWorkspace.locator(".database-order-item-status")).toHaveText(["Skipped", "Skipped"]);
@@ -699,11 +706,11 @@ test("skips and reopens checked orders from the Orders column menu", async ({ pa
     posts,
     postBody: (post) => {
       if (post.action === "skipOrders") {
-        ordersPayload = buildStatusPayload("skipped");
+        Object.assign(ordersPayload, buildStatusPayload("skipped"));
         return ordersPayload;
       }
       if (post.action === "reopenOrders") {
-        ordersPayload = buildStatusPayload("open");
+        Object.assign(ordersPayload, buildStatusPayload("open"));
         return ordersPayload;
       }
       return ordersPayload;
@@ -722,9 +729,12 @@ test("skips and reopens checked orders from the Orders column menu", async ({ pa
   await page.locator("#confirmationDialogConfirmButton").click();
 
   await expect.poll(() => posts.some((post) => post.action === "skipOrders" && post.orderIds.includes("order:1001") && post.orderIds.includes("order:1002"))).toBe(true);
+  await expect(page.locator("#databaseOrdersStatusFilter")).toHaveValue("open");
+  await expect(ordersWorkspace.locator(".database-order-row")).toHaveCount(0);
+
+  await page.locator("#databaseOrdersStatusFilter").selectOption("skipped");
   await expect(page.locator("#databaseOrdersStatusFilter")).toHaveValue("skipped");
   await expect(ordersWorkspace.locator(".database-order-row")).toHaveCount(2);
-
   await ordersWorkspace.getByLabel("Select order 1001").check();
   await ordersWorkspace.getByLabel("Select order 1002").check();
   await page.locator("#ordersToolsMenu summary").click();
