@@ -142,7 +142,7 @@ async function installFixedDesignRoutes(page) {
       public_url: fixedDesignPublicUrl("paw-print.svg"),
       file_name: "paw-print.svg",
       version: 1,
-      metadata_json: {},
+      metadata_json: { viewBox: "0 0 24 12" },
       deleted_at: null,
       created_at: "2026-06-02T12:00:00.000Z",
       updated_at: "2026-06-02T12:00:00.000Z",
@@ -258,6 +258,78 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
+test("renders inserted fixed SVG artwork even when the order text is blank", async ({ page }) => {
+  const analyzedLayouts = [];
+  await page.route("**/api/layout-analyze", async (route) => {
+    analyzedLayouts.push(route.request().postDataJSON()?.layout);
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify({
+        text: "",
+        widthMm: 40,
+        heightMm: 20,
+        backingMm: 3.1,
+        facePath: "",
+        faceBoundsMm: { left: 0, top: 0, width: 0, height: 0 },
+        exportFacePath: "",
+        backingPath: "",
+        connectedComponentCount: 0,
+        isConnected: true,
+      }),
+    });
+  });
+  await page.unroute("**/api/production-batch**");
+  await installProductionBatchRoutes(page, {
+    ...buildDefaultProductionBatchSnapshot(),
+    orderItems: [
+      {
+        ...buildDefaultProductionBatchSnapshot().orderItems[0],
+        text: "",
+        settings: {
+          text: "",
+          presetId: "all-candlepin",
+          lines: [],
+        },
+      },
+    ],
+  });
+
+  await page.goto("/production-batch");
+  await expect(page.locator("#initialBatchLoading")).toBeHidden();
+  await expect(page.locator("#textInput")).toHaveValue("");
+
+  await openPresetTools(page);
+  await page.getByRole("button", { name: "Insert Fixed Design" }).click();
+
+  const dialog = page.locator("#insertFixedDesignDialog");
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "Paw Print v1 - paw-print.svg" }).click();
+  await dialog.getByRole("button", { name: "Insert Fixed Design" }).click();
+  await expect(dialog).not.toBeVisible();
+
+  await expect(page.locator(".line-control-card", { hasText: "Fixed Design: Paw Print" })).toBeVisible();
+
+  const fixedPreview = page.locator('#preview [data-fixed-svg-id="fixed-design-2"]');
+  await expect(fixedPreview).toBeVisible();
+  await expect(fixedPreview).toHaveAttribute("href", /paw-print\.svg/);
+  await expect(fixedPreview).toHaveAttribute("width", "64");
+  await expect(fixedPreview).toHaveAttribute("height", "32");
+  await expect(page.locator("#captureButton")).toBeEnabled();
+
+  await page.locator("#captureButton").click();
+  await expect.poll(() => analyzedLayouts.length).toBe(1);
+  expect(analyzedLayouts[0].text).toBe("");
+  expect(analyzedLayouts[0].fixedSvgs).toEqual([
+    expect.objectContaining({
+      id: "fixed-design-2",
+      name: "Paw Print",
+      widthMm: 64,
+      heightMm: 32,
+    }),
+  ]);
+});
+
 test("inserts a fixed SVG design from the preset tools menu with SVG-only controls", async ({ page }) => {
   const analyzedLayouts = [];
   await page.route("**/api/layout-analyze", async (route) => {
@@ -328,6 +400,12 @@ test("inserts a fixed SVG design from the preset tools menu with SVG-only contro
   const fixedPreview = page.locator('#preview [data-fixed-svg-id="fixed-design-2"]');
   await expect(fixedPreview).toBeVisible();
   await expect(fixedPreview).toHaveAttribute("href", /paw-print\.svg/);
+  await expect.poll(async () => page.locator("#preview").evaluate((preview) => {
+    const children = [...preview.children];
+    const faceLayerIndex = children.findIndex((child) => child.classList.contains("face-layer"));
+    const fixedSvgIndex = children.findIndex((child) => child.getAttribute("data-fixed-svg-id") === "fixed-design-2");
+    return fixedSvgIndex > faceLayerIndex;
+  })).toBe(true);
   const initialPreviewBox = await fixedPreview.evaluate((element) => ({
     x: Number(element.getAttribute("x")),
     y: Number(element.getAttribute("y")),
@@ -350,7 +428,8 @@ test("inserts a fixed SVG design from the preset tools menu with SVG-only contro
     input.dispatchEvent(new Event("change", { bubbles: true }));
   });
 
-  await expect.poll(async () => fixedPreview.evaluate((element) => Number(element.getAttribute("width")))).toBe(40);
+  await expect.poll(async () => fixedPreview.evaluate((element) => Number(element.getAttribute("width")))).toBe(80);
+  await expect.poll(async () => fixedPreview.evaluate((element) => Number(element.getAttribute("height")))).toBe(40);
   const adjustedPreviewBox = await fixedPreview.evaluate((element) => ({
     x: Number(element.getAttribute("x")),
     y: Number(element.getAttribute("y")),
@@ -371,7 +450,7 @@ test("inserts a fixed SVG design from the preset tools menu with SVG-only contro
       id: "fixed-design-2",
       name: "Paw Print",
       publicUrl: fixedDesignPublicUrl("paw-print.svg"),
-      widthMm: 40,
+      widthMm: 80,
       heightMm: 40,
       offsetXMm: 7,
       offsetYMm: -6,
@@ -526,6 +605,7 @@ test("resolves deleted fixed SVG references for saved designs without offering t
       id: "fixed-design-deleted",
       name: "Retired Cross",
       publicUrl: fixedDesignPublicUrl("retired-cross.svg"),
+      svgText: DELETED_SVG,
       widthMm: 30,
       heightMm: 30,
       offsetXMm: 4,
@@ -654,7 +734,8 @@ test("enriches legacy cached fixed SVG layouts for preview and export", async ({
   const fixedPreview = page.locator('#preview [data-fixed-svg-id="fixed-design-2"]');
   await expect(fixedPreview).toBeVisible();
   await expect(fixedPreview).toHaveAttribute("href", /paw-print\.svg/);
-  await expect(fixedPreview).toHaveAttribute("width", "36");
+  await expect(fixedPreview).toHaveAttribute("width", "72");
+  await expect(fixedPreview).toHaveAttribute("height", "36");
 
   await page.evaluate(() => {
     const button = document.querySelector("#downloadButton");
@@ -669,9 +750,10 @@ test("enriches legacy cached fixed SVG layouts for preview and export", async ({
       id: "fixed-design-2",
       name: "Paw Print",
       publicUrl: fixedDesignPublicUrl("paw-print.svg"),
+      svgText: SECOND_SVG,
       xMm: 0,
       yMm: 0,
-      widthMm: 36,
+      widthMm: 72,
       heightMm: 36,
       offsetXMm: -30,
       offsetYMm: -20,
@@ -679,6 +761,126 @@ test("enriches legacy cached fixed SVG layouts for preview and export", async ({
   ]);
   expect(exportedPayload.widthMm).toBeGreaterThan(60);
   expect(exportedPayload.heightMm).toBe(50);
+});
+
+test("includes fixed SVG markup when copying a saved fixed design", async ({ page }) => {
+  await page.unroute("**/api/batch-session");
+  await page.unroute("**/api/production-batch**");
+
+  const settings = {
+    text: "Ava",
+    presetId: "preset-a1f4c8e2b601",
+    boundingSizePresetId: "size-2-2x1-5",
+    backingMm: 3.1,
+    weldExportedDesign: true,
+    lines: [
+      {
+        kind: "text",
+        fontId: "candlepin",
+        bridgeMm: 0.5,
+        lineBridgeMm: 0.5,
+        offsetXMm: 0,
+        fontSizeMm: 32,
+        horizontalScale: 1,
+        verticalScale: 1,
+        lockTextHeight: false,
+      },
+      {
+        kind: "fixedSvg",
+        fixedDesignId: "fixed-design-1",
+        fixedDesignName: "Cardiology Heart",
+        fixedDesignVersion: 3,
+        svgSizeMm: 24,
+        offsetXMm: 8,
+        offsetYMm: 6,
+      },
+    ],
+  };
+  const signature = buildLegacySettingsSignature(settings);
+  await installProductionBatchRoutes(page, {
+    batch: { id: "batch-1", workspaceId: "workspace-1" },
+    activeOrderItemId: "order-copy-fixed",
+    orderItems: [
+      {
+        id: "order-copy-fixed",
+        text: "Ava",
+        status: "captured",
+        settings,
+        source: null,
+        cachedBuild: {
+          signature,
+          layout: {
+            text: "Ava",
+            widthMm: 40,
+            heightMm: 24,
+            backingMm: 3.1,
+            weldExportedDesign: true,
+            boundingSizePresetId: "size-2-2x1-5",
+            textBoundsMm: { left: 6.1, top: 6.1, width: 27.8, height: 11.8 },
+            fit: { fitScale: 1, lineScaleFactors: [1], overflowsGuide: false },
+            letters: [
+              {
+                character: "A",
+                x: 7,
+                y: 18,
+                fontId: "candlepin",
+                fontPath: "public/fonts/Candlepin-Laser.otf",
+                fontSizeMm: 32,
+                horizontalScale: 1,
+                verticalScale: 1,
+              },
+            ],
+          },
+          analysis: {
+            exportFacePath: "M0 0 L10 0 L10 10 Z",
+            facePath: "M0 0 L10 0 L10 10 Z",
+            backingPath: "M20 0 L30 0 L30 10 Z",
+            faceBoundsMm: { left: 0, top: 0, width: 10, height: 10 },
+            connectedComponentCount: 1,
+            isConnected: true,
+          },
+        },
+        previousCompletedBuild: null,
+        savedSettingsSignature: signature,
+        completedSettingsSignature: signature,
+        analysisBadge: { state: "ok", shortLabel: "1", fullLabel: "Analysis complete: 1 connected face piece" },
+      },
+    ],
+  });
+
+  let exportedPayload = null;
+  await page.route("**/api/export-svg", async (route) => {
+    exportedPayload = route.request().postDataJSON();
+    await route.fulfill({
+      status: 200,
+      contentType: "image/svg+xml; charset=utf-8",
+      body: "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>",
+    });
+  });
+
+  await page.goto("/production-batch");
+  await expect(page.locator("#initialBatchLoading")).toBeHidden();
+  await page.evaluate(() => {
+    const button = document.querySelector("#copyButton");
+    if (!(button instanceof HTMLButtonElement)) {
+      throw new Error("Copy button not found");
+    }
+    button.click();
+  });
+
+  await expect.poll(() => exportedPayload).not.toBeNull();
+  expect(exportedPayload.fixedSvgs).toEqual([
+    expect.objectContaining({
+      id: "fixed-design-1",
+      name: "Cardiology Heart",
+      publicUrl: fixedDesignPublicUrl("cardiology-heart.svg"),
+      svgText: FIRST_SVG,
+      widthMm: 24,
+      heightMm: 24,
+      offsetXMm: 8,
+      offsetYMm: 6,
+    }),
+  ]);
 });
 
 test("keeps newer fixed design picker results when an older load fails later", async ({ page }) => {

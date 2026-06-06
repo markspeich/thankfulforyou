@@ -101,6 +101,50 @@ describe("preset authoring", () => {
     });
   });
 
+  it("infers reusable fixed SVG items without mixing them into text line rules", () => {
+    const preset = inferPresetDefinitionFromSettings({
+      name: "Bow RN",
+      settings: {
+        ...makeSettings(),
+        lines: [
+          makeSettings().lines[0],
+          {
+            kind: "fixedSvg",
+            fixedDesignId: "fixed-design-bow",
+            fixedDesignName: "Bow",
+            fixedDesignVersion: 4,
+            svgSizeMm: 36,
+            offsetXMm: 2.5,
+            offsetYMm: -3,
+          },
+          makeSettings().lines[1],
+        ],
+      },
+    });
+
+    expect(preset.fixedItems).toEqual([
+      {
+        kind: "fixedSvg",
+        fixedDesignId: "fixed-design-bow",
+        fixedDesignName: "Bow",
+        fixedDesignVersion: 4,
+        svgSizeMm: 36,
+        offsetXMm: 2.5,
+        offsetYMm: -3,
+      },
+    ]);
+    expect(preset.lineRules).toEqual([
+      {
+        match: { kind: "first" },
+        settings: { fontId: "skywalk", fontSizeMm: 18, lockTextHeight: false },
+      },
+      {
+        match: { kind: "remaining" },
+        settings: { fontId: "somekind", fontSizeMm: 23, lockTextHeight: true },
+      },
+    ]);
+  });
+
   it("round-trips inferred reusable rules through the preset builder for a third line", () => {
     const preset = inferPresetDefinitionFromSettings({
       name: "Skywalk RN",

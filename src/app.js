@@ -22,6 +22,7 @@ import {
   getBoundingSizePresetDefinitionsForEditor,
   getDefaultPresetId,
   getPresetDefinitionForEditor,
+  getPresetFixedItems,
   getPresetGlobalDefaults,
   getPresetIdForListingId,
   getPresetOptions,
@@ -1001,6 +1002,10 @@ function settingsIncludeFixedSvg(settings = {}) {
   return normalizeSettings(settings).lines.some(isFixedSvgLineSettings);
 }
 
+function orderHasRenderableDesign(order) {
+  return Boolean(order?.text?.trim() || settingsIncludeFixedSvg(order?.settings));
+}
+
 function restoredOrdersIncludeFixedSvgs() {
   return orders.some((order) => settingsIncludeFixedSvg(order.settings));
 }
@@ -1042,8 +1047,8 @@ function buildFixedSvgLayoutItems(lines, layoutWidthMm, layoutHeightMm) {
       const fixedDesign = resolveFixedDesignReference(line, fixedDesignRecords);
       const sizeMm = Math.max(1, Number(line.svgSizeMm) || 32);
       const aspectRatio = parseSvgViewBoxAspectRatio(fixedDesign);
-      const widthMm = aspectRatio >= 1 ? sizeMm : sizeMm * aspectRatio;
-      const heightMm = aspectRatio >= 1 ? sizeMm / aspectRatio : sizeMm;
+      const heightMm = sizeMm;
+      const widthMm = sizeMm * aspectRatio;
 
       return {
         id: fixedDesign.id || line.fixedDesignId || "",
@@ -1348,7 +1353,7 @@ function getCachedBuild(order, signature = getOrderSettingsSignatureCandidates(o
 
 function getBuildForSignature(order, signature) {
   const signatureCandidates = toSignatureCandidates(signature);
-  if (!order?.text.trim() || !signatureCandidates.length) {
+  if (!orderHasRenderableDesign(order) || !signatureCandidates.length) {
     return null;
   }
 
@@ -1425,6 +1430,57 @@ function buildExportPayload(layout, analysis = layout?.analysis || null, source 
     colorName,
     quantity,
   };
+}
+
+async function fetchFixedSvgText(fixedSvg) {
+  if (!fixedSvg || fixedSvg.svgText || !fixedSvg.publicUrl) {
+    return fixedSvg;
+  }
+
+  try {
+    const response = await fetch(fixedSvg.publicUrl);
+    if (!response.ok) {
+      return fixedSvg;
+    }
+
+    const svgText = await response.text();
+    if (!svgText.trim()) {
+      return fixedSvg;
+    }
+
+    return {
+      ...fixedSvg,
+      svgText,
+    };
+  } catch {
+    return fixedSvg;
+  }
+}
+
+async function enrichExportLayoutWithFixedSvgText(layout) {
+  if (!layout || !Array.isArray(layout.fixedSvgs) || !layout.fixedSvgs.length) {
+    return layout;
+  }
+
+  return {
+    ...layout,
+    fixedSvgs: await Promise.all(layout.fixedSvgs.map(fetchFixedSvgText)),
+  };
+}
+
+async function enrichExportPayloadWithFixedSvgText(payload) {
+  if (!payload) {
+    return payload;
+  }
+
+  if (Array.isArray(payload.layouts)) {
+    return {
+      ...payload,
+      layouts: await Promise.all(payload.layouts.map(enrichExportLayoutWithFixedSvgText)),
+    };
+  }
+
+  return enrichExportLayoutWithFixedSvgText(payload);
 }
 
 function renderPresetOptions() {
@@ -2372,6 +2428,7 @@ function buildOverwrittenPresetDefinition({ preset, settings }) {
     globalDefaults: inferredPreset.globalDefaults,
     lineDefaults: inferredPreset.lineDefaults,
     lineRules: inferredPreset.lineRules,
+    fixedItems: inferredPreset.fixedItems,
     listingAssignments: Array.isArray(preset?.listingAssignments)
       ? structuredClone(preset.listingAssignments)
       : [],
@@ -4582,6 +4639,7 @@ function buildPresetSynchronizedSettings(settings, presetId, options = {}) {
     normalizeSettings,
     getPresetBaseSettings,
     buildPresetLines,
+    getPresetFixedItems,
     createDefaultLineSettings,
     getRawTextLines,
   });
@@ -6932,6 +6990,7 @@ function applyPresetSelection(presetId) {
     normalizeSettings,
     getPresetBaseSettings,
     buildPresetLines,
+    getPresetFixedItems,
     createDefaultLineSettings,
     getRawTextLines,
   });
@@ -7264,7 +7323,7 @@ function hasCompletedEditingState(order, settings = getCurrentSettings()) {
 }
 
 function canCompleteActiveOrder(order) {
-  if (!order || !order.text.trim()) {
+  if (!orderHasRenderableDesign(order)) {
     return false;
   }
 
@@ -7272,7 +7331,7 @@ function canCompleteActiveOrder(order) {
 }
 
 function hasUnsavedRenderChanges(order) {
-  if (!order || !order.text.trim()) {
+  if (!orderHasRenderableDesign(order)) {
     return false;
   }
 
@@ -7301,7 +7360,7 @@ function hasSavedCompletedState(order) {
 }
 
 function getSavedCachedBuild(order) {
-  if (!order?.text.trim() || !hasSavedCompletedState(order)) {
+  if (!orderHasRenderableDesign(order) || !hasSavedCompletedState(order)) {
     return null;
   }
 
@@ -7459,7 +7518,7 @@ function renderOrderList() {
   const completeCount = orders.filter((order) => order.status === "captured" || order.status === "exported").length;
   const progressCount = orders.filter((order) => order.status === "in-progress").length;
   const notStartedCount = orders.filter((order) => order.status === "not-started").length;
-  const exportableCount = orders.filter((order) => order.text.trim()).length;
+  const exportableCount = orders.filter(orderHasRenderableDesign).length;
   const readyToExportCount = orders.filter(isOrderReadyForExport).length;
   const allExportableOrdersReady = exportableCount > 0 && readyToExportCount === exportableCount;
 
@@ -7820,10 +7879,11 @@ function renderInsertFixedDesignPicker() {
     insertFixedDesignList.append(empty);
   } else {
     visibleRecords.forEach((fixedDesign) => {
-      const row = document.createElement("button");
+      const row = document.createElement("article");
       row.className = "fixed-design-row size-preset-row insert-fixed-design-row";
       row.classList.toggle("is-selected", fixedDesign.id === selectedFixedDesign?.id);
-      row.type = "button";
+      row.role = "button";
+      row.tabIndex = 0;
       row.dataset.fixedDesignId = fixedDesign.id;
       row.innerHTML = `
         <span class="size-preset-name fixed-design-row-name"></span>
@@ -7832,6 +7892,14 @@ function renderInsertFixedDesignPicker() {
       row.querySelector(".fixed-design-row-name").textContent = fixedDesign.displayName;
       row.querySelector(".fixed-design-row-meta").textContent = `v${fixedDesign.version || 1} - ${fixedDesign.fileName || "SVG"}`;
       row.addEventListener("click", () => {
+        selectInsertFixedDesign(fixedDesign.id);
+      });
+      row.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter" && event.key !== " ") {
+          return;
+        }
+
+        event.preventDefault();
         selectInsertFixedDesign(fixedDesign.id);
       });
       insertFixedDesignList.append(row);
@@ -8023,10 +8091,11 @@ function renderFixedDesignWorkspace() {
     fixedDesignList.append(empty);
   } else {
     visibleRecords.forEach((fixedDesign) => {
-      const row = document.createElement("button");
+      const row = document.createElement("article");
       row.className = "fixed-design-row size-preset-row";
       row.classList.toggle("is-selected", fixedDesign.id === selectedFixedDesign?.id);
-      row.type = "button";
+      row.role = "button";
+      row.tabIndex = 0;
       row.dataset.fixedDesignId = fixedDesign.id;
       row.innerHTML = `
         <span class="size-preset-name fixed-design-row-name"></span>
@@ -8035,6 +8104,14 @@ function renderFixedDesignWorkspace() {
       row.querySelector(".fixed-design-row-name").textContent = fixedDesign.displayName;
       row.querySelector(".fixed-design-row-meta").textContent = `v${fixedDesign.version || 1} - ${fixedDesign.fileName || "SVG"}`;
       row.addEventListener("click", () => {
+        selectFixedDesign(fixedDesign.id);
+      });
+      row.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter" && event.key !== " ") {
+          return;
+        }
+
+        event.preventDefault();
         selectFixedDesign(fixedDesign.id);
       });
       fixedDesignList.append(row);
@@ -8785,12 +8862,15 @@ async function importOrdersFromClipboard() {
 
 async function captureActiveOrder({ advanceToNext = false } = {}) {
   const order = getActiveOrder();
-  if (!order || !textInput.value.trim()) {
+  if (!order) {
     return;
   }
 
   order.text = textInput.value;
   order.settings = getCurrentSettings();
+  if (!orderHasRenderableDesign(order)) {
+    return;
+  }
   const layout = buildOrderLayout(order.settings);
   const signature = buildSettingsSignature(order.settings);
   const requestId = crypto.randomUUID();
@@ -9697,7 +9777,7 @@ function renderPreviewFromLayout(layout) {
         height: layout.heightMm,
       });
 
-  preview.append(backingLayer, ...createFixedSvgPreviewElements(layout.fixedSvgs || [], frame), faceLayer);
+  preview.append(backingLayer, faceLayer, ...createFixedSvgPreviewElements(layout.fixedSvgs || [], frame));
   appendPreviewGuide(frame.previewBoxX, frame.previewBoxY, layout.guide);
 }
 
@@ -9728,7 +9808,7 @@ function render() {
   const activeOrder = getActiveOrder();
   const signature = buildSettingsSignature(settings);
 
-  if (!settings.text.trim()) {
+  if (!settings.text.trim() && !settingsIncludeFixedSvg(settings)) {
     lastLayout = null;
     renderPreviewGuideOnly();
     return;
@@ -9843,7 +9923,7 @@ async function copyCurrentSvg() {
     await copySvgToClipboard(svgSource);
   } catch {
   } finally {
-    copyButton.disabled = !order.text.trim() || !canCopySvgToClipboard();
+    copyButton.disabled = !orderHasRenderableDesign(order) || !canCopySvgToClipboard();
     setEditorActionLabel(copyButton, "Copy This Design");
     copyButton.removeAttribute("aria-busy");
     renderOrderList();
@@ -9852,12 +9932,13 @@ async function copyCurrentSvg() {
 
 async function requestSvgSource({ layout = null, layouts = null }) {
   const payload = layouts ? { layouts } : layout;
+  const exportPayload = await enrichExportPayloadWithFixedSvgText(payload);
   const response = await fetch("/api/export-svg", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
-    body: JSON.stringify(payload),
+    body: JSON.stringify(exportPayload),
   });
 
   if (!response.ok) {
@@ -9907,7 +9988,7 @@ async function exportAllOrders() {
   saveActiveOrderDraft();
   renderOrderList();
 
-  const exportableOrders = orders.filter((order) => order.text.trim());
+  const exportableOrders = orders.filter(orderHasRenderableDesign);
   if (!exportableOrders.length) {
     return;
   }
@@ -9959,7 +10040,7 @@ async function copyAllOrders() {
   saveActiveOrderDraft();
   renderOrderList();
 
-  const exportableOrders = orders.filter((order) => order.text.trim());
+  const exportableOrders = orders.filter(orderHasRenderableDesign);
   if (!exportableOrders.length || !canCopySvgToClipboard()) {
     return;
   }

@@ -465,11 +465,16 @@ The website should be a practical production tool rather than a marketing site. 
 - Fixed SVG items should be usable in conjunction with normal text lines in one badge reel design.
 - A fixed SVG item should render as its own control card titled `Fixed Design: <NAME>`.
 - A fixed SVG item control card should expose `SVG Size`, `Horizontal Offset`, and `Vertical Offset From Center`.
+- The fixed SVG `SVG Size` control should mean the fixed artwork's vertical rendered size in millimeters; width should scale proportionally from the SVG aspect ratio.
 - Fixed SVG items should not show text-line controls such as Font, Letter Bridge, Line Bridge, Text Height, Horizontal Stretch, Vertical Stretch, or Lock Text Height.
 - Fixed SVG items do not have to follow the active size guide. The sizing guide remains independent and applies to text fitting rather than constraining the fixed SVG artwork.
 - Fixed SVG item size and offsets should use explicit physical units, with offsets measured from the design center.
 - Fixed SVG artwork should participate in preview and export output while preserving clean vector paths suitable for laser cutting.
+- `Copy This Design` and `Export This Design` should include inline fixed SVG vector markup in export requests so fixed artwork is exported even when the server cannot fetch the stored asset URL directly.
 - Copying and pasting layout controls should include fixed SVG items and their size/offset settings, but must not copy fixed-design library metadata, uploaded SVG files, order text, quantity, buyer metadata, listing metadata, completion state, saved export data, or cached analysis results.
+- Saving or overwriting a preset from the selected-order editor should preserve fixed SVG items and their settings, including fixed design identity, version, SVG size, horizontal offset, and vertical offset, while continuing to preserve any entered text-line settings in the same preset.
+- Applying a preset that contains fixed SVG items should restore those fixed SVG items alongside whatever text lines are generated from the current order text.
+- Orders with fixed SVG items but blank design text should still be considered renderable designs for previewing and saving.
 - The preset dropdown label in the `Preset` card should read `Preset Name`.
 - The `Preset` card should include a `Reload preset` button at the bottom that reapplies the currently selected preset and overwrites all current layout settings for the active design with that preset's current values.
 - The `Global Settings` card should contain `Weld Exported Design`, `Size Guide`, global `Horizontal Stretch`, global `Vertical Stretch`, and `Backing Border`, followed by the per-line controls for `Line 1`, `Line 2`, and any additional lines.
@@ -556,6 +561,7 @@ For batch Etsy order sessions, the preferred workflow is:
 - The Orders workspace should provide a batch-membership filter for all orders, orders in the active batch, and orders not in the active batch.
 - The Orders workspace should provide a `Select all visible` checkbox that selects or clears every order currently shown after search, status, and batch filters. The checkbox should show an indeterminate state when only some visible orders are selected and should feed the existing `Add Checked to Production Batch` action.
 - Pasting Etsy line items should be idempotent by durable imported order-item id: items already present in the order database should not be re-imported, re-counted as new imports, reopened from `complete` to `open`, or have their existing design data overwritten. Production Batch paste may still add an existing open database item to the active batch when it is not already in that batch.
+- The Etsy Orders page copy helper should copy every visible Etsy line item, including items with no Personalization variation or blank personalization text, so non-personalized orders remain visible in the Orders workspace.
 - Orders workspace paste may send the active production batch id as read-only membership context so the returned Orders list preserves accurate `In batch` labels; it must still import to Orders only and must not create batch memberships.
 - Order import and batch-assignment actions should keep their in-progress UI state, and should keep selected-design save controls disabled, until the database mutation and any required production-batch snapshot refresh have completed.
 - Successful order paste actions should open a paste summary dialog showing newly imported designs, skipped duplicate designs, and designs added to the active production batch when applicable.
