@@ -642,7 +642,9 @@ select {
   z-index: 10;
   display: grid;
   gap: 14px;
-  width: min(344px, calc(100vw - 32px));
+  width: max-content;
+  min-width: 180px;
+  max-width: calc(100vw - 32px);
   padding: 14px;
   background: #fff;
   border: 1px solid var(--line);
@@ -655,6 +657,9 @@ select {
 .editor-tools-actions {
   display: grid;
   gap: 14px;
+  width: max-content;
+  min-width: 100%;
+  max-width: 100%;
 }
 
 .workspace-tools-group,
@@ -712,6 +717,7 @@ select {
   border-radius: var(--button-radius);
   font-size: 0.88rem;
   font-weight: 700;
+  white-space: nowrap;
   text-align: left;
   transition: background-color 120ms ease, border-color 120ms ease, box-shadow 120ms ease, color 120ms ease, transform 120ms ease;
 }

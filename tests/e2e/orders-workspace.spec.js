@@ -464,6 +464,9 @@ test("renders grouped database orders and selected order item cards", async ({ p
   await expect(orderActions.getByRole("button").nth(0)).toHaveText("Add to Production Batch");
   await expect(orderActions.getByRole("button").nth(1)).toHaveText("Skip Order");
   await expect(orderActions.getByRole("button", { name: "Add to Production Batch" })).toBeEnabled();
+  const selectedOrderMenuWidth = await ordersWorkspace.locator("#selectedOrderActionsMenu .workspace-tools-popover").evaluate((popover) => popover.getBoundingClientRect().width);
+  expect(selectedOrderMenuWidth).toBeLessThan(300);
+  expect(selectedOrderMenuWidth).toBeGreaterThan(190);
   await page.keyboard.press("Escape");
 
   const firstItemCard = ordersWorkspace.locator(".database-order-item-card").filter({ hasText: "Ada RN" });
