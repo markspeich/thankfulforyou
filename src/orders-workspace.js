@@ -47,6 +47,25 @@ export function getOrderItemListingText(item) {
   return match ? match.trim() : "Untitled listing";
 }
 
+export function getVisibleOrderSelectionState(visibleOrders, checkedOrderIds) {
+  const visibleOrderIds = new Set(
+    (Array.isArray(visibleOrders) ? visibleOrders : [])
+      .map((order) => order?.id)
+      .filter(isNonEmptyString),
+  );
+  const checkedVisibleOrderCount = getCheckedOrderIdsForBulkAction(checkedOrderIds)
+    .filter((orderId) => visibleOrderIds.has(orderId))
+    .length;
+  const visibleOrderCount = visibleOrderIds.size;
+
+  return {
+    visibleOrderCount,
+    checkedVisibleOrderCount,
+    allVisibleChecked: visibleOrderCount > 0 && checkedVisibleOrderCount === visibleOrderCount,
+    someVisibleChecked: checkedVisibleOrderCount > 0 && checkedVisibleOrderCount < visibleOrderCount,
+  };
+}
+
 export function getSelectedGroupedOrder(orders, selectedOrderId) {
   if (!Array.isArray(orders) || orders.length === 0) {
     return null;

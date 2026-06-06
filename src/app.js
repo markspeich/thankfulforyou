@@ -72,6 +72,7 @@ import {
   getCopyableSavedBuild,
   getOrderItemListingText as getDatabaseOrderItemListingText,
   getSelectedGroupedOrder,
+  getVisibleOrderSelectionState,
   normalizeOrdersWorkspaceState,
 } from "./orders-workspace.js";
 import {
@@ -205,6 +206,7 @@ const pasteOrdersButton = document.querySelector("#pasteOrdersButton");
 const databaseOrdersSearchInput = document.querySelector("#databaseOrdersSearchInput");
 const databaseOrdersStatusFilter = document.querySelector("#databaseOrdersStatusFilter");
 const databaseOrdersBatchFilter = document.querySelector("#databaseOrdersBatchFilter");
+const selectVisibleOrdersInput = document.querySelector("#selectVisibleOrdersInput");
 const databaseOrdersListShell = document.querySelector(".database-orders-list-shell");
 const databaseOrderItemsShell = document.querySelector(".database-order-items-shell");
 const selectedDatabaseOrderTitle = document.querySelector(".database-order-items-panel .editor-header h2");
@@ -4547,6 +4549,48 @@ function getDatabaseOrderItemFlattenedLines(item) {
   return lineText.length ? lineText.join(" / ") : getDatabaseOrderItemDesignText(item);
 }
 
+function createDatabaseOrderRowImageStack(order) {
+  const items = getDatabaseOrderItems(order);
+  const stack = document.createElement("span");
+  stack.className = "database-order-row-image-stack";
+  stack.classList.toggle("is-stacked", items.length > 1);
+  stack.setAttribute("aria-hidden", items.length ? "false" : "true");
+
+  const visibleItems = items.slice(0, 3);
+  visibleItems.forEach((item, index) => {
+    const imageUrl = getDatabaseOrderItemListingImageUrl(item);
+    const thumbnail = imageUrl
+      ? document.createElement("img")
+      : document.createElement("span");
+
+    thumbnail.className = imageUrl
+      ? "database-order-row-thumbnail"
+      : "database-order-row-thumbnail database-order-row-thumbnail-placeholder";
+    thumbnail.style.setProperty("--stack-index", String(index));
+
+    if (imageUrl) {
+      thumbnail.src = imageUrl;
+      thumbnail.alt = getDatabaseOrderItemListingText(item);
+      thumbnail.loading = "lazy";
+    } else {
+      thumbnail.setAttribute("aria-hidden", "true");
+    }
+
+    stack.append(thumbnail);
+  });
+
+  if (items.length > visibleItems.length) {
+    const overflow = document.createElement("span");
+    overflow.className = "database-order-row-thumbnail database-order-row-thumbnail-more";
+    overflow.style.setProperty("--stack-index", String(visibleItems.length));
+    overflow.setAttribute("aria-label", `${items.length - visibleItems.length} more order items`);
+    overflow.textContent = `+${items.length - visibleItems.length}`;
+    stack.append(overflow);
+  }
+
+  return stack;
+}
+
 function updateDatabaseOrdersState(nextState) {
   databaseOrders = nextState.orders;
   selectedDatabaseOrderId = nextState.selectedOrderId;
@@ -4945,6 +4989,7 @@ function renderDatabaseOrdersWorkspace() {
   }
   const visibleOrders = getVisibleDatabaseOrders();
   const visibleOrderIds = new Set(visibleOrders.map((order) => order.id));
+  const selectionState = getVisibleOrderSelectionState(visibleOrders, checkedDatabaseOrderIds);
   const batchEligibleOrderIds = new Set(
     visibleOrders
       .filter(isDatabaseOrderBatchEligible)
@@ -4959,6 +5004,11 @@ function renderDatabaseOrdersWorkspace() {
   }
   if (reopenCheckedOrdersButton) {
     reopenCheckedOrdersButton.disabled = databaseOrdersLoading || !checkedVisibleOrders.some(canReopenDatabaseOrder);
+  }
+  if (selectVisibleOrdersInput) {
+    selectVisibleOrdersInput.checked = selectionState.allVisibleChecked;
+    selectVisibleOrdersInput.indeterminate = selectionState.someVisibleChecked;
+    selectVisibleOrdersInput.disabled = databaseOrdersLoading || selectionState.visibleOrderCount === 0;
   }
 
   if (databaseOrdersLoading) {
@@ -5024,6 +5074,11 @@ function renderDatabaseOrdersWorkspace() {
       selectDatabaseOrder(order.id);
     });
 
+    const imageStack = createDatabaseOrderRowImageStack(order);
+
+    const copy = document.createElement("span");
+    copy.className = "database-order-row-copy";
+
     const title = document.createElement("span");
     title.className = "database-order-row-title";
     title.textContent = order.status === "skipped" ? `Order ${orderNumber} (Skipped)` : `Order ${orderNumber}`;
@@ -5032,7 +5087,8 @@ function renderDatabaseOrdersWorkspace() {
     meta.className = "database-order-row-meta";
     meta.textContent = getDatabaseOrderMeta(order);
 
-    button.append(title, meta);
+    copy.append(title, meta);
+    button.append(imageStack, copy);
     row.append(checkbox, button);
     databaseOrdersListShell.append(row);
   });
@@ -5674,14 +5730,15 @@ async function addCheckedDatabaseOrdersToBatch() {
     return;
   }
 
-  const visibleOrderIds = new Set(getVisibleDatabaseOrders().map((order) => order.id));
+  const checkedOrderIds = new Set(getCheckedOrderIdsForBulkAction(checkedDatabaseOrderIds));
   const batchEligibleOrderIds = new Set(
     getVisibleDatabaseOrders()
       .filter(isDatabaseOrderBatchEligible)
       .map((order) => order.id),
   );
-  const orderIds = getCheckedOrderIdsForBulkAction(checkedDatabaseOrderIds)
-    .filter((orderId) => visibleOrderIds.has(orderId) && batchEligibleOrderIds.has(orderId));
+  const orderIds = getVisibleDatabaseOrders()
+    .map((order) => order.id)
+    .filter((orderId) => checkedOrderIds.has(orderId) && batchEligibleOrderIds.has(orderId));
   if (!orderIds.length) {
     updateWorkflowAlert("Select one or more orders before adding them to the production batch.", "error");
     return;
@@ -9030,6 +9087,15 @@ skipCheckedOrdersButton?.addEventListener("click", () => {
 });
 reopenCheckedOrdersButton?.addEventListener("click", () => {
   void reopenCheckedDatabaseOrders();
+});
+selectVisibleOrdersInput?.addEventListener("change", () => {
+  const visibleOrderIds = getVisibleDatabaseOrders().map((order) => order.id);
+  if (selectVisibleOrdersInput.checked) {
+    visibleOrderIds.forEach((orderId) => checkedDatabaseOrderIds.add(orderId));
+  } else {
+    visibleOrderIds.forEach((orderId) => checkedDatabaseOrderIds.delete(orderId));
+  }
+  renderDatabaseOrdersWorkspace();
 });
 showColorCountsButton?.addEventListener("click", openBatchColorCountsDialog);
 exportCompletedButton.addEventListener("click", exportAllOrders);

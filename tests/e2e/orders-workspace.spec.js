@@ -427,6 +427,13 @@ test("renders grouped database orders and selected order item cards", async ({ p
   await expect(ordersWorkspace.getByRole("button", { name: /Ada Lovelace/ })).toBeVisible();
   await expect(ordersWorkspace.getByRole("button", { name: /Order 1002/ })).toBeVisible();
   await expect(ordersWorkspace.getByRole("button", { name: /In batch/ })).toBeVisible();
+  const firstOrderRow = ordersWorkspace.locator(".database-order-row").filter({ hasText: "Order 1001" });
+  await expect(firstOrderRow.locator(".database-order-row-image-stack")).toHaveCount(1);
+  await expect(firstOrderRow.locator(".database-order-row-thumbnail")).toHaveCount(2);
+  await expect(firstOrderRow.locator(".database-order-row-thumbnail").first()).toHaveCSS("width", "64px");
+  await expect(firstOrderRow.locator(".database-order-row-thumbnail").first()).toHaveCSS("height", "64px");
+  await expect(firstOrderRow.getByRole("img", { name: "Custom badge reel" })).toBeVisible();
+  await expect(firstOrderRow.locator(".database-order-row-thumbnail-placeholder")).toHaveCount(1);
   await expect(ordersWorkspace.locator(".database-orders-list-shell > .section-heading")).toHaveCount(0);
   await expect(ordersWorkspace.locator(".database-orders-list-shell")).toHaveCSS("gap", "10px");
   await expect(ordersWorkspace.locator(".database-order-row").first()).toHaveCSS("border-left-width", "4px");
@@ -1011,7 +1018,20 @@ test("adds checked orders to the active production batch", async ({ page }) => {
   const ordersWorkspace = page.getByRole("region", { name: "Orders workspace" });
   await page.getByRole("button", { name: "Orders", exact: true }).click();
   await expect(ordersWorkspace.getByLabel("Select order 1001")).toBeVisible();
-  await ordersWorkspace.getByLabel("Select order 1001").check();
+  await ordersWorkspace.getByLabel("Select all visible").check();
+  await expect(ordersWorkspace.getByLabel("Select order 1001")).toBeChecked();
+  await expect(ordersWorkspace.getByLabel("Select order 1002")).toBeChecked();
+
+  await page.locator("#databaseOrdersSearchInput").fill("ada");
+  await ordersWorkspace.getByLabel("Select all visible").uncheck();
+  await expect(ordersWorkspace.getByLabel("Select order 1001")).not.toBeChecked();
+  await page.locator("#databaseOrdersSearchInput").fill("");
+  await expect(ordersWorkspace.getByLabel("Select order 1002")).toBeChecked();
+  await expect.poll(() => (
+    ordersWorkspace.getByLabel("Select all visible").evaluate((input) => input.indeterminate)
+  )).toBe(true);
+
+  await ordersWorkspace.getByLabel("Select all visible").check();
   await ordersWorkspace.getByLabel("Orders tools").click();
   await ordersWorkspace.getByRole("button", { name: "Add Checked to Production Batch" }).click();
 

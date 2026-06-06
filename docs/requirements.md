@@ -1,8 +1,10 @@
-# Badge Reel Design Layout Tool Requirements
+# Thankful For  You Requirements
 
 ## Project Objective
 
 Create a website that helps lay out custom badge reel designs for Etsy orders.
+
+The app name should be `Thankful For  You` in browser chrome and operator-facing app identity surfaces.
 
 The business sells custom badge reels. Each face plate is made from two layers of 1/8 inch acrylic cut by laser and solvent-welded together. The completed face plate is then solvent-welded to a badge reel.
 
@@ -523,11 +525,13 @@ For batch Etsy order sessions, the preferred workflow is:
 - The Orders workspace should provide a status filter with `Open`, `Skipped`, `Complete`, and `All` options.
 - The Orders workspace should provide a search field matching order number, buyer, listing, transaction, color, and design text.
 - The Orders workspace should provide a batch-membership filter for all orders, orders in the active batch, and orders not in the active batch.
+- The Orders workspace should provide a `Select all visible` checkbox that selects or clears every order currently shown after search, status, and batch filters. The checkbox should show an indeterminate state when only some visible orders are selected and should feed the existing `Add Checked to Production Batch` action.
 - Pasting Etsy line items should be idempotent by durable imported order-item id: items already present in the order database should not be re-imported, re-counted as new imports, reopened from `complete` to `open`, or have their existing design data overwritten. Production Batch paste may still add an existing open database item to the active batch when it is not already in that batch.
 - Orders workspace paste may send the active production batch id as read-only membership context so the returned Orders list preserves accurate `In batch` labels; it must still import to Orders only and must not create batch memberships.
 - Order import and batch-assignment actions should keep their in-progress UI state, and should keep selected-design save controls disabled, until the database mutation and any required production-batch snapshot refresh have completed.
 - Successful order paste actions should open a paste summary dialog showing newly imported designs, skipped duplicate designs, and designs added to the active production batch when applicable.
 - In the Orders workspace selected-order item cards, each card title should be `Order Item`, with imported listing text in the header, imported Etsy listing image in the left body column, and saved design preview in the right body column. The bottom metadata should show `Personalization: <design text>` above imported color, with quantity stacked below color.
+- In the Orders workspace order list, each grouped order row should show the imported listing image from the first order item at the beginning of the row; grouped orders with multiple order items should show a compact stacked thumbnail treatment.
 
 - Clicking `Save` should immediately mark the current design as finished for editing, even if connectedness analysis is still running in the background.
 - After clicking `Save`, both `Save` and `Save & Next` should stay disabled for that design until the operator changes the text or layout settings again.
