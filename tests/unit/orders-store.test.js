@@ -511,6 +511,71 @@ describe("orders store", () => {
     });
   });
 
+  it("persists fixed SVG line items from imported order settings", async () => {
+    resetDb();
+    const { importWorkspaceOrderItems } = await import("../../api/_lib/orders-store.js");
+
+    await importWorkspaceOrderItems({
+      workspaceId: "workspace-1",
+      userId: "user-1",
+      target: "orders",
+      items: [
+        {
+          text: "Morgan\nRN",
+          source: { orderNumber: "2101", transactionId: "txn-mixed", buyerName: "Ada" },
+          settings: {
+            lines: [
+              { kind: "text", fontId: "skywalk", fontSizeMm: 30 },
+              {
+                kind: "fixedSvg",
+                fixedDesignId: "nurse-cross",
+                fixedDesignVersion: 3,
+                svgSizeMm: 38,
+                offsetXMm: 2,
+                offsetYMm: -7,
+              },
+              { kind: "text", fontId: "somekind", fontSizeMm: 23 },
+            ],
+          },
+        },
+      ],
+    });
+
+    const lineUpsert = supabaseMock.calls.find((call) => call.table === "design_lines" && call.operation === "upsert");
+    expect(lineUpsert.payload).toEqual([
+      expect.objectContaining({
+        design_id: "design-transaction:txn-mixed",
+        line_index: 0,
+        item_kind: "text",
+        text: "Morgan",
+        font_id: "skywalk",
+        fixed_design_id: null,
+        fixed_design_version: null,
+      }),
+      expect.objectContaining({
+        design_id: "design-transaction:txn-mixed",
+        line_index: 1,
+        item_kind: "fixed_svg",
+        text: "",
+        fixed_design_id: "nurse-cross",
+        fixed_design_version: 3,
+        svg_size_mm: 38,
+        offset_x_mm: 2,
+        offset_y_mm: -7,
+      }),
+      expect.objectContaining({
+        design_id: "design-transaction:txn-mixed",
+        line_index: 2,
+        item_kind: "text",
+        text: "RN",
+        font_id: "somekind",
+        text_height_mm: 23,
+        fixed_design_id: null,
+        fixed_design_version: null,
+      }),
+    ]);
+  });
+
   it("adds existing database order items to a production batch without counting them as imports", async () => {
     resetDb({
       order_items: [{

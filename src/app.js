@@ -789,6 +789,7 @@ function setFontEditorStatus(message, state = "pending") {
 
 function createDefaultLineSettings() {
   return {
+    kind: "text",
     fontId: DEFAULT_LINE_SETTINGS.fontId,
     bridgeMm: DEFAULT_LINE_SETTINGS.bridgeMm,
     lineBridgeMm: DEFAULT_LINE_SETTINGS.lineBridgeMm,
@@ -797,6 +798,18 @@ function createDefaultLineSettings() {
     horizontalScale: DEFAULT_LINE_SETTINGS.horizontalScale,
     verticalScale: DEFAULT_LINE_SETTINGS.verticalScale,
     lockTextHeight: DEFAULT_LINE_SETTINGS.lockTextHeight,
+  };
+}
+
+function createFixedDesignLineSettings(fixedDesign) {
+  return {
+    kind: "fixedSvg",
+    fixedDesignId: fixedDesign.id,
+    fixedDesignName: fixedDesign.displayName,
+    fixedDesignVersion: fixedDesign.version,
+    svgSizeMm: 32,
+    offsetXMm: 0,
+    offsetYMm: 0,
   };
 }
 
@@ -835,7 +848,22 @@ function getRawTextLines(text) {
 }
 
 function normalizeLineSettings(lineSettings = {}) {
+  if (lineSettings.kind === "fixedSvg") {
+    return {
+      kind: "fixedSvg",
+      fixedDesignId: typeof lineSettings.fixedDesignId === "string" ? lineSettings.fixedDesignId : null,
+      fixedDesignName: typeof lineSettings.fixedDesignName === "string" ? lineSettings.fixedDesignName : "",
+      fixedDesignVersion: Number.isFinite(Number(lineSettings.fixedDesignVersion))
+        ? Number(lineSettings.fixedDesignVersion)
+        : null,
+      svgSizeMm: Number.isFinite(Number(lineSettings.svgSizeMm)) ? Number(lineSettings.svgSizeMm) : 32,
+      offsetXMm: Number.isFinite(Number(lineSettings.offsetXMm)) ? Number(lineSettings.offsetXMm) : 0,
+      offsetYMm: Number.isFinite(Number(lineSettings.offsetYMm)) ? Number(lineSettings.offsetYMm) : 0,
+    };
+  }
+
   return {
+    kind: "text",
     fontId: FONT_BY_ID.has(lineSettings.fontId) ? lineSettings.fontId : DEFAULT_LINE_SETTINGS.fontId,
     bridgeMm: Number.isFinite(Number(lineSettings.bridgeMm)) ? Number(lineSettings.bridgeMm) : DEFAULT_LINE_SETTINGS.bridgeMm,
     lineBridgeMm: Number.isFinite(Number(lineSettings.lineBridgeMm)) ? Number(lineSettings.lineBridgeMm) : DEFAULT_LINE_SETTINGS.lineBridgeMm,
@@ -851,6 +879,66 @@ function normalizeLineSettings(lineSettings = {}) {
   };
 }
 
+function buildNormalizedLineSettings(rawLines, configuredLines, presetId) {
+  if (!Array.isArray(configuredLines)) {
+    return rawLines.map((_, index) => normalizeLineSettings({
+      kind: "text",
+      fontId: DEFAULT_LINE_SETTINGS.fontId,
+      bridgeMm: configuredLines?.bridgeMm,
+      lineBridgeMm: configuredLines?.lineBridgeMm,
+      offsetXMm: configuredLines?.offsetXMm,
+      fontSizeMm: configuredLines?.fontSizeMm,
+    }));
+  }
+
+  const normalizedLines = [];
+  let textLineIndex = 0;
+
+  configuredLines.forEach((lineSettings) => {
+    if (lineSettings?.kind === "fixedSvg") {
+      normalizedLines.push(normalizeLineSettings(lineSettings));
+      return;
+    }
+
+    if (textLineIndex < rawLines.length) {
+      normalizedLines.push(normalizeLineSettings(lineSettings));
+      textLineIndex += 1;
+    }
+  });
+
+  while (textLineIndex < rawLines.length) {
+    normalizedLines.push(normalizeLineSettings(createPresetLineSettings(presetId, textLineIndex)));
+    textLineIndex += 1;
+  }
+
+  return normalizedLines;
+}
+
+function isFixedSvgLineSettings(lineSettings) {
+  return lineSettings?.kind === "fixedSvg";
+}
+
+function getTextLineItemsFromSettings(settings = {}) {
+  const normalized = normalizeSettings(settings);
+  const rawLines = getRawTextLines(normalized.text);
+  let textLineIndex = 0;
+
+  return normalized.lines.flatMap((line, settingsIndex) => {
+    if (isFixedSvgLineSettings(line)) {
+      return [];
+    }
+
+    const item = {
+      line,
+      settingsIndex,
+      textLineIndex,
+      text: rawLines[textLineIndex] ?? "",
+    };
+    textLineIndex += 1;
+    return [item];
+  });
+}
+
 function normalizeSettings(settings = {}) {
   const text = typeof settings.text === "string" ? settings.text : "";
   const rawLines = getRawTextLines(text);
@@ -859,15 +947,14 @@ function normalizeSettings(settings = {}) {
     ? settings.presetId
     : defaultPresetId;
   const presetBaseSettings = getPresetBaseSettings(presetId);
-  const legacyLines = Array.isArray(settings.lines)
+  const configuredLines = Array.isArray(settings.lines)
     ? settings.lines
-    : rawLines.map(() => ({
-        fontId: DEFAULT_LINE_SETTINGS.fontId,
+    : {
         bridgeMm: settings.bridgeMm,
         lineBridgeMm: settings.lineBridgeMm,
         offsetXMm: settings.offsetXMm,
         fontSizeMm: settings.fontSizeMm,
-      }));
+      };
 
   return {
     text,
@@ -884,7 +971,7 @@ function normalizeSettings(settings = {}) {
     weldExportedDesign: typeof settings.weldExportedDesign === "boolean"
       ? settings.weldExportedDesign
       : presetBaseSettings.weldExportedDesign,
-    lines: rawLines.map((_, index) => normalizeLineSettings(legacyLines[index] || createPresetLineSettings(presetId, index))),
+    lines: buildNormalizedLineSettings(rawLines, configuredLines, presetId),
   };
 }
 
@@ -6194,14 +6281,17 @@ function updateRangeOutputForInput(input) {
 }
 
 function summarizeHorizontalScale(lines = []) {
-  if (!lines.length) {
+  const textLines = lines
+    .map((line) => normalizeLineSettings(line))
+    .filter((line) => !isFixedSvgLineSettings(line));
+  if (!textLines.length) {
     return {
       value: DEFAULT_LINE_SETTINGS.horizontalScale,
       mixed: false,
     };
   }
 
-  const values = lines.map((line) => normalizeLineSettings(line).horizontalScale);
+  const values = textLines.map((line) => line.horizontalScale);
   const first = values[0];
 
   return {
@@ -6211,14 +6301,17 @@ function summarizeHorizontalScale(lines = []) {
 }
 
 function summarizeVerticalScale(lines = []) {
-  if (!lines.length) {
+  const textLines = lines
+    .map((line) => normalizeLineSettings(line))
+    .filter((line) => !isFixedSvgLineSettings(line));
+  if (!textLines.length) {
     return {
       value: DEFAULT_LINE_SETTINGS.verticalScale,
       mixed: false,
     };
   }
 
-  const values = lines.map((line) => normalizeLineSettings(line).verticalScale);
+  const values = textLines.map((line) => line.verticalScale);
   const first = values[0];
 
   return {
@@ -6271,10 +6364,10 @@ function setEditorActionLabel(button, label) {
 
 function renderLineControls(settings = getCurrentSettings()) {
   const normalized = normalizeSettings(settings);
-  const rawLines = getRawTextLines(normalized.text);
+  const textLineItems = getTextLineItemsFromSettings(normalized);
   lineControlCards.replaceChildren();
 
-  if (!rawLines.length) {
+  if (!textLineItems.length) {
     const empty = document.createElement("p");
     empty.className = "line-control-empty";
     empty.textContent = "Add text lines to generate one font and slider group per line.";
@@ -6282,18 +6375,18 @@ function renderLineControls(settings = getCurrentSettings()) {
     return;
   }
 
-  rawLines.forEach((lineText, index) => {
-    const line = normalized.lines[index] || createDefaultLineSettings();
+  textLineItems.forEach(({ line, settingsIndex, textLineIndex, text: lineText }) => {
     const card = document.createElement("section");
     card.className = "line-control-card";
-    card.dataset.lineIndex = String(index);
+    card.dataset.lineIndex = String(textLineIndex);
+    card.dataset.settingsIndex = String(settingsIndex);
 
     const header = document.createElement("div");
     header.className = "line-control-header";
 
     const title = document.createElement("h3");
     title.className = "line-control-title";
-    title.textContent = `Line ${index + 1}`;
+    title.textContent = `Line ${textLineIndex + 1}`;
 
     const summary = document.createElement("span");
     summary.className = "line-control-text";
@@ -6305,23 +6398,51 @@ function renderLineControls(settings = getCurrentSettings()) {
     const grid = document.createElement("div");
     grid.className = "line-control-grid";
     const fields = [
-      createFontField(index, line.fontId),
-      createRangeField(index, "bridgeMm", "Letter Bridge", 0, 4, 0.1, line.bridgeMm),
-      createRangeField(index, "offsetXMm", "Horizontal Offset", -20, 20, 0.1, line.offsetXMm),
-      createRangeField(index, "fontSizeMm", "Text Height", 18, 55, 1, line.fontSizeMm),
-      createRangeField(index, "horizontalScale", "Horizontal Stretch", 0.75, 2, 0.01, line.horizontalScale),
-      createRangeField(index, "verticalScale", "Vertical Stretch", 0.75, 1.5, 0.01, line.verticalScale),
-      createCheckboxField(index, "lockTextHeight", "Lock Text Height", line.lockTextHeight),
+      createFontField(textLineIndex, line.fontId),
+      createRangeField(textLineIndex, "bridgeMm", "Letter Bridge", 0, 4, 0.1, line.bridgeMm),
+      createRangeField(textLineIndex, "offsetXMm", "Horizontal Offset", -20, 20, 0.1, line.offsetXMm),
+      createRangeField(textLineIndex, "fontSizeMm", "Text Height", 18, 55, 1, line.fontSizeMm),
+      createRangeField(textLineIndex, "horizontalScale", "Horizontal Stretch", 0.75, 2, 0.01, line.horizontalScale),
+      createRangeField(textLineIndex, "verticalScale", "Vertical Stretch", 0.75, 1.5, 0.01, line.verticalScale),
+      createCheckboxField(textLineIndex, "lockTextHeight", "Lock Text Height", line.lockTextHeight),
     ];
 
-    if (index > 0) {
-      fields.splice(2, 0, createRangeField(index, "lineBridgeMm", "Line Bridge", 0, 8, 0.1, line.lineBridgeMm));
+    if (textLineIndex > 0) {
+      fields.splice(2, 0, createRangeField(textLineIndex, "lineBridgeMm", "Line Bridge", 0, 8, 0.1, line.lineBridgeMm));
     }
 
     grid.append(...fields);
 
     card.append(grid);
     lineControlCards.append(card);
+  });
+}
+
+function readTextLineSettingsFromControls({ presetId, textLineIndex, listingId, fallbackLineSettings }) {
+  const lineCard = lineControlCards.querySelector(`[data-line-index="${textLineIndex}"]`);
+  if (!lineCard) {
+    return normalizeLineSettings(fallbackLineSettings || createPresetLineSettings(presetId, textLineIndex, { listingId }));
+  }
+
+  const fontSelect = lineCard.querySelector('[data-setting="fontId"]');
+  const bridgeInput = lineCard.querySelector('[data-setting="bridgeMm"]');
+  const lineBridgeInput = lineCard.querySelector('[data-setting="lineBridgeMm"]');
+  const offsetXInput = lineCard.querySelector('[data-setting="offsetXMm"]');
+  const fontSizeInput = lineCard.querySelector('[data-setting="fontSizeMm"]');
+  const horizontalScaleInput = lineCard.querySelector('[data-setting="horizontalScale"]');
+  const verticalScaleInput = lineCard.querySelector('[data-setting="verticalScale"]');
+  const lockTextHeightInput = lineCard.querySelector('[data-setting="lockTextHeight"]');
+
+  return normalizeLineSettings({
+    kind: "text",
+    fontId: fontSelect?.value,
+    bridgeMm: bridgeInput?.value,
+    lineBridgeMm: lineBridgeInput?.value,
+    offsetXMm: offsetXInput?.value,
+    fontSizeMm: fontSizeInput?.value,
+    horizontalScale: horizontalScaleInput?.value,
+    verticalScale: verticalScaleInput?.value,
+    lockTextHeight: lockTextHeightInput?.checked,
   });
 }
 
@@ -6398,32 +6519,41 @@ function getCurrentSettings() {
   const presetId = presetInput.value;
   const activeOrder = getActiveOrder();
   const listingId = activeOrder?.source?.listingId ?? null;
-  const lines = rawLines.map((_, index) => {
-    const lineCard = lineControlCards.querySelector(`[data-line-index="${index}"]`);
-    if (!lineCard) {
-      return createPresetLineSettings(presetId, index, { listingId });
+  const activeSettings = activeOrder?.settings && typeof activeOrder.settings === "object" ? activeOrder.settings : {};
+  const normalizedActiveSettings = normalizeSettings({
+    ...activeSettings,
+    text: textInput.value,
+    presetId,
+  });
+  const lines = [];
+  let textLineIndex = 0;
+
+  normalizedActiveSettings.lines.forEach((line) => {
+    if (isFixedSvgLineSettings(line)) {
+      lines.push(normalizeLineSettings(line));
+      return;
     }
 
-    const fontSelect = lineCard.querySelector('[data-setting="fontId"]');
-    const bridgeInput = lineCard.querySelector('[data-setting="bridgeMm"]');
-    const lineBridgeInput = lineCard.querySelector('[data-setting="lineBridgeMm"]');
-    const offsetXInput = lineCard.querySelector('[data-setting="offsetXMm"]');
-    const fontSizeInput = lineCard.querySelector('[data-setting="fontSizeMm"]');
-    const horizontalScaleInput = lineCard.querySelector('[data-setting="horizontalScale"]');
-    const verticalScaleInput = lineCard.querySelector('[data-setting="verticalScale"]');
-    const lockTextHeightInput = lineCard.querySelector('[data-setting="lockTextHeight"]');
-
-    return normalizeLineSettings({
-      fontId: fontSelect?.value,
-      bridgeMm: bridgeInput?.value,
-      lineBridgeMm: lineBridgeInput?.value,
-      offsetXMm: offsetXInput?.value,
-      fontSizeMm: fontSizeInput?.value,
-      horizontalScale: horizontalScaleInput?.value,
-      verticalScale: verticalScaleInput?.value,
-      lockTextHeight: lockTextHeightInput?.checked,
-    });
+    if (textLineIndex < rawLines.length) {
+      lines.push(readTextLineSettingsFromControls({
+        presetId,
+        textLineIndex,
+        listingId,
+        fallbackLineSettings: line,
+      }));
+      textLineIndex += 1;
+    }
   });
+
+  while (textLineIndex < rawLines.length) {
+    lines.push(readTextLineSettingsFromControls({
+      presetId,
+      textLineIndex,
+      listingId,
+      fallbackLineSettings: createPresetLineSettings(presetId, textLineIndex, { listingId }),
+    }));
+    textLineIndex += 1;
+  }
 
   return normalizeSettings({
     text: textInput.value,
@@ -8157,14 +8287,12 @@ function getMeasuredLine(text, settings) {
 }
 
 function layoutTextLines(text, lineSettings) {
-  const rawLines = getRawTextLines(text);
-  const normalizedSettings = normalizeSettings({ text, lines: lineSettings }).lines;
-  const lines = rawLines.map((lineText, index) => {
-    const settings = normalizedSettings[index] || createDefaultLineSettings();
-    const measuredLine = getMeasuredLine(lineText, settings);
+  const textLineItems = getTextLineItemsFromSettings({ text, lines: lineSettings });
+  const lines = textLineItems.map(({ text: lineText, line, textLineIndex }) => {
+    const measuredLine = getMeasuredLine(lineText, line);
 
     return {
-      index,
+      index: textLineIndex,
       text: measuredLine.text,
       settings: measuredLine.settings,
       letters: measuredLine.letters,

@@ -27,6 +27,10 @@ function splitTextLines(text) {
   return String(text ?? "").split(/\r?\n/);
 }
 
+function normalizeItemKind(kind) {
+  return kind === "fixed_svg" || kind === "fixedSvg" ? "fixed_svg" : "text";
+}
+
 function isProtectedDesign(row) {
   if (!row || typeof row !== "object") {
     return false;
@@ -102,44 +106,77 @@ function buildLineInputs(item) {
   const settings = item?.settings && typeof item.settings === "object" ? item.settings : {};
   const textLines = splitTextLines(item?.text ?? settings.text ?? "");
   const configuredLines = Array.isArray(settings.lines) ? settings.lines : [];
-  const lineCount = Math.max(textLines.length, configuredLines.length, 1);
+  if (!configuredLines.length) {
+    return Array.from({ length: Math.max(textLines.length, 1) }, (_, lineIndex) => ({
+      text: textLines[lineIndex] ?? "",
+      settings: {},
+    }));
+  }
 
-  return Array.from({ length: lineCount }, (_, lineIndex) => ({
-    text: textLines[lineIndex] ?? "",
-    settings: configuredLines[lineIndex] && typeof configuredLines[lineIndex] === "object"
-      ? configuredLines[lineIndex]
-      : {},
-  }));
+  const inputs = [];
+  let textLineIndex = 0;
+
+  configuredLines.forEach((lineSettings) => {
+    const settingsForLine = lineSettings && typeof lineSettings === "object" ? lineSettings : {};
+    const itemKind = normalizeItemKind(settingsForLine.kind);
+    inputs.push({
+      text: itemKind === "text" ? textLines[textLineIndex++] ?? "" : "",
+      settings: settingsForLine,
+    });
+  });
+
+  while (textLineIndex < textLines.length) {
+    inputs.push({
+      text: textLines[textLineIndex] ?? "",
+      settings: {},
+    });
+    textLineIndex += 1;
+  }
+
+  return inputs.length ? inputs : [{ text: "", settings: {} }];
 }
 
 function buildDesignLineRows(item, designId) {
-  return buildLineInputs(item).map((line, lineIndex) => ({
-    design_id: designId,
-    line_index: lineIndex,
-    text: line.text,
-    font_id: line.settings.fontId || item?.fontId || "candlepin",
-    letter_bridge_mm: toNumber(line.settings.bridgeMm, 0.5),
-    line_bridge_mm: toNumber(line.settings.lineBridgeMm, 0.5),
-    offset_x_mm: toNumber(line.settings.offsetXMm, 0),
-    text_height_mm: toNumber(line.settings.fontSizeMm, 34),
-    horizontal_scale: toNumber(line.settings.horizontalScale, 1),
-    vertical_scale: toNumber(line.settings.verticalScale, 1),
-    lock_text_height: Boolean(line.settings.lockTextHeight),
-  }));
+  return buildLineInputs(item).map((line, lineIndex) => {
+    const itemKind = normalizeItemKind(line.settings.kind);
+    return {
+      design_id: designId,
+      line_index: lineIndex,
+      item_kind: itemKind,
+      text: itemKind === "text" ? line.text : "",
+      font_id: line.settings.fontId || item?.fontId || "candlepin",
+      letter_bridge_mm: toNumber(line.settings.bridgeMm, 0.5),
+      line_bridge_mm: toNumber(line.settings.lineBridgeMm, 0.5),
+      offset_x_mm: toNumber(line.settings.offsetXMm, 0),
+      offset_y_mm: itemKind === "fixed_svg" ? toNumber(line.settings.offsetYMm, 0) : 0,
+      text_height_mm: toNumber(line.settings.fontSizeMm, 34),
+      horizontal_scale: toNumber(line.settings.horizontalScale, 1),
+      vertical_scale: toNumber(line.settings.verticalScale, 1),
+      lock_text_height: Boolean(line.settings.lockTextHeight),
+      fixed_design_id: itemKind === "fixed_svg" ? nullableString(line.settings.fixedDesignId) : null,
+      fixed_design_version: itemKind === "fixed_svg" ? toNumber(line.settings.fixedDesignVersion, null) : null,
+      svg_size_mm: itemKind === "fixed_svg" ? toNumber(line.settings.svgSizeMm, 32) : 32,
+    };
+  });
 }
 
 function normalizeDesignLine(row) {
   return {
     lineIndex: row.line_index,
+    kind: row.item_kind === "fixed_svg" ? "fixedSvg" : "text",
     text: row.text ?? "",
     fontId: row.font_id || "candlepin",
     letterBridgeMm: toNumber(row.letter_bridge_mm, 0.5),
     lineBridgeMm: toNumber(row.line_bridge_mm, 0.5),
     offsetXMm: toNumber(row.offset_x_mm, 0),
+    offsetYMm: toNumber(row.offset_y_mm, 0),
     textHeightMm: toNumber(row.text_height_mm, 34),
     horizontalScale: toNumber(row.horizontal_scale, 1),
     verticalScale: toNumber(row.vertical_scale, 1),
     lockTextHeight: Boolean(row.lock_text_height),
+    fixedDesignId: row.fixed_design_id ?? null,
+    fixedDesignVersion: row.fixed_design_version == null ? null : toNumber(row.fixed_design_version, null),
+    svgSizeMm: toNumber(row.svg_size_mm, 32),
   };
 }
 
@@ -334,7 +371,7 @@ export async function listWorkspaceOrders({ workspaceId, activeBatchId = null, s
   const { data: designLines, error: designLinesError } = designIds.length
     ? await supabase
       .from("design_lines")
-      .select("design_id, line_index, text, font_id, letter_bridge_mm, line_bridge_mm, offset_x_mm, text_height_mm, horizontal_scale, vertical_scale, lock_text_height")
+      .select("design_id, line_index, item_kind, text, font_id, letter_bridge_mm, line_bridge_mm, offset_x_mm, offset_y_mm, text_height_mm, horizontal_scale, vertical_scale, lock_text_height, fixed_design_id, fixed_design_version, svg_size_mm")
       .in("design_id", designIds)
       .order("line_index", { ascending: true })
     : { data: [], error: null };
