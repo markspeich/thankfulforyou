@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   filterGroupedOrders,
   getCheckedOrderIdsForBulkAction,
+  getVisibleOrderSelectionState,
   getCopyableSavedBuild,
   getSelectedGroupedOrder,
   normalizeOrdersWorkspaceState,
@@ -126,6 +127,35 @@ describe("orders workspace helpers", () => {
       "order:4003",
       "order:4004",
     ]);
+  });
+
+  it("describes visible order selection for select-all controls", () => {
+    expect(getVisibleOrderSelectionState([
+      { id: "order:5001" },
+      { id: "order:5002" },
+    ], new Set(["order:5001"]))).toEqual({
+      visibleOrderCount: 2,
+      checkedVisibleOrderCount: 1,
+      allVisibleChecked: false,
+      someVisibleChecked: true,
+    });
+
+    expect(getVisibleOrderSelectionState([
+      { id: "order:5001" },
+      { id: "order:5002" },
+    ], new Set(["order:5001", "order:5002", "order:hidden"]))).toEqual({
+      visibleOrderCount: 2,
+      checkedVisibleOrderCount: 2,
+      allVisibleChecked: true,
+      someVisibleChecked: false,
+    });
+
+    expect(getVisibleOrderSelectionState([], new Set(["order:hidden"]))).toEqual({
+      visibleOrderCount: 0,
+      checkedVisibleOrderCount: 0,
+      allVisibleChecked: false,
+      someVisibleChecked: false,
+    });
   });
 
   it("filters grouped orders by search text, status, and active batch membership", () => {

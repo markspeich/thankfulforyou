@@ -2321,7 +2321,7 @@ button:disabled {
 }
 
 .database-orders-list-panel {
-  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-rows: auto auto auto minmax(0, 1fr);
 }
 
 .database-orders-filters {
@@ -2333,6 +2333,24 @@ button:disabled {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 8px;
+}
+
+.database-orders-select-all {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 720;
+}
+
+.database-orders-select-all input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--ink);
 }
 
 .database-orders-list-shell,

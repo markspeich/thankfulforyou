@@ -1007,7 +1007,20 @@ test("adds checked orders to the active production batch", async ({ page }) => {
   const ordersWorkspace = page.getByRole("region", { name: "Orders workspace" });
   await page.getByRole("button", { name: "Orders", exact: true }).click();
   await expect(ordersWorkspace.getByLabel("Select order 1001")).toBeVisible();
-  await ordersWorkspace.getByLabel("Select order 1001").check();
+  await ordersWorkspace.getByLabel("Select all visible").check();
+  await expect(ordersWorkspace.getByLabel("Select order 1001")).toBeChecked();
+  await expect(ordersWorkspace.getByLabel("Select order 1002")).toBeChecked();
+
+  await page.locator("#databaseOrdersSearchInput").fill("ada");
+  await ordersWorkspace.getByLabel("Select all visible").uncheck();
+  await expect(ordersWorkspace.getByLabel("Select order 1001")).not.toBeChecked();
+  await page.locator("#databaseOrdersSearchInput").fill("");
+  await expect(ordersWorkspace.getByLabel("Select order 1002")).toBeChecked();
+  await expect.poll(() => (
+    ordersWorkspace.getByLabel("Select all visible").evaluate((input) => input.indeterminate)
+  )).toBe(true);
+
+  await ordersWorkspace.getByLabel("Select all visible").check();
   await ordersWorkspace.getByLabel("Orders tools").click();
   await ordersWorkspace.getByRole("button", { name: "Add Checked to Production Batch" }).click();
 
