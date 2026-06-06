@@ -4559,6 +4559,48 @@ function getDatabaseOrderItemFlattenedLines(item) {
   return lineText.length ? lineText.join(" / ") : getDatabaseOrderItemDesignText(item);
 }
 
+function createDatabaseOrderRowImageStack(order) {
+  const items = getDatabaseOrderItems(order);
+  const stack = document.createElement("span");
+  stack.className = "database-order-row-image-stack";
+  stack.classList.toggle("is-stacked", items.length > 1);
+  stack.setAttribute("aria-hidden", items.length ? "false" : "true");
+
+  const visibleItems = items.slice(0, 3);
+  visibleItems.forEach((item, index) => {
+    const imageUrl = getDatabaseOrderItemListingImageUrl(item);
+    const thumbnail = imageUrl
+      ? document.createElement("img")
+      : document.createElement("span");
+
+    thumbnail.className = imageUrl
+      ? "database-order-row-thumbnail"
+      : "database-order-row-thumbnail database-order-row-thumbnail-placeholder";
+    thumbnail.style.setProperty("--stack-index", String(index));
+
+    if (imageUrl) {
+      thumbnail.src = imageUrl;
+      thumbnail.alt = getDatabaseOrderItemListingText(item);
+      thumbnail.loading = "lazy";
+    } else {
+      thumbnail.setAttribute("aria-hidden", "true");
+    }
+
+    stack.append(thumbnail);
+  });
+
+  if (items.length > visibleItems.length) {
+    const overflow = document.createElement("span");
+    overflow.className = "database-order-row-thumbnail database-order-row-thumbnail-more";
+    overflow.style.setProperty("--stack-index", String(visibleItems.length));
+    overflow.setAttribute("aria-label", `${items.length - visibleItems.length} more order items`);
+    overflow.textContent = `+${items.length - visibleItems.length}`;
+    stack.append(overflow);
+  }
+
+  return stack;
+}
+
 function updateDatabaseOrdersState(nextState) {
   databaseOrders = nextState.orders;
   selectedDatabaseOrderId = nextState.selectedOrderId;
@@ -5042,6 +5084,11 @@ function renderDatabaseOrdersWorkspace() {
       selectDatabaseOrder(order.id);
     });
 
+    const imageStack = createDatabaseOrderRowImageStack(order);
+
+    const copy = document.createElement("span");
+    copy.className = "database-order-row-copy";
+
     const title = document.createElement("span");
     title.className = "database-order-row-title";
     title.textContent = order.status === "skipped" ? `Order ${orderNumber} (Skipped)` : `Order ${orderNumber}`;
@@ -5050,7 +5097,8 @@ function renderDatabaseOrdersWorkspace() {
     meta.className = "database-order-row-meta";
     meta.textContent = getDatabaseOrderMeta(order);
 
-    button.append(title, meta);
+    copy.append(title, meta);
+    button.append(imageStack, copy);
     row.append(checkbox, button);
     databaseOrdersListShell.append(row);
   });

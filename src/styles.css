@@ -2390,7 +2390,9 @@ button:disabled {
 
 .database-order-row-button {
   display: grid;
-  gap: 4px;
+  grid-template-columns: 92px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
   width: 100%;
   min-width: 0;
   padding: 10px 12px 10px 0;
@@ -2400,6 +2402,53 @@ button:disabled {
   color: var(--ink);
   text-align: left;
   cursor: pointer;
+}
+
+.database-order-row-image-stack {
+  position: relative;
+  display: block;
+  width: 92px;
+  height: 76px;
+  flex: 0 0 auto;
+}
+
+.database-order-row-thumbnail {
+  position: absolute;
+  inset: calc(var(--stack-index, 0) * 6px) auto auto calc(var(--stack-index, 0) * 10px);
+  z-index: calc(4 - var(--stack-index, 0));
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+  box-sizing: border-box;
+  overflow: hidden;
+  border: 1px solid #cbd8dd;
+  border-radius: 9px;
+  background: #f3f7f8;
+  box-shadow: 0 1px 2px rgba(24, 43, 54, 0.12);
+  object-fit: cover;
+}
+
+.database-order-row-thumbnail-placeholder,
+.database-order-row-thumbnail-more {
+  color: #667985;
+  font-size: 0.56rem;
+  font-weight: 800;
+  line-height: 1;
+  text-align: center;
+}
+
+.database-order-row-thumbnail-more {
+  color: #18434f;
+  background: #eaf7f6;
+  border-color: #b9d8d5;
+}
+
+.database-order-row-copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
 }
 
 .database-order-row:hover,
