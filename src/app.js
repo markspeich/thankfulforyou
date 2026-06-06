@@ -211,6 +211,8 @@ const databaseOrdersListShell = document.querySelector(".database-orders-list-sh
 const databaseOrderItemsShell = document.querySelector(".database-order-items-shell");
 const selectedDatabaseOrderTitle = document.querySelector(".database-order-items-panel .editor-header h2");
 const selectedDatabaseOrderMeta = document.querySelector(".database-order-items-panel .editor-meta");
+const selectedOrderActionsMenu = document.querySelector("#selectedOrderActionsMenu");
+const addSelectedOrderToBatchButton = document.querySelector("#addSelectedOrderToBatchButton");
 const skipSelectedOrderButton = document.querySelector("#skipSelectedOrderButton");
 const reopenSelectedOrderButton = document.querySelector("#reopenSelectedOrderButton");
 const addCheckedOrdersToBatchButton = document.querySelector("#addCheckedOrdersToBatchButton");
@@ -219,7 +221,7 @@ const reopenCheckedOrdersButton = document.querySelector("#reopenCheckedOrdersBu
 const editorToolsMenu = document.querySelector(".editor-tools-menu");
 const presetToolsMenu = document.querySelector(".preset-tools-menu");
 const batchActionLabelByButton = new Map(
-  [addOrderButton, importClipboardButton, clearBatchButton, showColorCountsButton, exportCompletedButton, copyCompletedButton, pasteOrdersButton, addCheckedOrdersToBatchButton, skipCheckedOrdersButton, reopenCheckedOrdersButton, skipSelectedOrderButton, reopenSelectedOrderButton]
+  [addOrderButton, importClipboardButton, clearBatchButton, showColorCountsButton, exportCompletedButton, copyCompletedButton, pasteOrdersButton, addCheckedOrdersToBatchButton, addSelectedOrderToBatchButton, skipCheckedOrdersButton, reopenCheckedOrdersButton, skipSelectedOrderButton, reopenSelectedOrderButton]
     .filter(Boolean)
     .map((button) => [button, button.querySelector(".batch-tool-label")]),
 );
@@ -5180,6 +5182,9 @@ function renderSelectedDatabaseOrderItems() {
       ? getDatabaseOrderMeta(selectedOrder)
       : "Select an order to review its items before adding designs to the production batch.";
   }
+  if (addSelectedOrderToBatchButton) {
+    addSelectedOrderToBatchButton.disabled = !selectedOrder || !isDatabaseOrderBatchEligible(selectedOrder) || ordersDatabaseMutationInFlight;
+  }
   if (skipSelectedOrderButton) {
     const showSkipOrder = Boolean(selectedOrder) && !canReopenDatabaseOrder(selectedOrder);
     skipSelectedOrderButton.hidden = !showSkipOrder;
@@ -5457,12 +5462,18 @@ async function updateDatabaseOrderItemStatus({
       accessToken,
     });
 
-    databaseOrdersStatusFilterValue = nextFilter;
-    if (databaseOrdersStatusFilter) {
-      databaseOrdersStatusFilter.value = nextFilter;
+    if (nextFilter) {
+      databaseOrdersStatusFilterValue = nextFilter;
+      if (databaseOrdersStatusFilter) {
+        databaseOrdersStatusFilter.value = nextFilter;
+      }
     }
     checkedDatabaseOrderIds.clear();
-    await refreshOrdersAndProductionBatch({ payload, accessToken, refreshBatch: action === "skipOrderItem" });
+    await refreshOrdersAndProductionBatch({
+      payload: nextFilter ? payload : null,
+      accessToken,
+      refreshBatch: action === "skipOrderItem",
+    });
     updateWorkflowAlert(successMessage, "success");
   } catch (error) {
     handleOrdersMutationError(
@@ -5497,7 +5508,7 @@ async function skipDatabaseOrderItem(item, button = null) {
   await updateDatabaseOrderItemStatus({
     item,
     action: "skipOrderItem",
-    nextFilter: "skipped",
+    nextFilter: null,
     pendingLabel: "Skipping...",
     successMessage: "Order skipped.",
     fallbackMessage: "Unable to skip the order.",
@@ -5552,12 +5563,18 @@ async function updateDatabaseOrderStatus({
       accessToken,
     });
 
-    databaseOrdersStatusFilterValue = nextFilter;
-    if (databaseOrdersStatusFilter) {
-      databaseOrdersStatusFilter.value = nextFilter;
+    if (nextFilter) {
+      databaseOrdersStatusFilterValue = nextFilter;
+      if (databaseOrdersStatusFilter) {
+        databaseOrdersStatusFilter.value = nextFilter;
+      }
     }
     checkedDatabaseOrderIds.clear();
-    await refreshOrdersAndProductionBatch({ payload, accessToken, refreshBatch: action === "skipOrder" });
+    await refreshOrdersAndProductionBatch({
+      payload: nextFilter ? payload : null,
+      accessToken,
+      refreshBatch: action === "skipOrder",
+    });
     updateWorkflowAlert(successMessage, "success");
   } catch (error) {
     handleOrdersMutationError(
@@ -5596,7 +5613,7 @@ async function skipSelectedDatabaseOrder() {
   await updateDatabaseOrderStatus({
     order: selectedOrder,
     action: "skipOrder",
-    nextFilter: "skipped",
+    nextFilter: null,
     pendingLabel: "Skipping...",
     successMessage: "Order skipped.",
     fallbackMessage: "Unable to skip the order.",
@@ -5654,12 +5671,18 @@ async function updateCheckedDatabaseOrdersStatus({
       accessToken,
     });
 
-    databaseOrdersStatusFilterValue = nextFilter;
-    if (databaseOrdersStatusFilter) {
-      databaseOrdersStatusFilter.value = nextFilter;
+    if (nextFilter) {
+      databaseOrdersStatusFilterValue = nextFilter;
+      if (databaseOrdersStatusFilter) {
+        databaseOrdersStatusFilter.value = nextFilter;
+      }
     }
     checkedDatabaseOrderIds.clear();
-    await refreshOrdersAndProductionBatch({ payload, accessToken, refreshBatch: action === "skipOrders" });
+    await refreshOrdersAndProductionBatch({
+      payload: nextFilter ? payload : null,
+      accessToken,
+      refreshBatch: action === "skipOrders",
+    });
     updateWorkflowAlert(successMessage, "success");
   } catch (error) {
     handleOrdersMutationError(
@@ -5698,7 +5721,7 @@ async function skipCheckedDatabaseOrders() {
 
   await updateCheckedDatabaseOrdersStatus({
     action: "skipOrders",
-    nextFilter: "skipped",
+    nextFilter: null,
     pendingLabel: "Skipping...",
     successMessage: "Orders skipped.",
     fallbackMessage: "Unable to skip the selected orders.",
@@ -5775,6 +5798,48 @@ async function addCheckedDatabaseOrdersToBatch() {
   } finally {
     ordersDatabaseMutationInFlight = false;
     setBatchActionLabel(addCheckedOrdersToBatchButton, "Add Checked to Production Batch");
+    renderDatabaseOrdersWorkspace();
+    render();
+  }
+}
+
+async function addSelectedDatabaseOrderToBatch() {
+  const selectedOrder = getSelectedGroupedOrder(getVisibleDatabaseOrders(), selectedDatabaseOrderId);
+  const orderId = typeof selectedOrder?.id === "string" ? selectedOrder.id.trim() : "";
+  const batchId = requireActiveProductionBatchId();
+  if (!batchId || !orderId || !isDatabaseOrderBatchEligible(selectedOrder)) {
+    return;
+  }
+
+  if (addSelectedOrderToBatchButton) {
+    addSelectedOrderToBatchButton.disabled = true;
+    setBatchActionLabel(addSelectedOrderToBatchButton, "Adding...");
+  }
+  ordersDatabaseMutationInFlight = true;
+  render();
+
+  try {
+    const accessToken = await resolveProductionBatchMutationAccessToken();
+    const payload = await addOrdersToProductionBatch({
+      batchId,
+      orderIds: [orderId],
+      accessToken,
+    });
+
+    await refreshOrdersAndProductionBatch({ payload, accessToken, refreshBatch: true });
+    selectedOrderActionsMenu?.removeAttribute("open");
+    updateWorkflowAlert(buildAddedToBatchMessage(payload), "success");
+  } catch (error) {
+    handleOrdersMutationError(
+      error,
+      "Unable to add the selected order to the production batch.",
+      "Production batch session expired. Sign in again to continue adding orders.",
+    );
+  } finally {
+    ordersDatabaseMutationInFlight = false;
+    if (addSelectedOrderToBatchButton) {
+      setBatchActionLabel(addSelectedOrderToBatchButton, "Add to Production Batch");
+    }
     renderDatabaseOrdersWorkspace();
     render();
   }
@@ -9096,6 +9161,9 @@ databaseOrdersBatchFilter?.addEventListener("change", () => {
   databaseOrdersBatchFilterValue = databaseOrdersBatchFilter.value;
   renderDatabaseOrdersWorkspace();
 });
+addSelectedOrderToBatchButton?.addEventListener("click", () => {
+  void addSelectedDatabaseOrderToBatch();
+});
 skipSelectedOrderButton?.addEventListener("click", () => {
   void skipSelectedDatabaseOrder();
 });
@@ -9143,6 +9211,13 @@ assignPresetToListingButton?.addEventListener("click", () => {
       ordersToolsMenu?.removeAttribute("open");
     });
   });
+[addSelectedOrderToBatchButton, skipSelectedOrderButton, reopenSelectedOrderButton]
+  .filter(Boolean)
+  .forEach((button) => {
+    button.addEventListener("click", () => {
+      selectedOrderActionsMenu?.removeAttribute("open");
+    });
+  });
 [copyButton, downloadButton]
   .filter(Boolean)
   .forEach((button) => {
@@ -9159,6 +9234,7 @@ assignPresetToListingButton?.addEventListener("click", () => {
   });
 registerOutsideDismissableDetailsMenu(batchToolsMenu);
 registerOutsideDismissableDetailsMenu(ordersToolsMenu);
+registerOutsideDismissableDetailsMenu(selectedOrderActionsMenu);
 registerOutsideDismissableDetailsMenu(presetToolsMenu);
 registerDatabaseOrderItemMenuDismissal(databaseOrdersWorkspace);
 closeColorCountsButton?.addEventListener("click", closeBatchColorCountsDialog);

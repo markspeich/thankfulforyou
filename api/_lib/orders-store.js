@@ -456,6 +456,35 @@ function getOrderItemsForStatusUpdate(order, status) {
     .map((item) => item.id);
 }
 
+async function clearActiveProductionBatchSelectionsForOrderItems({
+  supabase,
+  workspaceId,
+  userId,
+  orderItemIds,
+  savedAt,
+}) {
+  const ids = Array.isArray(orderItemIds)
+    ? orderItemIds.filter((id) => typeof id === "string" && id.trim())
+    : [];
+  if (!ids.length) {
+    return;
+  }
+
+  const { error } = await supabase
+    .from("production_batches")
+    .update({
+      active_order_item_id: null,
+      updated_at: savedAt,
+      updated_by: userId || null,
+    })
+    .eq("workspace_id", workspaceId)
+    .in("active_order_item_id", ids);
+
+  if (error) {
+    throw error;
+  }
+}
+
 export async function updateOrderItemStatus({
   workspaceId,
   userId,
@@ -491,6 +520,14 @@ export async function updateOrderItemStatus({
   }
 
   if (normalizedStatus === "skipped") {
+    await clearActiveProductionBatchSelectionsForOrderItems({
+      supabase,
+      workspaceId,
+      userId,
+      orderItemIds: [normalizedOrderItemId],
+      savedAt,
+    });
+
     const { error: batchItemsError } = await supabase
       .from("batch_items")
       .delete()
@@ -553,6 +590,14 @@ export async function updateOrderGroupStatus({
   }
 
   if (normalizedStatus === "skipped") {
+    await clearActiveProductionBatchSelectionsForOrderItems({
+      supabase,
+      workspaceId,
+      userId,
+      orderItemIds,
+      savedAt,
+    });
+
     const { error: batchItemsError } = await supabase
       .from("batch_items")
       .delete()
@@ -613,6 +658,14 @@ export async function updateOrderGroupsStatus({
   }
 
   if (normalizedStatus === "skipped") {
+    await clearActiveProductionBatchSelectionsForOrderItems({
+      supabase,
+      workspaceId,
+      userId,
+      orderItemIds,
+      savedAt,
+    });
+
     const { error: batchItemsError } = await supabase
       .from("batch_items")
       .delete()
