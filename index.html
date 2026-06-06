@@ -599,12 +599,25 @@
                   <p class="editor-meta">Select an order to review its items before adding designs to the production batch.</p>
                 </div>
                 <div class="editor-actions database-order-actions">
-                  <button id="skipSelectedOrderButton" class="batch-primary-action" type="button" disabled>
-                    <span class="batch-tool-label">Skip Order</span>
-                  </button>
-                  <button id="reopenSelectedOrderButton" class="batch-primary-action" type="button" disabled hidden>
-                    <span class="batch-tool-label">Reopen Order</span>
-                  </button>
+                  <details id="selectedOrderActionsMenu" class="workspace-tools-menu selected-order-actions-menu">
+                    <summary class="workspace-tools-toggle selected-order-actions-toggle" aria-label="Order actions"></summary>
+                    <div class="workspace-tools-popover batch-tools-popover">
+                      <div class="workspace-tools-actions batch-tools-actions" role="menu" aria-label="Selected order actions">
+                        <div class="workspace-tools-group batch-tools-group" aria-label="Selected order command group">
+                          <p class="workspace-tools-heading batch-tools-heading">Order</p>
+                          <button id="addSelectedOrderToBatchButton" class="batch-tool-button" type="button" disabled>
+                            <span class="batch-tool-label">Add to Production Batch</span>
+                          </button>
+                          <button id="skipSelectedOrderButton" class="batch-tool-button" type="button" disabled>
+                            <span class="batch-tool-label">Skip Order</span>
+                          </button>
+                          <button id="reopenSelectedOrderButton" class="batch-tool-button" type="button" disabled hidden>
+                            <span class="batch-tool-label">Reopen Order</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </details>
                 </div>
               </header>
               <div class="editor-body">

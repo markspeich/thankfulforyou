@@ -515,6 +515,8 @@ For batch Etsy order sessions, the preferred workflow is:
 - Skipped orders should not be eligible for adding to the active production batch through item actions, bulk checked-order actions, or API batch-add mutations.
 - Skipping an order item should remove any active production batch membership for that order item so it is not included in a production batch, after the operator confirms removal from the batch.
 - The Orders workspace should provide a `Skip Order Item` action for individual open order items, ask for confirmation, and then move that item to skipped status.
+- The Orders workspace selected-order detail header should collapse order-level actions into a top-right ellipsis menu ordered as `Add to Production Batch`, `Skip Order`, then `Reopen Order`.
+- The selected-order-level `Add to Production Batch` action should add all eligible open items in the selected order to the active production batch without duplicating existing active batch memberships.
 - The Orders workspace should provide a selected-order-level `Skip Order` action that skips every item in the selected order.
 - If any selected-order items are already in the active production batch, `Skip Order` must ask the operator to confirm removing those order items from the batch before skipping the full order.
 - Skipping an order item, selected order, or checked orders must preserve the current Orders status filter instead of automatically switching the filter to `Skipped`.

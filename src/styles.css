@@ -589,7 +589,7 @@ select {
 .orders-tools-menu,
 .editor-tools-menu,
 .database-order-item-menu {
-  position: static;
+  position: relative;
 }
 
 .workspace-tools-toggle,
@@ -642,7 +642,7 @@ select {
   z-index: 10;
   display: grid;
   gap: 14px;
-  width: min(344px, 100%);
+  width: min(344px, calc(100vw - 32px));
   padding: 14px;
   background: #fff;
   border: 1px solid var(--line);

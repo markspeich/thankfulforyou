@@ -459,6 +459,12 @@ test("renders grouped database orders and selected order item cards", async ({ p
   await expect(ordersWorkspace.getByText("Saved design available", { exact: true })).toBeVisible();
   await expect(ordersWorkspace.getByText("Badge buddy")).toBeVisible();
   await expect(ordersWorkspace.getByText("Already in active batch")).toBeVisible();
+  await ordersWorkspace.getByLabel("Order actions", { exact: true }).click();
+  const orderActions = ordersWorkspace.getByRole("menu", { name: "Selected order actions" });
+  await expect(orderActions.getByRole("button").nth(0)).toHaveText("Add to Production Batch");
+  await expect(orderActions.getByRole("button").nth(1)).toHaveText("Skip Order");
+  await expect(orderActions.getByRole("button", { name: "Add to Production Batch" })).toBeEnabled();
+  await page.keyboard.press("Escape");
 
   const firstItemCard = ordersWorkspace.locator(".database-order-item-card").filter({ hasText: "Ada RN" });
   await expect(firstItemCard.getByRole("heading", { name: "Order Item" })).toBeVisible();
@@ -657,7 +663,8 @@ test("skips and reopens an entire selected order from the Orders screen", async 
 
   const ordersWorkspace = page.locator("#databaseOrdersWorkspace");
   await expect(ordersWorkspace.locator(".database-order-item-card")).toHaveCount(2);
-  await ordersWorkspace.getByRole("button", { name: "Skip Order" }).click();
+  await ordersWorkspace.getByLabel("Order actions", { exact: true }).click();
+  await ordersWorkspace.getByRole("menu", { name: "Selected order actions" }).getByRole("button", { name: "Skip Order" }).click();
   await expect(page.locator("#confirmationDialogTitle")).toHaveText("Skip Order?");
   await expect(page.locator("#confirmationDialogDescription")).toContainText("Some order items are in the active production batch.");
   await expect(page.locator("#confirmationDialogDescription")).toContainText("Remove those order items from the batch and skip the entire order?");
@@ -672,7 +679,8 @@ test("skips and reopens an entire selected order from the Orders screen", async 
   await expect(ordersWorkspace.locator(".database-order-row")).toContainText("Order 1001 (Skipped)");
   await expect(ordersWorkspace.locator(".database-order-item-status")).toHaveText(["Skipped", "Skipped"]);
 
-  await ordersWorkspace.getByRole("button", { name: "Reopen Order" }).click();
+  await ordersWorkspace.getByLabel("Order actions", { exact: true }).click();
+  await ordersWorkspace.getByRole("menu", { name: "Selected order actions" }).getByRole("button", { name: "Reopen Order" }).click();
   await expect.poll(() => posts.some((post) => post.action === "reopenOrder" && post.orderId === "order:1001")).toBe(true);
   await expect(page.locator("#databaseOrdersStatusFilter")).toHaveValue("open");
   await expect(ordersWorkspace.locator(".database-order-item-status")).toHaveText(["Not in active batch", "Not in active batch"]);
@@ -1055,6 +1063,49 @@ test("adds checked orders to the active production batch", async ({ page }) => {
   await page.getByRole("button", { name: "Production Batch", exact: true }).click();
   const productionWorkspace = page.getByRole("region", { name: "Order items workspace" });
   await expect(productionWorkspace.locator(".order-row.active")).toContainText("Personalization: Ada RN");
+});
+
+test("adds the selected order to the active production batch from the order actions menu", async ({ page }) => {
+  await installSupabaseSession(page);
+  await installProductionBatchRoutes(page);
+  const posts = [];
+  let ordersPayload = buildOrdersPayload();
+  await installOrdersWorkspaceRoutes(page, {
+    ordersPayload,
+    posts,
+    postBody: (post) => {
+      if (post.action === "addOrdersToProductionBatch") {
+        ordersPayload = {
+          ...ordersPayload,
+          orders: ordersPayload.orders.map((order) => (
+            order.id === "order:1001"
+              ? {
+                ...order,
+                isInActiveBatch: true,
+                items: order.items.map((item) => ({ ...item, isInActiveBatch: true })),
+              }
+              : order
+          )),
+          importedOrderItemCount: 0,
+          addedOrderItemCount: 1,
+        };
+        return ordersPayload;
+      }
+      return ordersPayload;
+    },
+  });
+
+  await page.goto("/");
+
+  const ordersWorkspace = page.locator("#databaseOrdersWorkspace");
+  await ordersWorkspace.getByLabel("Order actions", { exact: true }).click();
+  await ordersWorkspace.getByRole("menu", { name: "Selected order actions" }).getByRole("button", { name: "Add to Production Batch" }).click();
+
+  await expect.poll(() => posts.some((post) => (
+    post.action === "addOrdersToProductionBatch"
+    && post.orderIds.includes("order:1001")
+  ))).toBe(true);
+  await expect(ordersWorkspace.locator(".database-order-item-status")).toHaveText(["Already in active batch", "Already in active batch"]);
 });
 
 test("copying an incomplete order item design shows a completion-needed status", async ({ page }) => {
