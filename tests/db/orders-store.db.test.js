@@ -6,6 +6,7 @@ import {
   addOrderGroupsToProductionBatch,
   importWorkspaceOrderItems,
   listWorkspaceOrders,
+  updateOrderGroupStatus,
 } from "../../api/_lib/orders-store.js";
 import { loadEnvFile } from "../../tools/env_file.mjs";
 
@@ -279,5 +280,64 @@ describe("orders store database integration", () => {
       completedSettingsSignature: cachedBuild.signature,
       lines: [{ lineIndex: 0, text: "Saved", fontId: "skywalk" }],
     });
+  });
+
+  it("skips an order and clears active production batch selection", async () => {
+    const suffix = Date.now().toString(36);
+    const orderNumber = `SKIP-${suffix}`;
+    const transactionId = `txn-skip-${suffix}`;
+    const orderItemId = `transaction:${transactionId}`;
+    const batchId = await createTestBatch("Skip Orders DB Test Batch");
+
+    await importWorkspaceOrderItems({
+      workspaceId: PRIMARY_WORKSPACE_ID,
+      userId: null,
+      target: "productionBatch",
+      batchId,
+      items: [{
+        text: "Skip Me",
+        source: {
+          orderNumber,
+          transactionId,
+          buyerName: "Skip Buyer",
+        },
+      }],
+    });
+
+    const supabase = createSupabaseAdminClient();
+    const { error: activeSelectionError } = await supabase
+      .from("production_batches")
+      .update({ active_order_item_id: orderItemId })
+      .eq("id", batchId);
+
+    expect(activeSelectionError).toBeNull();
+
+    const result = await updateOrderGroupStatus({
+      workspaceId: PRIMARY_WORKSPACE_ID,
+      userId: null,
+      orderId: `order:${orderNumber}`,
+      status: "skipped",
+    });
+
+    expect(result).toEqual({
+      orderItemIds: [orderItemId],
+      status: "skipped",
+    });
+
+    const { data: batch, error: batchError } = await supabase
+      .from("production_batches")
+      .select("active_order_item_id")
+      .eq("id", batchId)
+      .maybeSingle();
+    const { data: batchItems, error: batchItemsError } = await supabase
+      .from("batch_items")
+      .select("order_item_id")
+      .eq("batch_id", batchId)
+      .eq("order_item_id", orderItemId);
+
+    expect(batchError).toBeNull();
+    expect(batch?.active_order_item_id).toBeNull();
+    expect(batchItemsError).toBeNull();
+    expect(batchItems).toEqual([]);
   });
 });

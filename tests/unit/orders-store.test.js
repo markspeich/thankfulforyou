@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 const supabaseMock = vi.hoisted(() => ({
   calls: [],
   db: {
+    production_batches: [],
     order_items: [],
     designs: [],
     design_lines: [],
@@ -21,6 +22,7 @@ function clone(value) {
 function resetDb(nextDb = {}) {
   supabaseMock.calls = [];
   supabaseMock.db = {
+    production_batches: [],
     order_items: [],
     designs: [],
     design_lines: [],
@@ -146,6 +148,13 @@ function createUpdateChain(table, payload) {
     in(column, values) {
       filters.push({ type: "in", column, values: clone(values) });
       return chain;
+    },
+    then(resolve, reject) {
+      const matchingRows = supabaseMock.db[table].filter((row) => matchesFilters(row, filters));
+      matchingRows.forEach((row) => {
+        Object.assign(row, clone(payload));
+      });
+      return Promise.resolve({ data: null, error: null }).then(resolve, reject);
     },
     select() {
       return {
@@ -959,6 +968,13 @@ describe("orders store", () => {
 
   it("marks an order item skipped and removes it from batch memberships", async () => {
     resetDb({
+      production_batches: [
+        {
+          id: "batch-1",
+          workspace_id: "workspace-1",
+          active_order_item_id: "item-skip",
+        },
+      ],
       order_items: [
         {
           id: "item-skip",
@@ -994,11 +1010,23 @@ describe("orders store", () => {
       status: "skipped",
       updated_by: "user-1",
     });
+    expect(supabaseMock.db.production_batches[0]).toMatchObject({
+      id: "batch-1",
+      active_order_item_id: null,
+      updated_by: "user-1",
+    });
     expect(supabaseMock.db.batch_items).toEqual([]);
   });
 
   it("marks every item in an order skipped and removes their batch memberships", async () => {
     resetDb({
+      production_batches: [
+        {
+          id: "batch-1",
+          workspace_id: "workspace-1",
+          active_order_item_id: "item-skip-2",
+        },
+      ],
       order_items: [
         {
           id: "item-skip-1",
@@ -1063,6 +1091,11 @@ describe("orders store", () => {
       expect.objectContaining({ id: "item-skip-1", status: "skipped", updated_by: "user-1" }),
       expect.objectContaining({ id: "item-skip-2", status: "skipped", updated_by: "user-1" }),
     ]);
+    expect(supabaseMock.db.production_batches[0]).toMatchObject({
+      id: "batch-1",
+      active_order_item_id: null,
+      updated_by: "user-1",
+    });
     expect(supabaseMock.db.batch_items).toEqual([
       expect.objectContaining({ order_item_id: "item-other-order" }),
     ]);
@@ -1070,6 +1103,13 @@ describe("orders store", () => {
 
   it("marks items in multiple orders skipped and removes their batch memberships", async () => {
     resetDb({
+      production_batches: [
+        {
+          id: "batch-1",
+          workspace_id: "workspace-1",
+          active_order_item_id: "item-b",
+        },
+      ],
       order_items: [
         { id: "item-a", workspace_id: "workspace-1", status: "open", order_number: "8001", source_json: {}, quantity: 1 },
         { id: "item-b", workspace_id: "workspace-1", status: "open", order_number: "8002", source_json: {}, quantity: 1 },
@@ -1096,6 +1136,11 @@ describe("orders store", () => {
       expect.objectContaining({ id: "item-b", status: "skipped" }),
       expect.objectContaining({ id: "item-c", status: "open" }),
     ]);
+    expect(supabaseMock.db.production_batches[0]).toMatchObject({
+      id: "batch-1",
+      active_order_item_id: null,
+      updated_by: "user-1",
+    });
     expect(supabaseMock.db.batch_items).toEqual([
       expect.objectContaining({ order_item_id: "item-c" }),
     ]);

@@ -211,6 +211,8 @@ const databaseOrdersListShell = document.querySelector(".database-orders-list-sh
 const databaseOrderItemsShell = document.querySelector(".database-order-items-shell");
 const selectedDatabaseOrderTitle = document.querySelector(".database-order-items-panel .editor-header h2");
 const selectedDatabaseOrderMeta = document.querySelector(".database-order-items-panel .editor-meta");
+const selectedOrderActionsMenu = document.querySelector("#selectedOrderActionsMenu");
+const addSelectedOrderToBatchButton = document.querySelector("#addSelectedOrderToBatchButton");
 const skipSelectedOrderButton = document.querySelector("#skipSelectedOrderButton");
 const reopenSelectedOrderButton = document.querySelector("#reopenSelectedOrderButton");
 const addCheckedOrdersToBatchButton = document.querySelector("#addCheckedOrdersToBatchButton");
@@ -219,7 +221,7 @@ const reopenCheckedOrdersButton = document.querySelector("#reopenCheckedOrdersBu
 const editorToolsMenu = document.querySelector(".editor-tools-menu");
 const presetToolsMenu = document.querySelector(".preset-tools-menu");
 const batchActionLabelByButton = new Map(
-  [addOrderButton, importClipboardButton, clearBatchButton, showColorCountsButton, exportCompletedButton, copyCompletedButton, pasteOrdersButton, addCheckedOrdersToBatchButton, skipCheckedOrdersButton, reopenCheckedOrdersButton, skipSelectedOrderButton, reopenSelectedOrderButton]
+  [addOrderButton, importClipboardButton, clearBatchButton, showColorCountsButton, exportCompletedButton, copyCompletedButton, pasteOrdersButton, addCheckedOrdersToBatchButton, addSelectedOrderToBatchButton, skipCheckedOrdersButton, reopenCheckedOrdersButton, skipSelectedOrderButton, reopenSelectedOrderButton]
     .filter(Boolean)
     .map((button) => [button, button.querySelector(".batch-tool-label")]),
 );
@@ -344,6 +346,7 @@ const canvas = document.createElement("canvas");
 const ctx = canvas.getContext("2d");
 const MASK_SCALE = 3;
 const MASK_PADDING_PX = 12;
+const OUTLINE_BRIDGE_SAFETY_MM = 1 / (PX_PER_MM * MASK_SCALE);
 const measuredLineCache = new Map();
 let lastLayout = null;
 let zoom = DEFAULT_ZOOM;
@@ -5179,6 +5182,9 @@ function renderSelectedDatabaseOrderItems() {
       ? getDatabaseOrderMeta(selectedOrder)
       : "Select an order to review its items before adding designs to the production batch.";
   }
+  if (addSelectedOrderToBatchButton) {
+    addSelectedOrderToBatchButton.disabled = !selectedOrder || !isDatabaseOrderBatchEligible(selectedOrder) || ordersDatabaseMutationInFlight;
+  }
   if (skipSelectedOrderButton) {
     const showSkipOrder = Boolean(selectedOrder) && !canReopenDatabaseOrder(selectedOrder);
     skipSelectedOrderButton.hidden = !showSkipOrder;
@@ -5456,12 +5462,18 @@ async function updateDatabaseOrderItemStatus({
       accessToken,
     });
 
-    databaseOrdersStatusFilterValue = nextFilter;
-    if (databaseOrdersStatusFilter) {
-      databaseOrdersStatusFilter.value = nextFilter;
+    if (nextFilter) {
+      databaseOrdersStatusFilterValue = nextFilter;
+      if (databaseOrdersStatusFilter) {
+        databaseOrdersStatusFilter.value = nextFilter;
+      }
     }
     checkedDatabaseOrderIds.clear();
-    await refreshOrdersAndProductionBatch({ payload, accessToken, refreshBatch: action === "skipOrderItem" });
+    await refreshOrdersAndProductionBatch({
+      payload: nextFilter ? payload : null,
+      accessToken,
+      refreshBatch: action === "skipOrderItem",
+    });
     updateWorkflowAlert(successMessage, "success");
   } catch (error) {
     handleOrdersMutationError(
@@ -5496,7 +5508,7 @@ async function skipDatabaseOrderItem(item, button = null) {
   await updateDatabaseOrderItemStatus({
     item,
     action: "skipOrderItem",
-    nextFilter: "skipped",
+    nextFilter: null,
     pendingLabel: "Skipping...",
     successMessage: "Order skipped.",
     fallbackMessage: "Unable to skip the order.",
@@ -5551,12 +5563,18 @@ async function updateDatabaseOrderStatus({
       accessToken,
     });
 
-    databaseOrdersStatusFilterValue = nextFilter;
-    if (databaseOrdersStatusFilter) {
-      databaseOrdersStatusFilter.value = nextFilter;
+    if (nextFilter) {
+      databaseOrdersStatusFilterValue = nextFilter;
+      if (databaseOrdersStatusFilter) {
+        databaseOrdersStatusFilter.value = nextFilter;
+      }
     }
     checkedDatabaseOrderIds.clear();
-    await refreshOrdersAndProductionBatch({ payload, accessToken, refreshBatch: action === "skipOrder" });
+    await refreshOrdersAndProductionBatch({
+      payload: nextFilter ? payload : null,
+      accessToken,
+      refreshBatch: action === "skipOrder",
+    });
     updateWorkflowAlert(successMessage, "success");
   } catch (error) {
     handleOrdersMutationError(
@@ -5595,7 +5613,7 @@ async function skipSelectedDatabaseOrder() {
   await updateDatabaseOrderStatus({
     order: selectedOrder,
     action: "skipOrder",
-    nextFilter: "skipped",
+    nextFilter: null,
     pendingLabel: "Skipping...",
     successMessage: "Order skipped.",
     fallbackMessage: "Unable to skip the order.",
@@ -5653,12 +5671,18 @@ async function updateCheckedDatabaseOrdersStatus({
       accessToken,
     });
 
-    databaseOrdersStatusFilterValue = nextFilter;
-    if (databaseOrdersStatusFilter) {
-      databaseOrdersStatusFilter.value = nextFilter;
+    if (nextFilter) {
+      databaseOrdersStatusFilterValue = nextFilter;
+      if (databaseOrdersStatusFilter) {
+        databaseOrdersStatusFilter.value = nextFilter;
+      }
     }
     checkedDatabaseOrderIds.clear();
-    await refreshOrdersAndProductionBatch({ payload, accessToken, refreshBatch: action === "skipOrders" });
+    await refreshOrdersAndProductionBatch({
+      payload: nextFilter ? payload : null,
+      accessToken,
+      refreshBatch: action === "skipOrders",
+    });
     updateWorkflowAlert(successMessage, "success");
   } catch (error) {
     handleOrdersMutationError(
@@ -5697,7 +5721,7 @@ async function skipCheckedDatabaseOrders() {
 
   await updateCheckedDatabaseOrdersStatus({
     action: "skipOrders",
-    nextFilter: "skipped",
+    nextFilter: null,
     pendingLabel: "Skipping...",
     successMessage: "Orders skipped.",
     fallbackMessage: "Unable to skip the selected orders.",
@@ -5774,6 +5798,48 @@ async function addCheckedDatabaseOrdersToBatch() {
   } finally {
     ordersDatabaseMutationInFlight = false;
     setBatchActionLabel(addCheckedOrdersToBatchButton, "Add Checked to Production Batch");
+    renderDatabaseOrdersWorkspace();
+    render();
+  }
+}
+
+async function addSelectedDatabaseOrderToBatch() {
+  const selectedOrder = getSelectedGroupedOrder(getVisibleDatabaseOrders(), selectedDatabaseOrderId);
+  const orderId = typeof selectedOrder?.id === "string" ? selectedOrder.id.trim() : "";
+  const batchId = requireActiveProductionBatchId();
+  if (!batchId || !orderId || !isDatabaseOrderBatchEligible(selectedOrder)) {
+    return;
+  }
+
+  if (addSelectedOrderToBatchButton) {
+    addSelectedOrderToBatchButton.disabled = true;
+    setBatchActionLabel(addSelectedOrderToBatchButton, "Adding...");
+  }
+  ordersDatabaseMutationInFlight = true;
+  render();
+
+  try {
+    const accessToken = await resolveProductionBatchMutationAccessToken();
+    const payload = await addOrdersToProductionBatch({
+      batchId,
+      orderIds: [orderId],
+      accessToken,
+    });
+
+    await refreshOrdersAndProductionBatch({ payload, accessToken, refreshBatch: true });
+    selectedOrderActionsMenu?.removeAttribute("open");
+    updateWorkflowAlert(buildAddedToBatchMessage(payload), "success");
+  } catch (error) {
+    handleOrdersMutationError(
+      error,
+      "Unable to add the selected order to the production batch.",
+      "Production batch session expired. Sign in again to continue adding orders.",
+    );
+  } finally {
+    ordersDatabaseMutationInFlight = false;
+    if (addSelectedOrderToBatchButton) {
+      setBatchActionLabel(addSelectedOrderToBatchButton, "Add to Production Batch");
+    }
     renderDatabaseOrdersWorkspace();
     render();
   }
@@ -7840,10 +7906,10 @@ function findPairOffsetMm(leftMask, rightMask, bridgeMm) {
   const offsetPx = findPairOffsetPx(leftMask, rightMask, targetPx);
 
   if (Number.isFinite(offsetPx)) {
-    return offsetPx / MASK_SCALE / PX_PER_MM;
+    return (offsetPx / MASK_SCALE / PX_PER_MM) - OUTLINE_BRIDGE_SAFETY_MM;
   }
 
-  return (leftMask.rightMm + rightMask.leftMm) - bridgeMm;
+  return (leftMask.rightMm + rightMask.leftMm) - bridgeMm - OUTLINE_BRIDGE_SAFETY_MM;
 }
 
 function createEmptyLineMask(fontSizeMm, verticalScale) {
@@ -8172,12 +8238,19 @@ function buildScaledLineSettings(lines, fitScale) {
     const lockTextHeight = Boolean(line?.settings?.lockTextHeight);
     return normalizeLineSettings({
       ...line.settings,
-      bridgeMm: Number(line.settings.bridgeMm) * fitScale,
-      lineBridgeMm: Number(line.settings.lineBridgeMm) * fitScale,
+      bridgeMm: Number(line.settings.bridgeMm),
+      lineBridgeMm: Number(line.settings.lineBridgeMm),
       offsetXMm: Number(line.settings.offsetXMm) * fitScale,
       fontSizeMm: Number(line.settings.fontSizeMm) * (lockTextHeight ? 1 : fitScale),
     });
   });
+}
+
+function faceBoundsFitGuide(faceBounds, guide) {
+  const maxWidthMm = Number(guide?.maxWidthMm);
+  const maxHeightMm = Number(guide?.maxHeightMm);
+
+  return faceBounds.width <= maxWidthMm + 0.01 && faceBounds.height <= maxHeightMm + 0.01;
 }
 
 function hasLockedTextHeight(lines) {
@@ -8798,7 +8871,7 @@ function buildOrderLayout(settings) {
   let fitted = measureTextLayoutForFit(normalized.text, scaledLineSettings);
   let layout = assembleOrderLayout(normalized, lines, fitScale, fitted, guide);
 
-  for (let index = 0; index < 3; index += 1) {
+  for (let index = 0; index < 8; index += 1) {
     if (layout.fit.overflowsGuide && hasLockedTextHeight(lines)) {
       break;
     }
@@ -8810,10 +8883,22 @@ function buildOrderLayout(settings) {
       break;
     }
 
-    fitScale *= residualFitScale;
-    scaledLineSettings = buildScaledLineSettings(lines, fitScale);
-    fitted = measureTextLayoutForFit(normalized.text, scaledLineSettings);
-    layout = assembleOrderLayout(normalized, lines, fitScale, fitted, guide);
+    const nextFitScale = fitScale * residualFitScale;
+    const nextScaledLineSettings = buildScaledLineSettings(lines, nextFitScale);
+    const nextFitted = measureTextLayoutForFit(normalized.text, nextScaledLineSettings);
+    const nextLayout = assembleOrderLayout(normalized, lines, nextFitScale, nextFitted, guide);
+
+    if (residualFitScale > 1) {
+      const nextFaceBounds = renderFaceCanvas(nextLayout.letters, nextLayout.widthMm, nextLayout.heightMm).boundsMm;
+      if (!faceBoundsFitGuide(nextFaceBounds, guide)) {
+        break;
+      }
+    }
+
+    fitScale = nextFitScale;
+    scaledLineSettings = nextScaledLineSettings;
+    fitted = nextFitted;
+    layout = nextLayout;
   }
 
   return layout;
@@ -9076,6 +9161,9 @@ databaseOrdersBatchFilter?.addEventListener("change", () => {
   databaseOrdersBatchFilterValue = databaseOrdersBatchFilter.value;
   renderDatabaseOrdersWorkspace();
 });
+addSelectedOrderToBatchButton?.addEventListener("click", () => {
+  void addSelectedDatabaseOrderToBatch();
+});
 skipSelectedOrderButton?.addEventListener("click", () => {
   void skipSelectedDatabaseOrder();
 });
@@ -9123,6 +9211,13 @@ assignPresetToListingButton?.addEventListener("click", () => {
       ordersToolsMenu?.removeAttribute("open");
     });
   });
+[addSelectedOrderToBatchButton, skipSelectedOrderButton, reopenSelectedOrderButton]
+  .filter(Boolean)
+  .forEach((button) => {
+    button.addEventListener("click", () => {
+      selectedOrderActionsMenu?.removeAttribute("open");
+    });
+  });
 [copyButton, downloadButton]
   .filter(Boolean)
   .forEach((button) => {
@@ -9139,6 +9234,7 @@ assignPresetToListingButton?.addEventListener("click", () => {
   });
 registerOutsideDismissableDetailsMenu(batchToolsMenu);
 registerOutsideDismissableDetailsMenu(ordersToolsMenu);
+registerOutsideDismissableDetailsMenu(selectedOrderActionsMenu);
 registerOutsideDismissableDetailsMenu(presetToolsMenu);
 registerDatabaseOrderItemMenuDismissal(databaseOrdersWorkspace);
 closeColorCountsButton?.addEventListener("click", closeBatchColorCountsDialog);
