@@ -3,6 +3,7 @@ import { buildLegacySettingsSignature } from "../../src/order-signatures.js";
 
 const FIRST_SVG = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 20 20\"><path d=\"M10 18 2 9a5 5 0 0 1 8-6 5 5 0 0 1 8 6Z\" fill=\"#0f766e\"/></svg>";
 const SECOND_SVG = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><circle cx=\"12\" cy=\"12\" r=\"10\" fill=\"#be123c\"/></svg>";
+const DELETED_SVG = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 18 18\"><path d=\"M9 1 17 17H1Z\" fill=\"#7c3aed\"/></svg>";
 const STORAGE_ORIGIN = "https://example.supabase.co";
 const STORAGE_ROOT = `${STORAGE_ORIGIN}/storage/v1/object/public/workspace-fixed-designs`;
 
@@ -119,6 +120,7 @@ async function installFixedDesignRoutes(page) {
   const storageObjects = new Map([
     ["cardiology-heart.svg", FIRST_SVG],
     ["paw-print.svg", SECOND_SVG],
+    ["retired-cross.svg", DELETED_SVG],
   ]);
   const fixedDesigns = [
     {
@@ -145,14 +147,31 @@ async function installFixedDesignRoutes(page) {
       created_at: "2026-06-02T12:00:00.000Z",
       updated_at: "2026-06-02T12:00:00.000Z",
     },
+    {
+      id: "fixed-design-deleted",
+      workspace_id: "workspace-1",
+      display_name: "Retired Cross",
+      public_url: fixedDesignPublicUrl("retired-cross.svg"),
+      file_name: "retired-cross.svg",
+      version: 2,
+      metadata_json: {},
+      deleted_at: "2026-06-04T12:00:00.000Z",
+      created_at: "2026-06-01T12:00:00.000Z",
+      updated_at: "2026-06-04T12:00:00.000Z",
+    },
   ];
 
   await page.route("**/api/fixed-designs**", async (route) => {
     expect(route.request().headers().authorization).toBe("Bearer token-1");
+    const includeDeleted = new URL(route.request().url()).searchParams.get("includeDeleted") === "true";
     await route.fulfill({
       status: 200,
       contentType: "application/json; charset=utf-8",
-      body: JSON.stringify({ fixedDesigns }),
+      body: JSON.stringify({
+        fixedDesigns: includeDeleted
+          ? fixedDesigns
+          : fixedDesigns.filter((record) => !record.deleted_at),
+      }),
     });
   });
 
@@ -279,6 +298,7 @@ test("inserts a fixed SVG design from the preset tools menu with SVG-only contro
   await expect(dialog.getByRole("heading", { name: "Insert Fixed Design" })).toBeVisible();
   await expect(dialog.locator("#insertFixedDesignSearchInput")).toBeVisible();
   await expect(dialog.getByRole("button", { name: /Cardiology Heart/ })).toBeVisible();
+  await expect(dialog.getByRole("button", { name: /Retired Cross/ })).toHaveCount(0);
   await expect(dialog.locator("#insertFixedDesignPreviewImage")).toHaveAttribute("src", /cardiology-heart\.svg/);
   await expect(dialog.locator("#insertFixedDesignSelectedName")).toHaveText("Cardiology Heart");
   await expect(dialog.locator("#insertFixedDesignSelectedMeta")).toContainText("v3");
@@ -362,6 +382,156 @@ test("inserts a fixed SVG design from the preset tools menu with SVG-only contro
   await fixedCard.getByRole("button", { name: "Remove Fixed Design" }).click();
   await expect(page.locator(".line-control-card", { hasText: "Fixed Design: Paw Print" })).toHaveCount(0);
   await expect(page.locator('.line-control-card[data-line-kind="text"][data-line-index="0"]').getByText("Font").first()).toBeVisible();
+});
+
+test("resolves deleted fixed SVG references for saved designs without offering them for insert", async ({ page }) => {
+  await page.unroute("**/api/batch-session");
+  await page.unroute("**/api/production-batch**");
+
+  const settings = {
+    text: "Ava",
+    presetId: "preset-a1f4c8e2b601",
+    boundingSizePresetId: "size-2-2x1-5",
+    backingMm: 3.1,
+    weldExportedDesign: true,
+    lines: [
+      {
+        kind: "text",
+        fontId: "candlepin",
+        bridgeMm: 0.5,
+        lineBridgeMm: 0.5,
+        offsetXMm: 0,
+        fontSizeMm: 32,
+        horizontalScale: 1,
+        verticalScale: 1,
+        lockTextHeight: false,
+      },
+      {
+        kind: "fixedSvg",
+        fixedDesignId: "fixed-design-deleted",
+        fixedDesignName: "Retired Cross",
+        fixedDesignVersion: 2,
+        svgSizeMm: 30,
+        offsetXMm: 4,
+        offsetYMm: 8,
+      },
+    ],
+  };
+  const signature = buildLegacySettingsSignature(settings);
+  await installProductionBatchRoutes(page, {
+    batch: { id: "batch-1", workspaceId: "workspace-1" },
+    activeOrderItemId: "order-deleted-reference",
+    orderItems: [
+      {
+        id: "order-deleted-reference",
+        text: "Ava",
+        status: "captured",
+        settings,
+        source: null,
+        cachedBuild: {
+          signature,
+          layout: {
+            text: "Ava",
+            widthMm: 40,
+            heightMm: 24,
+            backingMm: 3.1,
+            weldExportedDesign: true,
+            boundingSizePresetId: "size-2-2x1-5",
+            textBoundsMm: { left: 6.1, top: 6.1, width: 27.8, height: 11.8 },
+            fit: { fitScale: 1, lineScaleFactors: [1], overflowsGuide: false },
+            letters: [
+              {
+                character: "A",
+                x: 7,
+                y: 18,
+                fontId: "candlepin",
+                fontPath: "public/fonts/Candlepin-Laser.otf",
+                fontSizeMm: 32,
+                horizontalScale: 1,
+                verticalScale: 1,
+              },
+              {
+                character: "v",
+                x: 17,
+                y: 18,
+                fontId: "candlepin",
+                fontPath: "public/fonts/Candlepin-Laser.otf",
+                fontSizeMm: 32,
+                horizontalScale: 1,
+                verticalScale: 1,
+              },
+              {
+                character: "a",
+                x: 27,
+                y: 18,
+                fontId: "candlepin",
+                fontPath: "public/fonts/Candlepin-Laser.otf",
+                fontSizeMm: 32,
+                horizontalScale: 1,
+                verticalScale: 1,
+              },
+            ],
+          },
+          analysis: {
+            exportFacePath: "M0 0 L10 0 L10 10 Z",
+            facePath: "M0 0 L10 0 L10 10 Z",
+            backingPath: "M20 0 L30 0 L30 10 Z",
+            faceBoundsMm: { left: 0, top: 0, width: 10, height: 10 },
+            connectedComponentCount: 1,
+            isConnected: true,
+          },
+        },
+        previousCompletedBuild: null,
+        savedSettingsSignature: signature,
+        completedSettingsSignature: signature,
+        analysisBadge: { state: "ok", shortLabel: "1", fullLabel: "Analysis complete: 1 connected face piece" },
+      },
+    ],
+  });
+
+  let exportedPayload = null;
+  await page.route("**/api/export-svg", async (route) => {
+    exportedPayload = route.request().postDataJSON();
+    await route.fulfill({
+      status: 200,
+      contentType: "image/svg+xml; charset=utf-8",
+      body: "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>",
+    });
+  });
+
+  await page.goto("/production-batch");
+  await expect(page.locator("#initialBatchLoading")).toBeHidden();
+  const fixedPreview = page.locator('#preview [data-fixed-svg-id="fixed-design-deleted"]');
+  await expect(fixedPreview).toBeVisible();
+  await expect(fixedPreview).toHaveAttribute("href", /retired-cross\.svg/);
+
+  await openPresetTools(page);
+  await page.getByRole("button", { name: "Insert Fixed Design" }).click();
+  const dialog = page.locator("#insertFixedDesignDialog");
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("button", { name: /Cardiology Heart/ })).toBeVisible();
+  await expect(dialog.getByRole("button", { name: /Retired Cross/ })).toHaveCount(0);
+  await dialog.locator("#cancelInsertFixedDesignButton").click();
+
+  await page.evaluate(() => {
+    const button = document.querySelector("#downloadButton");
+    if (!(button instanceof HTMLButtonElement)) {
+      throw new Error("Export button not found");
+    }
+    button.click();
+  });
+  await expect.poll(() => exportedPayload).not.toBeNull();
+  expect(exportedPayload.fixedSvgs).toEqual([
+    expect.objectContaining({
+      id: "fixed-design-deleted",
+      name: "Retired Cross",
+      publicUrl: fixedDesignPublicUrl("retired-cross.svg"),
+      widthMm: 30,
+      heightMm: 30,
+      offsetXMm: 4,
+      offsetYMm: 8,
+    }),
+  ]);
 });
 
 test("enriches legacy cached fixed SVG layouts for preview and export", async ({ page }) => {

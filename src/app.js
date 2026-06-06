@@ -7667,24 +7667,26 @@ function getSelectedFixedDesign() {
 }
 
 function getVisibleFixedDesignRecords() {
+  const activeRecords = fixedDesignRecords.filter((record) => !record.isDeleted);
   const query = fixedDesignSearchTerm.trim().toLowerCase();
   if (!query) {
-    return fixedDesignRecords;
+    return activeRecords;
   }
 
-  return fixedDesignRecords.filter((record) => (
+  return activeRecords.filter((record) => (
     record.displayName.toLowerCase().includes(query)
     || String(record.fileName || "").toLowerCase().includes(query)
   ));
 }
 
 function getVisibleInsertFixedDesignRecords() {
+  const activeRecords = fixedDesignRecords.filter((record) => !record.isDeleted);
   const query = insertFixedDesignSearchTerm.trim().toLowerCase();
   if (!query) {
-    return fixedDesignRecords;
+    return activeRecords;
   }
 
-  return fixedDesignRecords.filter((record) => (
+  return activeRecords.filter((record) => (
     record.displayName.toLowerCase().includes(query)
     || String(record.fileName || "").toLowerCase().includes(query)
   ));
@@ -7724,14 +7726,15 @@ function selectInsertFixedDesign(fixedDesignId) {
 }
 
 function selectFirstFixedDesignIfNeeded() {
-  if (fixedDesignRecords.some((record) => record.id === selectedFixedDesignId)) {
+  const activeRecords = fixedDesignRecords.filter((record) => !record.isDeleted);
+  if (activeRecords.some((record) => record.id === selectedFixedDesignId)) {
     return;
   }
   if (!fixedDesignsLoaded && selectedFixedDesignId) {
     return;
   }
 
-  selectedFixedDesignId = fixedDesignRecords[0]?.id || null;
+  selectedFixedDesignId = activeRecords[0]?.id || null;
 }
 
 function selectFixedDesign(fixedDesignId, options = {}) {
@@ -7762,7 +7765,7 @@ async function refreshWorkspaceFixedDesigns(accessToken = null) {
   fixedDesignsLoading = true;
   setFixedDesignEditorStatus("Loading fixed designs...", "pending");
   try {
-    const nextRecords = normalizeFixedDesignRecords(await fetchWorkspaceFixedDesigns({ accessToken }));
+    const nextRecords = normalizeFixedDesignRecords(await fetchWorkspaceFixedDesigns({ accessToken, includeDeleted: true }));
     if (loadRequestId !== fixedDesignsLoadRequestId) {
       return;
     }
@@ -7770,8 +7773,9 @@ async function refreshWorkspaceFixedDesigns(accessToken = null) {
     fixedDesignsLoaded = true;
     selectFirstFixedDesignIfNeeded();
     renderFixedDesignWorkspace();
+    const activeRecordCount = fixedDesignRecords.filter((record) => !record.isDeleted).length;
     setFixedDesignEditorStatus(
-      fixedDesignRecords.length ? "Choose a fixed SVG design or upload a new one." : "Upload an SVG fixed design to start.",
+      activeRecordCount ? "Choose a fixed SVG design or upload a new one." : "Upload an SVG fixed design to start.",
       "pending",
     );
   } catch (error) {
@@ -7862,8 +7866,9 @@ function renderInsertFixedDesignPicker() {
 
 async function loadFixedDesignsForInsertPicker() {
   if (fixedDesignsLoaded) {
+    const activeRecordCount = fixedDesignRecords.filter((record) => !record.isDeleted).length;
     setInsertFixedDesignStatus(
-      fixedDesignRecords.length ? "Choose a fixed design to insert." : "No fixed designs are available yet.",
+      activeRecordCount ? "Choose a fixed design to insert." : "No fixed designs are available yet.",
       "pending",
     );
     renderInsertFixedDesignPicker();
@@ -7884,7 +7889,7 @@ async function loadFixedDesignsForInsertPicker() {
   setInsertFixedDesignStatus("Loading fixed designs...", "pending");
   renderInsertFixedDesignPicker();
   try {
-    const nextRecords = normalizeFixedDesignRecords(await fetchWorkspaceFixedDesigns({ accessToken }));
+    const nextRecords = normalizeFixedDesignRecords(await fetchWorkspaceFixedDesigns({ accessToken, includeDeleted: true }));
     if (loadRequestId !== fixedDesignsLoadRequestId) {
       return;
     }
@@ -7893,8 +7898,9 @@ async function loadFixedDesignsForInsertPicker() {
     selectFirstFixedDesignIfNeeded();
     selectFirstInsertFixedDesignIfNeeded();
     renderFixedDesignWorkspace();
+    const activeRecordCount = fixedDesignRecords.filter((record) => !record.isDeleted).length;
     setInsertFixedDesignStatus(
-      fixedDesignRecords.length ? "Choose a fixed design to insert." : "No fixed designs are available yet.",
+      activeRecordCount ? "Choose a fixed design to insert." : "No fixed designs are available yet.",
       "pending",
     );
   } catch (error) {
@@ -7922,13 +7928,14 @@ function closeInsertFixedDesignDialog() {
 }
 
 function openInsertFixedDesignDialog() {
+  const activeFixedDesignRecords = fixedDesignRecords.filter((record) => !record.isDeleted);
   insertFixedDesignSearchTerm = "";
-  insertFixedDesignSelectedId = fixedDesignRecords.find((record) => record.id === insertFixedDesignSelectedId)?.id
-    || fixedDesignRecords[0]?.id
+  insertFixedDesignSelectedId = activeFixedDesignRecords.find((record) => record.id === insertFixedDesignSelectedId)?.id
+    || activeFixedDesignRecords[0]?.id
     || null;
   setInsertFixedDesignStatus(
     fixedDesignsLoaded
-      ? (fixedDesignRecords.length ? "Choose a fixed design to insert." : "No fixed designs are available yet.")
+      ? (activeFixedDesignRecords.length ? "Choose a fixed design to insert." : "No fixed designs are available yet.")
       : "Loading fixed designs...",
     "pending",
   );
