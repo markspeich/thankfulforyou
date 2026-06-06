@@ -1,4 +1,4 @@
-# Thankful For You Badge Reel Layout Tool
+# Thankful For  You
 
 This workspace is for a new website that will help prepare custom acrylic badge reel designs for production.
 

@@ -1,8 +1,10 @@
-# Badge Reel Design Layout Tool Requirements
+# Thankful For  You Requirements
 
 ## Project Objective
 
 Create a website that helps lay out custom badge reel designs for Etsy orders.
+
+The app name should be `Thankful For  You` in browser chrome and operator-facing app identity surfaces.
 
 The business sells custom badge reels. Each face plate is made from two layers of 1/8 inch acrylic cut by laser and solvent-welded together. The completed face plate is then solvent-welded to a badge reel.
 
