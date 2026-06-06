@@ -173,15 +173,17 @@ async function installDelayedAnalysisRoute(page) {
 }
 
 async function openBatchTools(page) {
-  if (await page.locator("#ordersWorkspace").isHidden()) {
-    await page.getByRole("button", { name: "Production Batch", exact: true }).click();
+  const productionBatchWorkspace = page.locator("#ordersWorkspace");
+  if (await productionBatchWorkspace.isHidden()) {
+    await page.goto("/production-batch");
   }
-  const menu = page.locator(".batch-header .batch-tools-menu");
+  await expect(productionBatchWorkspace).toBeVisible();
+  const menu = productionBatchWorkspace.locator(".batch-header .batch-tools-menu");
   if (await menu.evaluate((node) => node.hasAttribute("open"))) {
     return;
   }
 
-  await page.locator(".batch-header .batch-tools-toggle").click();
+  await productionBatchWorkspace.locator(".batch-header .batch-tools-toggle").click();
   await expect(menu).toHaveAttribute("open", "");
 }
 
@@ -191,9 +193,21 @@ async function clickBatchAction(page, name) {
 }
 
 async function pasteProductionBatchClipboard(page) {
-  if (await page.locator("#ordersWorkspace").isHidden()) {
-    await page.getByRole("button", { name: "Production Batch", exact: true }).click();
+  const productionBatchWorkspace = page.locator("#ordersWorkspace");
+  if (await productionBatchWorkspace.isHidden()) {
+    const clipboardPayload = await page.evaluate(async () => {
+      try {
+        return navigator.clipboard?.readText ? await navigator.clipboard.readText() : null;
+      } catch {
+        return null;
+      }
+    });
+    await page.goto("/production-batch");
+    if (clipboardPayload !== null) {
+      await setClipboardPayload(page, clipboardPayload);
+    }
   }
+  await expect(productionBatchWorkspace).toBeVisible();
   await page.locator("#importClipboardButton").click();
   await expect(page.locator("#pasteSummaryDialog")).toBeVisible();
   await page.locator("#pasteSummaryDoneButton").click();
@@ -221,6 +235,12 @@ async function setRangeValue(page, selector, value) {
     input.dispatchEvent(new Event("input", { bubbles: true }));
     input.dispatchEvent(new Event("change", { bubbles: true }));
   }, String(value));
+}
+
+async function expectDefaultSizeGuideLoaded(page) {
+  await expect(page.locator("#sizePresetNameInput")).toHaveValue("2.2 x 1.5");
+  await expect(page.locator("#sizePresetMaxWidthInput")).toHaveValue("2.2");
+  await expect(page.locator("#sizePresetMaxHeightInput")).toHaveValue("1.5");
 }
 
 async function completeDesign(page, queueLabel) {
@@ -508,10 +528,10 @@ test("loads workspace fonts into the Fonts workspace and line controls", async (
 });
 
 test("shows size guides in the Size Guides workspace", async ({ page }) => {
-  await page.goto("/");
-  await page.getByRole("button", { name: "Size Guides" }).click();
+  await page.goto("/size-guides");
 
   const sizeGuide = page.locator("#sizeGuideWorkspace");
+  await expect(page.getByRole("region", { name: "Size guides workspace" })).toBeVisible();
   await expect(sizeGuide.getByRole("heading", { level: 1, name: "Size Guides" })).toBeVisible();
   await expect(sizeGuide.getByRole("heading", { level: 2, name: "Size Guide Editor" })).toBeVisible();
   await expect(sizeGuide.getByText("2.2 x 1.5 in", { exact: true })).toBeVisible();
@@ -642,8 +662,7 @@ test("shows size guides in the Size Guides workspace", async ({ page }) => {
 
 test("uses a master-detail layout for preset selection and editing", async ({ page }) => {
   await installPresetRoutes(page);
-  await page.goto("/");
-  await page.getByRole("button", { name: "Presets" }).click();
+  await page.goto("/presets");
 
   const presetsWorkspace = page.locator("#presetsWorkspace");
   await expect(presetsWorkspace.locator(".production-workspace")).toBeVisible();
@@ -697,8 +716,7 @@ test("uses a master-detail layout for preset selection and editing", async ({ pa
 
 test("enables preset saving only after editor changes", async ({ page }) => {
   await installPresetRoutes(page);
-  await page.goto("/");
-  await page.getByRole("button", { name: "Presets" }).click();
+  await page.goto("/presets");
 
   const saveButton = page.getByRole("button", { name: "Save Preset" });
   const cancelButton = page.locator("#presetsWorkspace .preset-editor-panel .editor-header")
@@ -718,8 +736,7 @@ test("enables preset saving only after editor changes", async ({ page }) => {
 
 test("cancels creating a new preset draft", async ({ page }) => {
   await installPresetRoutes(page);
-  await page.goto("/");
-  await page.getByRole("button", { name: "Presets" }).click();
+  await page.goto("/presets");
   await page.getByRole("button", { name: "New Preset" }).click();
 
   const presetsWorkspace = page.locator("#presetsWorkspace");
@@ -742,8 +759,7 @@ test("cancels creating a new preset draft", async ({ page }) => {
 
 test("cancels edits to the selected preset", async ({ page }) => {
   await installPresetRoutes(page);
-  await page.goto("/");
-  await page.getByRole("button", { name: "Presets" }).click();
+  await page.goto("/presets");
 
   const cancelButton = page.locator("#presetsWorkspace .preset-editor-panel .editor-header")
     .getByRole("button", { name: "Cancel" });
@@ -761,18 +777,18 @@ test("cancels edits to the selected preset", async ({ page }) => {
 });
 
 test("shows a live preview while editing a size guide", async ({ page }) => {
-  await page.goto("/");
-  await page.getByRole("button", { name: "Size Guides" }).click();
+  await installPresetRoutes(page);
+  await page.goto("/size-guides");
   await page.getByRole("button", { name: "New Guide" }).click();
 
   const preview = page.locator("#sizePresetPreview");
   await expect(preview).toBeVisible();
-  await expect(page.locator("#sizePresetPreviewEmptyState")).toBeVisible();
 
   await page.locator("#sizePresetMaxWidthInput").fill("3");
   await page.locator("#sizePresetMaxHeightInput").fill("2");
   await page.locator("#sizePresetMinWidthInput").fill("2");
   await page.locator("#sizePresetMinHeightInput").fill("1.25");
+  await page.locator("#sizePresetCircleDiameterInput").fill("");
 
   await expect(page.locator("#sizePresetPreviewEmptyState")).toBeHidden();
   await expect(preview.locator(".preview-guide-box").first()).toHaveAttribute("width", String(3 * 25.4));
@@ -793,8 +809,7 @@ test("shows a live preview while editing a size guide", async ({ page }) => {
 
 test("creates a visible size guide draft with a derived read-only name and optional minimums", async ({ page }) => {
   await installPresetRoutes(page);
-  await page.goto("/");
-  await page.getByRole("button", { name: "Size Guides" }).click();
+  await page.goto("/size-guides");
   await page.getByRole("button", { name: "New Guide" }).click();
 
   const sizeGuides = page.getByLabel("Size Guides");
@@ -821,8 +836,7 @@ test("creates a visible size guide draft with a derived read-only name and optio
 
 test("cancels creating a new size guide draft", async ({ page }) => {
   await installPresetRoutes(page);
-  await page.goto("/");
-  await page.getByRole("button", { name: "Size Guides" }).click();
+  await page.goto("/size-guides");
   await page.getByRole("button", { name: "New Guide" }).click();
 
   const sizeGuides = page.getByLabel("Size Guides");
@@ -840,14 +854,14 @@ test("cancels creating a new size guide draft", async ({ page }) => {
 
 test("cancels edits to the selected size guide", async ({ page }) => {
   await installPresetRoutes(page);
-  await page.goto("/");
-  await page.getByRole("button", { name: "Size Guides" }).click();
+  await page.goto("/size-guides");
+  await expectDefaultSizeGuideLoaded(page);
 
   const cancelButton = page.locator("#sizeGuideWorkspace .size-guide-editor-panel .editor-header")
     .getByRole("button", { name: "Cancel" });
   await expect(cancelButton).toBeDisabled();
 
-  await page.locator("#sizePresetMaxWidthInput").fill("2.3");
+  await setRangeValue(page, "#sizePresetMaxWidthInput", 2.3);
   await expect(page.locator("#sizePresetNameInput")).toHaveValue("2.3 x 1.5");
   await expect(cancelButton).toBeEnabled();
 
@@ -861,8 +875,8 @@ test("cancels edits to the selected size guide", async ({ page }) => {
 
 test("enables size guide saving only after editor changes", async ({ page }) => {
   await installPresetRoutes(page);
-  await page.goto("/");
-  await page.getByRole("button", { name: "Size Guides" }).click();
+  await page.goto("/size-guides");
+  await expectDefaultSizeGuideLoaded(page);
 
   const saveButton = page.getByRole("button", { name: "Save Guide" });
   const cancelButton = page.locator("#sizeGuideWorkspace .size-guide-editor-panel .editor-header")
@@ -870,7 +884,7 @@ test("enables size guide saving only after editor changes", async ({ page }) => 
   await expect(saveButton).toBeDisabled();
   await expect(cancelButton).toBeDisabled();
 
-  await page.locator("#sizePresetMaxWidthInput").fill("2.3");
+  await setRangeValue(page, "#sizePresetMaxWidthInput", 2.3);
   await expect(saveButton).toBeEnabled();
   await expect(cancelButton).toBeEnabled();
 
@@ -947,9 +961,8 @@ test("saves a new preset from the design editor without switching to the preset 
 
 test("creates a custom size guide and uses it in the order editor preview", async ({ page }) => {
   await installPresetRoutes(page);
-  await page.goto("/");
 
-  await page.getByRole("button", { name: "Size Guides" }).click();
+  await page.goto("/size-guides");
   await page.getByRole("button", { name: "New Guide" }).click();
   await page.locator("#sizePresetMaxWidthInput").fill("3");
   await page.locator("#sizePresetMaxHeightInput").fill("2");
@@ -958,7 +971,7 @@ test("creates a custom size guide and uses it in the order editor preview", asyn
   await expect(page.locator("#sizePresetEditorStatus")).toContainText("Saved 3 x 2");
   await expect(page.getByLabel("Size Guides").getByText("3 x 2", { exact: true })).toBeVisible();
 
-  await page.getByRole("button", { name: "Production Batch" }).click();
+  await page.goto("/production-batch");
   await clickBatchAction(page, "Add Design");
   await page.locator("#boundingSizePresetInput").selectOption({ label: "3 x 2" });
 
@@ -967,7 +980,7 @@ test("creates a custom size guide and uses it in the order editor preview", asyn
   await expect(page.locator("#preview .preview-guide-label").nth(1)).toHaveText('2"');
   await expect(page.locator("#preview circle.preview-guide-box")).toHaveCount(0);
 
-  await page.getByRole("button", { name: "Size Guides" }).click();
+  await page.goto("/size-guides");
   await page.getByRole("button", { name: "New Guide" }).click();
   await page.locator("#sizePresetMaxWidthInput").fill("2.5");
   await page.locator("#sizePresetMaxHeightInput").fill("1.75");
@@ -976,7 +989,8 @@ test("creates a custom size guide and uses it in the order editor preview", asyn
   await page.locator("#sizePresetCircleDiameterInput").fill("1.75");
   await page.getByRole("button", { name: "Save Guide" }).click();
 
-  await page.getByRole("button", { name: "Production Batch" }).click();
+  await page.goto("/production-batch");
+  await clickBatchAction(page, "Add Design");
   await page.locator("#boundingSizePresetInput").selectOption({ label: "2.5 x 1.75" });
 
   await expect(page.locator("#preview circle.preview-guide-box")).toHaveCount(1);

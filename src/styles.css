@@ -592,6 +592,23 @@ select {
   position: relative;
 }
 
+.batch-header .batch-tools-menu {
+  position: static;
+}
+
+.batch-header .batch-tools-popover {
+  max-width: min(100%, calc(100vw - 32px));
+}
+
+.batch-header .batch-tools-popover .batch-tools-actions {
+  width: 100%;
+  min-width: 0;
+}
+
+.batch-header .batch-tools-popover .batch-tool-button {
+  white-space: normal;
+}
+
 .workspace-tools-toggle,
 .batch-tools-toggle,
 .orders-tools-toggle,
