@@ -66,7 +66,7 @@ When the user provides new product, workflow, material, manufacturing, design, o
 
 When the user says `local up`, treat it as shorthand for:
 
-`Initialize this worktree's local Supabase environment, then start the local app server. Follow AGENTS.md exactly and report the app URL, test user, test password, and Supabase Studio URL.`
+`Initialize this worktree's local Supabase environment, start the local app server, then open the built-in Codex browser and log in with the test operator. Follow AGENTS.md exactly and report the app URL, test user, test password, and Supabase Studio URL.`
 
 For `local up`, do not run raw `supabase start`, edit `supabase/config.toml`, or guess ports.
 
@@ -86,6 +86,11 @@ After that, start the app with:
 
 `npm run start:local`
 
+After the server is started and verified, open the built-in Codex browser to the printed app URL and log in with:
+
+- Test user: `test.operator@example.com`
+- Test password: `TestOperator123!`
+
 Whenever reporting a started server, include:
 
 - App URL.
@@ -104,10 +109,11 @@ When the user asks to start the app, start a server, or initialize the app, foll
 6. Read the printed `Badge reel layout tool: http://localhost:...` line and use that exact URL.
 7. Verify the server with `(Invoke-WebRequest -UseBasicParsing '<printed URL>/').StatusCode`.
 8. If `localhost` resolves to IPv6 and fails in scripted checks, retry verification with `http://127.0.0.1:<port>`.
-9. For `Initialize app`, run `npm run initialize:local` when the local Supabase stack is already prepared; run `npm run prepare:local` when the worktree needs the full local stack start/reset/init sequence.
-10. Verify initialization by signing in as `test.operator@example.com` and calling `<printed URL>/api/batch-session` with the access token.
-11. Whenever starting or reporting a local server, include the server URL, the test login `test.operator@example.com`, the test password `TestOperator123!`, and the local Supabase Studio URL for this worktree.
-12. Report the server URL, HTTP status, operator, workspace, batch, test login, test password, and Supabase Studio URL.
+9. For `local up`, open the built-in Codex browser to the verified app URL, sign in as `test.operator@example.com` with password `TestOperator123!`, and confirm the authenticated app loads.
+10. For `Initialize app`, run `npm run initialize:local` when the local Supabase stack is already prepared; run `npm run prepare:local` when the worktree needs the full local stack start/reset/init sequence.
+11. Verify initialization by signing in as `test.operator@example.com` and calling `<printed URL>/api/batch-session` with the access token.
+12. Whenever starting or reporting a local server, include the server URL, the test login `test.operator@example.com`, the test password `TestOperator123!`, and the local Supabase Studio URL for this worktree.
+13. Report the server URL, HTTP status, operator, workspace, batch, test login, test password, and Supabase Studio URL.
 
 - When the user says `start a server`, start the local dev server unless they explicitly ask for remote.
 - To start the local dev server in this worktree, run `npm run start:local` from the repository root.
@@ -116,10 +122,9 @@ When the user asks to start the app, start a server, or initialize the app, foll
 - Use `npm run start:local` or `npm run start:remote` as the canonical dev entrypoints for this app instead of invoking `node` directly with a guessed script.
 - `npm run start:local` and `npm run start:remote` first run through `tools/run_with_supabase_env.mjs`, which selects the requested Supabase environment before launching the dev server.
 - `npm run prepare:local` runs through `tools/prepare_local_env.mjs`, which uses the generated per-worktree Supabase workdir instead of rewriting the tracked `supabase/config.toml`.
-- Plain `npm start` is not the default Codex startup command for this worktree unless the user specifically asks for the generic start script.
-- `npm start` first runs `tools/setup_worktree_env.mjs`, which fills missing shared-queue Supabase keys in the worktree `.env.local` from the machine-local seed file at `C:\Users\Mark\CodexProjects\thankfulforyou\.env.local.shared`.
-- Keep `C:\Users\Mark\CodexProjects\thankfulforyou\.env.local.shared` out of git. It is the local source of truth for secrets that Vercel CLI cannot pull into new worktrees, especially `SUPABASE_SERVICE_ROLE_KEY`.
-- `npm start` loads `.env.local` automatically when present, so do not wrap it in a custom env-loading command unless a specific task needs different values.
+- Plain `npm start` is an alias for the per-worktree local startup path and should resolve Supabase settings through `tools/run_with_supabase_env.mjs --env local`, not through `.env.local`.
+- Keep `C:\Users\Mark\CodexProjects\thankfulforyou\.env.local.shared` out of git. It is only a machine-local seed for explicitly remote Supabase workflows that need missing `.env.local` secrets, especially `SUPABASE_SERVICE_ROLE_KEY`.
+- The dev server should consume Supabase settings injected by `npm run start:local`, `npm run start:remote`, or another explicit wrapper. It should not load `.env.local` implicitly during local startup.
 - Do not use `npm run start:remote`, `tools/run_with_supabase_env.mjs --env remote`, `.env.local`, or Vercel env pulls as proof that a command is targeting the live production database. Worktree env files can point at local Supabase.
 - For order-data database administration, use the explicit admin scripts:
   - `npm run db:local:orders:count`
