@@ -546,6 +546,24 @@ test("shows a size guide control in global settings", async ({ page }) => {
   await expect(page.locator("#preview .preview-guide-min-box")).not.toHaveAttribute("rx", /.+/);
 });
 
+test("All Candlepin keeps the What / do you / mean layout to at most two outline pieces", async ({ page }) => {
+  let analysisResponse = null;
+
+  await page.route("**/api/layout-analyze", async (route) => {
+    const response = await route.fetch();
+    analysisResponse = await response.json();
+    await route.fulfill({ response });
+  });
+
+  await setDesignText(page, "What\ndo you\nmean?");
+  await completeDesign(page, "Design 1");
+
+  await expect.poll(() => analysisResponse, { timeout: 20000 }).not.toBeNull();
+  expect(analysisResponse.connectedComponentCount).toBeLessThanOrEqual(2);
+
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+});
+
 test("applies the global horizontal stretch slider to every line and persists the result", async ({ page }) => {
   await page.route("**/api/layout-analyze", async (route) => {
     await route.fulfill({
