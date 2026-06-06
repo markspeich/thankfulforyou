@@ -428,4 +428,119 @@ describe("layout controls clipboard", () => {
 
     expect(result.settings.boundingSizePresetId).toBe("size-2-2x1-5");
   });
+
+  it("captures fixed SVG line controls without fixed design library metadata", () => {
+    const snapshot = buildLayoutControlsSnapshot({
+      id: "order-fixed",
+      label: "Fixed Source",
+      settings: {
+        presetId: "preset-a1f4c8e2b601",
+        backingMm: 3.1,
+        weldExportedDesign: true,
+        lines: [
+          {
+            kind: "fixedSvg",
+            fixedDesignId: "fixed-design-1",
+            fixedDesignName: "Nurse Cross",
+            fixedDesignVersion: 3,
+            svgSizeMm: 38,
+            offsetXMm: 2,
+            offsetYMm: -7,
+            publicUrl: "https://example.invalid/nurse-cross.svg",
+            storagePath: "do-not-copy",
+          },
+        ],
+      },
+    });
+
+    expect(snapshot.settings.lines).toEqual([
+      {
+        kind: "fixedSvg",
+        fixedDesignId: "fixed-design-1",
+        fixedDesignName: "Nurse Cross",
+        fixedDesignVersion: 3,
+        svgSizeMm: 38,
+        offsetXMm: 2,
+        offsetYMm: -7,
+      },
+    ]);
+  });
+
+  it("pastes fixed SVG controls onto matching ordered fixed SVG slots", () => {
+    const result = applyLayoutControlsSnapshot(
+      {
+        presetId: "preset-a1f4c8e2b601",
+        backingMm: 2.2,
+        weldExportedDesign: false,
+        lines: [
+          {
+            kind: "text",
+            fontId: "candlepin",
+            fontSizeMm: 22,
+          },
+          {
+            kind: "fixedSvg",
+            fixedDesignId: "fixed-design-old",
+            fixedDesignName: "Old",
+            fixedDesignVersion: 1,
+            svgSizeMm: 24,
+            offsetXMm: 0,
+            offsetYMm: 0,
+          },
+        ],
+      },
+      {
+        sourceOrderId: "source-fixed",
+        sourceOrderLabel: "Source Fixed",
+        settings: {
+          presetId: "preset-c3e8a1d7f520",
+          backingMm: 3.4,
+          weldExportedDesign: true,
+          lines: [
+            {
+              kind: "text",
+              fontId: "skywalk",
+              fontSizeMm: 30,
+              bridgeMm: 0.8,
+            },
+            {
+              kind: "fixedSvg",
+              fixedDesignId: "fixed-design-new",
+              fixedDesignName: "New",
+              fixedDesignVersion: 4,
+              svgSizeMm: 42,
+              offsetXMm: 3,
+              offsetYMm: -5,
+            },
+          ],
+        },
+      },
+    );
+
+    expect(result).toEqual({
+      appliedLineCount: 2,
+      settings: {
+        presetId: "preset-c3e8a1d7f520",
+        backingMm: 3.4,
+        weldExportedDesign: true,
+        lines: [
+          {
+            kind: "text",
+            fontId: "skywalk",
+            fontSizeMm: 30,
+            bridgeMm: 0.8,
+          },
+          {
+            kind: "fixedSvg",
+            fixedDesignId: "fixed-design-new",
+            fixedDesignName: "New",
+            fixedDesignVersion: 4,
+            svgSizeMm: 42,
+            offsetXMm: 3,
+            offsetYMm: -5,
+          },
+        ],
+      },
+    });
+  });
 });

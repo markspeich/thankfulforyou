@@ -16,6 +16,16 @@ const LINE_SETTING_KEYS = [
   "lockTextHeight",
 ];
 
+const FIXED_SVG_LINE_SETTING_KEYS = [
+  "kind",
+  "fixedDesignId",
+  "fixedDesignName",
+  "fixedDesignVersion",
+  "svgSizeMm",
+  "offsetXMm",
+  "offsetYMm",
+];
+
 function normalizeLines(lines) {
   return Array.isArray(lines) ? lines : [];
 }
@@ -32,10 +42,14 @@ function pickFields(source = {}, keys = []) {
   }, {});
 }
 
+function getLineSettingKeys(line = {}) {
+  return line?.kind === "fixedSvg" ? FIXED_SVG_LINE_SETTING_KEYS : LINE_SETTING_KEYS;
+}
+
 function buildSnapshotSettings(settings = {}) {
   return {
     ...pickFields(settings, GLOBAL_SETTING_KEYS),
-    lines: normalizeLines(settings.lines).map((line) => pickFields(line, LINE_SETTING_KEYS)),
+    lines: normalizeLines(settings.lines).map((line) => pickFields(line, getLineSettingKeys(line))),
   };
 }
 
@@ -56,7 +70,10 @@ export function applyLayoutControlsSnapshot(targetSettings = {}, snapshot = {}) 
     ...pickFields(sourceSettings, GLOBAL_SETTING_KEYS),
     lines: targetLines.map((line, index) => (
       index < sourceLines.length
-        ? { ...pickFields(line, Object.keys(line ?? {})), ...pickFields(sourceLines[index], LINE_SETTING_KEYS) }
+        ? {
+            ...pickFields(line, Object.keys(line ?? {})),
+            ...pickFields(sourceLines[index], getLineSettingKeys(sourceLines[index])),
+          }
         : { ...pickFields(line, Object.keys(line ?? {})) }
     )),
   };
