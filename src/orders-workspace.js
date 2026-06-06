@@ -35,6 +35,18 @@ export function getCheckedOrderIdsForBulkAction(checkedOrderIds) {
   return toOrderIdArray(checkedOrderIds).filter(isNonEmptyString);
 }
 
+export function getOrderItemListingText(item) {
+  const candidates = [
+    item?.source?.listingTitle,
+    item?.listingTitle,
+    item?.title,
+    item?.listing?.title,
+    item?.design?.listingTitle,
+  ];
+  const match = candidates.find((value) => typeof value === "string" && value.trim());
+  return match ? match.trim() : "Untitled listing";
+}
+
 export function getVisibleOrderSelectionState(visibleOrders, checkedOrderIds) {
   const visibleOrderIds = new Set(
     (Array.isArray(visibleOrders) ? visibleOrders : [])

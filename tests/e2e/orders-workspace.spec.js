@@ -456,13 +456,16 @@ test("renders grouped database orders and selected order item cards", async ({ p
   await expect(ordersWorkspace.locator(".database-order-items-shell > .section-heading")).toHaveCount(0);
   await expect(ordersWorkspace.locator(".database-order-items-shell > .database-order-selected-meta")).toHaveCount(0);
   await expect(ordersWorkspace.getByText("Ada RN")).toBeVisible();
-  await expect(ordersWorkspace.getByText("Ada / RN")).toBeVisible();
   await expect(ordersWorkspace.getByText("Saved design available", { exact: true })).toBeVisible();
   await expect(ordersWorkspace.getByText("Badge buddy")).toBeVisible();
   await expect(ordersWorkspace.getByText("Already in active batch")).toBeVisible();
 
   const firstItemCard = ordersWorkspace.locator(".database-order-item-card").filter({ hasText: "Ada RN" });
-  await expect(firstItemCard.locator(".database-order-item-listing-column")).toContainText("Ada RN");
+  await expect(firstItemCard.getByRole("heading", { name: "Order Item" })).toBeVisible();
+  await expect(firstItemCard.locator(".database-order-item-listing")).toHaveText("Custom badge reel");
+  await expect(firstItemCard.locator(".database-order-item-listing-column")).not.toContainText("Ada RN");
+  await expect(firstItemCard.locator(".database-order-item-meta")).toContainText("Personalization");
+  await expect(firstItemCard.locator(".database-order-item-meta")).toContainText("Ada RN");
   await expect(firstItemCard.getByRole("img", { name: "Custom badge reel" })).toBeVisible();
   await expect(firstItemCard.locator(".database-order-item-meta")).toContainText("Color");
   await expect(firstItemCard.locator(".database-order-item-meta")).toContainText("Red Glitter");
@@ -484,8 +487,9 @@ test("renders grouped database orders and selected order item cards", async ({ p
     .filter({ hasText: "Order 1002" })
     .getByRole("button")
     .click();
-  await expect(ordersWorkspace.getByRole("heading", { name: "Grace" })).toBeVisible();
+  await expect(ordersWorkspace.getByRole("heading", { name: "Order 1002" })).toBeVisible();
   const inBatchItemCard = ordersWorkspace.locator(".database-order-item-card").filter({ hasText: "Grace" });
+  await expect(inBatchItemCard.locator(".database-order-item-meta")).toContainText("Grace");
   await inBatchItemCard.getByRole("button", { name: "Item actions" }).click();
   await expect(inBatchItemCard.getByRole("button", { name: "Add to Production Batch" })).toBeDisabled();
 });

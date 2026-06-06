@@ -5,6 +5,7 @@ import {
   getCheckedOrderIdsForBulkAction,
   getVisibleOrderSelectionState,
   getCopyableSavedBuild,
+  getOrderItemListingText,
   getSelectedGroupedOrder,
   normalizeOrdersWorkspaceState,
 } from "../../src/orders-workspace.js";
@@ -127,6 +128,12 @@ describe("orders workspace helpers", () => {
       "order:4003",
       "order:4004",
     ]);
+  });
+
+  it("returns the imported Etsy listing title from source metadata", () => {
+    expect(getOrderItemListingText({
+      source: { listingTitle: "Custom RN Badge Reel" },
+    })).toBe("Custom RN Badge Reel");
   });
 
   it("describes visible order selection for select-all controls", () => {

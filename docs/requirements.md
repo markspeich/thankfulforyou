@@ -530,8 +530,8 @@ For batch Etsy order sessions, the preferred workflow is:
 - Orders workspace paste may send the active production batch id as read-only membership context so the returned Orders list preserves accurate `In batch` labels; it must still import to Orders only and must not create batch memberships.
 - Order import and batch-assignment actions should keep their in-progress UI state, and should keep selected-design save controls disabled, until the database mutation and any required production-batch snapshot refresh have completed.
 - Successful order paste actions should open a paste summary dialog showing newly imported designs, skipped duplicate designs, and designs added to the active production batch when applicable.
+- In the Orders workspace selected-order item cards, each card title should be `Order Item`, with imported listing text in the header, imported Etsy listing image in the left body column, and saved design preview in the right body column. The bottom metadata should show `Personalization: <design text>` above imported color, with quantity stacked below color.
 - In the Orders workspace order list, each grouped order row should show the imported listing image from the first order item at the beginning of the row; grouped orders with multiple order items should show a compact stacked thumbnail treatment.
-- In the Orders workspace selected-order item cards, each order item should use a two-column body: the first column shows the order item title and imported Etsy listing image, the second column shows the saved design preview, and the bottom of the card shows imported color and quantity.
 
 - Clicking `Save` should immediately mark the current design as finished for editing, even if connectedness analysis is still running in the background.
 - After clicking `Save`, both `Save` and `Save & Next` should stay disabled for that design until the operator changes the text or layout settings again.
