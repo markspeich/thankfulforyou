@@ -66,7 +66,7 @@ When the user provides new product, workflow, material, manufacturing, design, o
 
 When the user says `local up`, treat it as shorthand for:
 
-`Initialize this worktree's local Supabase environment, then start the local app server. Follow AGENTS.md exactly and report the app URL, test user, test password, and Supabase Studio URL.`
+`Initialize this worktree's local Supabase environment, start the local app server, then open the built-in Codex browser and log in with the test operator. Follow AGENTS.md exactly and report the app URL, test user, test password, and Supabase Studio URL.`
 
 For `local up`, do not run raw `supabase start`, edit `supabase/config.toml`, or guess ports.
 
@@ -86,6 +86,11 @@ After that, start the app with:
 
 `npm run start:local`
 
+After the server is started and verified, open the built-in Codex browser to the printed app URL and log in with:
+
+- Test user: `test.operator@example.com`
+- Test password: `TestOperator123!`
+
 Whenever reporting a started server, include:
 
 - App URL.
@@ -104,10 +109,11 @@ When the user asks to start the app, start a server, or initialize the app, foll
 6. Read the printed `Badge reel layout tool: http://localhost:...` line and use that exact URL.
 7. Verify the server with `(Invoke-WebRequest -UseBasicParsing '<printed URL>/').StatusCode`.
 8. If `localhost` resolves to IPv6 and fails in scripted checks, retry verification with `http://127.0.0.1:<port>`.
-9. For `Initialize app`, run `npm run initialize:local` when the local Supabase stack is already prepared; run `npm run prepare:local` when the worktree needs the full local stack start/reset/init sequence.
-10. Verify initialization by signing in as `test.operator@example.com` and calling `<printed URL>/api/batch-session` with the access token.
-11. Whenever starting or reporting a local server, include the server URL, the test login `test.operator@example.com`, the test password `TestOperator123!`, and the local Supabase Studio URL for this worktree.
-12. Report the server URL, HTTP status, operator, workspace, batch, test login, test password, and Supabase Studio URL.
+9. For `local up`, open the built-in Codex browser to the verified app URL, sign in as `test.operator@example.com` with password `TestOperator123!`, and confirm the authenticated app loads.
+10. For `Initialize app`, run `npm run initialize:local` when the local Supabase stack is already prepared; run `npm run prepare:local` when the worktree needs the full local stack start/reset/init sequence.
+11. Verify initialization by signing in as `test.operator@example.com` and calling `<printed URL>/api/batch-session` with the access token.
+12. Whenever starting or reporting a local server, include the server URL, the test login `test.operator@example.com`, the test password `TestOperator123!`, and the local Supabase Studio URL for this worktree.
+13. Report the server URL, HTTP status, operator, workspace, batch, test login, test password, and Supabase Studio URL.
 
 - When the user says `start a server`, start the local dev server unless they explicitly ask for remote.
 - To start the local dev server in this worktree, run `npm run start:local` from the repository root.
