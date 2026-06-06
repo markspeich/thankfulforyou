@@ -300,6 +300,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - The first `Orders` workspace column should show one row per Etsy order, grouped by order number where available.
 - Each order row on the `Orders` workspace should include a checkbox so operators can select orders for bulk actions.
 - The orders column should include an ellipsis menu with actions to add checked orders to the active production batch, skip checked orders, and reopen checked skipped orders.
+- Orders workspace ellipsis menus should stay compact and content-sized rather than using a fixed wide popover when the action labels are short.
 - Clicking an order row in the `Orders` workspace should show one card for each order item in that order that matches the active Orders status filter.
 - Each order item card on the `Orders` workspace should include the saved design when available.
 - Each order item card on the `Orders` workspace should include an ellipsis menu with actions for `Copy Design` and `Add to Production Batch`.

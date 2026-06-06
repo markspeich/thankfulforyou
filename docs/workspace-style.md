@@ -129,6 +129,8 @@ Workspace ellipsis menus should use the shared `workspace-tools-*` class family 
 
 Menu actions should use the shared command button style with `.batch-tool-button` and a `.batch-tool-label` child. Keep related commands grouped under a concise heading such as `Orders`, `Order Item`, `Layout`, or `Preset`. Avoid one-off menu button, popover, or hover treatments unless the shared ellipsis pattern is intentionally revised for every menu.
 
+Ellipsis menu popovers should be only as wide as their contents require, with enough minimum width to keep the group readable and enough viewport max-width to avoid clipping on narrow screens. Menu action labels should stay on one line when possible; do not make every ellipsis menu a fixed, wide panel when the available commands are short.
+
 Use icon-plus-label buttons for production commands where an icon helps scanning. Existing hand-drawn SVG icons are acceptable in the current app, but new icon work should stay visually consistent with the existing button system.
 
 Preserve the same terminology across workspaces:
