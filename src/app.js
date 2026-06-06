@@ -71,6 +71,7 @@ import {
   getCheckedOrderIdsForBulkAction,
   getCopyableSavedBuild,
   getSelectedGroupedOrder,
+  getVisibleOrderSelectionState,
   normalizeOrdersWorkspaceState,
 } from "./orders-workspace.js";
 import {
@@ -204,6 +205,7 @@ const pasteOrdersButton = document.querySelector("#pasteOrdersButton");
 const databaseOrdersSearchInput = document.querySelector("#databaseOrdersSearchInput");
 const databaseOrdersStatusFilter = document.querySelector("#databaseOrdersStatusFilter");
 const databaseOrdersBatchFilter = document.querySelector("#databaseOrdersBatchFilter");
+const selectVisibleOrdersInput = document.querySelector("#selectVisibleOrdersInput");
 const databaseOrdersListShell = document.querySelector(".database-orders-list-shell");
 const databaseOrderItemsShell = document.querySelector(".database-order-items-shell");
 const selectedDatabaseOrderTitle = document.querySelector(".database-order-items-panel .editor-header h2");
@@ -4955,6 +4957,7 @@ function renderDatabaseOrdersWorkspace() {
   }
   const visibleOrders = getVisibleDatabaseOrders();
   const visibleOrderIds = new Set(visibleOrders.map((order) => order.id));
+  const selectionState = getVisibleOrderSelectionState(visibleOrders, checkedDatabaseOrderIds);
   const batchEligibleOrderIds = new Set(
     visibleOrders
       .filter(isDatabaseOrderBatchEligible)
@@ -4969,6 +4972,11 @@ function renderDatabaseOrdersWorkspace() {
   }
   if (reopenCheckedOrdersButton) {
     reopenCheckedOrdersButton.disabled = databaseOrdersLoading || !checkedVisibleOrders.some(canReopenDatabaseOrder);
+  }
+  if (selectVisibleOrdersInput) {
+    selectVisibleOrdersInput.checked = selectionState.allVisibleChecked;
+    selectVisibleOrdersInput.indeterminate = selectionState.someVisibleChecked;
+    selectVisibleOrdersInput.disabled = databaseOrdersLoading || selectionState.visibleOrderCount === 0;
   }
 
   if (databaseOrdersLoading) {
@@ -5683,14 +5691,15 @@ async function addCheckedDatabaseOrdersToBatch() {
     return;
   }
 
-  const visibleOrderIds = new Set(getVisibleDatabaseOrders().map((order) => order.id));
+  const checkedOrderIds = new Set(getCheckedOrderIdsForBulkAction(checkedDatabaseOrderIds));
   const batchEligibleOrderIds = new Set(
     getVisibleDatabaseOrders()
       .filter(isDatabaseOrderBatchEligible)
       .map((order) => order.id),
   );
-  const orderIds = getCheckedOrderIdsForBulkAction(checkedDatabaseOrderIds)
-    .filter((orderId) => visibleOrderIds.has(orderId) && batchEligibleOrderIds.has(orderId));
+  const orderIds = getVisibleDatabaseOrders()
+    .map((order) => order.id)
+    .filter((orderId) => checkedOrderIds.has(orderId) && batchEligibleOrderIds.has(orderId));
   if (!orderIds.length) {
     updateWorkflowAlert("Select one or more orders before adding them to the production batch.", "error");
     return;
@@ -9039,6 +9048,15 @@ skipCheckedOrdersButton?.addEventListener("click", () => {
 });
 reopenCheckedOrdersButton?.addEventListener("click", () => {
   void reopenCheckedDatabaseOrders();
+});
+selectVisibleOrdersInput?.addEventListener("change", () => {
+  const visibleOrderIds = getVisibleDatabaseOrders().map((order) => order.id);
+  if (selectVisibleOrdersInput.checked) {
+    visibleOrderIds.forEach((orderId) => checkedDatabaseOrderIds.add(orderId));
+  } else {
+    visibleOrderIds.forEach((orderId) => checkedDatabaseOrderIds.delete(orderId));
+  }
+  renderDatabaseOrdersWorkspace();
 });
 showColorCountsButton?.addEventListener("click", openBatchColorCountsDialog);
 exportCompletedButton.addEventListener("click", exportAllOrders);
