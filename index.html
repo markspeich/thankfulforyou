@@ -92,6 +92,15 @@
           <span class="workspace-nav-icon workspace-nav-icon-size-guide" aria-hidden="true"></span>
           <span class="workspace-nav-label">Size Guides</span>
         </button>
+        <button
+          id="fixedDesignsWorkspaceButton"
+          class="workspace-nav-item"
+          type="button"
+          aria-label="Fixed Designs"
+        >
+          <span class="workspace-nav-icon workspace-nav-icon-fixed-designs" aria-hidden="true"></span>
+          <span class="workspace-nav-label">Fixed Designs</span>
+        </button>
         <div class="workspace-nav-spacer" aria-hidden="true"></div>
         <button
           id="productionBatchLogoutButton"
@@ -765,6 +774,83 @@
             </section>
           </section>
         </section>
+        <section id="fixedDesignsWorkspace" class="workspace-view" aria-label="Fixed designs workspace" hidden>
+          <section class="production-workspace fixed-designs-workspace">
+            <aside class="orders-panel fixed-designs-panel" aria-label="Fixed designs navigation">
+              <div class="batch-header">
+                <h1>Fixed Designs</h1>
+                <button id="fixedDesignUploadButton" class="batch-primary-action" type="button">
+                  <span class="batch-tool-label">Upload SVG</span>
+                </button>
+                <input id="fixedDesignUploadInput" class="visually-hidden" type="file" accept=".svg,image/svg+xml">
+              </div>
+              <p class="batch-tools-note">Manage reusable static SVG face layers for production orders.</p>
+              <label class="field compact-field fixed-design-search-field" for="fixedDesignSearchInput">
+                <span>Search</span>
+                <input id="fixedDesignSearchInput" type="search" autocomplete="off" placeholder="Search fixed designs">
+              </label>
+              <div id="fixedDesignList" class="fixed-design-list" aria-label="Fixed designs list"></div>
+            </aside>
+            <section class="editor-panel fixed-design-editor-panel" aria-label="Fixed design editor panel">
+              <header class="editor-header">
+                <div class="fixed-design-editor-header-inner">
+                  <div>
+                    <p class="eyebrow">Static SVG</p>
+                    <h2 id="selectedFixedDesignName">No fixed design selected</h2>
+                    <p id="selectedFixedDesignMeta" class="editor-meta">Upload or choose a fixed SVG design.</p>
+                  </div>
+                  <div class="editor-actions">
+                    <details id="fixedDesignActionsMenu" class="workspace-tools-menu fixed-design-actions-menu">
+                      <summary class="workspace-tools-toggle fixed-design-actions-toggle" aria-label="Fixed design actions"></summary>
+                      <div class="workspace-tools-popover batch-tools-popover">
+                        <div class="workspace-tools-actions batch-tools-actions" role="menu" aria-label="Selected fixed design actions">
+                          <div class="workspace-tools-group batch-tools-group" aria-label="Fixed design command group">
+                            <p class="workspace-tools-heading batch-tools-heading">Design</p>
+                            <button id="saveFixedDesignButton" class="batch-tool-button" type="button" disabled>
+                              <span class="batch-tool-label">Save Design</span>
+                            </button>
+                            <button id="loadFixedDesignVersionButton" class="batch-tool-button" type="button" disabled>
+                              <span class="batch-tool-label">Load New Version</span>
+                            </button>
+                            <button id="downloadFixedDesignButton" class="batch-tool-button" type="button" disabled>
+                              <span class="batch-tool-label">Download SVG</span>
+                            </button>
+                            <button id="deleteFixedDesignButton" class="batch-tool-button batch-tool-danger" type="button" disabled>
+                              <span class="batch-tool-label">Delete</span>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </details>
+                  </div>
+                </div>
+              </header>
+              <div class="editor-body">
+                <section class="fixed-design-editor" aria-label="Fixed design editor">
+                  <section class="fixed-design-preview-panel" aria-label="Selected fixed design preview">
+                    <img id="fixedDesignPreviewImage" class="fixed-design-preview-image" alt="">
+                    <p id="fixedDesignPreviewEmptyState" class="fixed-design-preview-empty">Select or upload an SVG fixed design.</p>
+                  </section>
+                  <dl class="fixed-design-details">
+                    <div>
+                      <dt>File</dt>
+                      <dd id="selectedFixedDesignFileName">None</dd>
+                    </div>
+                    <div>
+                      <dt>Version</dt>
+                      <dd id="selectedFixedDesignVersion">None</dd>
+                    </div>
+                    <div>
+                      <dt>Status</dt>
+                      <dd id="selectedFixedDesignState">No selection</dd>
+                    </div>
+                  </dl>
+                  <p id="fixedDesignEditorStatus" class="note" aria-live="polite">Upload or choose a fixed SVG design.</p>
+                </section>
+              </div>
+            </section>
+          </section>
+        </section>
         <section id="sizeGuideWorkspace" class="workspace-view" aria-label="Size guides workspace" hidden>
           <section class="production-workspace size-guide-workspace">
             <aside class="orders-panel size-guide-panel" aria-label="Size guide navigation">
@@ -906,6 +992,38 @@
         <div class="confirmation-dialog-actions">
           <button id="pasteSummaryDoneButton" class="confirmation-dialog-button confirmation-dialog-confirm" type="button">
             Done
+          </button>
+        </div>
+      </div>
+    </dialog>
+
+    <dialog id="fixedDesignVersionDialog" class="fixed-design-version-dialog" aria-labelledby="fixedDesignVersionDialogTitle">
+      <div class="confirmation-dialog-card fixed-design-version-card">
+        <header class="confirmation-dialog-header">
+          <div>
+            <p class="confirmation-dialog-eyebrow">Fixed Design</p>
+            <h2 id="fixedDesignVersionDialogTitle">Load New Version</h2>
+          </div>
+          <button id="closeFixedDesignVersionDialogButton" class="confirmation-dialog-close" type="button" aria-label="Close load new version dialog">
+            <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+              <path d="M6 6l12 12M18 6 6 18" />
+            </svg>
+          </button>
+        </header>
+        <div id="fixedDesignDropZone" class="fixed-design-drop-zone">
+          <p>Drop an SVG here or choose a file.</p>
+          <button id="chooseFixedDesignVersionButton" class="confirmation-dialog-button confirmation-dialog-confirm" type="button">
+            Choose SVG File
+          </button>
+          <input id="fixedDesignVersionInput" class="visually-hidden" type="file" accept=".svg,image/svg+xml">
+        </div>
+        <p id="fixedDesignVersionStatus" class="confirmation-dialog-description" aria-live="polite"></p>
+        <div class="confirmation-dialog-actions">
+          <button id="cancelFixedDesignVersionButton" class="confirmation-dialog-button confirmation-dialog-cancel" type="button">
+            Cancel
+          </button>
+          <button id="loadFixedDesignVersionConfirmButton" class="confirmation-dialog-button confirmation-dialog-confirm" type="button" disabled>
+            Load Version
           </button>
         </div>
       </div>

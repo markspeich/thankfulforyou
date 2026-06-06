@@ -106,6 +106,16 @@ import {
   replaceWorkspaceFont,
   resolveFontOption,
 } from "./fonts.js";
+import {
+  createWorkspaceFixedDesign,
+  deleteWorkspaceFixedDesign,
+  fetchWorkspaceFixedDesigns,
+  replaceWorkspaceFixedDesign,
+} from "./fixed-design-api.js";
+import {
+  normalizeFixedDesignRecord,
+  normalizeFixedDesignRecords,
+} from "./fixed-designs.js";
 
 let FONT_OPTIONS = buildFontOptions();
 let FONT_BY_ID = new Map(FONT_OPTIONS.map((font) => [font.id, font]));
@@ -149,6 +159,7 @@ const WORKSPACE_ROUTE_SEGMENTS = Object.freeze({
   orders: "production-batch",
   presets: "presets",
   fonts: "fonts",
+  fixedDesigns: "fixed-designs",
   sizeGuides: "size-guides",
 });
 const WORKSPACE_BY_ROUTE_SEGMENT = Object.freeze(
@@ -170,11 +181,13 @@ const ordersWorkspace = document.querySelector("#ordersWorkspace");
 const databaseOrdersWorkspace = document.querySelector("#databaseOrdersWorkspace");
 const presetsWorkspace = document.querySelector("#presetsWorkspace");
 const fontsWorkspace = document.querySelector("#fontsWorkspace");
+const fixedDesignsWorkspace = document.querySelector("#fixedDesignsWorkspace");
 const sizeGuideWorkspace = document.querySelector("#sizeGuideWorkspace");
 const orderWorkspaceButton = document.querySelector("#orderWorkspaceButton");
 const databaseOrdersWorkspaceButton = document.querySelector("#databaseOrdersWorkspaceButton");
 const presetWorkspaceButton = document.querySelector("#presetWorkspaceButton");
 const fontWorkspaceButton = document.querySelector("#fontWorkspaceButton");
+const fixedDesignsWorkspaceButton = document.querySelector("#fixedDesignsWorkspaceButton");
 const sizeGuideWorkspaceButton = document.querySelector("#sizeGuideWorkspaceButton");
 const productionBatchLogoutButton = document.querySelector("#productionBatchLogoutButton");
 const navCollapseButton = document.querySelector("#navCollapseButton");
@@ -188,6 +201,31 @@ const selectedFontPreview = document.querySelector("#selectedFontPreview");
 const replaceFontButton = document.querySelector("#replaceFontButton");
 const deleteFontButton = document.querySelector("#deleteFontButton");
 const fontEditorStatus = document.querySelector("#fontEditorStatus");
+const fixedDesignUploadButton = document.querySelector("#fixedDesignUploadButton");
+const fixedDesignUploadInput = document.querySelector("#fixedDesignUploadInput");
+const fixedDesignSearchInput = document.querySelector("#fixedDesignSearchInput");
+const fixedDesignList = document.querySelector("#fixedDesignList");
+const selectedFixedDesignName = document.querySelector("#selectedFixedDesignName");
+const selectedFixedDesignMeta = document.querySelector("#selectedFixedDesignMeta");
+const fixedDesignActionsMenu = document.querySelector("#fixedDesignActionsMenu");
+const saveFixedDesignButton = document.querySelector("#saveFixedDesignButton");
+const loadFixedDesignVersionButton = document.querySelector("#loadFixedDesignVersionButton");
+const downloadFixedDesignButton = document.querySelector("#downloadFixedDesignButton");
+const deleteFixedDesignButton = document.querySelector("#deleteFixedDesignButton");
+const fixedDesignPreviewImage = document.querySelector("#fixedDesignPreviewImage");
+const fixedDesignPreviewEmptyState = document.querySelector("#fixedDesignPreviewEmptyState");
+const selectedFixedDesignFileName = document.querySelector("#selectedFixedDesignFileName");
+const selectedFixedDesignVersion = document.querySelector("#selectedFixedDesignVersion");
+const selectedFixedDesignState = document.querySelector("#selectedFixedDesignState");
+const fixedDesignEditorStatus = document.querySelector("#fixedDesignEditorStatus");
+const fixedDesignVersionDialog = document.querySelector("#fixedDesignVersionDialog");
+const closeFixedDesignVersionDialogButton = document.querySelector("#closeFixedDesignVersionDialogButton");
+const fixedDesignDropZone = document.querySelector("#fixedDesignDropZone");
+const chooseFixedDesignVersionButton = document.querySelector("#chooseFixedDesignVersionButton");
+const fixedDesignVersionInput = document.querySelector("#fixedDesignVersionInput");
+const fixedDesignVersionStatus = document.querySelector("#fixedDesignVersionStatus");
+const cancelFixedDesignVersionButton = document.querySelector("#cancelFixedDesignVersionButton");
+const loadFixedDesignVersionConfirmButton = document.querySelector("#loadFixedDesignVersionConfirmButton");
 const addOrderButton = document.querySelector("#addOrderButton");
 const importClipboardButton = document.querySelector("#importClipboardButton");
 const clearBatchButton = document.querySelector("#clearBatchButton");
@@ -373,6 +411,12 @@ let databaseOrdersSearchTerm = "";
 let databaseOrdersStatusFilterValue = "open";
 let databaseOrdersBatchFilterValue = "all";
 let selectedFontId = "candlepin";
+let fixedDesignRecords = [];
+let selectedFixedDesignId = initialAppRoute.workspace === "fixedDesigns" ? initialAppRoute.itemId : null;
+let fixedDesignSearchTerm = "";
+let fixedDesignsLoading = false;
+let fixedDesignsLoaded = false;
+let stagedFixedDesignVersionFile = null;
 let navCollapsed = readNavCollapsedPreference();
 let presetEditorDraft = null;
 let presetEditorBaselineKey = null;
@@ -438,6 +482,9 @@ function getWorkspaceRouteItemId(workspace = activeWorkspace) {
   }
   if (workspace === "fonts") {
     return selectedFontId;
+  }
+  if (workspace === "fixedDesigns") {
+    return selectedFixedDesignId;
   }
   if (workspace === "sizeGuides") {
     return selectedSizePresetId;
@@ -517,6 +564,19 @@ function applyRouteSelection(route, options = {}) {
       replace: replaceRoute,
       workspace,
       itemId: itemId && selectedFontId === itemId ? itemId : null,
+    });
+    return;
+  }
+
+  if (workspace === "fixedDesigns") {
+    if (itemId) {
+      selectedFixedDesignId = itemId;
+    }
+    renderFixedDesignWorkspace();
+    writeAppRoute({
+      replace: replaceRoute,
+      workspace,
+      itemId: itemId && selectedFixedDesignId === itemId ? itemId : null,
     });
     return;
   }
@@ -7248,6 +7308,223 @@ function getFontMetaLabel(font) {
   return `${kind} · ${format} · ${version}`;
 }
 
+function getFixedDesignMetaLabel(fixedDesign) {
+  if (!fixedDesign) {
+    return "Upload or choose a fixed SVG design.";
+  }
+
+  return `${fixedDesign.stateLabel || "Available"} - SVG - v${fixedDesign.version || 1}`;
+}
+
+function setFixedDesignEditorStatus(message, state = "pending") {
+  if (!fixedDesignEditorStatus) {
+    return;
+  }
+
+  fixedDesignEditorStatus.textContent = message;
+  fixedDesignEditorStatus.dataset.state = state;
+}
+
+function setFixedDesignVersionStatus(message = "") {
+  if (!fixedDesignVersionStatus) {
+    return;
+  }
+
+  fixedDesignVersionStatus.textContent = message;
+}
+
+function handleFixedDesignApiError(error, fallbackMessage, options = {}) {
+  if (isProductionBatchAuthenticationError(error)) {
+    const detail = options.authDetail || "Production batch session expired. Sign in again to manage fixed designs.";
+    handleProductionBatchAuthenticationRequired(detail);
+    if (options.versionDialog) {
+      setFixedDesignVersionStatus(detail);
+    } else {
+      setFixedDesignEditorStatus(detail, "pending");
+    }
+    return;
+  }
+
+  const message = error instanceof Error ? error.message : fallbackMessage;
+  if (options.versionDialog) {
+    setFixedDesignVersionStatus(message);
+  } else {
+    setFixedDesignEditorStatus(message, "error");
+  }
+}
+
+function stageFixedDesignVersionFile(file) {
+  if (!file) {
+    stagedFixedDesignVersionFile = null;
+    setFixedDesignVersionStatus("");
+    if (loadFixedDesignVersionConfirmButton) {
+      loadFixedDesignVersionConfirmButton.disabled = true;
+    }
+    return;
+  }
+
+  if (!/\.svg$/i.test(file.name || "")) {
+    stagedFixedDesignVersionFile = null;
+    setFixedDesignVersionStatus("Choose an SVG file to load as the new version.");
+    if (loadFixedDesignVersionConfirmButton) {
+      loadFixedDesignVersionConfirmButton.disabled = true;
+    }
+    return;
+  }
+
+  stagedFixedDesignVersionFile = file;
+  setFixedDesignVersionStatus(`Ready to load ${file.name}.`);
+  if (loadFixedDesignVersionConfirmButton) {
+    loadFixedDesignVersionConfirmButton.disabled = false;
+  }
+}
+
+function getSelectedFixedDesign() {
+  return fixedDesignRecords.find((record) => record.id === selectedFixedDesignId) || null;
+}
+
+function getVisibleFixedDesignRecords() {
+  const query = fixedDesignSearchTerm.trim().toLowerCase();
+  if (!query) {
+    return fixedDesignRecords;
+  }
+
+  return fixedDesignRecords.filter((record) => (
+    record.displayName.toLowerCase().includes(query)
+    || String(record.fileName || "").toLowerCase().includes(query)
+  ));
+}
+
+function selectFirstFixedDesignIfNeeded() {
+  if (fixedDesignRecords.some((record) => record.id === selectedFixedDesignId)) {
+    return;
+  }
+  if (!fixedDesignsLoaded && selectedFixedDesignId) {
+    return;
+  }
+
+  selectedFixedDesignId = fixedDesignRecords[0]?.id || null;
+}
+
+function selectFixedDesign(fixedDesignId, options = {}) {
+  const { updateRoute = true, replaceRoute = false } = options;
+  if (!fixedDesignRecords.some((record) => record.id === fixedDesignId)) {
+    return false;
+  }
+
+  selectedFixedDesignId = fixedDesignId;
+  renderFixedDesignWorkspace();
+  if (updateRoute) {
+    writeAppRoute({ replace: replaceRoute, workspace: "fixedDesigns", itemId: selectedFixedDesignId });
+  }
+  return true;
+}
+
+async function refreshWorkspaceFixedDesigns(accessToken = null) {
+  if (!accessToken) {
+    setFixedDesignEditorStatus("Sign in to load fixed designs.", "pending");
+    return;
+  }
+  if (fixedDesignsLoading) {
+    return;
+  }
+
+  fixedDesignsLoading = true;
+  setFixedDesignEditorStatus("Loading fixed designs...", "pending");
+  try {
+    fixedDesignRecords = normalizeFixedDesignRecords(await fetchWorkspaceFixedDesigns({ accessToken }));
+    fixedDesignsLoaded = true;
+    selectFirstFixedDesignIfNeeded();
+    renderFixedDesignWorkspace();
+    setFixedDesignEditorStatus(
+      fixedDesignRecords.length ? "Choose a fixed SVG design or upload a new one." : "Upload an SVG fixed design to start.",
+      "pending",
+    );
+  } catch (error) {
+    fixedDesignsLoaded = false;
+    renderFixedDesignWorkspace();
+    handleFixedDesignApiError(error, "Unable to load fixed designs.");
+  } finally {
+    fixedDesignsLoading = false;
+  }
+}
+
+function renderFixedDesignWorkspace() {
+  if (!fixedDesignList) {
+    return;
+  }
+
+  if (fixedDesignSearchInput && fixedDesignSearchInput.value !== fixedDesignSearchTerm) {
+    fixedDesignSearchInput.value = fixedDesignSearchTerm;
+  }
+
+  selectFirstFixedDesignIfNeeded();
+  const selectedFixedDesign = getSelectedFixedDesign();
+  const visibleRecords = getVisibleFixedDesignRecords();
+
+  fixedDesignList.replaceChildren();
+  if (!fixedDesignsLoaded && fixedDesignsLoading) {
+    const empty = document.createElement("p");
+    empty.className = "batch-tools-note fixed-design-empty-state";
+    empty.textContent = "Loading fixed designs...";
+    fixedDesignList.append(empty);
+  } else if (!visibleRecords.length) {
+    const empty = document.createElement("p");
+    empty.className = "batch-tools-note fixed-design-empty-state";
+    empty.textContent = fixedDesignSearchTerm.trim()
+      ? "No fixed designs match that search."
+      : "Upload an SVG to add the first fixed design.";
+    fixedDesignList.append(empty);
+  } else {
+    visibleRecords.forEach((fixedDesign) => {
+      const row = document.createElement("button");
+      row.className = "fixed-design-row size-preset-row";
+      row.classList.toggle("is-selected", fixedDesign.id === selectedFixedDesign?.id);
+      row.type = "button";
+      row.dataset.fixedDesignId = fixedDesign.id;
+      row.innerHTML = `
+        <span class="size-preset-name fixed-design-row-name"></span>
+        <span class="size-preset-meta fixed-design-row-meta"></span>
+      `;
+      row.querySelector(".fixed-design-row-name").textContent = fixedDesign.displayName;
+      row.querySelector(".fixed-design-row-meta").textContent = `v${fixedDesign.version || 1} - ${fixedDesign.fileName || "SVG"}`;
+      row.addEventListener("click", () => {
+        selectFixedDesign(fixedDesign.id);
+      });
+      fixedDesignList.append(row);
+    });
+  }
+
+  selectedFixedDesignName.textContent = selectedFixedDesign?.displayName || "No fixed design selected";
+  selectedFixedDesignMeta.textContent = getFixedDesignMetaLabel(selectedFixedDesign);
+  selectedFixedDesignFileName.textContent = selectedFixedDesign?.fileName || "None";
+  selectedFixedDesignVersion.textContent = selectedFixedDesign ? `v${selectedFixedDesign.version || 1}` : "None";
+  selectedFixedDesignState.textContent = selectedFixedDesign?.stateLabel || "No selection";
+
+  const hasSelectedDesign = Boolean(selectedFixedDesign);
+  [saveFixedDesignButton, loadFixedDesignVersionButton, downloadFixedDesignButton, deleteFixedDesignButton]
+    .filter(Boolean)
+    .forEach((button) => {
+      button.disabled = !hasSelectedDesign;
+    });
+  downloadFixedDesignButton.disabled = !selectedFixedDesign?.publicUrl;
+
+  if (selectedFixedDesign?.publicUrl) {
+    fixedDesignPreviewImage.src = selectedFixedDesign.publicUrl;
+    fixedDesignPreviewImage.alt = `${selectedFixedDesign.displayName} SVG preview`;
+    fixedDesignPreviewImage.hidden = false;
+    fixedDesignPreviewEmptyState.hidden = true;
+  } else {
+    fixedDesignPreviewImage.removeAttribute("src");
+    fixedDesignPreviewImage.alt = "";
+    fixedDesignPreviewImage.hidden = true;
+    fixedDesignPreviewEmptyState.hidden = false;
+    fixedDesignPreviewEmptyState.textContent = selectedFixedDesign
+      ? "This fixed design does not have a preview URL."
+      : "Select or upload an SVG fixed design.";
+  }
+}
+
 function renderFontWorkspace() {
   if (!fontLibraryList) {
     return;
@@ -7296,25 +7573,214 @@ function renderFontWorkspace() {
     : "Uploaded fonts can be replaced with a new version or deleted from future selections.";
 }
 
+function formatFixedDesignDisplayName(fileName) {
+  return String(fileName || "")
+    .replace(/\.[^.]+$/, "")
+    .split(/[\s_-]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ")
+    || "Fixed Design";
+}
+
+async function buildFixedDesignUploadPayload(file, displayName = "") {
+  if (!file || !/\.svg$/i.test(file.name || "")) {
+    throw new Error("Upload an SVG file.");
+  }
+
+  const text = await file.text();
+  return {
+    displayName: displayName.trim() || formatFixedDesignDisplayName(file.name),
+    file: {
+      name: file.name,
+      type: file.type || "image/svg+xml",
+      size: file.size,
+      text,
+    },
+  };
+}
+
+function upsertFixedDesignRecord(record) {
+  const normalized = normalizeFixedDesignRecord(record);
+  if (!normalized) {
+    return null;
+  }
+
+  const existingIndex = fixedDesignRecords.findIndex((candidate) => candidate.id === normalized.id);
+  if (existingIndex >= 0) {
+    fixedDesignRecords = fixedDesignRecords.map((candidate) => (
+      candidate.id === normalized.id ? normalized : candidate
+    ));
+  } else {
+    fixedDesignRecords = [...fixedDesignRecords, normalized];
+  }
+  fixedDesignRecords.sort((a, b) => a.displayName.localeCompare(b.displayName));
+  fixedDesignsLoaded = true;
+  return normalized;
+}
+
+async function handleFixedDesignUploadSelection() {
+  const file = fixedDesignUploadInput?.files?.[0] || null;
+  if (fixedDesignUploadInput) {
+    fixedDesignUploadInput.value = "";
+  }
+  if (!file) {
+    return;
+  }
+
+  try {
+    setFixedDesignEditorStatus("Uploading fixed design...", "pending");
+    const payload = await buildFixedDesignUploadPayload(file);
+    const savedRecord = await createWorkspaceFixedDesign(payload, { accessToken: productionBatchAccessToken });
+    const normalized = upsertFixedDesignRecord(savedRecord);
+    if (normalized) {
+      selectedFixedDesignId = normalized.id;
+    }
+    renderFixedDesignWorkspace();
+    writeAppRoute({ workspace: "fixedDesigns", itemId: selectedFixedDesignId });
+    setFixedDesignEditorStatus("Fixed design uploaded.", "success");
+  } catch (error) {
+    handleFixedDesignApiError(error, "Unable to upload fixed design.");
+  }
+}
+
+function openFixedDesignVersionDialog() {
+  if (!getSelectedFixedDesign()) {
+    return;
+  }
+
+  fixedDesignActionsMenu?.removeAttribute("open");
+  stageFixedDesignVersionFile(null);
+  if (fixedDesignVersionInput) {
+    fixedDesignVersionInput.value = "";
+  }
+  if (typeof fixedDesignVersionDialog?.showModal === "function") {
+    fixedDesignVersionDialog.showModal();
+  }
+}
+
+function closeFixedDesignVersionDialog() {
+  if (fixedDesignVersionDialog?.open) {
+    fixedDesignVersionDialog.close();
+  }
+  stageFixedDesignVersionFile(null);
+  if (fixedDesignVersionInput) {
+    fixedDesignVersionInput.value = "";
+  }
+}
+
+async function replaceSelectedFixedDesignVersion(file) {
+  const selectedFixedDesign = getSelectedFixedDesign();
+  if (!selectedFixedDesign || !file) {
+    setFixedDesignVersionStatus("Choose an SVG file before loading a new version.");
+    return;
+  }
+
+  try {
+    setFixedDesignVersionStatus("Uploading new version...");
+    const payload = await buildFixedDesignUploadPayload(file, selectedFixedDesign.displayName);
+    const savedRecord = await replaceWorkspaceFixedDesign(selectedFixedDesign.id, payload, { accessToken: productionBatchAccessToken });
+    const normalized = upsertFixedDesignRecord(savedRecord);
+    if (normalized) {
+      selectedFixedDesignId = normalized.id;
+    }
+    renderFixedDesignWorkspace();
+    setFixedDesignEditorStatus("Fixed design version uploaded.", "success");
+    closeFixedDesignVersionDialog();
+  } catch (error) {
+    handleFixedDesignApiError(error, "Unable to upload new version.", { versionDialog: true });
+  }
+}
+
+function getFixedDesignDownloadFileName(fixedDesign) {
+  return fixedDesign.fileName || `${fixedDesign.displayName.replace(/\s+/g, "-").toLowerCase()}.svg`;
+}
+
+async function downloadSelectedFixedDesign() {
+  const selectedFixedDesign = getSelectedFixedDesign();
+  if (!selectedFixedDesign?.publicUrl) {
+    setFixedDesignEditorStatus("This fixed design does not have a downloadable SVG URL.", "error");
+    return;
+  }
+
+  fixedDesignActionsMenu?.removeAttribute("open");
+  try {
+    setFixedDesignEditorStatus("Preparing SVG download...", "pending");
+    const response = await fetch(selectedFixedDesign.publicUrl);
+    if (!response.ok) {
+      throw new Error("Unable to download SVG file.");
+    }
+
+    const blob = await response.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = objectUrl;
+    link.download = getFixedDesignDownloadFileName(selectedFixedDesign);
+    document.body.append(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => {
+      URL.revokeObjectURL(objectUrl);
+    }, 0);
+    setFixedDesignEditorStatus("SVG download prepared.", "success");
+  } catch (error) {
+    setFixedDesignEditorStatus(error instanceof Error ? error.message : "Unable to download SVG file.", "error");
+  }
+}
+
+async function deleteSelectedFixedDesign() {
+  const selectedFixedDesign = getSelectedFixedDesign();
+  if (!selectedFixedDesign) {
+    return;
+  }
+
+  fixedDesignActionsMenu?.removeAttribute("open");
+  const confirmed = await showConfirmationDialog({
+    title: "Delete Fixed Design?",
+    description: `Delete ${selectedFixedDesign.displayName} from future fixed design selections? Existing saved orders may still reference it.`,
+    confirmLabel: "Delete",
+    isDanger: true,
+  });
+  if (!confirmed) {
+    return;
+  }
+
+  try {
+    setFixedDesignEditorStatus("Deleting fixed design...", "pending");
+    await deleteWorkspaceFixedDesign(selectedFixedDesign.id, { accessToken: productionBatchAccessToken });
+    fixedDesignRecords = fixedDesignRecords.filter((record) => record.id !== selectedFixedDesign.id);
+    selectedFixedDesignId = null;
+    selectFirstFixedDesignIfNeeded();
+    renderFixedDesignWorkspace();
+    writeAppRoute({ workspace: "fixedDesigns", itemId: selectedFixedDesignId });
+    setFixedDesignEditorStatus("Fixed design deleted.", "success");
+  } catch (error) {
+    handleFixedDesignApiError(error, "Unable to delete fixed design.");
+  }
+}
+
 function setActiveWorkspace(workspace, options = {}) {
   const { updateRoute = true, replaceRoute = false } = options;
   const hasRouteItemId = Object.prototype.hasOwnProperty.call(options, "routeItemId");
-  activeWorkspace = ["orders", "databaseOrders", "presets", "fonts", "sizeGuides"].includes(workspace) ? workspace : DEFAULT_WORKSPACE;
+  activeWorkspace = ["orders", "databaseOrders", "presets", "fonts", "fixedDesigns", "sizeGuides"].includes(workspace) ? workspace : DEFAULT_WORKSPACE;
   appShell.dataset.workspace = activeWorkspace;
   ordersWorkspace.hidden = activeWorkspace !== "orders";
   databaseOrdersWorkspace.hidden = activeWorkspace !== "databaseOrders";
   presetsWorkspace.hidden = activeWorkspace !== "presets";
   fontsWorkspace.hidden = activeWorkspace !== "fonts";
+  fixedDesignsWorkspace.hidden = activeWorkspace !== "fixedDesigns";
   sizeGuideWorkspace.hidden = activeWorkspace !== "sizeGuides";
   orderWorkspaceButton.classList.toggle("is-active", activeWorkspace === "orders");
   databaseOrdersWorkspaceButton.classList.toggle("is-active", activeWorkspace === "databaseOrders");
   presetWorkspaceButton.classList.toggle("is-active", activeWorkspace === "presets");
   fontWorkspaceButton.classList.toggle("is-active", activeWorkspace === "fonts");
+  fixedDesignsWorkspaceButton.classList.toggle("is-active", activeWorkspace === "fixedDesigns");
   sizeGuideWorkspaceButton.classList.toggle("is-active", activeWorkspace === "sizeGuides");
   orderWorkspaceButton.setAttribute("aria-pressed", String(activeWorkspace === "orders"));
   databaseOrdersWorkspaceButton.setAttribute("aria-pressed", String(activeWorkspace === "databaseOrders"));
   presetWorkspaceButton.setAttribute("aria-pressed", String(activeWorkspace === "presets"));
   fontWorkspaceButton.setAttribute("aria-pressed", String(activeWorkspace === "fonts"));
+  fixedDesignsWorkspaceButton.setAttribute("aria-pressed", String(activeWorkspace === "fixedDesigns"));
   sizeGuideWorkspaceButton.setAttribute("aria-pressed", String(activeWorkspace === "sizeGuides"));
   if (activeWorkspace === "presets") {
     selectFirstPresetEditorRowIfNeeded();
@@ -7325,6 +7791,12 @@ function setActiveWorkspace(workspace, options = {}) {
   }
   if (activeWorkspace === "fonts") {
     renderFontWorkspace();
+  }
+  if (activeWorkspace === "fixedDesigns") {
+    renderFixedDesignWorkspace();
+    if (productionBatchAccessToken) {
+      void refreshWorkspaceFixedDesigns(productionBatchAccessToken);
+    }
   }
   if (activeWorkspace === "sizeGuides") {
     selectFirstSizePresetIfNeeded({ updateRoute });
@@ -9178,6 +9650,9 @@ presetWorkspaceButton.addEventListener("click", () => {
 fontWorkspaceButton.addEventListener("click", () => {
   setActiveWorkspace("fonts", { routeItemId: null });
 });
+fixedDesignsWorkspaceButton.addEventListener("click", () => {
+  setActiveWorkspace("fixedDesigns", { routeItemId: null });
+});
 newFontUploadButton?.addEventListener("click", () => {
   fontFileInput.dataset.mode = "create";
   fontFileInput.click();
@@ -9191,6 +9666,59 @@ fontFileInput?.addEventListener("change", () => {
 });
 deleteFontButton?.addEventListener("click", () => {
   void handleDeleteSelectedFont();
+});
+fixedDesignUploadButton?.addEventListener("click", () => {
+  fixedDesignUploadInput?.click();
+});
+fixedDesignUploadInput?.addEventListener("change", () => {
+  void handleFixedDesignUploadSelection();
+});
+fixedDesignSearchInput?.addEventListener("input", () => {
+  fixedDesignSearchTerm = fixedDesignSearchInput.value;
+  renderFixedDesignWorkspace();
+});
+saveFixedDesignButton?.addEventListener("click", () => {
+  fixedDesignActionsMenu?.removeAttribute("open");
+  setFixedDesignEditorStatus("Fixed design details are current.", "success");
+});
+loadFixedDesignVersionButton?.addEventListener("click", openFixedDesignVersionDialog);
+downloadFixedDesignButton?.addEventListener("click", downloadSelectedFixedDesign);
+deleteFixedDesignButton?.addEventListener("click", () => {
+  void deleteSelectedFixedDesign();
+});
+chooseFixedDesignVersionButton?.addEventListener("click", () => {
+  fixedDesignVersionInput?.click();
+});
+fixedDesignVersionInput?.addEventListener("change", () => {
+  const file = fixedDesignVersionInput.files?.[0] || null;
+  stageFixedDesignVersionFile(file);
+});
+cancelFixedDesignVersionButton?.addEventListener("click", closeFixedDesignVersionDialog);
+loadFixedDesignVersionConfirmButton?.addEventListener("click", () => {
+  void replaceSelectedFixedDesignVersion(stagedFixedDesignVersionFile);
+});
+closeFixedDesignVersionDialogButton?.addEventListener("click", closeFixedDesignVersionDialog);
+fixedDesignVersionDialog?.addEventListener("cancel", (event) => {
+  event.preventDefault();
+  closeFixedDesignVersionDialog();
+});
+fixedDesignVersionDialog?.addEventListener("click", (event) => {
+  if (event.target === fixedDesignVersionDialog) {
+    closeFixedDesignVersionDialog();
+  }
+});
+fixedDesignDropZone?.addEventListener("dragover", (event) => {
+  event.preventDefault();
+  fixedDesignDropZone.classList.add("is-dragging");
+});
+fixedDesignDropZone?.addEventListener("dragleave", () => {
+  fixedDesignDropZone.classList.remove("is-dragging");
+});
+fixedDesignDropZone?.addEventListener("drop", (event) => {
+  event.preventDefault();
+  fixedDesignDropZone.classList.remove("is-dragging");
+  const file = event.dataTransfer?.files?.[0] || null;
+  stageFixedDesignVersionFile(file);
 });
 sizeGuideWorkspaceButton.addEventListener("click", () => {
   setActiveWorkspace("sizeGuides", { routeItemId: null });
@@ -9346,6 +9874,13 @@ assignPresetToListingButton?.addEventListener("click", () => {
       selectedOrderActionsMenu?.removeAttribute("open");
     });
   });
+[saveFixedDesignButton, loadFixedDesignVersionButton, downloadFixedDesignButton, deleteFixedDesignButton]
+  .filter(Boolean)
+  .forEach((button) => {
+    button.addEventListener("click", () => {
+      fixedDesignActionsMenu?.removeAttribute("open");
+    });
+  });
 [copyButton, downloadButton]
   .filter(Boolean)
   .forEach((button) => {
@@ -9363,6 +9898,7 @@ assignPresetToListingButton?.addEventListener("click", () => {
 registerOutsideDismissableDetailsMenu(batchToolsMenu);
 registerOutsideDismissableDetailsMenu(ordersToolsMenu);
 registerOutsideDismissableDetailsMenu(selectedOrderActionsMenu);
+registerOutsideDismissableDetailsMenu(fixedDesignActionsMenu);
 registerOutsideDismissableDetailsMenu(presetToolsMenu);
 registerDatabaseOrderItemMenuDismissal(databaseOrdersWorkspace);
 closeColorCountsButton?.addEventListener("click", closeBatchColorCountsDialog);
@@ -9517,6 +10053,9 @@ renderPresetEditorDraft();
 updateBackingOutput();
 productionBatchAccessToken = await bootstrapProductionBatchAccess();
 await refreshWorkspaceFonts(productionBatchAccessToken);
+if (initialAppRoute.workspace === "fixedDesigns") {
+  await refreshWorkspaceFixedDesigns(productionBatchAccessToken);
+}
 const restoredBatch = productionBatchAccessToken
   ? await restoreInitialBatchState(productionBatchAccessToken)
   : { source: null, count: 0 };
