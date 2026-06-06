@@ -68,7 +68,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Add a `Presets` dropdown directly below the `Order Text` field.
 - The `Preset` control card in the selected-order editor must expose its secondary actions from an ellipses menu in the card header rather than showing them as always-visible buttons.
 - The `Presets` dropdown must offer these production presets: `All Candlepin`, `Candlepin, Skywalk`, `Skywalk, Somekind`, and `Skywalk, Candlepin`.
-- The app should add a top-level left navigation bar with workspace items ordered as `Orders`, `Production Batch`, `Presets`, `Fonts`, and `Size Guides`.
+- The app should add a top-level left navigation bar with workspace items ordered as `Orders`, `Production Batch`, `Presets`, `Fonts`, `Size Guides`, and `Fixed Designs`.
 - The app should open the `Orders` workspace by default on initial page load.
 - The left navigation bar should be collapsible between an expanded icon-plus-label state and a collapsed icon-only state.
 - The left navigation bar should remember its expanded or collapsed state across browser refreshes.
@@ -78,6 +78,18 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - `Production Batch` should open the existing production batch workspace with the production batch and selected-order editor.
 - `Presets` should open a dedicated preset editor workspace for viewing, editing, and creating presets.
 - `Size Guides` should open a dedicated size guide workspace for viewing, editing, and creating the named guide boxes used to constrain badge reel design sizes.
+- `Fixed Designs` should open a dedicated workspace for uploading, viewing, versioning, downloading, and deleting reusable fixed SVG artwork.
+- The `Fixed Designs` workspace should follow the shared two-pane production workspace layout style used by `Presets`, `Fonts`, and `Size Guides`: saved fixed design rows in a left navigation panel, with the selected fixed design preview and editor in a right editor panel on desktop-width screens.
+- The `Fixed Designs` workspace should allow uploading new SVG files from the operator's computer.
+- Uploaded fixed SVG designs should be stored in Supabase so they remain available across sessions, operators, and deployments.
+- The `Fixed Designs` workspace should allow loading a new SVG version for an existing fixed design while keeping the same fixed design identity for saved designs that reference it.
+- Loading a new fixed design version should use an in-app popup opened from the selected design's ellipsis menu. The popup should include a drag/drop upload area, a `Choose SVG File` button that opens a file selector, `Cancel`, and `Load Version`.
+- Replacing a fixed SVG should use a new stored file version rather than reusing the exact same asset path, so previews, export, and CDN caches can resolve the updated SVG reliably.
+- The selected fixed design editor actions should live behind an ellipsis menu rather than always-visible header buttons. The menu should include `Save Design`, `Load New Version`, `Download SVG`, and `Delete`.
+- `Download SVG` should download the currently selected fixed design as an SVG file.
+- The `Fixed Designs` workspace should allow deleting uploaded fixed designs with an explicit in-app confirmation.
+- Deleting a fixed design should not silently break existing saved designs that already reference that fixed design.
+- Fixed design rows should use the same shared production workspace selector row style as the `Presets`, `Fonts`, and `Size Guides` workspaces.
 - The `All Candlepin` preset must set every text line to the Candlepin font.
 - The `Candlepin, Skywalk` preset must set the first text line to Candlepin and every subsequent line to Skywalk.
 - The `Skywalk, Somekind` preset must set the first text line to Skywalk and every subsequent line to Somekind.
@@ -446,6 +458,18 @@ The website should be a practical production tool rather than a marketing site. 
 - The right editor column should begin with the `Preset` card, and `Copy Layout` plus `Paste Layout` should live in that card's ellipses menu rather than a separate utility row.
 - The selected-order editor should split preset selection and global layout settings into two separate cards titled `Preset` and `Global Settings`.
 - The `Preset` card should contain the preset dropdown, while its ellipses menu should contain `Copy Layout`, `Paste Layout`, `Save as New Preset`, `Overwrite`, `Assign Preset to Listing`, and `Reload preset`.
+- The `Preset` card ellipsis menu should include `Insert Fixed Design`.
+- Clicking `Insert Fixed Design` should open an in-app fixed design picker popup.
+- The fixed design picker popup should show searchable saved fixed design rows, a selected-design SVG preview, version/default metadata, and `Cancel` plus `Insert Fixed Design` actions.
+- Inserting a fixed design should add a fixed SVG item to the selected design's ordered line/control list.
+- Fixed SVG items should be usable in conjunction with normal text lines in one badge reel design.
+- A fixed SVG item should render as its own control card titled `Fixed Design: <NAME>`.
+- A fixed SVG item control card should expose `SVG Size`, `Horizontal Offset`, and `Vertical Offset From Center`.
+- Fixed SVG items should not show text-line controls such as Font, Letter Bridge, Line Bridge, Text Height, Horizontal Stretch, Vertical Stretch, or Lock Text Height.
+- Fixed SVG items do not have to follow the active size guide. The sizing guide remains independent and applies to text fitting rather than constraining the fixed SVG artwork.
+- Fixed SVG item size and offsets should use explicit physical units, with offsets measured from the design center.
+- Fixed SVG artwork should participate in preview and export output while preserving clean vector paths suitable for laser cutting.
+- Copying and pasting layout controls should include fixed SVG items and their size/offset settings, but must not copy fixed-design library metadata, uploaded SVG files, order text, quantity, buyer metadata, listing metadata, completion state, saved export data, or cached analysis results.
 - The preset dropdown label in the `Preset` card should read `Preset Name`.
 - The `Preset` card should include a `Reload preset` button at the bottom that reapplies the currently selected preset and overwrites all current layout settings for the active design with that preset's current values.
 - The `Global Settings` card should contain `Weld Exported Design`, `Size Guide`, global `Horizontal Stretch`, global `Vertical Stretch`, and `Backing Border`, followed by the per-line controls for `Line 1`, `Line 2`, and any additional lines.
