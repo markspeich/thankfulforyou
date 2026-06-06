@@ -4,6 +4,7 @@ import {
   filterGroupedOrders,
   getCheckedOrderIdsForBulkAction,
   getCopyableSavedBuild,
+  getOrderItemListingText,
   getSelectedGroupedOrder,
   normalizeOrdersWorkspaceState,
 } from "../../src/orders-workspace.js";
@@ -126,6 +127,12 @@ describe("orders workspace helpers", () => {
       "order:4003",
       "order:4004",
     ]);
+  });
+
+  it("returns the imported Etsy listing title from source metadata", () => {
+    expect(getOrderItemListingText({
+      source: { listingTitle: "Custom RN Badge Reel" },
+    })).toBe("Custom RN Badge Reel");
   });
 
   it("filters grouped orders by search text, status, and active batch membership", () => {

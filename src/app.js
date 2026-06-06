@@ -70,6 +70,7 @@ import {
   filterGroupedOrders,
   getCheckedOrderIdsForBulkAction,
   getCopyableSavedBuild,
+  getOrderItemListingText as getDatabaseOrderItemListingText,
   getSelectedGroupedOrder,
   normalizeOrdersWorkspaceState,
 } from "./orders-workspace.js";
@@ -4498,17 +4499,6 @@ function getDatabaseOrderMeta(order) {
   return parts.join(" - ");
 }
 
-function getDatabaseOrderItemListingText(item) {
-  const candidates = [
-    item?.listingTitle,
-    item?.title,
-    item?.listing?.title,
-    item?.design?.listingTitle,
-  ];
-  const match = candidates.find((value) => typeof value === "string" && value.trim());
-  return match ? match.trim() : "Untitled listing";
-}
-
 function getDatabaseOrderItemListingImageUrl(item) {
   const candidates = [
     item?.source?.listingImageUrl75x75,
@@ -5173,7 +5163,7 @@ function renderSelectedDatabaseOrderItems() {
     titleGroup.className = "database-order-item-title-group";
 
     const title = document.createElement("h3");
-    title.textContent = getDatabaseOrderItemDesignText(item);
+    title.textContent = "Order Item";
 
     const listing = document.createElement("p");
     listing.className = "database-order-item-listing";
@@ -5247,11 +5237,7 @@ function renderSelectedDatabaseOrderItems() {
     menuBody.append(menuActions);
     menu.append(summary, menuBody);
 
-    cardHeader.append(menu);
-
-    const lineText = document.createElement("p");
-    lineText.className = "database-order-item-lines";
-    lineText.textContent = getDatabaseOrderItemFlattenedLines(item);
+    cardHeader.append(titleGroup, menu);
 
     const listingMedia = document.createElement("div");
     listingMedia.className = "database-order-item-listing-media";
@@ -5310,7 +5296,7 @@ function renderSelectedDatabaseOrderItems() {
 
     const listingColumn = document.createElement("div");
     listingColumn.className = "database-order-item-listing-column";
-    listingColumn.append(titleGroup, lineText, listingMedia);
+    listingColumn.append(listingMedia);
 
     const previewColumn = document.createElement("div");
     previewColumn.className = "database-order-item-preview-column";
@@ -5318,6 +5304,11 @@ function renderSelectedDatabaseOrderItems() {
 
     const meta = document.createElement("dl");
     meta.className = "database-order-item-meta";
+
+    const personalizationTerm = document.createElement("dt");
+    personalizationTerm.textContent = "Personalization";
+    const personalizationValue = document.createElement("dd");
+    personalizationValue.textContent = getDatabaseOrderItemDesignText(item);
 
     const colorTerm = document.createElement("dt");
     colorTerm.textContent = "Color";
@@ -5329,7 +5320,7 @@ function renderSelectedDatabaseOrderItems() {
     const quantityValue = document.createElement("dd");
     quantityValue.textContent = getDatabaseOrderItemQuantityText(item);
 
-    meta.append(colorTerm, colorValue, quantityTerm, quantityValue);
+    meta.append(personalizationTerm, personalizationValue, colorTerm, colorValue, quantityTerm, quantityValue);
 
     cardBody.append(listingColumn, previewColumn);
     card.append(cardHeader, cardBody, status, savedDesign, meta);

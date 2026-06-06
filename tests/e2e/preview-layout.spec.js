@@ -2797,7 +2797,7 @@ test("skips already imported Etsy line items when importing another batch", asyn
 
   await clickButtonBySelector(page, "#importClipboardButton");
 
-  await expect(page.locator("#orderCountOutput")).toHaveText("3");
+  await expect(page.locator("#orderCountOutput")).toHaveText("2");
   await expect(page.locator(".batch-header .batch-tools-menu")).not.toHaveAttribute("open", "");
   await expect(page.locator("#importStatus")).toBeVisible();
   await expect(page.locator("#importStatus")).toContainText("Imported 2 Etsy designs and added 2 to the production batch.");
@@ -2834,7 +2834,7 @@ test("skips already imported Etsy line items when importing another batch", asyn
 
   await clickButtonBySelector(page, "#importClipboardButton");
 
-  await expect(page.locator("#orderCountOutput")).toHaveText("4");
+  await expect(page.locator("#orderCountOutput")).toHaveText("3");
   await expect(page.locator(".batch-header .batch-tools-menu")).not.toHaveAttribute("open", "");
   await expect(page.locator("#importStatus")).toBeVisible();
   await expect(page.locator("#importStatus")).toContainText("Imported 1 Etsy design and added 1 to the production batch. Skipped 1 already in the batch.");
@@ -2945,6 +2945,8 @@ test("shows imported Etsy color and quantity below design text and highlights wh
   await expect(page.locator("#importedQuantityField")).toBeVisible();
   await expect(page.locator("#importedQuantityValue")).toHaveText("2");
 
+  await page.locator("#pasteSummaryDoneButton").click();
+  await expect(page.locator("#pasteSummaryDialog")).not.toBeVisible();
   await page.locator("#orderList .order-row").filter({ hasText: "#4057629148" }).click();
 
   await expect(page.locator("#importedColorField")).toBeVisible();
@@ -3004,6 +3006,8 @@ test("shows batch color counts from the queue tools menu", async ({ page }) => {
   }, payload);
 
   await clickButtonBySelector(page, "#importClipboardButton");
+  await page.locator("#pasteSummaryDoneButton").click();
+  await expect(page.locator("#pasteSummaryDialog")).not.toBeVisible();
   await clickBatchAction(page, "View Color Counts");
 
   const dialog = page.locator("#colorCountsDialog");
@@ -3064,7 +3068,10 @@ test("includes imported color and quantity in the export payload", async ({ page
 
   await clickButtonBySelector(page, "#importClipboardButton");
   await expect(page.locator("#importStatus")).toContainText("Imported 1 Etsy design and added 1 to the production batch.");
+  await page.locator("#pasteSummaryDoneButton").click();
+  await expect(page.locator("#pasteSummaryDialog")).not.toBeVisible();
   await expect(page.locator("#orderList .order-row").filter({ hasText: "#4057600528" })).toContainText("In progress");
+  await page.locator("#backingInput").fill("3.2");
   await completeDesign(page, "#4057600528");
   await clickOrderItemByText(page, "#4057600528");
   await clickEditorToolButton(page, "#downloadButton");

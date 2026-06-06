@@ -2450,7 +2450,13 @@ button:disabled {
 .database-order-item-header {
   position: relative;
   display: flex;
-  justify-content: flex-end;
+  align-items: flex-start;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.database-order-item-header .database-order-item-menu {
+  flex: 0 0 auto;
 }
 
 .database-order-item-title-group {
@@ -2537,7 +2543,7 @@ button:disabled {
 
 .database-order-item-meta {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto minmax(0, 1fr);
+  grid-template-columns: auto minmax(0, 1fr);
   gap: 4px 8px;
   align-items: baseline;
   margin: 0;

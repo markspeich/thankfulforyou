@@ -195,6 +195,9 @@ async function pasteProductionBatchClipboard(page) {
     await page.getByRole("button", { name: "Production Batch", exact: true }).click();
   }
   await page.locator("#importClipboardButton").click();
+  await expect(page.locator("#pasteSummaryDialog")).toBeVisible();
+  await page.locator("#pasteSummaryDoneButton").click();
+  await expect(page.locator("#pasteSummaryDialog")).not.toBeVisible();
 }
 
 async function selectPresetEditorRow(page, name) {
@@ -369,17 +372,17 @@ test("switches between order items, presets, and size guides from the left nav",
   const editorPanel = page.getByLabel("Selected design editor");
 
   await expect(page.getByRole("button", { name: "Orders", exact: true })).toHaveAttribute("aria-pressed", "true");
-  await expect(page.getByRole("button", { name: "Production Batch" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Presets" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Fonts" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Size Guides" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Production Batch", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Presets", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Fonts", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Size Guides", exact: true })).toBeVisible();
   await expect.poll(async () => {
-    return page.getByRole("button", { name: "Size Guides" }).evaluate((button) => Math.round(button.getBoundingClientRect().height));
+    return page.getByRole("button", { name: "Size Guides", exact: true }).evaluate((button) => Math.round(button.getBoundingClientRect().height));
   }).toBeLessThanOrEqual(54);
   await expect(databaseOrdersWorkspace).toBeVisible();
   await expect(ordersWorkspace).toBeHidden();
 
-  await page.getByRole("button", { name: "Production Batch" }).click();
+  await page.getByRole("button", { name: "Production Batch", exact: true }).click();
   await expect(ordersWorkspace).toBeVisible();
   await expect(databaseOrdersWorkspace).toBeHidden();
   await expect(presetsWorkspace).toBeHidden();
@@ -387,7 +390,7 @@ test("switches between order items, presets, and size guides from the left nav",
   await expect(sizeGuideWorkspace).toBeHidden();
   await expect(editorPanel).toHaveClass(/is-hidden/);
 
-  await page.getByRole("button", { name: "Presets" }).click();
+  await page.getByRole("button", { name: "Presets", exact: true }).click();
   await expect(ordersWorkspace).toBeHidden();
   await expect(page.getByRole("region", { name: "Preset editor workspace" })).toBeVisible();
   await expect(presetsWorkspace).toBeVisible();
@@ -403,7 +406,7 @@ test("switches between order items, presets, and size guides from the left nav",
     };
   });
 
-  await page.getByRole("button", { name: "Fonts" }).click();
+  await page.getByRole("button", { name: "Fonts", exact: true }).click();
   await expect(ordersWorkspace).toBeHidden();
   await expect(presetsWorkspace).toBeHidden();
   await expect(fontsWorkspace).toBeVisible();
@@ -422,7 +425,7 @@ test("switches between order items, presets, and size guides from the left nav",
   });
   expect(fontRowTitleTypography).toEqual(presetRowTitleTypography);
 
-  await page.getByRole("button", { name: "Size Guides" }).click();
+  await page.getByRole("button", { name: "Size Guides", exact: true }).click();
   await expect(ordersWorkspace).toBeHidden();
   await expect(presetsWorkspace).toBeHidden();
   await expect(fontsWorkspace).toBeHidden();
@@ -439,7 +442,7 @@ test("switches between order items, presets, and size guides from the left nav",
   });
   expect(sizeGuideRowTitleTypography).toEqual(presetRowTitleTypography);
 
-  await page.getByRole("button", { name: "Production Batch" }).click();
+  await page.getByRole("button", { name: "Production Batch", exact: true }).click();
   await expect(page.getByRole("region", { name: "Order items workspace" })).toBeVisible();
   await expect(page.getByRole("region", { name: "Preset editor workspace" })).toBeHidden();
   await expect(fontsWorkspace).toBeHidden();
@@ -1198,7 +1201,6 @@ test("assigning a preset to a completed imported order clears stale batch-export
   await expect(page.locator('[data-line-index="1"] [data-setting="fontSizeMm"]')).toHaveValue("23");
   await expect(page.locator("#downloadButton")).toBeDisabled();
 
-  await page.locator("#orderList .order-row").filter({ hasText: "Design 1" }).click();
   await openBatchTools(page);
   await expect(page.getByRole("button", { name: "Export All Designs" })).toBeDisabled();
 });
@@ -1281,6 +1283,7 @@ test("shows assigned listings for a preset and lets operators unassign them", as
   await expect(page.locator("#presetInput")).toHaveValue("preset-c3e8a1d7f520");
   await expect(page.locator("#presetListingIndicator")).toHaveText("Linked");
 
+  await setRangeValue(page, "#backingInput", 3.2);
   await page.locator("#captureButton").click();
   await expect(page.locator("#downloadButton")).toBeEnabled();
 
