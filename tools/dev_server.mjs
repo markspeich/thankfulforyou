@@ -8,14 +8,12 @@ import { randomUUID } from "node:crypto";
 import { buildPublicAppConfigScript } from "./app_config.mjs";
 import { allocateDevPort } from "./dev_port.mjs";
 import { clearDevServerPid, mergeDevServerState } from "./dev_server_state.mjs";
-import { loadEnvFile } from "./env_file.mjs";
 import { buildLocalServerInfo, formatLocalServerInfo } from "./local_server_info.mjs";
 
 const port = await allocateDevPort();
 const root = process.cwd();
 const productionBatchLogPath = process.env.PRODUCTION_BATCH_LOG_PATH
   || join(process.platform === "win32" ? "C:\\tmp" : "/tmp", "thankfulforyou-production-batch.log");
-loadEnvFile({ cwd: root });
 const pythonCommand = process.env.PYTHON || (process.platform === "win32" ? "py" : "python3");
 const pythonScriptArgs = process.env.PYTHON
   ? ["tools/export_svg.py"]

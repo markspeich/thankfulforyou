@@ -18,7 +18,7 @@
     "supabase:start:local": "node tools/supabase_start_local.mjs",
     "supabase:status:local": "node tools/supabase_status_local.mjs",
     "supabase:stop:local": "node tools/supabase_stop_local.mjs",
-    "start": "node tools/setup_worktree_env.mjs && node --watch tools/dev_server.mjs",
+    "start": "node tools/run_with_supabase_env.mjs --env local -- node --watch tools/dev_server.mjs",
     "start:local": "node tools/run_with_supabase_env.mjs --env local -- node --watch tools/dev_server.mjs",
     "start:remote": "node tools/run_with_supabase_env.mjs --env remote -- node --watch tools/dev_server.mjs",
     "stop:local": "node tools/stop_dev_server.mjs",

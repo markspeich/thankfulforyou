@@ -116,10 +116,9 @@ When the user asks to start the app, start a server, or initialize the app, foll
 - Use `npm run start:local` or `npm run start:remote` as the canonical dev entrypoints for this app instead of invoking `node` directly with a guessed script.
 - `npm run start:local` and `npm run start:remote` first run through `tools/run_with_supabase_env.mjs`, which selects the requested Supabase environment before launching the dev server.
 - `npm run prepare:local` runs through `tools/prepare_local_env.mjs`, which uses the generated per-worktree Supabase workdir instead of rewriting the tracked `supabase/config.toml`.
-- Plain `npm start` is not the default Codex startup command for this worktree unless the user specifically asks for the generic start script.
-- `npm start` first runs `tools/setup_worktree_env.mjs`, which fills missing shared-queue Supabase keys in the worktree `.env.local` from the machine-local seed file at `C:\Users\Mark\CodexProjects\thankfulforyou\.env.local.shared`.
-- Keep `C:\Users\Mark\CodexProjects\thankfulforyou\.env.local.shared` out of git. It is the local source of truth for secrets that Vercel CLI cannot pull into new worktrees, especially `SUPABASE_SERVICE_ROLE_KEY`.
-- `npm start` loads `.env.local` automatically when present, so do not wrap it in a custom env-loading command unless a specific task needs different values.
+- Plain `npm start` is an alias for the per-worktree local startup path and should resolve Supabase settings through `tools/run_with_supabase_env.mjs --env local`, not through `.env.local`.
+- Keep `C:\Users\Mark\CodexProjects\thankfulforyou\.env.local.shared` out of git. It is only a machine-local seed for explicitly remote Supabase workflows that need missing `.env.local` secrets, especially `SUPABASE_SERVICE_ROLE_KEY`.
+- The dev server should consume Supabase settings injected by `npm run start:local`, `npm run start:remote`, or another explicit wrapper. It should not load `.env.local` implicitly during local startup.
 - Do not use `npm run start:remote`, `tools/run_with_supabase_env.mjs --env remote`, `.env.local`, or Vercel env pulls as proof that a command is targeting the live production database. Worktree env files can point at local Supabase.
 - For order-data database administration, use the explicit admin scripts:
   - `npm run db:local:orders:count`
