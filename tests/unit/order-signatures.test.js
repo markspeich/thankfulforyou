@@ -143,4 +143,49 @@ describe("order signatures", () => {
       boundingSizePresetFingerprint: "size-custom|3.25|2|2|1.25|",
     })).not.toBe(buildSettingsSignature(baseSettings));
   });
+
+  it("includes fixed SVG identity and placement controls in the current signature format", () => {
+    const baseSettings = {
+      text: "Ava",
+      presetId: "preset-a1f4c8e2b601",
+      boundingSizePresetId: "size-2-2x1-5",
+      boundingSizePresetFingerprint: "size-2-2x1-5|2.2|1.5|2.2|1.5|",
+      backingMm: 3.1,
+      weldExportedDesign: true,
+      lines: [
+        {
+          kind: "fixedSvg",
+          fixedDesignId: "fixed-design-1",
+          fixedDesignName: "Cardiology Heart",
+          fixedDesignVersion: 2,
+          svgSizeMm: 32,
+          offsetXMm: 1.5,
+          offsetYMm: -2.5,
+        },
+      ],
+    };
+
+    const parsed = JSON.parse(buildSettingsSignature(baseSettings));
+    expect(parsed.lines[0]).toMatchObject({
+      kind: "fixedSvg",
+      fixedDesignId: "fixed-design-1",
+      fixedDesignVersion: 2,
+      svgSizeMm: 32,
+      offsetXMm: 1.5,
+      offsetYMm: -2.5,
+    });
+
+    for (const changedLine of [
+      { fixedDesignId: "fixed-design-2" },
+      { fixedDesignVersion: 3 },
+      { svgSizeMm: 36 },
+      { offsetXMm: 2 },
+      { offsetYMm: -1 },
+    ]) {
+      expect(buildSettingsSignature({
+        ...baseSettings,
+        lines: [{ ...baseSettings.lines[0], ...changedLine }],
+      })).not.toBe(buildSettingsSignature(baseSettings));
+    }
+  });
 });

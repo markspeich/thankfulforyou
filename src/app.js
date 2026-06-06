@@ -115,6 +115,7 @@ import {
 import {
   normalizeFixedDesignRecord,
   normalizeFixedDesignRecords,
+  resolveFixedDesignReference,
 } from "./fixed-designs.js";
 
 let FONT_OPTIONS = buildFontOptions();
@@ -329,10 +330,23 @@ const downloadButton = document.querySelector("#downloadButton");
 const copyButton = document.querySelector("#copyButton");
 const copyLayoutControlsButton = document.querySelector("#copyLayoutPlacementButton");
 const pasteLayoutControlsButton = document.querySelector("#pasteLayoutPlacementButton");
+const insertFixedDesignButton = document.querySelector("#insertFixedDesignButton");
 const saveAsNewPresetButton = document.querySelector("#saveAsNewPresetButton");
 const overwritePresetButton = document.querySelector("#overwritePresetButton");
 const assignPresetToListingButton = document.querySelector("#assignPresetToListingButton");
 const reloadPresetButton = document.querySelector("#reloadPresetButton");
+const insertFixedDesignDialog = document.querySelector("#insertFixedDesignDialog");
+const closeInsertFixedDesignDialogButton = document.querySelector("#closeInsertFixedDesignDialogButton");
+const cancelInsertFixedDesignButton = document.querySelector("#cancelInsertFixedDesignButton");
+const insertFixedDesignConfirmButton = document.querySelector("#insertFixedDesignConfirmButton");
+const insertFixedDesignSearchInput = document.querySelector("#insertFixedDesignSearchInput");
+const insertFixedDesignList = document.querySelector("#insertFixedDesignList");
+const insertFixedDesignPreviewImage = document.querySelector("#insertFixedDesignPreviewImage");
+const insertFixedDesignPreviewEmptyState = document.querySelector("#insertFixedDesignPreviewEmptyState");
+const insertFixedDesignSelectedName = document.querySelector("#insertFixedDesignSelectedName");
+const insertFixedDesignSelectedMeta = document.querySelector("#insertFixedDesignSelectedMeta");
+const insertFixedDesignSelectedFile = document.querySelector("#insertFixedDesignSelectedFile");
+const insertFixedDesignStatus = document.querySelector("#insertFixedDesignStatus");
 const captureButton = document.querySelector("#captureButton");
 const cancelDesignButton = document.querySelector("#cancelDesignButton");
 const completeNextButton = document.querySelector("#completeNextButton");
@@ -416,6 +430,11 @@ let selectedFixedDesignId = initialAppRoute.workspace === "fixedDesigns" ? initi
 let fixedDesignSearchTerm = "";
 let fixedDesignsLoading = false;
 let fixedDesignsLoaded = false;
+let fixedDesignsLoadRequestId = 0;
+let insertFixedDesignSearchTerm = "";
+let insertFixedDesignSelectedId = null;
+let insertFixedDesignStatusMessage = "";
+let insertFixedDesignStatusState = "pending";
 let stagedFixedDesignVersionFile = null;
 let navCollapsed = readNavCollapsedPreference();
 let presetEditorDraft = null;
@@ -6424,10 +6443,9 @@ function setEditorActionLabel(button, label) {
 
 function renderLineControls(settings = getCurrentSettings()) {
   const normalized = normalizeSettings(settings);
-  const textLineItems = getTextLineItemsFromSettings(normalized);
   lineControlCards.replaceChildren();
 
-  if (!textLineItems.length) {
+  if (!normalized.lines.length) {
     const empty = document.createElement("p");
     empty.className = "line-control-empty";
     empty.textContent = "Add text lines to generate one font and slider group per line.";
@@ -6435,10 +6453,12 @@ function renderLineControls(settings = getCurrentSettings()) {
     return;
   }
 
-  textLineItems.forEach(({ line, settingsIndex, textLineIndex, text: lineText }) => {
+  const rawLines = getRawTextLines(normalized.text);
+  let textLineIndex = 0;
+
+  normalized.lines.forEach((line, settingsIndex) => {
     const card = document.createElement("section");
     card.className = "line-control-card";
-    card.dataset.lineIndex = String(textLineIndex);
     card.dataset.settingsIndex = String(settingsIndex);
 
     const header = document.createElement("div");
@@ -6446,17 +6466,38 @@ function renderLineControls(settings = getCurrentSettings()) {
 
     const title = document.createElement("h3");
     title.className = "line-control-title";
-    title.textContent = `Line ${textLineIndex + 1}`;
 
     const summary = document.createElement("span");
     summary.className = "line-control-text";
-    summary.textContent = lineText.trim() || "Blank line";
 
     header.append(title, summary);
     card.append(header);
 
     const grid = document.createElement("div");
     grid.className = "line-control-grid";
+
+    if (isFixedSvgLineSettings(line)) {
+      const fixedDesign = resolveFixedDesignReference(line, fixedDesignRecords);
+      card.dataset.lineKind = "fixedSvg";
+      title.textContent = `Fixed Design: ${fixedDesign.displayName}`;
+      summary.textContent = `v${fixedDesign.version || 1}`;
+      header.append(createFixedDesignLineMenu(settingsIndex));
+      grid.append(
+        createFixedDesignRangeField(settingsIndex, "svgSizeMm", "SVG Size", 5, 80, 0.5, line.svgSizeMm),
+        createFixedDesignRangeField(settingsIndex, "offsetXMm", "Horizontal Offset", -30, 30, 0.1, line.offsetXMm),
+        createFixedDesignRangeField(settingsIndex, "offsetYMm", "Vertical Offset From Center", -30, 30, 0.1, line.offsetYMm),
+      );
+      card.append(grid);
+      lineControlCards.append(card);
+      return;
+    }
+
+    const lineText = rawLines[textLineIndex] ?? "";
+    card.dataset.lineKind = "text";
+    card.dataset.lineIndex = String(textLineIndex);
+    title.textContent = `Line ${textLineIndex + 1}`;
+    summary.textContent = lineText.trim() || "Blank line";
+
     const fields = [
       createFontField(textLineIndex, line.fontId),
       createRangeField(textLineIndex, "bridgeMm", "Letter Bridge", 0, 4, 0.1, line.bridgeMm),
@@ -6475,6 +6516,7 @@ function renderLineControls(settings = getCurrentSettings()) {
 
     card.append(grid);
     lineControlCards.append(card);
+    textLineIndex += 1;
   });
 }
 
@@ -6503,6 +6545,25 @@ function readTextLineSettingsFromControls({ presetId, textLineIndex, listingId, 
     horizontalScale: horizontalScaleInput?.value,
     verticalScale: verticalScaleInput?.value,
     lockTextHeight: lockTextHeightInput?.checked,
+  });
+}
+
+function readFixedDesignLineSettingsFromControls({ settingsIndex, fallbackLineSettings }) {
+  const fallback = normalizeLineSettings(fallbackLineSettings);
+  const lineCard = lineControlCards.querySelector(`[data-line-kind="fixedSvg"][data-settings-index="${settingsIndex}"]`);
+  if (!lineCard) {
+    return fallback;
+  }
+
+  const svgSizeInput = lineCard.querySelector('[data-setting="svgSizeMm"]');
+  const offsetXInput = lineCard.querySelector('[data-setting="offsetXMm"]');
+  const offsetYInput = lineCard.querySelector('[data-setting="offsetYMm"]');
+
+  return normalizeLineSettings({
+    ...fallback,
+    svgSizeMm: svgSizeInput instanceof HTMLInputElement ? Number(svgSizeInput.value) : fallback.svgSizeMm,
+    offsetXMm: offsetXInput instanceof HTMLInputElement ? Number(offsetXInput.value) : fallback.offsetXMm,
+    offsetYMm: offsetYInput instanceof HTMLInputElement ? Number(offsetYInput.value) : fallback.offsetYMm,
   });
 }
 
@@ -6557,6 +6618,61 @@ function createRangeField(lineIndex, setting, labelText, min, max, step, value) 
   return label;
 }
 
+function createFixedDesignRangeField(settingsIndex, setting, labelText, min, max, step, value) {
+  const label = document.createElement("label");
+  label.className = "field compact-field";
+
+  const span = document.createElement("span");
+  span.textContent = labelText;
+
+  const row = document.createElement("div");
+  row.className = "range-row";
+
+  const input = document.createElement("input");
+  input.type = "range";
+  input.min = String(min);
+  input.max = String(max);
+  input.step = String(step);
+  input.value = String(value);
+  input.dataset.settingsIndex = String(settingsIndex);
+  input.dataset.setting = setting;
+
+  const output = document.createElement("output");
+  output.textContent = lineValueText(setting, value);
+
+  row.append(input, output);
+  label.append(span, row);
+
+  return label;
+}
+
+function createFixedDesignLineMenu(settingsIndex) {
+  const menu = document.createElement("details");
+  menu.className = "line-control-menu fixed-design-line-menu";
+
+  const summary = document.createElement("summary");
+  summary.className = "batch-tools-toggle fixed-design-line-toggle";
+  summary.setAttribute("aria-label", "Fixed design actions");
+
+  const popover = document.createElement("div");
+  popover.className = "line-control-menu-popover";
+
+  const button = document.createElement("button");
+  button.className = "batch-tool-button";
+  button.type = "button";
+  button.dataset.lineAction = "removeFixedDesign";
+  button.dataset.settingsIndex = String(settingsIndex);
+
+  const label = document.createElement("span");
+  label.className = "batch-tool-label";
+  label.textContent = "Remove Fixed Design";
+  button.append(label);
+
+  popover.append(button);
+  menu.append(summary, popover);
+  return menu;
+}
+
 function createCheckboxField(lineIndex, setting, labelText, checked) {
   const label = document.createElement("label");
   label.className = "check-field line-control-toggle";
@@ -6588,9 +6704,12 @@ function getCurrentSettings() {
   const lines = [];
   let textLineIndex = 0;
 
-  normalizedActiveSettings.lines.forEach((line) => {
+  normalizedActiveSettings.lines.forEach((line, settingsIndex) => {
     if (isFixedSvgLineSettings(line)) {
-      lines.push(normalizeLineSettings(line));
+      lines.push(readFixedDesignLineSettingsFromControls({
+        settingsIndex,
+        fallbackLineSettings: line,
+      }));
       return;
     }
 
@@ -7287,6 +7406,7 @@ function renderOrderList() {
   copyButton.disabled = !activeOrder || !isOrderReadyForExport(activeOrder) || !canCopySvgToClipboard();
   copyLayoutControlsButton.disabled = !canCopyLayoutControls(activeOrder);
   pasteLayoutControlsButton.disabled = !canPasteLayoutControls(activeOrder);
+  insertFixedDesignButton.disabled = !activeOrder;
   saveAsNewPresetButton.disabled = !activeOrder;
   overwritePresetButton.disabled = !activeOrder || !getPresetDefinitionForEditor(presetInput.value);
   assignPresetToListingButton.disabled = !activeOrder?.source?.listingId;
@@ -7395,6 +7515,51 @@ function getVisibleFixedDesignRecords() {
   ));
 }
 
+function getVisibleInsertFixedDesignRecords() {
+  const query = insertFixedDesignSearchTerm.trim().toLowerCase();
+  if (!query) {
+    return fixedDesignRecords;
+  }
+
+  return fixedDesignRecords.filter((record) => (
+    record.displayName.toLowerCase().includes(query)
+    || String(record.fileName || "").toLowerCase().includes(query)
+  ));
+}
+
+function getSelectedInsertFixedDesign() {
+  return fixedDesignRecords.find((record) => record.id === insertFixedDesignSelectedId) || null;
+}
+
+function setInsertFixedDesignStatus(message = "", state = "pending") {
+  insertFixedDesignStatusMessage = message;
+  insertFixedDesignStatusState = state;
+  if (insertFixedDesignStatus) {
+    insertFixedDesignStatus.textContent = message;
+    insertFixedDesignStatus.dataset.state = state;
+    insertFixedDesignStatus.hidden = !message;
+  }
+}
+
+function selectFirstInsertFixedDesignIfNeeded() {
+  const visibleRecords = getVisibleInsertFixedDesignRecords();
+  if (visibleRecords.some((record) => record.id === insertFixedDesignSelectedId)) {
+    return;
+  }
+
+  insertFixedDesignSelectedId = visibleRecords[0]?.id || null;
+}
+
+function selectInsertFixedDesign(fixedDesignId) {
+  if (!fixedDesignRecords.some((record) => record.id === fixedDesignId)) {
+    return false;
+  }
+
+  insertFixedDesignSelectedId = fixedDesignId;
+  renderInsertFixedDesignPicker();
+  return true;
+}
+
 function selectFirstFixedDesignIfNeeded() {
   if (fixedDesignRecords.some((record) => record.id === selectedFixedDesignId)) {
     return;
@@ -7429,10 +7594,16 @@ async function refreshWorkspaceFixedDesigns(accessToken = null) {
     return;
   }
 
+  const loadRequestId = fixedDesignsLoadRequestId + 1;
+  fixedDesignsLoadRequestId = loadRequestId;
   fixedDesignsLoading = true;
   setFixedDesignEditorStatus("Loading fixed designs...", "pending");
   try {
-    fixedDesignRecords = normalizeFixedDesignRecords(await fetchWorkspaceFixedDesigns({ accessToken }));
+    const nextRecords = normalizeFixedDesignRecords(await fetchWorkspaceFixedDesigns({ accessToken }));
+    if (loadRequestId !== fixedDesignsLoadRequestId) {
+      return;
+    }
+    fixedDesignRecords = nextRecords;
     fixedDesignsLoaded = true;
     selectFirstFixedDesignIfNeeded();
     renderFixedDesignWorkspace();
@@ -7441,12 +7612,217 @@ async function refreshWorkspaceFixedDesigns(accessToken = null) {
       "pending",
     );
   } catch (error) {
+    if (loadRequestId !== fixedDesignsLoadRequestId) {
+      return;
+    }
     fixedDesignsLoaded = false;
     renderFixedDesignWorkspace();
     handleFixedDesignApiError(error, "Unable to load fixed designs.");
   } finally {
-    fixedDesignsLoading = false;
+    if (loadRequestId === fixedDesignsLoadRequestId) {
+      fixedDesignsLoading = false;
+    }
   }
+}
+
+function renderInsertFixedDesignPicker() {
+  if (!insertFixedDesignList) {
+    return;
+  }
+
+  if (insertFixedDesignSearchInput && insertFixedDesignSearchInput.value !== insertFixedDesignSearchTerm) {
+    insertFixedDesignSearchInput.value = insertFixedDesignSearchTerm;
+  }
+
+  selectFirstInsertFixedDesignIfNeeded();
+  const selectedFixedDesign = getSelectedInsertFixedDesign();
+  const visibleRecords = getVisibleInsertFixedDesignRecords();
+
+  insertFixedDesignList.replaceChildren();
+  if (!fixedDesignsLoaded && fixedDesignsLoading) {
+    const empty = document.createElement("p");
+    empty.className = "batch-tools-note fixed-design-empty-state";
+    empty.textContent = "Loading fixed designs...";
+    insertFixedDesignList.append(empty);
+  } else if (!visibleRecords.length) {
+    const empty = document.createElement("p");
+    empty.className = "batch-tools-note fixed-design-empty-state";
+    empty.textContent = insertFixedDesignSearchTerm.trim()
+      ? "No fixed designs match that search."
+      : "No fixed designs are available yet.";
+    insertFixedDesignList.append(empty);
+  } else {
+    visibleRecords.forEach((fixedDesign) => {
+      const row = document.createElement("button");
+      row.className = "fixed-design-row size-preset-row insert-fixed-design-row";
+      row.classList.toggle("is-selected", fixedDesign.id === selectedFixedDesign?.id);
+      row.type = "button";
+      row.dataset.fixedDesignId = fixedDesign.id;
+      row.innerHTML = `
+        <span class="size-preset-name fixed-design-row-name"></span>
+        <span class="size-preset-meta fixed-design-row-meta"></span>
+      `;
+      row.querySelector(".fixed-design-row-name").textContent = fixedDesign.displayName;
+      row.querySelector(".fixed-design-row-meta").textContent = `v${fixedDesign.version || 1} - ${fixedDesign.fileName || "SVG"}`;
+      row.addEventListener("click", () => {
+        selectInsertFixedDesign(fixedDesign.id);
+      });
+      insertFixedDesignList.append(row);
+    });
+  }
+
+  insertFixedDesignSelectedName.textContent = selectedFixedDesign?.displayName || "None";
+  insertFixedDesignSelectedMeta.textContent = selectedFixedDesign ? `v${selectedFixedDesign.version || 1}` : "None";
+  insertFixedDesignSelectedFile.textContent = selectedFixedDesign?.fileName || "None";
+
+  if (selectedFixedDesign?.publicUrl) {
+    insertFixedDesignPreviewImage.src = selectedFixedDesign.publicUrl;
+    insertFixedDesignPreviewImage.alt = `${selectedFixedDesign.displayName} SVG preview`;
+    insertFixedDesignPreviewImage.hidden = false;
+    insertFixedDesignPreviewEmptyState.hidden = true;
+  } else {
+    insertFixedDesignPreviewImage.removeAttribute("src");
+    insertFixedDesignPreviewImage.alt = "";
+    insertFixedDesignPreviewImage.hidden = true;
+    insertFixedDesignPreviewEmptyState.hidden = false;
+    insertFixedDesignPreviewEmptyState.textContent = selectedFixedDesign
+      ? "This fixed design does not have a preview URL."
+      : "Choose a fixed design to preview.";
+  }
+
+  if (insertFixedDesignConfirmButton) {
+    insertFixedDesignConfirmButton.disabled = !selectedFixedDesign || !getActiveOrder();
+  }
+
+  setInsertFixedDesignStatus(insertFixedDesignStatusMessage, insertFixedDesignStatusState);
+}
+
+async function loadFixedDesignsForInsertPicker() {
+  if (fixedDesignsLoaded) {
+    setInsertFixedDesignStatus(
+      fixedDesignRecords.length ? "Choose a fixed design to insert." : "No fixed designs are available yet.",
+      "pending",
+    );
+    renderInsertFixedDesignPicker();
+    return;
+  }
+
+  const accessToken = productionBatchAccessToken || readProductionBatchAccessTokenOverride() || await getAccessToken();
+  if (!accessToken) {
+    setInsertFixedDesignStatus("Sign in to load fixed designs.", "error");
+    renderInsertFixedDesignPicker();
+    return;
+  }
+
+  productionBatchAccessToken = accessToken;
+  const loadRequestId = fixedDesignsLoadRequestId + 1;
+  fixedDesignsLoadRequestId = loadRequestId;
+  fixedDesignsLoading = true;
+  setInsertFixedDesignStatus("Loading fixed designs...", "pending");
+  renderInsertFixedDesignPicker();
+  try {
+    const nextRecords = normalizeFixedDesignRecords(await fetchWorkspaceFixedDesigns({ accessToken }));
+    if (loadRequestId !== fixedDesignsLoadRequestId) {
+      return;
+    }
+    fixedDesignRecords = nextRecords;
+    fixedDesignsLoaded = true;
+    selectFirstFixedDesignIfNeeded();
+    selectFirstInsertFixedDesignIfNeeded();
+    renderFixedDesignWorkspace();
+    setInsertFixedDesignStatus(
+      fixedDesignRecords.length ? "Choose a fixed design to insert." : "No fixed designs are available yet.",
+      "pending",
+    );
+  } catch (error) {
+    if (loadRequestId !== fixedDesignsLoadRequestId) {
+      return;
+    }
+    fixedDesignsLoaded = false;
+    const message = error instanceof Error ? error.message : "Unable to load fixed designs.";
+    if (isProductionBatchAuthenticationError(error)) {
+      handleProductionBatchAuthenticationRequired("Production batch session expired. Sign in again to insert fixed designs.");
+    }
+    setInsertFixedDesignStatus(message, "error");
+  } finally {
+    if (loadRequestId === fixedDesignsLoadRequestId) {
+      fixedDesignsLoading = false;
+      renderInsertFixedDesignPicker();
+    }
+  }
+}
+
+function closeInsertFixedDesignDialog() {
+  if (insertFixedDesignDialog?.open) {
+    insertFixedDesignDialog.close();
+  }
+}
+
+function openInsertFixedDesignDialog() {
+  insertFixedDesignSearchTerm = "";
+  insertFixedDesignSelectedId = fixedDesignRecords.find((record) => record.id === insertFixedDesignSelectedId)?.id
+    || fixedDesignRecords[0]?.id
+    || null;
+  setInsertFixedDesignStatus(
+    fixedDesignsLoaded
+      ? (fixedDesignRecords.length ? "Choose a fixed design to insert." : "No fixed designs are available yet.")
+      : "Loading fixed designs...",
+    "pending",
+  );
+  presetToolsMenu?.removeAttribute("open");
+  renderInsertFixedDesignPicker();
+  if (typeof insertFixedDesignDialog?.showModal === "function") {
+    insertFixedDesignDialog.showModal();
+  }
+  insertFixedDesignSearchInput?.focus();
+  void loadFixedDesignsForInsertPicker();
+}
+
+function insertSelectedFixedDesignIntoActiveOrder() {
+  const selectedFixedDesign = getSelectedInsertFixedDesign();
+  const activeOrder = getActiveOrder();
+  if (!selectedFixedDesign || !activeOrder) {
+    return;
+  }
+
+  const currentSettings = normalizeSettings(getCurrentSettings());
+  const nextSettings = normalizeSettings({
+    ...currentSettings,
+    lines: [
+      ...currentSettings.lines,
+      createFixedDesignLineSettings(selectedFixedDesign),
+    ],
+  });
+
+  activeOrder.text = currentSettings.text;
+  activeOrder.settings = nextSettings;
+  applySettings(nextSettings);
+  updateActiveOrderFromControls();
+  render();
+  closeInsertFixedDesignDialog();
+  updateWorkflowAlert(`Inserted fixed design ${selectedFixedDesign.displayName}.`, "success");
+}
+
+function removeFixedDesignLine(settingsIndex) {
+  const activeOrder = getActiveOrder();
+  const currentSettings = normalizeSettings(getCurrentSettings());
+  const removedLine = currentSettings.lines[settingsIndex];
+  if (!activeOrder || !isFixedSvgLineSettings(removedLine)) {
+    return;
+  }
+
+  const removedFixedDesign = resolveFixedDesignReference(removedLine, fixedDesignRecords);
+  const nextSettings = normalizeSettings({
+    ...currentSettings,
+    lines: currentSettings.lines.filter((_, index) => index !== settingsIndex),
+  });
+
+  activeOrder.text = currentSettings.text;
+  activeOrder.settings = nextSettings;
+  applySettings(nextSettings);
+  updateActiveOrderFromControls();
+  render();
+  updateWorkflowAlert(`Removed fixed design ${removedFixedDesign.displayName}.`, "success");
 }
 
 function renderFixedDesignWorkspace() {
@@ -9606,6 +9982,21 @@ reloadPresetButton?.addEventListener("click", () => {
 });
 lineControls.addEventListener("input", handleLineControlsChange);
 lineControls.addEventListener("change", handleLineControlsChange);
+lineControls.addEventListener("click", (event) => {
+  const actionButton = event.target instanceof Element
+    ? event.target.closest("[data-line-action]")
+    : null;
+  if (!(actionButton instanceof HTMLButtonElement)) {
+    return;
+  }
+
+  if (actionButton.dataset.lineAction === "removeFixedDesign") {
+    const settingsIndex = Number(actionButton.dataset.settingsIndex);
+    if (Number.isInteger(settingsIndex)) {
+      removeFixedDesignLine(settingsIndex);
+    }
+  }
+});
 globalHorizontalScaleInput?.addEventListener("input", () => {
   applyGlobalHorizontalScale(globalHorizontalScaleInput.value, { deferPreview: true });
 });
@@ -9853,6 +10244,23 @@ overwritePresetButton?.addEventListener("click", () => {
 assignPresetToListingButton?.addEventListener("click", () => {
   void assignSelectedPresetToActiveListing();
 });
+insertFixedDesignButton?.addEventListener("click", openInsertFixedDesignDialog);
+insertFixedDesignSearchInput?.addEventListener("input", () => {
+  insertFixedDesignSearchTerm = insertFixedDesignSearchInput.value;
+  renderInsertFixedDesignPicker();
+});
+insertFixedDesignConfirmButton?.addEventListener("click", insertSelectedFixedDesignIntoActiveOrder);
+cancelInsertFixedDesignButton?.addEventListener("click", closeInsertFixedDesignDialog);
+closeInsertFixedDesignDialogButton?.addEventListener("click", closeInsertFixedDesignDialog);
+insertFixedDesignDialog?.addEventListener("cancel", (event) => {
+  event.preventDefault();
+  closeInsertFixedDesignDialog();
+});
+insertFixedDesignDialog?.addEventListener("click", (event) => {
+  if (event.target === insertFixedDesignDialog) {
+    closeInsertFixedDesignDialog();
+  }
+});
 [addOrderButton, importClipboardButton, clearBatchButton, showColorCountsButton, exportCompletedButton, copyCompletedButton]
   .filter(Boolean)
   .forEach((button) => {
@@ -9888,7 +10296,7 @@ assignPresetToListingButton?.addEventListener("click", () => {
       editorToolsMenu?.removeAttribute("open");
     });
   });
-[copyLayoutControlsButton, pasteLayoutControlsButton, saveAsNewPresetButton, overwritePresetButton, assignPresetToListingButton, reloadPresetButton]
+[copyLayoutControlsButton, pasteLayoutControlsButton, insertFixedDesignButton, saveAsNewPresetButton, overwritePresetButton, assignPresetToListingButton, reloadPresetButton]
   .filter(Boolean)
   .forEach((button) => {
     button.addEventListener("click", () => {

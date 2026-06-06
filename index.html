@@ -424,6 +424,17 @@
                               </span>
                               <span class="batch-tool-label">Paste Layout</span>
                             </button>
+                            <button id="insertFixedDesignButton" class="batch-tool-button" type="button" disabled>
+                              <span class="batch-tool-icon" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" focusable="false">
+                                  <path d="M7 4h10a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Z" />
+                                  <path d="M9 15 12 11l2 2 2-3 2 5" />
+                                  <path d="M9 8h.01" />
+                                  <path d="M12 19v3M9.5 21.5h5" />
+                                </svg>
+                              </span>
+                              <span class="batch-tool-label">Insert Fixed Design</span>
+                            </button>
                           </div>
 
                           <div class="batch-tools-group" aria-label="Preset actions">
@@ -1102,6 +1113,65 @@
             </button>
           </div>
         </form>
+      </div>
+    </dialog>
+
+    <dialog id="insertFixedDesignDialog" class="batch-summary-dialog insert-fixed-design-dialog" aria-labelledby="insertFixedDesignTitle">
+      <div class="confirmation-dialog-card insert-fixed-design-card">
+        <header class="confirmation-dialog-header">
+          <div>
+            <p class="confirmation-dialog-eyebrow">Fixed SVG</p>
+            <h2 id="insertFixedDesignTitle">Insert Fixed Design</h2>
+          </div>
+          <button
+            id="closeInsertFixedDesignDialogButton"
+            class="confirmation-dialog-close"
+            type="button"
+            aria-label="Close fixed design picker"
+          >
+            <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+              <path d="M6 6l12 12M18 6 6 18" />
+            </svg>
+          </button>
+        </header>
+        <div class="insert-fixed-design-layout">
+          <section class="insert-fixed-design-list-panel" aria-label="Available fixed designs">
+            <label class="field compact-field" for="insertFixedDesignSearchInput">
+              <span>Search Fixed Designs</span>
+              <input id="insertFixedDesignSearchInput" type="search" autocomplete="off" placeholder="Search by name or file" />
+            </label>
+            <div id="insertFixedDesignList" class="insert-fixed-design-list"></div>
+          </section>
+          <section class="insert-fixed-design-detail" aria-label="Selected fixed design details">
+            <div class="insert-fixed-design-preview">
+              <img id="insertFixedDesignPreviewImage" class="fixed-design-preview-image" alt="" hidden>
+              <p id="insertFixedDesignPreviewEmptyState" class="fixed-design-preview-empty">Choose a fixed design to preview.</p>
+            </div>
+            <dl class="fixed-design-details insert-fixed-design-details">
+              <div>
+                <dt>Name</dt>
+                <dd id="insertFixedDesignSelectedName">None</dd>
+              </div>
+              <div>
+                <dt>Version</dt>
+                <dd id="insertFixedDesignSelectedMeta">None</dd>
+              </div>
+              <div>
+                <dt>File</dt>
+                <dd id="insertFixedDesignSelectedFile">None</dd>
+              </div>
+            </dl>
+          </section>
+        </div>
+        <p id="insertFixedDesignStatus" class="confirmation-dialog-description" aria-live="polite"></p>
+        <div class="confirmation-dialog-actions">
+          <button id="cancelInsertFixedDesignButton" class="confirmation-dialog-button confirmation-dialog-cancel" type="button">
+            Cancel
+          </button>
+          <button id="insertFixedDesignConfirmButton" class="confirmation-dialog-button confirmation-dialog-confirm" type="button" disabled>
+            Insert Fixed Design
+          </button>
+        </div>
       </div>
     </dialog>
 
