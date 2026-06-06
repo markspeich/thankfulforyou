@@ -131,6 +131,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Allow controlled overlap or contact between multiple text lines.
 - Treat 0.5 mm as the current default target for the connecting bridge between neighboring lines in Candlepin layouts.
 - For multi-line Candlepin layouts, slide each lower line upward until the actual visible line shapes overlap by the configured line-bridge target.
+- For the `All Candlepin` preset with the three-line text `What` / `do you` / `mean?`, outline-based completed-design analysis should produce no more than two face-layer pieces.
 - Center multi-line layouts by each line's actual visible shape bounds, not by rough text boxes or font advance widths.
 - The rendered text geometry must fit within the active preset's selected maximum bounding rectangle. The current default maximum bounding rectangle is 2.2 inches wide by 1.5 inches tall.
 - Scale the text proportionally to make the best use of the active preset's selected maximum bounding rectangle, scaling up or down as needed so the text fills as much of the allowed space as possible while still staying within that rectangle.

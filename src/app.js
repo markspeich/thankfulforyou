@@ -346,6 +346,7 @@ const canvas = document.createElement("canvas");
 const ctx = canvas.getContext("2d");
 const MASK_SCALE = 3;
 const MASK_PADDING_PX = 12;
+const OUTLINE_BRIDGE_SAFETY_MM = 1 / (PX_PER_MM * MASK_SCALE);
 const measuredLineCache = new Map();
 let lastLayout = null;
 let zoom = DEFAULT_ZOOM;
@@ -7905,10 +7906,10 @@ function findPairOffsetMm(leftMask, rightMask, bridgeMm) {
   const offsetPx = findPairOffsetPx(leftMask, rightMask, targetPx);
 
   if (Number.isFinite(offsetPx)) {
-    return offsetPx / MASK_SCALE / PX_PER_MM;
+    return (offsetPx / MASK_SCALE / PX_PER_MM) - OUTLINE_BRIDGE_SAFETY_MM;
   }
 
-  return (leftMask.rightMm + rightMask.leftMm) - bridgeMm;
+  return (leftMask.rightMm + rightMask.leftMm) - bridgeMm - OUTLINE_BRIDGE_SAFETY_MM;
 }
 
 function createEmptyLineMask(fontSizeMm, verticalScale) {
@@ -8237,12 +8238,19 @@ function buildScaledLineSettings(lines, fitScale) {
     const lockTextHeight = Boolean(line?.settings?.lockTextHeight);
     return normalizeLineSettings({
       ...line.settings,
-      bridgeMm: Number(line.settings.bridgeMm) * fitScale,
-      lineBridgeMm: Number(line.settings.lineBridgeMm) * fitScale,
+      bridgeMm: Number(line.settings.bridgeMm),
+      lineBridgeMm: Number(line.settings.lineBridgeMm),
       offsetXMm: Number(line.settings.offsetXMm) * fitScale,
       fontSizeMm: Number(line.settings.fontSizeMm) * (lockTextHeight ? 1 : fitScale),
     });
   });
+}
+
+function faceBoundsFitGuide(faceBounds, guide) {
+  const maxWidthMm = Number(guide?.maxWidthMm);
+  const maxHeightMm = Number(guide?.maxHeightMm);
+
+  return faceBounds.width <= maxWidthMm + 0.01 && faceBounds.height <= maxHeightMm + 0.01;
 }
 
 function hasLockedTextHeight(lines) {
@@ -8863,7 +8871,7 @@ function buildOrderLayout(settings) {
   let fitted = measureTextLayoutForFit(normalized.text, scaledLineSettings);
   let layout = assembleOrderLayout(normalized, lines, fitScale, fitted, guide);
 
-  for (let index = 0; index < 3; index += 1) {
+  for (let index = 0; index < 8; index += 1) {
     if (layout.fit.overflowsGuide && hasLockedTextHeight(lines)) {
       break;
     }
@@ -8875,10 +8883,22 @@ function buildOrderLayout(settings) {
       break;
     }
 
-    fitScale *= residualFitScale;
-    scaledLineSettings = buildScaledLineSettings(lines, fitScale);
-    fitted = measureTextLayoutForFit(normalized.text, scaledLineSettings);
-    layout = assembleOrderLayout(normalized, lines, fitScale, fitted, guide);
+    const nextFitScale = fitScale * residualFitScale;
+    const nextScaledLineSettings = buildScaledLineSettings(lines, nextFitScale);
+    const nextFitted = measureTextLayoutForFit(normalized.text, nextScaledLineSettings);
+    const nextLayout = assembleOrderLayout(normalized, lines, nextFitScale, nextFitted, guide);
+
+    if (residualFitScale > 1) {
+      const nextFaceBounds = renderFaceCanvas(nextLayout.letters, nextLayout.widthMm, nextLayout.heightMm).boundsMm;
+      if (!faceBoundsFitGuide(nextFaceBounds, guide)) {
+        break;
+      }
+    }
+
+    fitScale = nextFitScale;
+    scaledLineSettings = nextScaledLineSettings;
+    fitted = nextFitted;
+    layout = nextLayout;
   }
 
   return layout;
