@@ -536,14 +536,20 @@
                   >
                     <span class="batch-tool-label">Paste</span>
                   </button>
-                  <details id="ordersToolsMenu" class="orders-tools-menu">
-                    <summary class="orders-tools-toggle" aria-label="Orders tools"></summary>
-                    <div class="batch-tools-popover">
-                      <div class="batch-tools-actions" role="menu" aria-label="Orders actions">
-                        <div class="batch-tools-group" aria-label="Orders batch actions">
-                          <p class="batch-tools-heading">Orders</p>
+                  <details id="ordersToolsMenu" class="workspace-tools-menu orders-tools-menu">
+                    <summary class="workspace-tools-toggle orders-tools-toggle" aria-label="Orders tools"></summary>
+                    <div class="workspace-tools-popover batch-tools-popover">
+                      <div class="workspace-tools-actions batch-tools-actions" role="menu" aria-label="Orders actions">
+                        <div class="workspace-tools-group batch-tools-group" aria-label="Orders batch actions">
+                          <p class="workspace-tools-heading batch-tools-heading">Orders</p>
                           <button id="addCheckedOrdersToBatchButton" class="batch-tool-button" type="button" disabled>
                             <span class="batch-tool-label">Add Checked to Production Batch</span>
+                          </button>
+                          <button id="skipCheckedOrdersButton" class="batch-tool-button" type="button" disabled>
+                            <span class="batch-tool-label">Skip Orders</span>
+                          </button>
+                          <button id="reopenCheckedOrdersButton" class="batch-tool-button" type="button" disabled>
+                            <span class="batch-tool-label">Reopen Orders</span>
                           </button>
                         </div>
                       </div>
@@ -561,6 +567,7 @@
                     <span>Status</span>
                     <select id="databaseOrdersStatusFilter">
                       <option value="open" selected>Open</option>
+                      <option value="skipped">Skipped</option>
                       <option value="complete">Complete</option>
                       <option value="all">All</option>
                     </select>
@@ -586,6 +593,14 @@
                   <p class="eyebrow">Order Workspace</p>
                   <h2>Selected order items</h2>
                   <p class="editor-meta">Select an order to review its items before adding designs to the production batch.</p>
+                </div>
+                <div class="editor-actions database-order-actions">
+                  <button id="skipSelectedOrderButton" class="batch-primary-action" type="button" disabled>
+                    <span class="batch-tool-label">Skip Order</span>
+                  </button>
+                  <button id="reopenSelectedOrderButton" class="batch-primary-action" type="button" disabled hidden>
+                    <span class="batch-tool-label">Reopen Order</span>
+                  </button>
                 </div>
               </header>
               <div class="editor-body">

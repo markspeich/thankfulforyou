@@ -52,6 +52,9 @@ function createTableMock(table) {
       supabaseMock.db[table].push(...clone(Array.isArray(payload) ? payload : [payload]));
       return Promise.resolve({ data: null, error: null });
     },
+    update(payload) {
+      return createUpdateChain(table, payload);
+    },
     delete() {
       return createDeleteChain(table);
     },
@@ -112,14 +115,76 @@ function createSelectChain(table) {
 function createDeleteChain(table) {
   const call = { table, operation: "delete", filters: [] };
   supabaseMock.calls.push(call);
-
-  return {
+  const chain = {
+    eq(column, value) {
+      call.filters.push({ type: "eq", column, value });
+      return chain;
+    },
     in(column, values) {
       call.filters.push({ type: "in", column, values: clone(values) });
-      supabaseMock.db[table] = supabaseMock.db[table].filter((row) => !values.includes(row[column]));
+      applyDeleteFilters(table, call.filters);
       return Promise.resolve({ data: null, error: null });
     },
+    then(resolve, reject) {
+      applyDeleteFilters(table, call.filters);
+      return Promise.resolve({ data: null, error: null }).then(resolve, reject);
+    },
   };
+
+  return chain;
+}
+
+function createUpdateChain(table, payload) {
+  const filters = [];
+  const call = { table, operation: "update", payload: clone(payload), filters };
+  supabaseMock.calls.push(call);
+  const chain = {
+    eq(column, value) {
+      filters.push({ type: "eq", column, value });
+      return chain;
+    },
+    in(column, values) {
+      filters.push({ type: "in", column, values: clone(values) });
+      return chain;
+    },
+    select() {
+      return {
+        maybeSingle() {
+          const matchingRows = supabaseMock.db[table].filter((row) => matchesFilters(row, filters));
+          if (!matchingRows.length) {
+            return Promise.resolve({ data: null, error: null });
+          }
+          const row = matchingRows[0];
+          Object.assign(row, clone(payload));
+          return Promise.resolve({ data: clone(row), error: null });
+        },
+        then(resolve, reject) {
+          const matchingRows = supabaseMock.db[table].filter((row) => matchesFilters(row, filters));
+          matchingRows.forEach((row) => {
+            Object.assign(row, clone(payload));
+          });
+          return Promise.resolve({ data: clone(matchingRows), error: null }).then(resolve, reject);
+        },
+      };
+    },
+  };
+  return chain;
+}
+
+function matchesFilters(row, filters) {
+  return filters.every((filter) => {
+    if (filter.type === "eq") {
+      return row[filter.column] === filter.value;
+    }
+    if (filter.type === "in") {
+      return filter.values.includes(row[filter.column]);
+    }
+    return true;
+  });
+}
+
+function applyDeleteFilters(table, filters) {
+  supabaseMock.db[table] = supabaseMock.db[table].filter((row) => !matchesFilters(row, filters));
 }
 
 function resolveRows(table, filters, state) {
@@ -320,6 +385,15 @@ describe("orders store", () => {
           source_json: {},
           quantity: 1,
         },
+        {
+          id: "item-skipped",
+          workspace_id: "workspace-1",
+          status: "skipped",
+          order_number: "2003",
+          buyer_name: "Katherine",
+          source_json: {},
+          quantity: 1,
+        },
       ],
     });
     const { listWorkspaceOrders } = await import("../../api/_lib/orders-store.js");
@@ -339,13 +413,21 @@ describe("orders store", () => {
       orders: [{ id: "order:2002" }],
     });
 
+    await expect(listWorkspaceOrders({
+      workspaceId: "workspace-1",
+      activeBatchId: "batch-1",
+      statusFilter: "skipped",
+    })).resolves.toMatchObject({
+      orders: [{ id: "order:2003", status: "skipped" }],
+    });
+
     const allResult = await listWorkspaceOrders({
       workspaceId: "workspace-1",
       activeBatchId: "batch-1",
       statusFilter: "all",
     });
 
-    expect(allResult.orders.map((order) => order.id)).toEqual(["order:2001", "order:2002"]);
+    expect(allResult.orders.map((order) => order.id)).toEqual(["order:2001", "order:2002", "order:2003"]);
   });
 
   it("imports order items into a production batch and inserts only missing active memberships", async () => {
@@ -873,5 +955,149 @@ describe("orders store", () => {
       status: "active",
       added_by: "user-1",
     })]);
+  });
+
+  it("marks an order item skipped and removes it from batch memberships", async () => {
+    resetDb({
+      order_items: [
+        {
+          id: "item-skip",
+          workspace_id: "workspace-1",
+          status: "open",
+          order_number: "6001",
+          source_json: {},
+          quantity: 1,
+        },
+      ],
+      batch_items: [
+        {
+          workspace_id: "workspace-1",
+          batch_id: "batch-1",
+          order_item_id: "item-skip",
+          batch_position: 0,
+          status: "active",
+        },
+      ],
+    });
+    const { updateOrderItemStatus } = await import("../../api/_lib/orders-store.js");
+
+    const result = await updateOrderItemStatus({
+      workspaceId: "workspace-1",
+      userId: "user-1",
+      orderItemId: "item-skip",
+      status: "skipped",
+    });
+
+    expect(result).toEqual({ orderItemId: "item-skip", status: "skipped" });
+    expect(supabaseMock.db.order_items[0]).toMatchObject({
+      id: "item-skip",
+      status: "skipped",
+      updated_by: "user-1",
+    });
+    expect(supabaseMock.db.batch_items).toEqual([]);
+  });
+
+  it("marks every item in an order skipped and removes their batch memberships", async () => {
+    resetDb({
+      order_items: [
+        {
+          id: "item-skip-1",
+          workspace_id: "workspace-1",
+          status: "open",
+          order_number: "7001",
+          source_json: {},
+          quantity: 1,
+        },
+        {
+          id: "item-skip-2",
+          workspace_id: "workspace-1",
+          status: "open",
+          order_number: "7001",
+          source_json: {},
+          quantity: 1,
+        },
+        {
+          id: "item-other-order",
+          workspace_id: "workspace-1",
+          status: "open",
+          order_number: "7002",
+          source_json: {},
+          quantity: 1,
+        },
+      ],
+      batch_items: [
+        {
+          workspace_id: "workspace-1",
+          batch_id: "batch-1",
+          order_item_id: "item-skip-1",
+          batch_position: 0,
+          status: "active",
+        },
+        {
+          workspace_id: "workspace-1",
+          batch_id: "batch-1",
+          order_item_id: "item-skip-2",
+          batch_position: 1,
+          status: "active",
+        },
+        {
+          workspace_id: "workspace-1",
+          batch_id: "batch-1",
+          order_item_id: "item-other-order",
+          batch_position: 2,
+          status: "active",
+        },
+      ],
+    });
+    const { updateOrderGroupStatus } = await import("../../api/_lib/orders-store.js");
+
+    const result = await updateOrderGroupStatus({
+      workspaceId: "workspace-1",
+      userId: "user-1",
+      orderId: "order:7001",
+      status: "skipped",
+    });
+
+    expect(result).toEqual({ orderItemIds: ["item-skip-1", "item-skip-2"], status: "skipped" });
+    expect(supabaseMock.db.order_items.filter((item) => item.order_number === "7001")).toEqual([
+      expect.objectContaining({ id: "item-skip-1", status: "skipped", updated_by: "user-1" }),
+      expect.objectContaining({ id: "item-skip-2", status: "skipped", updated_by: "user-1" }),
+    ]);
+    expect(supabaseMock.db.batch_items).toEqual([
+      expect.objectContaining({ order_item_id: "item-other-order" }),
+    ]);
+  });
+
+  it("marks items in multiple orders skipped and removes their batch memberships", async () => {
+    resetDb({
+      order_items: [
+        { id: "item-a", workspace_id: "workspace-1", status: "open", order_number: "8001", source_json: {}, quantity: 1 },
+        { id: "item-b", workspace_id: "workspace-1", status: "open", order_number: "8002", source_json: {}, quantity: 1 },
+        { id: "item-c", workspace_id: "workspace-1", status: "open", order_number: "8003", source_json: {}, quantity: 1 },
+      ],
+      batch_items: [
+        { workspace_id: "workspace-1", batch_id: "batch-1", order_item_id: "item-a", batch_position: 0, status: "active" },
+        { workspace_id: "workspace-1", batch_id: "batch-1", order_item_id: "item-b", batch_position: 1, status: "active" },
+        { workspace_id: "workspace-1", batch_id: "batch-1", order_item_id: "item-c", batch_position: 2, status: "active" },
+      ],
+    });
+    const { updateOrderGroupsStatus } = await import("../../api/_lib/orders-store.js");
+
+    const result = await updateOrderGroupsStatus({
+      workspaceId: "workspace-1",
+      userId: "user-1",
+      orderIds: ["order:8001", "order:8002"],
+      status: "skipped",
+    });
+
+    expect(result).toEqual({ orderItemIds: ["item-a", "item-b"], status: "skipped" });
+    expect(supabaseMock.db.order_items).toEqual([
+      expect.objectContaining({ id: "item-a", status: "skipped" }),
+      expect.objectContaining({ id: "item-b", status: "skipped" }),
+      expect.objectContaining({ id: "item-c", status: "open" }),
+    ]);
+    expect(supabaseMock.db.batch_items).toEqual([
+      expect.objectContaining({ order_item_id: "item-c" }),
+    ]);
   });
 });

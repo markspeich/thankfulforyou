@@ -165,7 +165,7 @@ function runProductionSql(sql) {
 async function run() {
   const args = parseArgs(process.argv.slice(2));
   const isProduction = args.target === "production";
-  const env = isProduction ? readProductionSupabaseEnv() : readLocalSupabaseEnv();
+  const env = isProduction ? readProductionSupabaseEnv() : await readLocalSupabaseEnv();
 
   if (isProduction && args.command === "orders:purge" && !args.dryRun) {
     assertProductionTarget(env, args.confirm);

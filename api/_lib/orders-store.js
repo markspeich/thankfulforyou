@@ -214,9 +214,13 @@ function appendOrderItemToGroups(groups, orderItem) {
 
   group.items.push(orderItem);
   group.isInActiveBatch = group.isInActiveBatch || orderItem.isInActiveBatch;
-  group.status = group.items.length > 0 && group.items.every((item) => item.status === "complete")
-    ? "complete"
-    : "open";
+  if (group.items.length > 0 && group.items.every((item) => item.status === "complete")) {
+    group.status = "complete";
+  } else if (group.items.length > 0 && group.items.every((item) => item.status === "skipped")) {
+    group.status = "skipped";
+  } else {
+    group.status = "open";
+  }
 }
 
 async function queryBatchItems({ supabase, workspaceId, batchId }) {
@@ -285,9 +289,12 @@ export async function listWorkspaceOrders({ workspaceId, activeBatchId = null, s
     .eq("workspace_id", workspaceId);
   if (statusFilter === "complete") {
     orderItemsQuery = orderItemsQuery.eq("status", "complete");
+  } else if (statusFilter === "skipped") {
+    orderItemsQuery = orderItemsQuery.eq("status", "skipped");
   } else if (statusFilter !== "all") {
     orderItemsQuery = orderItemsQuery
       .neq("status", "complete")
+      .neq("status", "skipped")
       .neq("status", "archived");
   }
   orderItemsQuery = orderItemsQuery
@@ -433,6 +440,194 @@ export async function addOrderGroupsToProductionBatch({
     .flatMap((order) => order.items.map((item) => item.id));
 
   return addOrderItemsToProductionBatch({ workspaceId, userId, batchId, orderItemIds });
+}
+
+function getOrderItemsForStatusUpdate(order, status) {
+  return (Array.isArray(order?.items) ? order.items : [])
+    .filter((item) => {
+      if (!item?.id) {
+        return false;
+      }
+      if (status === "skipped") {
+        return item.status !== "skipped" && item.status !== "complete";
+      }
+      return item.status === "skipped";
+    })
+    .map((item) => item.id);
+}
+
+export async function updateOrderItemStatus({
+  workspaceId,
+  userId,
+  orderItemId,
+  status,
+}) {
+  const normalizedOrderItemId = normalizeString(orderItemId);
+  const normalizedStatus = normalizeString(status);
+  if (!normalizedOrderItemId || !["open", "skipped"].includes(normalizedStatus)) {
+    return null;
+  }
+
+  const supabase = createSupabaseAdminClient();
+  const savedAt = new Date().toISOString();
+  const { data, error } = await supabase
+    .from("order_items")
+    .update({
+      status: normalizedStatus,
+      updated_at: savedAt,
+      updated_by: userId || null,
+    })
+    .eq("workspace_id", workspaceId)
+    .eq("id", normalizedOrderItemId)
+    .select("id, status")
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  if (!data) {
+    return null;
+  }
+
+  if (normalizedStatus === "skipped") {
+    const { error: batchItemsError } = await supabase
+      .from("batch_items")
+      .delete()
+      .eq("workspace_id", workspaceId)
+      .eq("order_item_id", normalizedOrderItemId);
+
+    if (batchItemsError) {
+      throw batchItemsError;
+    }
+  }
+
+  return {
+    orderItemId: data.id,
+    status: data.status,
+  };
+}
+
+export async function updateOrderGroupStatus({
+  workspaceId,
+  userId,
+  orderId,
+  status,
+}) {
+  const normalizedOrderId = normalizeString(orderId);
+  const normalizedStatus = normalizeString(status);
+  if (!normalizedOrderId || !["open", "skipped"].includes(normalizedStatus)) {
+    return { orderItemIds: [], status: normalizedStatus || null };
+  }
+
+  const { orders } = await listWorkspaceOrders({
+    workspaceId,
+    activeBatchId: null,
+    statusFilter: "all",
+  });
+  const order = orders.find((candidate) => (
+    candidate.id === normalizedOrderId
+    || candidate.orderNumber === normalizedOrderId
+  ));
+  const orderItemIds = getOrderItemsForStatusUpdate(order, normalizedStatus);
+
+  if (!orderItemIds.length) {
+    return { orderItemIds: [], status: normalizedStatus };
+  }
+
+  const supabase = createSupabaseAdminClient();
+  const savedAt = new Date().toISOString();
+  const { data, error } = await supabase
+    .from("order_items")
+    .update({
+      status: normalizedStatus,
+      updated_at: savedAt,
+      updated_by: userId || null,
+    })
+    .eq("workspace_id", workspaceId)
+    .in("id", orderItemIds)
+    .select("id, status");
+
+  if (error) {
+    throw error;
+  }
+
+  if (normalizedStatus === "skipped") {
+    const { error: batchItemsError } = await supabase
+      .from("batch_items")
+      .delete()
+      .eq("workspace_id", workspaceId)
+      .in("order_item_id", orderItemIds);
+
+    if (batchItemsError) {
+      throw batchItemsError;
+    }
+  }
+
+  return {
+    orderItemIds: (data || []).map((item) => item.id),
+    status: normalizedStatus,
+  };
+}
+
+export async function updateOrderGroupsStatus({
+  workspaceId,
+  userId,
+  orderIds,
+  status,
+}) {
+  const requestedIds = new Set((orderIds || []).filter((id) => typeof id === "string" && id));
+  const normalizedStatus = normalizeString(status);
+  if (!requestedIds.size || !["open", "skipped"].includes(normalizedStatus)) {
+    return { orderItemIds: [], status: normalizedStatus || null };
+  }
+
+  const { orders } = await listWorkspaceOrders({
+    workspaceId,
+    activeBatchId: null,
+    statusFilter: "all",
+  });
+  const orderItemIds = orders
+    .filter((order) => requestedIds.has(order.id) || requestedIds.has(order.orderNumber))
+    .flatMap((order) => getOrderItemsForStatusUpdate(order, normalizedStatus));
+
+  if (!orderItemIds.length) {
+    return { orderItemIds: [], status: normalizedStatus };
+  }
+
+  const supabase = createSupabaseAdminClient();
+  const savedAt = new Date().toISOString();
+  const { data, error } = await supabase
+    .from("order_items")
+    .update({
+      status: normalizedStatus,
+      updated_at: savedAt,
+      updated_by: userId || null,
+    })
+    .eq("workspace_id", workspaceId)
+    .in("id", orderItemIds)
+    .select("id, status");
+
+  if (error) {
+    throw error;
+  }
+
+  if (normalizedStatus === "skipped") {
+    const { error: batchItemsError } = await supabase
+      .from("batch_items")
+      .delete()
+      .eq("workspace_id", workspaceId)
+      .in("order_item_id", orderItemIds);
+
+    if (batchItemsError) {
+      throw batchItemsError;
+    }
+  }
+
+  return {
+    orderItemIds: (data || []).map((item) => item.id),
+    status: normalizedStatus,
+  };
 }
 
 export async function importWorkspaceOrderItems({

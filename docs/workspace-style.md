@@ -115,6 +115,20 @@ Use native form controls where they support production speed: selects for option
 
 Use compact action buttons in headers for primary actions. Use menu popovers for secondary or less frequent actions, especially when a workspace already has several related commands.
 
+## Ellipsis Menus
+
+Workspace ellipsis menus should use the shared `workspace-tools-*` class family so header menus, preset menus, and item-card menus keep one visual language.
+
+- Menu container: `.workspace-tools-menu`
+- Toggle: `.workspace-tools-toggle`
+- Popover: `.workspace-tools-popover`
+- Popover action wrapper: `.workspace-tools-actions`
+- Section group: `.workspace-tools-group`
+- Section heading: `.workspace-tools-heading`
+- Optional helper copy: `.workspace-tools-note`
+
+Menu actions should use the shared command button style with `.batch-tool-button` and a `.batch-tool-label` child. Keep related commands grouped under a concise heading such as `Orders`, `Order Item`, `Layout`, or `Preset`. Avoid one-off menu button, popover, or hover treatments unless the shared ellipsis pattern is intentionally revised for every menu.
+
 Use icon-plus-label buttons for production commands where an icon helps scanning. Existing hand-drawn SVG icons are acceptable in the current app, but new icon work should stay visually consistent with the existing button system.
 
 Preserve the same terminology across workspaces:

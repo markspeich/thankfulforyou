@@ -75,10 +75,17 @@ function getOrderLifecycleStatus(order) {
   if (order?.status === "complete") {
     return "complete";
   }
+  if (order?.status === "skipped") {
+    return "skipped";
+  }
   const items = Array.isArray(order?.items) ? order.items : [];
-  return items.length > 0 && items.every((item) => item?.status === "complete")
-    ? "complete"
-    : "open";
+  if (items.length > 0 && items.every((item) => item?.status === "complete")) {
+    return "complete";
+  }
+  if (items.length > 0 && items.every((item) => item?.status === "skipped")) {
+    return "skipped";
+  }
+  return "open";
 }
 
 export function filterGroupedOrders(orders, {
@@ -97,6 +104,9 @@ export function filterGroupedOrders(orders, {
       return false;
     }
     if (statusFilter === "complete" && lifecycleStatus !== "complete") {
+      return false;
+    }
+    if (statusFilter === "skipped" && lifecycleStatus !== "skipped") {
       return false;
     }
 

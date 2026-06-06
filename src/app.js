@@ -64,6 +64,7 @@ import {
   addOrdersToProductionBatch,
   fetchWorkspaceOrders,
   importWorkspaceOrders,
+  updateOrderItemLifecycleStatus,
 } from "./orders-api.js";
 import {
   filterGroupedOrders,
@@ -207,11 +208,15 @@ const databaseOrdersListShell = document.querySelector(".database-orders-list-sh
 const databaseOrderItemsShell = document.querySelector(".database-order-items-shell");
 const selectedDatabaseOrderTitle = document.querySelector(".database-order-items-panel .editor-header h2");
 const selectedDatabaseOrderMeta = document.querySelector(".database-order-items-panel .editor-meta");
+const skipSelectedOrderButton = document.querySelector("#skipSelectedOrderButton");
+const reopenSelectedOrderButton = document.querySelector("#reopenSelectedOrderButton");
 const addCheckedOrdersToBatchButton = document.querySelector("#addCheckedOrdersToBatchButton");
+const skipCheckedOrdersButton = document.querySelector("#skipCheckedOrdersButton");
+const reopenCheckedOrdersButton = document.querySelector("#reopenCheckedOrdersButton");
 const editorToolsMenu = document.querySelector(".editor-tools-menu");
 const presetToolsMenu = document.querySelector(".preset-tools-menu");
 const batchActionLabelByButton = new Map(
-  [addOrderButton, importClipboardButton, clearBatchButton, showColorCountsButton, exportCompletedButton, copyCompletedButton, pasteOrdersButton, addCheckedOrdersToBatchButton]
+  [addOrderButton, importClipboardButton, clearBatchButton, showColorCountsButton, exportCompletedButton, copyCompletedButton, pasteOrdersButton, addCheckedOrdersToBatchButton, skipCheckedOrdersButton, reopenCheckedOrdersButton, skipSelectedOrderButton, reopenSelectedOrderButton]
     .filter(Boolean)
     .map((button) => [button, button.querySelector(".batch-tool-label")]),
 );
@@ -4891,6 +4896,51 @@ function getVisibleDatabaseOrders() {
   });
 }
 
+function isDatabaseOrderItemSkipped(item) {
+  return item?.status === "skipped";
+}
+
+function isDatabaseOrderItemComplete(item) {
+  return item?.status === "complete";
+}
+
+function isDatabaseOrderItemBatchEligible(item) {
+  return Boolean(item?.id) && !item?.isInActiveBatch && !isDatabaseOrderItemSkipped(item);
+}
+
+function isDatabaseOrderBatchEligible(order) {
+  return (Array.isArray(order?.items) ? order.items : []).some(isDatabaseOrderItemBatchEligible);
+}
+
+function getDatabaseOrderItems(order) {
+  return Array.isArray(order?.items) ? order.items : [];
+}
+
+function isDatabaseOrderFullySkipped(order) {
+  const items = getDatabaseOrderItems(order);
+  return items.length > 0 && items.every(isDatabaseOrderItemSkipped);
+}
+
+function canSkipDatabaseOrder(order) {
+  return getDatabaseOrderItems(order).some((item) => !isDatabaseOrderItemSkipped(item) && !isDatabaseOrderItemComplete(item));
+}
+
+function canReopenDatabaseOrder(order) {
+  return isDatabaseOrderFullySkipped(order);
+}
+
+function getVisibleCheckedDatabaseOrders() {
+  const visibleOrderIds = new Set(getVisibleDatabaseOrders().map((order) => order.id));
+  return databaseOrders.filter((order) => (
+    visibleOrderIds.has(order.id)
+    && checkedDatabaseOrderIds.has(order.id)
+  ));
+}
+
+function hasDatabaseOrderItemsInActiveBatch(order) {
+  return getDatabaseOrderItems(order).some((item) => Boolean(item?.isInActiveBatch));
+}
+
 function renderDatabaseOrdersWorkspace() {
   if (!databaseOrdersListShell || !addCheckedOrdersToBatchButton) {
     return;
@@ -4905,8 +4955,21 @@ function renderDatabaseOrdersWorkspace() {
   }
   const visibleOrders = getVisibleDatabaseOrders();
   const visibleOrderIds = new Set(visibleOrders.map((order) => order.id));
-  const visibleCheckedOrderCount = [...checkedDatabaseOrderIds].filter((orderId) => visibleOrderIds.has(orderId)).length;
+  const batchEligibleOrderIds = new Set(
+    visibleOrders
+      .filter(isDatabaseOrderBatchEligible)
+      .map((order) => order.id),
+  );
+  const visibleCheckedOrderCount = [...checkedDatabaseOrderIds]
+    .filter((orderId) => visibleOrderIds.has(orderId) && batchEligibleOrderIds.has(orderId)).length;
   addCheckedOrdersToBatchButton.disabled = databaseOrdersLoading || visibleCheckedOrderCount === 0;
+  const checkedVisibleOrders = visibleOrders.filter((order) => checkedDatabaseOrderIds.has(order.id));
+  if (skipCheckedOrdersButton) {
+    skipCheckedOrdersButton.disabled = databaseOrdersLoading || !checkedVisibleOrders.some(canSkipDatabaseOrder);
+  }
+  if (reopenCheckedOrdersButton) {
+    reopenCheckedOrdersButton.disabled = databaseOrdersLoading || !checkedVisibleOrders.some(canReopenDatabaseOrder);
+  }
 
   if (databaseOrdersLoading) {
     const loading = document.createElement("p");
@@ -4949,6 +5012,7 @@ function renderDatabaseOrdersWorkspace() {
     checkbox.className = "database-order-checkbox";
     checkbox.type = "checkbox";
     checkbox.checked = checkedDatabaseOrderIds.has(order.id);
+    checkbox.disabled = !isDatabaseOrderBatchEligible(order) && !canSkipDatabaseOrder(order) && !canReopenDatabaseOrder(order);
     checkbox.setAttribute("aria-label", `Select order ${orderNumber}`);
     checkbox.addEventListener("click", (event) => {
       event.stopPropagation();
@@ -4972,7 +5036,7 @@ function renderDatabaseOrdersWorkspace() {
 
     const title = document.createElement("span");
     title.className = "database-order-row-title";
-    title.textContent = `Order ${orderNumber}`;
+    title.textContent = order.status === "skipped" ? `Order ${orderNumber} (Skipped)` : `Order ${orderNumber}`;
 
     const meta = document.createElement("span");
     meta.className = "database-order-row-meta";
@@ -5069,6 +5133,16 @@ function renderSelectedDatabaseOrderItems() {
       ? getDatabaseOrderMeta(selectedOrder)
       : "Select an order to review its items before adding designs to the production batch.";
   }
+  if (skipSelectedOrderButton) {
+    const showSkipOrder = Boolean(selectedOrder) && !canReopenDatabaseOrder(selectedOrder);
+    skipSelectedOrderButton.hidden = !showSkipOrder;
+    skipSelectedOrderButton.disabled = !showSkipOrder || !canSkipDatabaseOrder(selectedOrder) || ordersDatabaseMutationInFlight;
+  }
+  if (reopenSelectedOrderButton) {
+    const showReopenOrder = Boolean(selectedOrder) && canReopenDatabaseOrder(selectedOrder);
+    reopenSelectedOrderButton.hidden = !showReopenOrder;
+    reopenSelectedOrderButton.disabled = !showReopenOrder || ordersDatabaseMutationInFlight;
+  }
 
   if (!selectedOrder) {
     const empty = document.createElement("p");
@@ -5108,14 +5182,23 @@ function renderSelectedDatabaseOrderItems() {
     titleGroup.append(title, listing);
 
     const menu = document.createElement("details");
-    menu.className = "database-order-item-menu";
+    menu.className = "workspace-tools-menu database-order-item-menu";
     const summary = document.createElement("summary");
-    summary.className = "database-order-item-menu-toggle";
+    summary.className = "workspace-tools-toggle database-order-item-menu-toggle";
     summary.setAttribute("role", "button");
     summary.setAttribute("aria-label", "Item actions");
-    summary.textContent = "...";
     const menuBody = document.createElement("div");
-    menuBody.className = "database-order-item-menu-popover";
+    menuBody.className = "workspace-tools-popover database-order-item-menu-popover";
+    const menuActions = document.createElement("div");
+    menuActions.className = "workspace-tools-actions";
+    menuActions.setAttribute("role", "menu");
+    menuActions.setAttribute("aria-label", "Order item actions");
+    const menuGroup = document.createElement("div");
+    menuGroup.className = "workspace-tools-group";
+    menuGroup.setAttribute("aria-label", "Order item actions");
+    const menuHeading = document.createElement("p");
+    menuHeading.className = "workspace-tools-heading";
+    menuHeading.textContent = "Order Item";
 
     const copyDesignButton = document.createElement("button");
     copyDesignButton.type = "button";
@@ -5128,13 +5211,40 @@ function renderSelectedDatabaseOrderItems() {
     const addToBatchButton = document.createElement("button");
     addToBatchButton.type = "button";
     addToBatchButton.textContent = "Add to Production Batch";
-    addToBatchButton.disabled = Boolean(item?.isInActiveBatch);
+    addToBatchButton.disabled = !isDatabaseOrderItemBatchEligible(item);
     addToBatchButton.addEventListener("click", () => {
       void addDatabaseOrderItemToBatch(item, addToBatchButton);
       closeDetailsMenu(menu);
     });
 
-    menuBody.append(copyDesignButton, addToBatchButton);
+    const statusActionButton = document.createElement("button");
+    statusActionButton.type = "button";
+    if (isDatabaseOrderItemSkipped(item)) {
+      statusActionButton.textContent = "Reopen Order";
+      statusActionButton.addEventListener("click", () => {
+        void reopenDatabaseOrderItem(item, statusActionButton);
+        closeDetailsMenu(menu);
+      });
+    } else {
+      statusActionButton.textContent = "Skip Order Item";
+      statusActionButton.disabled = isDatabaseOrderItemComplete(item);
+      statusActionButton.addEventListener("click", () => {
+        void skipDatabaseOrderItem(item, statusActionButton);
+        closeDetailsMenu(menu);
+      });
+    }
+
+    [copyDesignButton, addToBatchButton, statusActionButton].forEach((button) => {
+      button.className = "batch-tool-button";
+      const label = document.createElement("span");
+      label.className = "batch-tool-label";
+      label.textContent = button.textContent;
+      button.replaceChildren(label);
+    });
+
+    menuGroup.append(menuHeading, copyDesignButton, addToBatchButton, statusActionButton);
+    menuActions.append(menuGroup);
+    menuBody.append(menuActions);
     menu.append(summary, menuBody);
 
     cardHeader.append(menu);
@@ -5164,7 +5274,9 @@ function renderSelectedDatabaseOrderItems() {
 
     const status = document.createElement("p");
     status.className = "database-order-item-status";
-    status.textContent = item?.isInActiveBatch ? "Already in active batch" : "Not in active batch";
+    status.textContent = isDatabaseOrderItemSkipped(item)
+      ? "Skipped"
+      : item?.isInActiveBatch ? "Already in active batch" : "Not in active batch";
 
     const savedDesign = document.createElement("p");
     savedDesign.className = "database-order-item-saved-design";
@@ -5228,7 +5340,7 @@ function renderSelectedDatabaseOrderItems() {
 async function addDatabaseOrderItemToBatch(item, button = null) {
   const orderItemId = typeof item?.id === "string" ? item.id.trim() : "";
   const batchId = requireActiveProductionBatchId();
-  if (!batchId || !orderItemId) {
+  if (!batchId || !orderItemId || !isDatabaseOrderItemBatchEligible(item)) {
     return;
   }
 
@@ -5258,12 +5370,311 @@ async function addDatabaseOrderItemToBatch(item, button = null) {
   } finally {
     ordersDatabaseMutationInFlight = false;
     if (button) {
-      button.disabled = Boolean(item?.isInActiveBatch);
+      button.disabled = !isDatabaseOrderItemBatchEligible(item);
       button.textContent = "Add to Production Batch";
     }
     renderDatabaseOrdersWorkspace();
     render();
   }
+}
+
+async function updateDatabaseOrderItemStatus({
+  item,
+  action,
+  nextFilter,
+  pendingLabel,
+  successMessage,
+  fallbackMessage,
+  button = null,
+}) {
+  const orderItemId = typeof item?.id === "string" ? item.id.trim() : "";
+  if (!orderItemId) {
+    return;
+  }
+
+  const batchId = getActiveProductionBatchId();
+  if (button) {
+    button.disabled = true;
+    button.textContent = pendingLabel;
+  }
+  ordersDatabaseMutationInFlight = true;
+  render();
+
+  try {
+    const accessToken = await resolveProductionBatchMutationAccessToken();
+    const payload = await updateOrderItemLifecycleStatus({
+      action,
+      batchId,
+      orderItemId,
+      accessToken,
+    });
+
+    databaseOrdersStatusFilterValue = nextFilter;
+    if (databaseOrdersStatusFilter) {
+      databaseOrdersStatusFilter.value = nextFilter;
+    }
+    checkedDatabaseOrderIds.clear();
+    await refreshOrdersAndProductionBatch({ payload, accessToken, refreshBatch: action === "skipOrderItem" });
+    updateWorkflowAlert(successMessage, "success");
+  } catch (error) {
+    handleOrdersMutationError(
+      error,
+      fallbackMessage,
+      "Production batch session expired. Sign in again to continue updating orders.",
+    );
+  } finally {
+    ordersDatabaseMutationInFlight = false;
+    renderDatabaseOrdersWorkspace();
+    render();
+  }
+}
+
+async function skipDatabaseOrderItem(item, button = null) {
+  if (isDatabaseOrderItemSkipped(item) || isDatabaseOrderItemComplete(item)) {
+    return;
+  }
+
+  const confirmed = await showConfirmationDialog({
+    title: "Skip Order Item?",
+    description: item?.isInActiveBatch
+      ? "This order item is in the active production batch. Remove it from the batch and skip this order item?"
+      : "Skip this order item? It will not be added to a production batch.",
+    confirmLabel: "Skip Order Item",
+    cancelLabel: "Keep Open",
+  });
+  if (!confirmed) {
+    return;
+  }
+
+  await updateDatabaseOrderItemStatus({
+    item,
+    action: "skipOrderItem",
+    nextFilter: "skipped",
+    pendingLabel: "Skipping...",
+    successMessage: "Order skipped.",
+    fallbackMessage: "Unable to skip the order.",
+    button,
+  });
+}
+
+async function reopenDatabaseOrderItem(item, button = null) {
+  if (!isDatabaseOrderItemSkipped(item)) {
+    return;
+  }
+
+  await updateDatabaseOrderItemStatus({
+    item,
+    action: "reopenOrderItem",
+    nextFilter: "open",
+    pendingLabel: "Reopening...",
+    successMessage: "Order reopened.",
+    fallbackMessage: "Unable to reopen the order.",
+    button,
+  });
+}
+
+async function updateDatabaseOrderStatus({
+  order,
+  action,
+  nextFilter,
+  pendingLabel,
+  successMessage,
+  fallbackMessage,
+  button = null,
+}) {
+  const orderId = typeof order?.id === "string" ? order.id.trim() : "";
+  if (!orderId) {
+    return;
+  }
+
+  const batchId = getActiveProductionBatchId();
+  if (button) {
+    button.disabled = true;
+    setBatchActionLabel(button, pendingLabel);
+  }
+  ordersDatabaseMutationInFlight = true;
+  render();
+
+  try {
+    const accessToken = await resolveProductionBatchMutationAccessToken();
+    const payload = await updateOrderItemLifecycleStatus({
+      action,
+      batchId,
+      orderId,
+      accessToken,
+    });
+
+    databaseOrdersStatusFilterValue = nextFilter;
+    if (databaseOrdersStatusFilter) {
+      databaseOrdersStatusFilter.value = nextFilter;
+    }
+    checkedDatabaseOrderIds.clear();
+    await refreshOrdersAndProductionBatch({ payload, accessToken, refreshBatch: action === "skipOrder" });
+    updateWorkflowAlert(successMessage, "success");
+  } catch (error) {
+    handleOrdersMutationError(
+      error,
+      fallbackMessage,
+      "Production batch session expired. Sign in again to continue updating orders.",
+    );
+  } finally {
+    ordersDatabaseMutationInFlight = false;
+    if (button) {
+      setBatchActionLabel(button, action === "skipOrder" ? "Skip Order" : "Reopen Order");
+    }
+    renderDatabaseOrdersWorkspace();
+    render();
+  }
+}
+
+async function skipSelectedDatabaseOrder() {
+  const selectedOrder = getSelectedGroupedOrder(getVisibleDatabaseOrders(), selectedDatabaseOrderId);
+  if (!canSkipDatabaseOrder(selectedOrder)) {
+    return;
+  }
+
+  const confirmed = await showConfirmationDialog({
+    title: "Skip Order?",
+    description: hasDatabaseOrderItemsInActiveBatch(selectedOrder)
+      ? "Some order items are in the active production batch. Remove those order items from the batch and skip the entire order?"
+      : "Skip this order? All order items will be skipped and will not be added to a production batch.",
+    confirmLabel: "Skip Order",
+    cancelLabel: "Keep Open",
+  });
+  if (!confirmed) {
+    return;
+  }
+
+  await updateDatabaseOrderStatus({
+    order: selectedOrder,
+    action: "skipOrder",
+    nextFilter: "skipped",
+    pendingLabel: "Skipping...",
+    successMessage: "Order skipped.",
+    fallbackMessage: "Unable to skip the order.",
+    button: skipSelectedOrderButton,
+  });
+}
+
+async function reopenSelectedDatabaseOrder() {
+  const selectedOrder = getSelectedGroupedOrder(getVisibleDatabaseOrders(), selectedDatabaseOrderId);
+  if (!canReopenDatabaseOrder(selectedOrder)) {
+    return;
+  }
+
+  await updateDatabaseOrderStatus({
+    order: selectedOrder,
+    action: "reopenOrder",
+    nextFilter: "open",
+    pendingLabel: "Reopening...",
+    successMessage: "Order reopened.",
+    fallbackMessage: "Unable to reopen the order.",
+    button: reopenSelectedOrderButton,
+  });
+}
+
+async function updateCheckedDatabaseOrdersStatus({
+  action,
+  nextFilter,
+  pendingLabel,
+  successMessage,
+  fallbackMessage,
+  button,
+  filterOrder,
+}) {
+  const selectedOrders = getVisibleCheckedDatabaseOrders().filter(filterOrder);
+  const orderIds = selectedOrders.map((order) => order.id);
+  if (!orderIds.length) {
+    updateWorkflowAlert("Select one or more matching orders first.", "error");
+    return;
+  }
+
+  const batchId = getActiveProductionBatchId();
+  if (button) {
+    button.disabled = true;
+    setBatchActionLabel(button, pendingLabel);
+  }
+  ordersDatabaseMutationInFlight = true;
+  render();
+
+  try {
+    const accessToken = await resolveProductionBatchMutationAccessToken();
+    const payload = await updateOrderItemLifecycleStatus({
+      action,
+      batchId,
+      orderIds,
+      accessToken,
+    });
+
+    databaseOrdersStatusFilterValue = nextFilter;
+    if (databaseOrdersStatusFilter) {
+      databaseOrdersStatusFilter.value = nextFilter;
+    }
+    checkedDatabaseOrderIds.clear();
+    await refreshOrdersAndProductionBatch({ payload, accessToken, refreshBatch: action === "skipOrders" });
+    updateWorkflowAlert(successMessage, "success");
+  } catch (error) {
+    handleOrdersMutationError(
+      error,
+      fallbackMessage,
+      "Production batch session expired. Sign in again to continue updating orders.",
+    );
+  } finally {
+    ordersDatabaseMutationInFlight = false;
+    if (button) {
+      setBatchActionLabel(button, action === "skipOrders" ? "Skip Orders" : "Reopen Orders");
+    }
+    renderDatabaseOrdersWorkspace();
+    render();
+  }
+}
+
+async function skipCheckedDatabaseOrders() {
+  const selectedOrders = getVisibleCheckedDatabaseOrders().filter(canSkipDatabaseOrder);
+  if (!selectedOrders.length) {
+    updateWorkflowAlert("Select one or more open orders before skipping them.", "error");
+    return;
+  }
+
+  const confirmed = await showConfirmationDialog({
+    title: "Skip Orders?",
+    description: selectedOrders.some(hasDatabaseOrderItemsInActiveBatch)
+      ? "Some selected order items are in the active production batch. Remove those order items from the batch and skip the selected orders?"
+      : "Skip the selected orders? Their order items will not be added to a production batch.",
+    confirmLabel: "Skip Orders",
+    cancelLabel: "Keep Open",
+  });
+  if (!confirmed) {
+    return;
+  }
+
+  await updateCheckedDatabaseOrdersStatus({
+    action: "skipOrders",
+    nextFilter: "skipped",
+    pendingLabel: "Skipping...",
+    successMessage: "Orders skipped.",
+    fallbackMessage: "Unable to skip the selected orders.",
+    button: skipCheckedOrdersButton,
+    filterOrder: canSkipDatabaseOrder,
+  });
+}
+
+async function reopenCheckedDatabaseOrders() {
+  const selectedOrders = getVisibleCheckedDatabaseOrders().filter(canReopenDatabaseOrder);
+  if (!selectedOrders.length) {
+    updateWorkflowAlert("Select one or more skipped orders before reopening them.", "error");
+    return;
+  }
+
+  await updateCheckedDatabaseOrdersStatus({
+    action: "reopenOrders",
+    nextFilter: "open",
+    pendingLabel: "Reopening...",
+    successMessage: "Orders reopened.",
+    fallbackMessage: "Unable to reopen the selected orders.",
+    button: reopenCheckedOrdersButton,
+    filterOrder: canReopenDatabaseOrder,
+  });
 }
 
 async function addCheckedDatabaseOrdersToBatch() {
@@ -5273,8 +5684,13 @@ async function addCheckedDatabaseOrdersToBatch() {
   }
 
   const visibleOrderIds = new Set(getVisibleDatabaseOrders().map((order) => order.id));
+  const batchEligibleOrderIds = new Set(
+    getVisibleDatabaseOrders()
+      .filter(isDatabaseOrderBatchEligible)
+      .map((order) => order.id),
+  );
   const orderIds = getCheckedOrderIdsForBulkAction(checkedDatabaseOrderIds)
-    .filter((orderId) => visibleOrderIds.has(orderId));
+    .filter((orderId) => visibleOrderIds.has(orderId) && batchEligibleOrderIds.has(orderId));
   if (!orderIds.length) {
     updateWorkflowAlert("Select one or more orders before adding them to the production batch.", "error");
     return;
@@ -8612,6 +9028,18 @@ databaseOrdersBatchFilter?.addEventListener("change", () => {
   databaseOrdersBatchFilterValue = databaseOrdersBatchFilter.value;
   renderDatabaseOrdersWorkspace();
 });
+skipSelectedOrderButton?.addEventListener("click", () => {
+  void skipSelectedDatabaseOrder();
+});
+reopenSelectedOrderButton?.addEventListener("click", () => {
+  void reopenSelectedDatabaseOrder();
+});
+skipCheckedOrdersButton?.addEventListener("click", () => {
+  void skipCheckedDatabaseOrders();
+});
+reopenCheckedOrdersButton?.addEventListener("click", () => {
+  void reopenCheckedDatabaseOrders();
+});
 showColorCountsButton?.addEventListener("click", openBatchColorCountsDialog);
 exportCompletedButton.addEventListener("click", exportAllOrders);
 copyCompletedButton.addEventListener("click", copyAllOrders);
@@ -8631,7 +9059,7 @@ assignPresetToListingButton?.addEventListener("click", () => {
       batchToolsMenu?.removeAttribute("open");
     });
   });
-[pasteOrdersButton, addCheckedOrdersToBatchButton]
+[pasteOrdersButton, addCheckedOrdersToBatchButton, skipCheckedOrdersButton, reopenCheckedOrdersButton]
   .filter(Boolean)
   .forEach((button) => {
     button.addEventListener("click", () => {
