@@ -146,7 +146,7 @@ function ensureCopyButton() {
   const button = document.createElement("button");
   button.type = "button";
   button.dataset.badgeClipboardCopy = "true";
-  button.textContent = "Copy Badge Batch";
+  button.textContent = "Copy Orders";
   button.style.position = "fixed";
   button.style.right = "16px";
   button.style.bottom = "92px";

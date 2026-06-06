@@ -7,16 +7,19 @@ import { describe, expect, it, vi } from "vitest";
 const SCRIPT_PATH = path.resolve("tools/etsy-copy-badge-clipboard.js");
 const SCRIPT_SOURCE = fs.readFileSync(SCRIPT_PATH, "utf8");
 
-function loadClipboardScript(orders) {
+function loadClipboardScript(orders, options = {}) {
   const clipboardWrites = [];
   const warnings = [];
   const infos = [];
-  const querySelector = vi.fn(() => ({ dataset: { badgeClipboardCopy: "true" } }));
-  const createElement = vi.fn(() => ({
+  const createdButton = {
     style: {},
     dataset: {},
     addEventListener: vi.fn(),
-  }));
+  };
+  const querySelector = vi.fn(() => {
+    return options.existingCopyButton === false ? null : { dataset: { badgeClipboardCopy: "true" } };
+  });
+  const createElement = vi.fn(() => createdButton);
   const append = vi.fn();
 
   const context = {
@@ -65,10 +68,19 @@ function loadClipboardScript(orders) {
     clipboardWrites,
     warnings,
     infos,
+    createdButton,
+    append,
   };
 }
 
 describe("etsy copy badge clipboard", () => {
+  it("labels the injected Etsy copy button as Copy Orders", () => {
+    const { createdButton, append } = loadClipboardScript([], { existingCopyButton: false });
+
+    expect(createdButton.textContent).toBe("Copy Orders");
+    expect(append).toHaveBeenCalledWith(createdButton);
+  });
+
   it("reports skipped orders that have no personalization variation", async () => {
     const { context, warnings, clipboardWrites } = loadClipboardScript([
       {
