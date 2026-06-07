@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { expect, test } from "playwright/test";
 
 test.describe.configure({ mode: "serial" });
@@ -5,7 +6,26 @@ test.describe.configure({ mode: "serial" });
 const PRODUCTION_BATCH_REMOTE_RESTORE_TEST_TITLE = "restores the production batch from the backend before stale local cache";
 const PRODUCTION_BATCH_CONFLICT_TEST_TITLE = "keeps shared sync enabled on revision conflict";
 const PRODUCTION_BATCH_PAGEHIDE_TEST_TITLE = "pagehide keepalive saves even while a shared autosave is in flight";
+const SAMPLE_CLIPBOARD_URL = new URL("../../docs/sample-clipboard.txt", import.meta.url);
 const productionBatchSnapshots = new WeakMap();
+
+function getSampleClipboardItemForBatchRow() {
+  const payload = JSON.parse(readFileSync(SAMPLE_CLIPBOARD_URL, "utf8"));
+  const item = payload.items.find((candidate) => (
+    typeof candidate?.listingTitle === "string"
+    && candidate.listingTitle.trim()
+    && typeof candidate?.listingImageUrl75x75 === "string"
+    && candidate.listingImageUrl75x75.trim()
+    && typeof candidate?.personalization === "string"
+    && candidate.personalization.trim()
+  ));
+
+  if (!item) {
+    throw new Error("docs/sample-clipboard.txt needs at least one item with a listing title, image, and personalization.");
+  }
+
+  return item;
+}
 
 function completeButton(page) {
   return page.locator("#captureButton");
@@ -2864,18 +2884,12 @@ test("skips already imported Etsy line items when importing another batch", asyn
   await expect(page.locator("#importStatus")).toBeHidden({ timeout: 8000 });
 });
 
-test("shows labeled buyer, listing, and emphasized personalization lines in batch rows", async ({ page }) => {
+test("shows product image, buyer, and emphasized personalization in batch rows without listing title", async ({ page }) => {
+  const sampleItem = getSampleClipboardItemForBatchRow();
   const payload = JSON.stringify({
-    items: [
-      {
-        orderNumber: "4057600528",
-        listingId: "1884223710",
-        listingTitle: "Custom Badge Reel for Nurse Practitioner with Floral Backing and Glitter Accent",
-        transactionId: "5078093505",
-        buyerName: "Marilyn Lopez",
-        personalization: "Yohanna APN",
-      },
-    ],
+    source: "thankfulforyou-etsy-clipboard",
+    version: 1,
+    items: [sampleItem],
   });
 
   await page.evaluate((clipboardPayload) => {
@@ -2889,35 +2903,36 @@ test("shows labeled buyer, listing, and emphasized personalization lines in batc
 
   await clickButtonBySelector(page, "#importClipboardButton");
 
-  const row = page.locator("#orderList .order-row").filter({ hasText: "#4057600528" });
+  const row = page.locator("#orderList .order-row").filter({ hasText: `#${sampleItem.orderNumber}` });
+  const productImage = row.locator(".order-item-product-image");
   const buyerLine = row.locator(".order-item-recipient");
-  const listingLine = row.locator(".order-item-listing");
   const personalizationLine = row.locator(".order-item-personalization");
 
-  await expect(row).toContainText("#4057600528");
-  await expect(buyerLine).toHaveText("Buyer: Marilyn Lopez");
-  await expect(listingLine).toHaveText("Listing: Custom Badge Reel for Nurse Practitioner with Floral Backing and Glitter Accent");
-  await expect(personalizationLine).toHaveText("Personalization: Yohanna APN");
+  await expect(row).toContainText(`#${sampleItem.orderNumber}`);
+  await expect(productImage).toBeVisible();
+  await expect(productImage).toHaveAttribute("alt", sampleItem.listingTitle);
+  await expect(productImage).toHaveAttribute("src", sampleItem.listingImageUrl75x75);
+  await expect(buyerLine).toHaveText(`Buyer: ${sampleItem.buyerName}`);
+  await expect(row.locator(".order-item-listing")).toHaveCount(0);
+  await expect(row).not.toContainText(sampleItem.listingTitle);
+  await expect(personalizationLine).toHaveText(`Personalization: ${sampleItem.personalization.replace(/\r?\n/g, " / ")}`);
 
   const lineMetrics = await page.evaluate(() => {
     const buyerLine = document.querySelector(".order-item-recipient");
-    const listingLine = document.querySelector(".order-item-listing");
     const personalizationLine = document.querySelector(".order-item-personalization");
 
-    if (!(buyerLine instanceof HTMLElement) || !(listingLine instanceof HTMLElement) || !(personalizationLine instanceof HTMLElement)) {
+    if (!(buyerLine instanceof HTMLElement) || !(personalizationLine instanceof HTMLElement)) {
       return null;
     }
 
     return {
       buyerSize: window.getComputedStyle(buyerLine).fontSize,
-      listingSize: window.getComputedStyle(listingLine).fontSize,
       personalizationSize: window.getComputedStyle(personalizationLine).fontSize,
     };
   });
 
   expect(lineMetrics).toEqual({
     buyerSize: "12.8px",
-    listingSize: "11.68px",
     personalizationSize: "14.4px",
   });
 });

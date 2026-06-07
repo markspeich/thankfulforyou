@@ -279,7 +279,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Etsy listing ID `4465975709` must also apply a listing-specific per-line default of `21 mm` text height on line 2 while keeping the rest of the `Skywalk, Candlepin` preset defaults unchanged.
 - Imported Etsy data should create one order item per personalized Etsy line item rather than one order item per Etsy order.
 - Because one Etsy order may create multiple order items, user-facing batch and editor language should refer to designs, order items, or batch items rather than assuming one row always equals one Etsy order.
-- Imported batch items should display as exactly four text lines: line 1 the Etsy order number, line 2 `Buyer: <buyer name>`, line 3 `Listing: <listing title>` truncated when needed, and line 4 `Personalization: <personalization>` using the same row text styling as the other metadata lines except for a larger font size.
+- Imported production batch rows should display the Etsy order number, imported listing/product image when available, `Buyer: <buyer name>`, and `Personalization: <personalization>`. Listing titles should remain available as image alt/reference metadata but should not render as row text.
 - Re-importing a later Etsy batch must preserve any order items already present in the current production batch instead of overwriting them.
 - During import, any Etsy line item that already exists in the current production batch should be skipped so the operator can import only newly arrived orders into the same working batch.
 - Imported order items and subsequent design edits should persist across a browser refresh through Supabase Postgres during the current batch workflow.
@@ -571,6 +571,7 @@ For batch Etsy order sessions, the preferred workflow is:
 - Successful order paste actions should open a paste summary dialog showing newly imported designs, skipped duplicate designs, and designs added to the active production batch when applicable.
 - In the Orders workspace selected-order item cards, each card title should be `Order Item`, with imported listing text in the header, imported Etsy listing image in the left body column, and saved design preview in the right body column. The bottom metadata should show `Personalization: <design text>` above imported color, with quantity stacked below color.
 - In the Orders workspace order list, each grouped order row should show the imported listing image from the first order item at the beginning of the row; grouped orders with multiple order items should show a compact stacked thumbnail treatment.
+- In the Production Batch row list, each row should show the imported listing/product image when available and should not show the imported listing title; row text should prioritize the order number, buyer, personalization, status, and connectedness indicators.
 
 - Clicking `Save` should immediately mark the current design as finished for editing, even if connectedness analysis is still running in the background.
 - After clicking `Save`, both `Save` and `Save & Next` should stay disabled for that design until the operator changes the text or layout settings again.

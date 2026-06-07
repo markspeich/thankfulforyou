@@ -2954,6 +2954,39 @@ function buildBatchListing(order) {
   return listingId ? `Listing ${listingId}` : buildActiveMeta(order);
 }
 
+function getBatchListingImageUrl(order) {
+  const candidates = [
+    order?.source?.listingImageUrl75x75,
+    order?.source?.listingImageUrl,
+    order?.listingImageUrl75x75,
+    order?.listingImageUrl,
+  ];
+  const match = candidates.find((value) => typeof value === "string" && value.trim());
+  return match ? match.trim() : "";
+}
+
+function createBatchProductImage(order) {
+  const imageUrl = getBatchListingImageUrl(order);
+  const label = buildBatchListing(order);
+  const productImage = imageUrl
+    ? document.createElement("img")
+    : document.createElement("span");
+
+  productImage.className = imageUrl
+    ? "order-item-product-image"
+    : "order-item-product-image order-item-product-image-placeholder";
+
+  if (imageUrl) {
+    productImage.src = imageUrl;
+    productImage.alt = label;
+    productImage.loading = "lazy";
+  } else {
+    productImage.setAttribute("aria-hidden", "true");
+  }
+
+  return productImage;
+}
+
 function buildBatchPersonalization(order) {
   const personalization = summarizeOrderText(order?.text || "");
   return personalization && personalization !== "No text entered"
@@ -7671,15 +7704,14 @@ function renderOrderList() {
     const body = document.createElement("div");
     body.className = "order-item-body";
 
+    const productImage = createBatchProductImage(order);
+    const copy = document.createElement("div");
+    copy.className = "order-item-copy";
+
     const recipientText = document.createElement("div");
     recipientText.className = "order-item-recipient";
     recipientText.textContent = `Buyer: ${buildBatchRecipient(order)}`;
     recipientText.title = buildBatchRecipient(order);
-
-    const listingText = document.createElement("div");
-    listingText.className = "order-item-listing";
-    listingText.textContent = `Listing: ${buildBatchListing(order)}`;
-    listingText.title = buildBatchListing(order);
 
     const personalizationText = document.createElement("div");
     personalizationText.className = "order-item-personalization";
@@ -7687,7 +7719,8 @@ function renderOrderList() {
     personalizationText.title = buildBatchPersonalization(order);
 
     header.append(title, analysisIndicator, status);
-    body.append(recipientText, listingText, personalizationText);
+    copy.append(recipientText, personalizationText);
+    body.append(productImage, copy);
     item.append(header, body);
     item.addEventListener("click", () => selectOrder(order.id));
 
