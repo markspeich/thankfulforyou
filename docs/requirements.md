@@ -465,8 +465,8 @@ The website should be a practical production tool rather than a marketing site. 
 - Inserting a fixed design should add a fixed SVG item to the selected design's ordered line/control list.
 - Fixed SVG items should be usable in conjunction with normal text lines in one badge reel design.
 - A fixed SVG item should render as its own control card titled `Fixed Design: <NAME>`.
-- A fixed SVG item control card should expose `SVG Size`, `Horizontal Offset`, and `Vertical Offset From Center`.
-- The fixed SVG `SVG Size` control should mean the fixed artwork's vertical rendered size in millimeters; width should scale proportionally from the SVG aspect ratio.
+- A fixed SVG item control card should expose `Vertical Size`, `Horizontal Offset`, and `Vertical Offset From Center`.
+- The fixed SVG `Vertical Size` control should mean the fixed artwork's vertical rendered size in millimeters; width should scale proportionally from the SVG aspect ratio.
 - Fixed SVG items should not show text-line controls such as Font, Letter Bridge, Line Bridge, Text Height, Horizontal Stretch, Vertical Stretch, or Lock Text Height.
 - Fixed SVG items do not have to follow the active size guide. The sizing guide remains independent and applies to text fitting rather than constraining the fixed SVG artwork.
 - Fixed SVG item size and offsets should use explicit physical units, with offsets measured from the design center.

@@ -1824,7 +1824,7 @@ function createPresetFixedItemCard(item, index) {
   const grid = document.createElement("div");
   grid.className = "line-control-grid";
   grid.append(
-    createPresetEditorRangeField(`fixed:${index}`, "svgSizeMm", "SVG Size", 5, 80, 0.5, normalized.svgSizeMm),
+    createPresetEditorRangeField(`fixed:${index}`, "svgSizeMm", "Vertical Size", 5, 80, 0.5, normalized.svgSizeMm),
     createPresetEditorRangeField(`fixed:${index}`, "offsetXMm", "Horizontal Offset", -30, 30, 0.1, normalized.offsetXMm),
     createPresetEditorRangeField(`fixed:${index}`, "offsetYMm", "Vertical Offset From Center", -30, 30, 0.1, normalized.offsetYMm),
   );
@@ -6798,7 +6798,7 @@ function renderLineControls(settings = getCurrentSettings()) {
       summary.textContent = `v${fixedDesign.version || 1}`;
       header.append(createFixedDesignLineMenu(settingsIndex));
       grid.append(
-        createFixedDesignRangeField(settingsIndex, "svgSizeMm", "SVG Size", 5, 80, 0.5, line.svgSizeMm),
+        createFixedDesignRangeField(settingsIndex, "svgSizeMm", "Vertical Size", 5, 80, 0.5, line.svgSizeMm),
         createFixedDesignRangeField(settingsIndex, "offsetXMm", "Horizontal Offset", -30, 30, 0.1, line.offsetXMm),
         createFixedDesignRangeField(settingsIndex, "offsetYMm", "Vertical Offset From Center", -30, 30, 0.1, line.offsetYMm),
       );

@@ -263,18 +263,7 @@ export async function saveProductionBatch({ snapshot, userId, changedOrderItemId
     throw batchError;
   }
 
-  if (changedOrderItemIdSet) {
-    const changedBatchItems = rows.batchItems.filter((item) => shouldSaveOrderItem(item.order_item_id));
-    if (changedBatchItems.length) {
-      const { error: batchItemsError } = await supabase
-        .from("batch_items")
-        .upsert(changedBatchItems, { onConflict: "batch_id,order_item_id" });
-
-      if (batchItemsError) {
-        throw batchItemsError;
-      }
-    }
-  } else {
+  if (!changedOrderItemIdSet) {
     const { error: deleteBatchItemsError } = await supabase
       .from("batch_items")
       .delete()
