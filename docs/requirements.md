@@ -204,7 +204,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Export designs as SVG for current production use.
 - SVG export must produce vector path definitions, not embedded raster image data.
 - Exported SVG face and backing paths must use a solid fill color of RGB(255, 0, 0).
-- When imported Etsy color metadata is available, exported SVG output must add an `Arial` color-value label to the right of the backing layer for each exported design instance, with a large enough font size to read easily in batch export files.
+- When imported Etsy color metadata is available, exported SVG output must add an `Arial` color-value label to the right of the backing layer for each exported design instance, with a 9 mm font size so the label remains easy to read in single-design and batch export files.
 - The exported color label should contain only the imported color value, not the word `Color` or any quantity text.
 - When `Weld Exported Design` is checked, exported face-layer paths must be welded/unioned so overlapping letters do not create internal cut lines.
 - When `Weld Exported Design` is unchecked, SVG export may preserve overlapping letter contours without welding so the overlaps remain visible and editable.
