@@ -22,6 +22,7 @@ import {
   getBoundingSizePresetDefinitionsForEditor,
   getDefaultPresetId,
   getPresetDefinitionForEditor,
+  getPresetFixedItems,
   getPresetGlobalDefaults,
   getPresetIdForListingId,
   getPresetOptions,
@@ -106,6 +107,17 @@ import {
   replaceWorkspaceFont,
   resolveFontOption,
 } from "./fonts.js";
+import {
+  createWorkspaceFixedDesign,
+  deleteWorkspaceFixedDesign,
+  fetchWorkspaceFixedDesigns,
+  replaceWorkspaceFixedDesign,
+} from "./fixed-design-api.js";
+import {
+  normalizeFixedDesignRecord,
+  normalizeFixedDesignRecords,
+  resolveFixedDesignReference,
+} from "./fixed-designs.js";
 
 let FONT_OPTIONS = buildFontOptions();
 let FONT_BY_ID = new Map(FONT_OPTIONS.map((font) => [font.id, font]));
@@ -149,6 +161,7 @@ const WORKSPACE_ROUTE_SEGMENTS = Object.freeze({
   orders: "production-batch",
   presets: "presets",
   fonts: "fonts",
+  fixedDesigns: "fixed-designs",
   sizeGuides: "size-guides",
 });
 const WORKSPACE_BY_ROUTE_SEGMENT = Object.freeze(
@@ -170,11 +183,13 @@ const ordersWorkspace = document.querySelector("#ordersWorkspace");
 const databaseOrdersWorkspace = document.querySelector("#databaseOrdersWorkspace");
 const presetsWorkspace = document.querySelector("#presetsWorkspace");
 const fontsWorkspace = document.querySelector("#fontsWorkspace");
+const fixedDesignsWorkspace = document.querySelector("#fixedDesignsWorkspace");
 const sizeGuideWorkspace = document.querySelector("#sizeGuideWorkspace");
 const orderWorkspaceButton = document.querySelector("#orderWorkspaceButton");
 const databaseOrdersWorkspaceButton = document.querySelector("#databaseOrdersWorkspaceButton");
 const presetWorkspaceButton = document.querySelector("#presetWorkspaceButton");
 const fontWorkspaceButton = document.querySelector("#fontWorkspaceButton");
+const fixedDesignsWorkspaceButton = document.querySelector("#fixedDesignsWorkspaceButton");
 const sizeGuideWorkspaceButton = document.querySelector("#sizeGuideWorkspaceButton");
 const productionBatchLogoutButton = document.querySelector("#productionBatchLogoutButton");
 const navCollapseButton = document.querySelector("#navCollapseButton");
@@ -188,6 +203,31 @@ const selectedFontPreview = document.querySelector("#selectedFontPreview");
 const replaceFontButton = document.querySelector("#replaceFontButton");
 const deleteFontButton = document.querySelector("#deleteFontButton");
 const fontEditorStatus = document.querySelector("#fontEditorStatus");
+const fixedDesignUploadButton = document.querySelector("#fixedDesignUploadButton");
+const fixedDesignUploadInput = document.querySelector("#fixedDesignUploadInput");
+const fixedDesignSearchInput = document.querySelector("#fixedDesignSearchInput");
+const fixedDesignList = document.querySelector("#fixedDesignList");
+const selectedFixedDesignName = document.querySelector("#selectedFixedDesignName");
+const selectedFixedDesignMeta = document.querySelector("#selectedFixedDesignMeta");
+const fixedDesignActionsMenu = document.querySelector("#fixedDesignActionsMenu");
+const saveFixedDesignButton = document.querySelector("#saveFixedDesignButton");
+const loadFixedDesignVersionButton = document.querySelector("#loadFixedDesignVersionButton");
+const downloadFixedDesignButton = document.querySelector("#downloadFixedDesignButton");
+const deleteFixedDesignButton = document.querySelector("#deleteFixedDesignButton");
+const fixedDesignPreviewImage = document.querySelector("#fixedDesignPreviewImage");
+const fixedDesignPreviewEmptyState = document.querySelector("#fixedDesignPreviewEmptyState");
+const selectedFixedDesignFileName = document.querySelector("#selectedFixedDesignFileName");
+const selectedFixedDesignVersion = document.querySelector("#selectedFixedDesignVersion");
+const selectedFixedDesignState = document.querySelector("#selectedFixedDesignState");
+const fixedDesignEditorStatus = document.querySelector("#fixedDesignEditorStatus");
+const fixedDesignVersionDialog = document.querySelector("#fixedDesignVersionDialog");
+const closeFixedDesignVersionDialogButton = document.querySelector("#closeFixedDesignVersionDialogButton");
+const fixedDesignDropZone = document.querySelector("#fixedDesignDropZone");
+const chooseFixedDesignVersionButton = document.querySelector("#chooseFixedDesignVersionButton");
+const fixedDesignVersionInput = document.querySelector("#fixedDesignVersionInput");
+const fixedDesignVersionStatus = document.querySelector("#fixedDesignVersionStatus");
+const cancelFixedDesignVersionButton = document.querySelector("#cancelFixedDesignVersionButton");
+const loadFixedDesignVersionConfirmButton = document.querySelector("#loadFixedDesignVersionConfirmButton");
 const addOrderButton = document.querySelector("#addOrderButton");
 const importClipboardButton = document.querySelector("#importClipboardButton");
 const clearBatchButton = document.querySelector("#clearBatchButton");
@@ -291,10 +331,23 @@ const downloadButton = document.querySelector("#downloadButton");
 const copyButton = document.querySelector("#copyButton");
 const copyLayoutControlsButton = document.querySelector("#copyLayoutPlacementButton");
 const pasteLayoutControlsButton = document.querySelector("#pasteLayoutPlacementButton");
+const insertFixedDesignButton = document.querySelector("#insertFixedDesignButton");
 const saveAsNewPresetButton = document.querySelector("#saveAsNewPresetButton");
 const overwritePresetButton = document.querySelector("#overwritePresetButton");
 const assignPresetToListingButton = document.querySelector("#assignPresetToListingButton");
 const reloadPresetButton = document.querySelector("#reloadPresetButton");
+const insertFixedDesignDialog = document.querySelector("#insertFixedDesignDialog");
+const closeInsertFixedDesignDialogButton = document.querySelector("#closeInsertFixedDesignDialogButton");
+const cancelInsertFixedDesignButton = document.querySelector("#cancelInsertFixedDesignButton");
+const insertFixedDesignConfirmButton = document.querySelector("#insertFixedDesignConfirmButton");
+const insertFixedDesignSearchInput = document.querySelector("#insertFixedDesignSearchInput");
+const insertFixedDesignList = document.querySelector("#insertFixedDesignList");
+const insertFixedDesignPreviewImage = document.querySelector("#insertFixedDesignPreviewImage");
+const insertFixedDesignPreviewEmptyState = document.querySelector("#insertFixedDesignPreviewEmptyState");
+const insertFixedDesignSelectedName = document.querySelector("#insertFixedDesignSelectedName");
+const insertFixedDesignSelectedMeta = document.querySelector("#insertFixedDesignSelectedMeta");
+const insertFixedDesignSelectedFile = document.querySelector("#insertFixedDesignSelectedFile");
+const insertFixedDesignStatus = document.querySelector("#insertFixedDesignStatus");
 const captureButton = document.querySelector("#captureButton");
 const cancelDesignButton = document.querySelector("#cancelDesignButton");
 const completeNextButton = document.querySelector("#completeNextButton");
@@ -314,6 +367,8 @@ const presetGlobalVerticalScaleOutput = document.querySelector("#presetGlobalVer
 const presetBackingInput = document.querySelector("#presetBackingInput");
 const presetBackingOutput = document.querySelector("#presetBackingOutput");
 const presetLineRuleControls = document.querySelector("#presetLineRuleControls");
+const presetFixedItemList = document.querySelector("#presetFixedItemList");
+const presetFixedItemsEmptyState = document.querySelector("#presetFixedItemsEmptyState");
 const presetAssignmentsList = document.querySelector("#presetAssignmentsList");
 const presetAssignmentsEmptyState = document.querySelector("#presetAssignmentsEmptyState");
 const sizePresetList = document.querySelector("#sizePresetList");
@@ -373,6 +428,17 @@ let databaseOrdersSearchTerm = "";
 let databaseOrdersStatusFilterValue = "open";
 let databaseOrdersBatchFilterValue = "all";
 let selectedFontId = "candlepin";
+let fixedDesignRecords = [];
+let selectedFixedDesignId = initialAppRoute.workspace === "fixedDesigns" ? initialAppRoute.itemId : null;
+let fixedDesignSearchTerm = "";
+let fixedDesignsLoading = false;
+let fixedDesignsLoaded = false;
+let fixedDesignsLoadRequestId = 0;
+let insertFixedDesignSearchTerm = "";
+let insertFixedDesignSelectedId = null;
+let insertFixedDesignStatusMessage = "";
+let insertFixedDesignStatusState = "pending";
+let stagedFixedDesignVersionFile = null;
 let navCollapsed = readNavCollapsedPreference();
 let presetEditorDraft = null;
 let presetEditorBaselineKey = null;
@@ -438,6 +504,9 @@ function getWorkspaceRouteItemId(workspace = activeWorkspace) {
   }
   if (workspace === "fonts") {
     return selectedFontId;
+  }
+  if (workspace === "fixedDesigns") {
+    return selectedFixedDesignId;
   }
   if (workspace === "sizeGuides") {
     return selectedSizePresetId;
@@ -517,6 +586,19 @@ function applyRouteSelection(route, options = {}) {
       replace: replaceRoute,
       workspace,
       itemId: itemId && selectedFontId === itemId ? itemId : null,
+    });
+    return;
+  }
+
+  if (workspace === "fixedDesigns") {
+    if (itemId) {
+      selectedFixedDesignId = itemId;
+    }
+    renderFixedDesignWorkspace();
+    writeAppRoute({
+      replace: replaceRoute,
+      workspace,
+      itemId: itemId && selectedFixedDesignId === itemId ? itemId : null,
     });
     return;
   }
@@ -789,6 +871,7 @@ function setFontEditorStatus(message, state = "pending") {
 
 function createDefaultLineSettings() {
   return {
+    kind: "text",
     fontId: DEFAULT_LINE_SETTINGS.fontId,
     bridgeMm: DEFAULT_LINE_SETTINGS.bridgeMm,
     lineBridgeMm: DEFAULT_LINE_SETTINGS.lineBridgeMm,
@@ -797,6 +880,18 @@ function createDefaultLineSettings() {
     horizontalScale: DEFAULT_LINE_SETTINGS.horizontalScale,
     verticalScale: DEFAULT_LINE_SETTINGS.verticalScale,
     lockTextHeight: DEFAULT_LINE_SETTINGS.lockTextHeight,
+  };
+}
+
+function createFixedDesignLineSettings(fixedDesign) {
+  return {
+    kind: "fixedSvg",
+    fixedDesignId: fixedDesign.id,
+    fixedDesignName: fixedDesign.displayName,
+    fixedDesignVersion: fixedDesign.version,
+    svgSizeMm: 32,
+    offsetXMm: 0,
+    offsetYMm: 0,
   };
 }
 
@@ -835,7 +930,22 @@ function getRawTextLines(text) {
 }
 
 function normalizeLineSettings(lineSettings = {}) {
+  if (lineSettings.kind === "fixedSvg") {
+    return {
+      kind: "fixedSvg",
+      fixedDesignId: typeof lineSettings.fixedDesignId === "string" ? lineSettings.fixedDesignId : null,
+      fixedDesignName: typeof lineSettings.fixedDesignName === "string" ? lineSettings.fixedDesignName : "",
+      fixedDesignVersion: Number.isFinite(Number(lineSettings.fixedDesignVersion))
+        ? Number(lineSettings.fixedDesignVersion)
+        : null,
+      svgSizeMm: Number.isFinite(Number(lineSettings.svgSizeMm)) ? Number(lineSettings.svgSizeMm) : 32,
+      offsetXMm: Number.isFinite(Number(lineSettings.offsetXMm)) ? Number(lineSettings.offsetXMm) : 0,
+      offsetYMm: Number.isFinite(Number(lineSettings.offsetYMm)) ? Number(lineSettings.offsetYMm) : 0,
+    };
+  }
+
   return {
+    kind: "text",
     fontId: FONT_BY_ID.has(lineSettings.fontId) ? lineSettings.fontId : DEFAULT_LINE_SETTINGS.fontId,
     bridgeMm: Number.isFinite(Number(lineSettings.bridgeMm)) ? Number(lineSettings.bridgeMm) : DEFAULT_LINE_SETTINGS.bridgeMm,
     lineBridgeMm: Number.isFinite(Number(lineSettings.lineBridgeMm)) ? Number(lineSettings.lineBridgeMm) : DEFAULT_LINE_SETTINGS.lineBridgeMm,
@@ -851,6 +961,232 @@ function normalizeLineSettings(lineSettings = {}) {
   };
 }
 
+function buildNormalizedLineSettings(rawLines, configuredLines, presetId) {
+  if (!Array.isArray(configuredLines)) {
+    return rawLines.map((_, index) => normalizeLineSettings({
+      kind: "text",
+      fontId: DEFAULT_LINE_SETTINGS.fontId,
+      bridgeMm: configuredLines?.bridgeMm,
+      lineBridgeMm: configuredLines?.lineBridgeMm,
+      offsetXMm: configuredLines?.offsetXMm,
+      fontSizeMm: configuredLines?.fontSizeMm,
+    }));
+  }
+
+  const normalizedLines = [];
+  let textLineIndex = 0;
+
+  configuredLines.forEach((lineSettings) => {
+    if (lineSettings?.kind === "fixedSvg") {
+      normalizedLines.push(normalizeLineSettings(lineSettings));
+      return;
+    }
+
+    if (textLineIndex < rawLines.length) {
+      normalizedLines.push(normalizeLineSettings(lineSettings));
+      textLineIndex += 1;
+    }
+  });
+
+  while (textLineIndex < rawLines.length) {
+    normalizedLines.push(normalizeLineSettings(createPresetLineSettings(presetId, textLineIndex)));
+    textLineIndex += 1;
+  }
+
+  return normalizedLines;
+}
+
+function isFixedSvgLineSettings(lineSettings) {
+  return lineSettings?.kind === "fixedSvg";
+}
+
+function settingsIncludeFixedSvg(settings = {}) {
+  return normalizeSettings(settings).lines.some(isFixedSvgLineSettings);
+}
+
+function orderHasRenderableDesign(order) {
+  return Boolean(order?.text?.trim() || settingsIncludeFixedSvg(order?.settings));
+}
+
+function restoredOrdersIncludeFixedSvgs() {
+  return orders.some((order) => settingsIncludeFixedSvg(order.settings));
+}
+
+function countFixedSvgLines(settings = {}) {
+  return normalizeSettings(settings).lines.filter(isFixedSvgLineSettings).length;
+}
+
+function parseSvgViewBoxAspectRatio(fixedDesign) {
+  const metadataAspectRatio = Number(fixedDesign?.metadata?.aspectRatio);
+  if (Number.isFinite(metadataAspectRatio) && metadataAspectRatio > 0) {
+    return metadataAspectRatio;
+  }
+
+  const metadataWidth = Number(fixedDesign?.metadata?.width);
+  const metadataHeight = Number(fixedDesign?.metadata?.height);
+  if (Number.isFinite(metadataWidth) && metadataWidth > 0 && Number.isFinite(metadataHeight) && metadataHeight > 0) {
+    return metadataWidth / metadataHeight;
+  }
+
+  const viewBox = typeof fixedDesign?.metadata?.viewBox === "string"
+    ? fixedDesign.metadata.viewBox
+    : "";
+  const parts = viewBox.trim().split(/[\s,]+/).map(Number);
+  if (parts.length === 4 && parts.every(Number.isFinite) && parts[2] > 0 && parts[3] > 0) {
+    return parts[2] / parts[3];
+  }
+
+  return 1;
+}
+
+function buildFixedSvgLayoutItems(lines, layoutWidthMm, layoutHeightMm) {
+  const centerX = layoutWidthMm / 2;
+  const centerY = layoutHeightMm / 2;
+
+  return lines
+    .filter(isFixedSvgLineSettings)
+    .map((line) => {
+      const fixedDesign = resolveFixedDesignReference(line, fixedDesignRecords);
+      const sizeMm = Math.max(1, Number(line.svgSizeMm) || 32);
+      const aspectRatio = parseSvgViewBoxAspectRatio(fixedDesign);
+      const heightMm = sizeMm;
+      const widthMm = sizeMm * aspectRatio;
+
+      return {
+        id: fixedDesign.id || line.fixedDesignId || "",
+        name: fixedDesign.displayName || line.fixedDesignName || "Fixed design",
+        version: fixedDesign.version || line.fixedDesignVersion || 1,
+        publicUrl: fixedDesign.publicUrl || null,
+        state: fixedDesign.state || "missing",
+        stateLabel: fixedDesign.stateLabel || "Missing",
+        xMm: centerX + Number(line.offsetXMm || 0) - widthMm / 2,
+        yMm: centerY + Number(line.offsetYMm || 0) - heightMm / 2,
+        widthMm,
+        heightMm,
+        svgSizeMm: sizeMm,
+        offsetXMm: Number(line.offsetXMm || 0),
+        offsetYMm: Number(line.offsetYMm || 0),
+      };
+    });
+}
+
+function expandLayoutForFixedSvgs({ widthMm, heightMm, textBoundsMm, letters, fixedSvgs }) {
+  if (!fixedSvgs.length) {
+    return {
+      widthMm,
+      heightMm,
+      textBoundsMm,
+      letters,
+      fixedSvgs,
+    };
+  }
+
+  const minX = Math.min(0, ...fixedSvgs.map((item) => item.xMm));
+  const minY = Math.min(0, ...fixedSvgs.map((item) => item.yMm));
+  const maxX = Math.max(widthMm, ...fixedSvgs.map((item) => item.xMm + item.widthMm));
+  const maxY = Math.max(heightMm, ...fixedSvgs.map((item) => item.yMm + item.heightMm));
+  const shiftX = -minX;
+  const shiftY = -minY;
+
+  return {
+    widthMm: maxX - minX,
+    heightMm: maxY - minY,
+    textBoundsMm: {
+      ...textBoundsMm,
+      left: textBoundsMm.left + shiftX,
+      top: textBoundsMm.top + shiftY,
+    },
+    letters: letters.map((letter) => ({
+      ...letter,
+      x: letter.x + shiftX,
+      y: letter.y + shiftY,
+    })),
+    fixedSvgs: fixedSvgs.map((item) => ({
+      ...item,
+      xMm: item.xMm + shiftX,
+      yMm: item.yMm + shiftY,
+    })),
+  };
+}
+
+function layoutNeedsFixedSvgEnrichment(layout, settings = {}) {
+  const expectedCount = countFixedSvgLines(settings);
+  if (!expectedCount) {
+    return false;
+  }
+
+  const fixedSvgs = Array.isArray(layout?.fixedSvgs) ? layout.fixedSvgs : [];
+  if (fixedSvgs.length < expectedCount) {
+    return true;
+  }
+
+  return fixedSvgs.some((fixedSvg) => {
+    const fixedDesign = fixedDesignRecords.find((record) => record.id === fixedSvg.id);
+    return fixedDesign?.publicUrl && fixedSvg.publicUrl !== fixedDesign.publicUrl;
+  });
+}
+
+function enrichCachedLayoutWithFixedSvgs(layout, settings = {}) {
+  if (!layoutNeedsFixedSvgEnrichment(layout, settings)) {
+    return layout;
+  }
+
+  const normalized = normalizeSettings(settings);
+  const widthMm = Number.isFinite(Number(layout?.widthMm)) ? Number(layout.widthMm) : 1;
+  const heightMm = Number.isFinite(Number(layout?.heightMm)) ? Number(layout.heightMm) : 1;
+  const fixedSvgs = buildFixedSvgLayoutItems(normalized.lines, widthMm, heightMm);
+  const expanded = expandLayoutForFixedSvgs({
+    widthMm,
+    heightMm,
+    textBoundsMm: layout?.textBoundsMm && typeof layout.textBoundsMm === "object"
+      ? layout.textBoundsMm
+      : { left: 0, top: 0, width: widthMm, height: heightMm },
+    letters: Array.isArray(layout?.letters) ? layout.letters : [],
+    fixedSvgs,
+  });
+
+  return {
+    ...layout,
+    widthMm: expanded.widthMm,
+    heightMm: expanded.heightMm,
+    textBoundsMm: expanded.textBoundsMm,
+    letters: expanded.letters,
+    fixedSvgs: expanded.fixedSvgs,
+  };
+}
+
+function enrichCachedBuildForOrder(order, build) {
+  if (!build?.layout) {
+    return build;
+  }
+
+  return {
+    ...build,
+    layout: enrichCachedLayoutWithFixedSvgs(build.layout, order?.settings),
+  };
+}
+
+function getTextLineItemsFromSettings(settings = {}) {
+  const normalized = normalizeSettings(settings);
+  const rawLines = getRawTextLines(normalized.text);
+  let textLineIndex = 0;
+
+  return normalized.lines.flatMap((line, settingsIndex) => {
+    if (isFixedSvgLineSettings(line)) {
+      return [];
+    }
+
+    const item = {
+      line,
+      settingsIndex,
+      textLineIndex,
+      text: rawLines[textLineIndex] ?? "",
+    };
+    textLineIndex += 1;
+    return [item];
+  });
+}
+
 function normalizeSettings(settings = {}) {
   const text = typeof settings.text === "string" ? settings.text : "";
   const rawLines = getRawTextLines(text);
@@ -859,15 +1195,14 @@ function normalizeSettings(settings = {}) {
     ? settings.presetId
     : defaultPresetId;
   const presetBaseSettings = getPresetBaseSettings(presetId);
-  const legacyLines = Array.isArray(settings.lines)
+  const configuredLines = Array.isArray(settings.lines)
     ? settings.lines
-    : rawLines.map(() => ({
-        fontId: DEFAULT_LINE_SETTINGS.fontId,
+    : {
         bridgeMm: settings.bridgeMm,
         lineBridgeMm: settings.lineBridgeMm,
         offsetXMm: settings.offsetXMm,
         fontSizeMm: settings.fontSizeMm,
-      }));
+      };
 
   return {
     text,
@@ -884,7 +1219,7 @@ function normalizeSettings(settings = {}) {
     weldExportedDesign: typeof settings.weldExportedDesign === "boolean"
       ? settings.weldExportedDesign
       : presetBaseSettings.weldExportedDesign,
-    lines: rawLines.map((_, index) => normalizeLineSettings(legacyLines[index] || createPresetLineSettings(presetId, index))),
+    lines: buildNormalizedLineSettings(rawLines, configuredLines, presetId),
   };
 }
 
@@ -1015,18 +1350,18 @@ function getCachedBuild(order, signature = getOrderSettingsSignatureCandidates(o
     return null;
   }
 
-  return getStoredBuildForSignature(order.cachedBuild, null, signature);
+  return enrichCachedBuildForOrder(order, getStoredBuildForSignature(order.cachedBuild, null, signature));
 }
 
 function getBuildForSignature(order, signature) {
   const signatureCandidates = toSignatureCandidates(signature);
-  if (!order?.text.trim() || !signatureCandidates.length) {
+  if (!orderHasRenderableDesign(order) || !signatureCandidates.length) {
     return null;
   }
 
   const storedBuild = getStoredBuildForSignature(order.cachedBuild, order.previousCompletedBuild, signatureCandidates);
   if (storedBuild) {
-    return storedBuild;
+    return enrichCachedBuildForOrder(order, storedBuild);
   }
 
   if (
@@ -1042,7 +1377,7 @@ function getBuildForSignature(order, signature) {
 
     return {
       signature: order.savedSettingsSignature,
-      layout,
+      layout: enrichCachedLayoutWithFixedSvgs(layout, order.settings),
       analysis,
     };
   }
@@ -1081,6 +1416,7 @@ function buildExportPayload(layout, analysis = layout?.analysis || null, source 
       heightMm: layout.heightMm,
       backingMm: layout.backingMm,
       weldExportedDesign: layout.weldExportedDesign,
+      fixedSvgs: Array.isArray(layout.fixedSvgs) ? layout.fixedSvgs : [],
       colorName,
       quantity,
       analysis: {
@@ -1096,6 +1432,57 @@ function buildExportPayload(layout, analysis = layout?.analysis || null, source 
     colorName,
     quantity,
   };
+}
+
+async function fetchFixedSvgText(fixedSvg) {
+  if (!fixedSvg || fixedSvg.svgText || !fixedSvg.publicUrl) {
+    return fixedSvg;
+  }
+
+  try {
+    const response = await fetch(fixedSvg.publicUrl);
+    if (!response.ok) {
+      return fixedSvg;
+    }
+
+    const svgText = await response.text();
+    if (!svgText.trim()) {
+      return fixedSvg;
+    }
+
+    return {
+      ...fixedSvg,
+      svgText,
+    };
+  } catch {
+    return fixedSvg;
+  }
+}
+
+async function enrichExportLayoutWithFixedSvgText(layout) {
+  if (!layout || !Array.isArray(layout.fixedSvgs) || !layout.fixedSvgs.length) {
+    return layout;
+  }
+
+  return {
+    ...layout,
+    fixedSvgs: await Promise.all(layout.fixedSvgs.map(fetchFixedSvgText)),
+  };
+}
+
+async function enrichExportPayloadWithFixedSvgText(payload) {
+  if (!payload) {
+    return payload;
+  }
+
+  if (Array.isArray(payload.layouts)) {
+    return {
+      ...payload,
+      layouts: await Promise.all(payload.layouts.map(enrichExportLayoutWithFixedSvgText)),
+    };
+  }
+
+  return enrichExportLayoutWithFixedSvgText(payload);
 }
 
 function renderPresetOptions() {
@@ -1405,6 +1792,65 @@ function renderPresetEditorLineControls() {
   presetLineRuleControls.append(...cards);
 }
 
+function createPresetFixedItemCard(item, index) {
+  const normalized = normalizeLineSettings({
+    ...item,
+    kind: "fixedSvg",
+  });
+  const fixedDesign = resolveFixedDesignReference(normalized, fixedDesignRecords);
+  const displayName = fixedDesign.displayName || normalized.fixedDesignName || "Fixed design";
+  const version = Number.isFinite(Number(normalized.fixedDesignVersion))
+    ? Number(normalized.fixedDesignVersion)
+    : Number(fixedDesign.version) || null;
+
+  const card = document.createElement("article");
+  card.className = "preset-fixed-item-card line-control-card";
+  card.dataset.fixedDesignId = normalized.fixedDesignId || "";
+  card.dataset.fixedItemIndex = String(index);
+
+  const header = document.createElement("div");
+  header.className = "line-control-header";
+
+  const title = document.createElement("h3");
+  title.className = "preset-line-control-title";
+  title.textContent = `Fixed Design: ${displayName}`;
+
+  const summary = document.createElement("span");
+  summary.className = "line-control-text";
+  summary.textContent = version ? `v${version}` : "Fixed SVG";
+
+  header.append(title, summary);
+
+  const grid = document.createElement("div");
+  grid.className = "line-control-grid";
+  grid.append(
+    createPresetEditorRangeField(`fixed:${index}`, "svgSizeMm", "SVG Size", 5, 80, 0.5, normalized.svgSizeMm),
+    createPresetEditorRangeField(`fixed:${index}`, "offsetXMm", "Horizontal Offset", -30, 30, 0.1, normalized.offsetXMm),
+    createPresetEditorRangeField(`fixed:${index}`, "offsetYMm", "Vertical Offset From Center", -30, 30, 0.1, normalized.offsetYMm),
+  );
+
+  card.append(header, grid);
+  return card;
+}
+
+function renderPresetEditorFixedItems() {
+  if (!presetFixedItemList || !presetFixedItemsEmptyState) {
+    return;
+  }
+
+  const fixedItems = Array.isArray(presetEditorDraft?.preset?.fixedItems)
+    ? presetEditorDraft.preset.fixedItems.filter(isFixedSvgLineSettings)
+    : [];
+  presetFixedItemList.replaceChildren();
+  presetFixedItemsEmptyState.hidden = fixedItems.length > 0;
+
+  if (!fixedItems.length) {
+    return;
+  }
+
+  presetFixedItemList.append(...fixedItems.map(createPresetFixedItemCard));
+}
+
 function readPresetEditorLineSettings(ruleKey) {
   const card = presetLineRuleControls?.querySelector(`[data-preset-rule-key="${ruleKey}"]`);
   if (!card) {
@@ -1430,6 +1876,36 @@ function readPresetEditorLineSettings(ruleKey) {
     verticalScale: verticalScaleInput?.value,
     lockTextHeight: lockTextHeightInput?.checked,
   });
+}
+
+function readPresetEditorFixedItems(fallbackItems = []) {
+  const cards = Array.from(presetFixedItemList?.querySelectorAll("[data-fixed-item-index]") || []);
+  if (!cards.length) {
+    return Array.isArray(fallbackItems) ? structuredClone(fallbackItems) : [];
+  }
+
+  return cards
+    .map((card) => {
+      const index = Number(card.dataset.fixedItemIndex);
+      const fallback = normalizeLineSettings({
+        ...(Array.isArray(fallbackItems) ? fallbackItems[index] : {}),
+        kind: "fixedSvg",
+      });
+      const svgSizeInput = card.querySelector('[data-setting="svgSizeMm"]');
+      const offsetXInput = card.querySelector('[data-setting="offsetXMm"]');
+      const offsetYInput = card.querySelector('[data-setting="offsetYMm"]');
+
+      return {
+        kind: "fixedSvg",
+        fixedDesignId: fallback.fixedDesignId,
+        fixedDesignName: fallback.fixedDesignName,
+        fixedDesignVersion: fallback.fixedDesignVersion,
+        svgSizeMm: svgSizeInput instanceof HTMLInputElement ? Number(svgSizeInput.value) : fallback.svgSizeMm,
+        offsetXMm: offsetXInput instanceof HTMLInputElement ? Number(offsetXInput.value) : fallback.offsetXMm,
+        offsetYMm: offsetYInput instanceof HTMLInputElement ? Number(offsetYInput.value) : fallback.offsetYMm,
+      };
+    })
+    .filter((item) => typeof item.fixedDesignId === "string" && item.fixedDesignId.trim());
 }
 
 function diffPresetLineSettings(base, next) {
@@ -1506,6 +1982,7 @@ function syncPresetEditorDraftFromControls() {
       lineRules: lineRules.length
         ? lineRules
         : [{ match: { kind: "all" }, settings: {} }],
+      fixedItems: readPresetEditorFixedItems(currentPreset.fixedItems),
     },
   };
 }
@@ -1667,6 +2144,7 @@ function renderPresetEditorEmptyState() {
   updatePresetGlobalVerticalScaleOutput();
   updatePresetBackingOutput();
   renderPresetEditorLineControls();
+  renderPresetEditorFixedItems();
   if (savePresetButton) {
     savePresetButton.disabled = true;
   }
@@ -1717,6 +2195,7 @@ function renderPresetEditorDraft() {
   updatePresetGlobalVerticalScaleOutput();
   updatePresetBackingOutput();
   renderPresetEditorLineControls();
+  renderPresetEditorFixedItems();
   updatePresetSaveButtonState();
   if (deletePresetButton) {
     deletePresetButton.disabled = !presetEditorDraft?.previousId
@@ -2043,6 +2522,7 @@ function buildOverwrittenPresetDefinition({ preset, settings }) {
     globalDefaults: inferredPreset.globalDefaults,
     lineDefaults: inferredPreset.lineDefaults,
     lineRules: inferredPreset.lineRules,
+    fixedItems: inferredPreset.fixedItems,
     listingAssignments: Array.isArray(preset?.listingAssignments)
       ? structuredClone(preset.listingAssignments)
       : [],
@@ -4253,6 +4733,7 @@ function buildPresetSynchronizedSettings(settings, presetId, options = {}) {
     normalizeSettings,
     getPresetBaseSettings,
     buildPresetLines,
+    getPresetFixedItems,
     createDefaultLineSettings,
     getRawTextLines,
   });
@@ -6194,14 +6675,17 @@ function updateRangeOutputForInput(input) {
 }
 
 function summarizeHorizontalScale(lines = []) {
-  if (!lines.length) {
+  const textLines = lines
+    .map((line) => normalizeLineSettings(line))
+    .filter((line) => !isFixedSvgLineSettings(line));
+  if (!textLines.length) {
     return {
       value: DEFAULT_LINE_SETTINGS.horizontalScale,
       mixed: false,
     };
   }
 
-  const values = lines.map((line) => normalizeLineSettings(line).horizontalScale);
+  const values = textLines.map((line) => line.horizontalScale);
   const first = values[0];
 
   return {
@@ -6211,14 +6695,17 @@ function summarizeHorizontalScale(lines = []) {
 }
 
 function summarizeVerticalScale(lines = []) {
-  if (!lines.length) {
+  const textLines = lines
+    .map((line) => normalizeLineSettings(line))
+    .filter((line) => !isFixedSvgLineSettings(line));
+  if (!textLines.length) {
     return {
       value: DEFAULT_LINE_SETTINGS.verticalScale,
       mixed: false,
     };
   }
 
-  const values = lines.map((line) => normalizeLineSettings(line).verticalScale);
+  const values = textLines.map((line) => line.verticalScale);
   const first = values[0];
 
   return {
@@ -6271,10 +6758,9 @@ function setEditorActionLabel(button, label) {
 
 function renderLineControls(settings = getCurrentSettings()) {
   const normalized = normalizeSettings(settings);
-  const rawLines = getRawTextLines(normalized.text);
   lineControlCards.replaceChildren();
 
-  if (!rawLines.length) {
+  if (!normalized.lines.length) {
     const empty = document.createElement("p");
     empty.className = "line-control-empty";
     empty.textContent = "Add text lines to generate one font and slider group per line.";
@@ -6282,46 +6768,117 @@ function renderLineControls(settings = getCurrentSettings()) {
     return;
   }
 
-  rawLines.forEach((lineText, index) => {
-    const line = normalized.lines[index] || createDefaultLineSettings();
+  const rawLines = getRawTextLines(normalized.text);
+  let textLineIndex = 0;
+
+  normalized.lines.forEach((line, settingsIndex) => {
     const card = document.createElement("section");
     card.className = "line-control-card";
-    card.dataset.lineIndex = String(index);
+    card.dataset.settingsIndex = String(settingsIndex);
 
     const header = document.createElement("div");
     header.className = "line-control-header";
 
     const title = document.createElement("h3");
     title.className = "line-control-title";
-    title.textContent = `Line ${index + 1}`;
 
     const summary = document.createElement("span");
     summary.className = "line-control-text";
-    summary.textContent = lineText.trim() || "Blank line";
 
     header.append(title, summary);
     card.append(header);
 
     const grid = document.createElement("div");
     grid.className = "line-control-grid";
+
+    if (isFixedSvgLineSettings(line)) {
+      const fixedDesign = resolveFixedDesignReference(line, fixedDesignRecords);
+      card.dataset.lineKind = "fixedSvg";
+      title.textContent = `Fixed Design: ${fixedDesign.displayName}`;
+      summary.textContent = `v${fixedDesign.version || 1}`;
+      header.append(createFixedDesignLineMenu(settingsIndex));
+      grid.append(
+        createFixedDesignRangeField(settingsIndex, "svgSizeMm", "SVG Size", 5, 80, 0.5, line.svgSizeMm),
+        createFixedDesignRangeField(settingsIndex, "offsetXMm", "Horizontal Offset", -30, 30, 0.1, line.offsetXMm),
+        createFixedDesignRangeField(settingsIndex, "offsetYMm", "Vertical Offset From Center", -30, 30, 0.1, line.offsetYMm),
+      );
+      card.append(grid);
+      lineControlCards.append(card);
+      return;
+    }
+
+    const lineText = rawLines[textLineIndex] ?? "";
+    card.dataset.lineKind = "text";
+    card.dataset.lineIndex = String(textLineIndex);
+    title.textContent = `Line ${textLineIndex + 1}`;
+    summary.textContent = lineText.trim() || "Blank line";
+
     const fields = [
-      createFontField(index, line.fontId),
-      createRangeField(index, "bridgeMm", "Letter Bridge", 0, 4, 0.1, line.bridgeMm),
-      createRangeField(index, "offsetXMm", "Horizontal Offset", -20, 20, 0.1, line.offsetXMm),
-      createRangeField(index, "fontSizeMm", "Text Height", 18, 55, 1, line.fontSizeMm),
-      createRangeField(index, "horizontalScale", "Horizontal Stretch", 0.75, 2, 0.01, line.horizontalScale),
-      createRangeField(index, "verticalScale", "Vertical Stretch", 0.75, 1.5, 0.01, line.verticalScale),
-      createCheckboxField(index, "lockTextHeight", "Lock Text Height", line.lockTextHeight),
+      createFontField(textLineIndex, line.fontId),
+      createRangeField(textLineIndex, "bridgeMm", "Letter Bridge", 0, 4, 0.1, line.bridgeMm),
+      createRangeField(textLineIndex, "offsetXMm", "Horizontal Offset", -20, 20, 0.1, line.offsetXMm),
+      createRangeField(textLineIndex, "fontSizeMm", "Text Height", 18, 55, 1, line.fontSizeMm),
+      createRangeField(textLineIndex, "horizontalScale", "Horizontal Stretch", 0.75, 2, 0.01, line.horizontalScale),
+      createRangeField(textLineIndex, "verticalScale", "Vertical Stretch", 0.75, 1.5, 0.01, line.verticalScale),
+      createCheckboxField(textLineIndex, "lockTextHeight", "Lock Text Height", line.lockTextHeight),
     ];
 
-    if (index > 0) {
-      fields.splice(2, 0, createRangeField(index, "lineBridgeMm", "Line Bridge", 0, 8, 0.1, line.lineBridgeMm));
+    if (textLineIndex > 0) {
+      fields.splice(2, 0, createRangeField(textLineIndex, "lineBridgeMm", "Line Bridge", 0, 8, 0.1, line.lineBridgeMm));
     }
 
     grid.append(...fields);
 
     card.append(grid);
     lineControlCards.append(card);
+    textLineIndex += 1;
+  });
+}
+
+function readTextLineSettingsFromControls({ presetId, textLineIndex, listingId, fallbackLineSettings }) {
+  const lineCard = lineControlCards.querySelector(`[data-line-index="${textLineIndex}"]`);
+  if (!lineCard) {
+    return normalizeLineSettings(fallbackLineSettings || createPresetLineSettings(presetId, textLineIndex, { listingId }));
+  }
+
+  const fontSelect = lineCard.querySelector('[data-setting="fontId"]');
+  const bridgeInput = lineCard.querySelector('[data-setting="bridgeMm"]');
+  const lineBridgeInput = lineCard.querySelector('[data-setting="lineBridgeMm"]');
+  const offsetXInput = lineCard.querySelector('[data-setting="offsetXMm"]');
+  const fontSizeInput = lineCard.querySelector('[data-setting="fontSizeMm"]');
+  const horizontalScaleInput = lineCard.querySelector('[data-setting="horizontalScale"]');
+  const verticalScaleInput = lineCard.querySelector('[data-setting="verticalScale"]');
+  const lockTextHeightInput = lineCard.querySelector('[data-setting="lockTextHeight"]');
+
+  return normalizeLineSettings({
+    kind: "text",
+    fontId: fontSelect?.value,
+    bridgeMm: bridgeInput?.value,
+    lineBridgeMm: lineBridgeInput?.value,
+    offsetXMm: offsetXInput?.value,
+    fontSizeMm: fontSizeInput?.value,
+    horizontalScale: horizontalScaleInput?.value,
+    verticalScale: verticalScaleInput?.value,
+    lockTextHeight: lockTextHeightInput?.checked,
+  });
+}
+
+function readFixedDesignLineSettingsFromControls({ settingsIndex, fallbackLineSettings }) {
+  const fallback = normalizeLineSettings(fallbackLineSettings);
+  const lineCard = lineControlCards.querySelector(`[data-line-kind="fixedSvg"][data-settings-index="${settingsIndex}"]`);
+  if (!lineCard) {
+    return fallback;
+  }
+
+  const svgSizeInput = lineCard.querySelector('[data-setting="svgSizeMm"]');
+  const offsetXInput = lineCard.querySelector('[data-setting="offsetXMm"]');
+  const offsetYInput = lineCard.querySelector('[data-setting="offsetYMm"]');
+
+  return normalizeLineSettings({
+    ...fallback,
+    svgSizeMm: svgSizeInput instanceof HTMLInputElement ? Number(svgSizeInput.value) : fallback.svgSizeMm,
+    offsetXMm: offsetXInput instanceof HTMLInputElement ? Number(offsetXInput.value) : fallback.offsetXMm,
+    offsetYMm: offsetYInput instanceof HTMLInputElement ? Number(offsetYInput.value) : fallback.offsetYMm,
   });
 }
 
@@ -6376,6 +6933,61 @@ function createRangeField(lineIndex, setting, labelText, min, max, step, value) 
   return label;
 }
 
+function createFixedDesignRangeField(settingsIndex, setting, labelText, min, max, step, value) {
+  const label = document.createElement("label");
+  label.className = "field compact-field";
+
+  const span = document.createElement("span");
+  span.textContent = labelText;
+
+  const row = document.createElement("div");
+  row.className = "range-row";
+
+  const input = document.createElement("input");
+  input.type = "range";
+  input.min = String(min);
+  input.max = String(max);
+  input.step = String(step);
+  input.value = String(value);
+  input.dataset.settingsIndex = String(settingsIndex);
+  input.dataset.setting = setting;
+
+  const output = document.createElement("output");
+  output.textContent = lineValueText(setting, value);
+
+  row.append(input, output);
+  label.append(span, row);
+
+  return label;
+}
+
+function createFixedDesignLineMenu(settingsIndex) {
+  const menu = document.createElement("details");
+  menu.className = "line-control-menu fixed-design-line-menu";
+
+  const summary = document.createElement("summary");
+  summary.className = "batch-tools-toggle fixed-design-line-toggle";
+  summary.setAttribute("aria-label", "Fixed design actions");
+
+  const popover = document.createElement("div");
+  popover.className = "line-control-menu-popover";
+
+  const button = document.createElement("button");
+  button.className = "batch-tool-button";
+  button.type = "button";
+  button.dataset.lineAction = "removeFixedDesign";
+  button.dataset.settingsIndex = String(settingsIndex);
+
+  const label = document.createElement("span");
+  label.className = "batch-tool-label";
+  label.textContent = "Remove Fixed Design";
+  button.append(label);
+
+  popover.append(button);
+  menu.append(summary, popover);
+  return menu;
+}
+
 function createCheckboxField(lineIndex, setting, labelText, checked) {
   const label = document.createElement("label");
   label.className = "check-field line-control-toggle";
@@ -6398,32 +7010,44 @@ function getCurrentSettings() {
   const presetId = presetInput.value;
   const activeOrder = getActiveOrder();
   const listingId = activeOrder?.source?.listingId ?? null;
-  const lines = rawLines.map((_, index) => {
-    const lineCard = lineControlCards.querySelector(`[data-line-index="${index}"]`);
-    if (!lineCard) {
-      return createPresetLineSettings(presetId, index, { listingId });
+  const activeSettings = activeOrder?.settings && typeof activeOrder.settings === "object" ? activeOrder.settings : {};
+  const normalizedActiveSettings = normalizeSettings({
+    ...activeSettings,
+    text: textInput.value,
+    presetId,
+  });
+  const lines = [];
+  let textLineIndex = 0;
+
+  normalizedActiveSettings.lines.forEach((line, settingsIndex) => {
+    if (isFixedSvgLineSettings(line)) {
+      lines.push(readFixedDesignLineSettingsFromControls({
+        settingsIndex,
+        fallbackLineSettings: line,
+      }));
+      return;
     }
 
-    const fontSelect = lineCard.querySelector('[data-setting="fontId"]');
-    const bridgeInput = lineCard.querySelector('[data-setting="bridgeMm"]');
-    const lineBridgeInput = lineCard.querySelector('[data-setting="lineBridgeMm"]');
-    const offsetXInput = lineCard.querySelector('[data-setting="offsetXMm"]');
-    const fontSizeInput = lineCard.querySelector('[data-setting="fontSizeMm"]');
-    const horizontalScaleInput = lineCard.querySelector('[data-setting="horizontalScale"]');
-    const verticalScaleInput = lineCard.querySelector('[data-setting="verticalScale"]');
-    const lockTextHeightInput = lineCard.querySelector('[data-setting="lockTextHeight"]');
-
-    return normalizeLineSettings({
-      fontId: fontSelect?.value,
-      bridgeMm: bridgeInput?.value,
-      lineBridgeMm: lineBridgeInput?.value,
-      offsetXMm: offsetXInput?.value,
-      fontSizeMm: fontSizeInput?.value,
-      horizontalScale: horizontalScaleInput?.value,
-      verticalScale: verticalScaleInput?.value,
-      lockTextHeight: lockTextHeightInput?.checked,
-    });
+    if (textLineIndex < rawLines.length) {
+      lines.push(readTextLineSettingsFromControls({
+        presetId,
+        textLineIndex,
+        listingId,
+        fallbackLineSettings: line,
+      }));
+      textLineIndex += 1;
+    }
   });
+
+  while (textLineIndex < rawLines.length) {
+    lines.push(readTextLineSettingsFromControls({
+      presetId,
+      textLineIndex,
+      listingId,
+      fallbackLineSettings: createPresetLineSettings(presetId, textLineIndex, { listingId }),
+    }));
+    textLineIndex += 1;
+  }
 
   return normalizeSettings({
     text: textInput.value,
@@ -6460,6 +7084,7 @@ function applyPresetSelection(presetId) {
     normalizeSettings,
     getPresetBaseSettings,
     buildPresetLines,
+    getPresetFixedItems,
     createDefaultLineSettings,
     getRawTextLines,
   });
@@ -6792,7 +7417,7 @@ function hasCompletedEditingState(order, settings = getCurrentSettings()) {
 }
 
 function canCompleteActiveOrder(order) {
-  if (!order || !order.text.trim()) {
+  if (!orderHasRenderableDesign(order)) {
     return false;
   }
 
@@ -6800,7 +7425,7 @@ function canCompleteActiveOrder(order) {
 }
 
 function hasUnsavedRenderChanges(order) {
-  if (!order || !order.text.trim()) {
+  if (!orderHasRenderableDesign(order)) {
     return false;
   }
 
@@ -6829,7 +7454,7 @@ function hasSavedCompletedState(order) {
 }
 
 function getSavedCachedBuild(order) {
-  if (!order?.text.trim() || !hasSavedCompletedState(order)) {
+  if (!orderHasRenderableDesign(order) || !hasSavedCompletedState(order)) {
     return null;
   }
 
@@ -6987,7 +7612,7 @@ function renderOrderList() {
   const completeCount = orders.filter((order) => order.status === "captured" || order.status === "exported").length;
   const progressCount = orders.filter((order) => order.status === "in-progress").length;
   const notStartedCount = orders.filter((order) => order.status === "not-started").length;
-  const exportableCount = orders.filter((order) => order.text.trim()).length;
+  const exportableCount = orders.filter(orderHasRenderableDesign).length;
   const readyToExportCount = orders.filter(isOrderReadyForExport).length;
   const allExportableOrdersReady = exportableCount > 0 && readyToExportCount === exportableCount;
 
@@ -7097,6 +7722,7 @@ function renderOrderList() {
   copyButton.disabled = !activeOrder || !isOrderReadyForExport(activeOrder) || !canCopySvgToClipboard();
   copyLayoutControlsButton.disabled = !canCopyLayoutControls(activeOrder);
   pasteLayoutControlsButton.disabled = !canPasteLayoutControls(activeOrder);
+  insertFixedDesignButton.disabled = !activeOrder;
   saveAsNewPresetButton.disabled = !activeOrder;
   overwritePresetButton.disabled = !activeOrder || !getPresetDefinitionForEditor(presetInput.value);
   assignPresetToListingButton.disabled = !activeOrder?.source?.listingId;
@@ -7116,6 +7742,504 @@ function getFontMetaLabel(font) {
   const format = font.fileFormat ? font.fileFormat.toUpperCase() : "font";
   const version = font.version ? `v${font.version}` : "v1";
   return `${kind} · ${format} · ${version}`;
+}
+
+function getFixedDesignMetaLabel(fixedDesign) {
+  if (!fixedDesign) {
+    return "Upload or choose a fixed SVG design.";
+  }
+
+  return `${fixedDesign.stateLabel || "Available"} - SVG - v${fixedDesign.version || 1}`;
+}
+
+function setFixedDesignEditorStatus(message, state = "pending") {
+  if (!fixedDesignEditorStatus) {
+    return;
+  }
+
+  fixedDesignEditorStatus.textContent = message;
+  fixedDesignEditorStatus.dataset.state = state;
+}
+
+function setFixedDesignVersionStatus(message = "") {
+  if (!fixedDesignVersionStatus) {
+    return;
+  }
+
+  fixedDesignVersionStatus.textContent = message;
+}
+
+function handleFixedDesignApiError(error, fallbackMessage, options = {}) {
+  if (isProductionBatchAuthenticationError(error)) {
+    const detail = options.authDetail || "Production batch session expired. Sign in again to manage fixed designs.";
+    handleProductionBatchAuthenticationRequired(detail);
+    if (options.versionDialog) {
+      setFixedDesignVersionStatus(detail);
+    } else {
+      setFixedDesignEditorStatus(detail, "pending");
+    }
+    return;
+  }
+
+  const message = error instanceof Error ? error.message : fallbackMessage;
+  if (options.versionDialog) {
+    setFixedDesignVersionStatus(message);
+  } else {
+    setFixedDesignEditorStatus(message, "error");
+  }
+}
+
+function stageFixedDesignVersionFile(file) {
+  if (!file) {
+    stagedFixedDesignVersionFile = null;
+    setFixedDesignVersionStatus("");
+    if (loadFixedDesignVersionConfirmButton) {
+      loadFixedDesignVersionConfirmButton.disabled = true;
+    }
+    return;
+  }
+
+  if (!/\.svg$/i.test(file.name || "")) {
+    stagedFixedDesignVersionFile = null;
+    setFixedDesignVersionStatus("Choose an SVG file to load as the new version.");
+    if (loadFixedDesignVersionConfirmButton) {
+      loadFixedDesignVersionConfirmButton.disabled = true;
+    }
+    return;
+  }
+
+  stagedFixedDesignVersionFile = file;
+  setFixedDesignVersionStatus(`Ready to load ${file.name}.`);
+  if (loadFixedDesignVersionConfirmButton) {
+    loadFixedDesignVersionConfirmButton.disabled = false;
+  }
+}
+
+function getSelectedFixedDesign() {
+  return fixedDesignRecords.find((record) => record.id === selectedFixedDesignId) || null;
+}
+
+function getVisibleFixedDesignRecords() {
+  const activeRecords = fixedDesignRecords.filter((record) => !record.isDeleted);
+  const query = fixedDesignSearchTerm.trim().toLowerCase();
+  if (!query) {
+    return activeRecords;
+  }
+
+  return activeRecords.filter((record) => (
+    record.displayName.toLowerCase().includes(query)
+    || String(record.fileName || "").toLowerCase().includes(query)
+  ));
+}
+
+function getVisibleInsertFixedDesignRecords() {
+  const activeRecords = fixedDesignRecords.filter((record) => !record.isDeleted);
+  const query = insertFixedDesignSearchTerm.trim().toLowerCase();
+  if (!query) {
+    return activeRecords;
+  }
+
+  return activeRecords.filter((record) => (
+    record.displayName.toLowerCase().includes(query)
+    || String(record.fileName || "").toLowerCase().includes(query)
+  ));
+}
+
+function getSelectedInsertFixedDesign() {
+  return fixedDesignRecords.find((record) => record.id === insertFixedDesignSelectedId) || null;
+}
+
+function setInsertFixedDesignStatus(message = "", state = "pending") {
+  insertFixedDesignStatusMessage = message;
+  insertFixedDesignStatusState = state;
+  if (insertFixedDesignStatus) {
+    insertFixedDesignStatus.textContent = message;
+    insertFixedDesignStatus.dataset.state = state;
+    insertFixedDesignStatus.hidden = !message;
+  }
+}
+
+function selectFirstInsertFixedDesignIfNeeded() {
+  const visibleRecords = getVisibleInsertFixedDesignRecords();
+  if (visibleRecords.some((record) => record.id === insertFixedDesignSelectedId)) {
+    return;
+  }
+
+  insertFixedDesignSelectedId = visibleRecords[0]?.id || null;
+}
+
+function selectInsertFixedDesign(fixedDesignId) {
+  if (!fixedDesignRecords.some((record) => record.id === fixedDesignId)) {
+    return false;
+  }
+
+  insertFixedDesignSelectedId = fixedDesignId;
+  renderInsertFixedDesignPicker();
+  return true;
+}
+
+function selectFirstFixedDesignIfNeeded() {
+  const activeRecords = fixedDesignRecords.filter((record) => !record.isDeleted);
+  if (activeRecords.some((record) => record.id === selectedFixedDesignId)) {
+    return;
+  }
+  if (!fixedDesignsLoaded && selectedFixedDesignId) {
+    return;
+  }
+
+  selectedFixedDesignId = activeRecords[0]?.id || null;
+}
+
+function selectFixedDesign(fixedDesignId, options = {}) {
+  const { updateRoute = true, replaceRoute = false } = options;
+  if (!fixedDesignRecords.some((record) => record.id === fixedDesignId)) {
+    return false;
+  }
+
+  selectedFixedDesignId = fixedDesignId;
+  renderFixedDesignWorkspace();
+  if (updateRoute) {
+    writeAppRoute({ replace: replaceRoute, workspace: "fixedDesigns", itemId: selectedFixedDesignId });
+  }
+  return true;
+}
+
+async function refreshWorkspaceFixedDesigns(accessToken = null) {
+  if (!accessToken) {
+    setFixedDesignEditorStatus("Sign in to load fixed designs.", "pending");
+    return;
+  }
+  if (fixedDesignsLoading) {
+    return;
+  }
+
+  const loadRequestId = fixedDesignsLoadRequestId + 1;
+  fixedDesignsLoadRequestId = loadRequestId;
+  fixedDesignsLoading = true;
+  setFixedDesignEditorStatus("Loading fixed designs...", "pending");
+  try {
+    const nextRecords = normalizeFixedDesignRecords(await fetchWorkspaceFixedDesigns({ accessToken, includeDeleted: true }));
+    if (loadRequestId !== fixedDesignsLoadRequestId) {
+      return;
+    }
+    fixedDesignRecords = nextRecords;
+    fixedDesignsLoaded = true;
+    selectFirstFixedDesignIfNeeded();
+    renderFixedDesignWorkspace();
+    const activeRecordCount = fixedDesignRecords.filter((record) => !record.isDeleted).length;
+    setFixedDesignEditorStatus(
+      activeRecordCount ? "Choose a fixed SVG design or upload a new one." : "Upload an SVG fixed design to start.",
+      "pending",
+    );
+  } catch (error) {
+    if (loadRequestId !== fixedDesignsLoadRequestId) {
+      return;
+    }
+    fixedDesignsLoaded = false;
+    renderFixedDesignWorkspace();
+    handleFixedDesignApiError(error, "Unable to load fixed designs.");
+  } finally {
+    if (loadRequestId === fixedDesignsLoadRequestId) {
+      fixedDesignsLoading = false;
+    }
+  }
+}
+
+function renderInsertFixedDesignPicker() {
+  if (!insertFixedDesignList) {
+    return;
+  }
+
+  if (insertFixedDesignSearchInput && insertFixedDesignSearchInput.value !== insertFixedDesignSearchTerm) {
+    insertFixedDesignSearchInput.value = insertFixedDesignSearchTerm;
+  }
+
+  selectFirstInsertFixedDesignIfNeeded();
+  const selectedFixedDesign = getSelectedInsertFixedDesign();
+  const visibleRecords = getVisibleInsertFixedDesignRecords();
+
+  insertFixedDesignList.replaceChildren();
+  if (!fixedDesignsLoaded && fixedDesignsLoading) {
+    const empty = document.createElement("p");
+    empty.className = "batch-tools-note fixed-design-empty-state";
+    empty.textContent = "Loading fixed designs...";
+    insertFixedDesignList.append(empty);
+  } else if (!visibleRecords.length) {
+    const empty = document.createElement("p");
+    empty.className = "batch-tools-note fixed-design-empty-state";
+    empty.textContent = insertFixedDesignSearchTerm.trim()
+      ? "No fixed designs match that search."
+      : "No fixed designs are available yet.";
+    insertFixedDesignList.append(empty);
+  } else {
+    visibleRecords.forEach((fixedDesign) => {
+      const row = document.createElement("article");
+      row.className = "fixed-design-row size-preset-row insert-fixed-design-row";
+      row.classList.toggle("is-selected", fixedDesign.id === selectedFixedDesign?.id);
+      row.role = "button";
+      row.tabIndex = 0;
+      row.dataset.fixedDesignId = fixedDesign.id;
+      row.innerHTML = `
+        <span class="size-preset-name fixed-design-row-name"></span>
+        <span class="size-preset-meta fixed-design-row-meta"></span>
+      `;
+      row.querySelector(".fixed-design-row-name").textContent = fixedDesign.displayName;
+      row.querySelector(".fixed-design-row-meta").textContent = `v${fixedDesign.version || 1} - ${fixedDesign.fileName || "SVG"}`;
+      row.addEventListener("click", () => {
+        selectInsertFixedDesign(fixedDesign.id);
+      });
+      row.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter" && event.key !== " ") {
+          return;
+        }
+
+        event.preventDefault();
+        selectInsertFixedDesign(fixedDesign.id);
+      });
+      insertFixedDesignList.append(row);
+    });
+  }
+
+  insertFixedDesignSelectedName.textContent = selectedFixedDesign?.displayName || "None";
+  insertFixedDesignSelectedMeta.textContent = selectedFixedDesign ? `v${selectedFixedDesign.version || 1}` : "None";
+  insertFixedDesignSelectedFile.textContent = selectedFixedDesign?.fileName || "None";
+
+  if (selectedFixedDesign?.publicUrl) {
+    insertFixedDesignPreviewImage.src = selectedFixedDesign.publicUrl;
+    insertFixedDesignPreviewImage.alt = `${selectedFixedDesign.displayName} SVG preview`;
+    insertFixedDesignPreviewImage.hidden = false;
+    insertFixedDesignPreviewEmptyState.hidden = true;
+  } else {
+    insertFixedDesignPreviewImage.removeAttribute("src");
+    insertFixedDesignPreviewImage.alt = "";
+    insertFixedDesignPreviewImage.hidden = true;
+    insertFixedDesignPreviewEmptyState.hidden = false;
+    insertFixedDesignPreviewEmptyState.textContent = selectedFixedDesign
+      ? "This fixed design does not have a preview URL."
+      : "Choose a fixed design to preview.";
+  }
+
+  if (insertFixedDesignConfirmButton) {
+    insertFixedDesignConfirmButton.disabled = !selectedFixedDesign || !getActiveOrder();
+  }
+
+  setInsertFixedDesignStatus(insertFixedDesignStatusMessage, insertFixedDesignStatusState);
+}
+
+async function loadFixedDesignsForInsertPicker() {
+  if (fixedDesignsLoaded) {
+    const activeRecordCount = fixedDesignRecords.filter((record) => !record.isDeleted).length;
+    setInsertFixedDesignStatus(
+      activeRecordCount ? "Choose a fixed design to insert." : "No fixed designs are available yet.",
+      "pending",
+    );
+    renderInsertFixedDesignPicker();
+    return;
+  }
+
+  const accessToken = productionBatchAccessToken || readProductionBatchAccessTokenOverride() || await getAccessToken();
+  if (!accessToken) {
+    setInsertFixedDesignStatus("Sign in to load fixed designs.", "error");
+    renderInsertFixedDesignPicker();
+    return;
+  }
+
+  productionBatchAccessToken = accessToken;
+  const loadRequestId = fixedDesignsLoadRequestId + 1;
+  fixedDesignsLoadRequestId = loadRequestId;
+  fixedDesignsLoading = true;
+  setInsertFixedDesignStatus("Loading fixed designs...", "pending");
+  renderInsertFixedDesignPicker();
+  try {
+    const nextRecords = normalizeFixedDesignRecords(await fetchWorkspaceFixedDesigns({ accessToken, includeDeleted: true }));
+    if (loadRequestId !== fixedDesignsLoadRequestId) {
+      return;
+    }
+    fixedDesignRecords = nextRecords;
+    fixedDesignsLoaded = true;
+    selectFirstFixedDesignIfNeeded();
+    selectFirstInsertFixedDesignIfNeeded();
+    renderFixedDesignWorkspace();
+    const activeRecordCount = fixedDesignRecords.filter((record) => !record.isDeleted).length;
+    setInsertFixedDesignStatus(
+      activeRecordCount ? "Choose a fixed design to insert." : "No fixed designs are available yet.",
+      "pending",
+    );
+  } catch (error) {
+    if (loadRequestId !== fixedDesignsLoadRequestId) {
+      return;
+    }
+    fixedDesignsLoaded = false;
+    const message = error instanceof Error ? error.message : "Unable to load fixed designs.";
+    if (isProductionBatchAuthenticationError(error)) {
+      handleProductionBatchAuthenticationRequired("Production batch session expired. Sign in again to insert fixed designs.");
+    }
+    setInsertFixedDesignStatus(message, "error");
+  } finally {
+    if (loadRequestId === fixedDesignsLoadRequestId) {
+      fixedDesignsLoading = false;
+      renderInsertFixedDesignPicker();
+    }
+  }
+}
+
+function closeInsertFixedDesignDialog() {
+  if (insertFixedDesignDialog?.open) {
+    insertFixedDesignDialog.close();
+  }
+}
+
+function openInsertFixedDesignDialog() {
+  const activeFixedDesignRecords = fixedDesignRecords.filter((record) => !record.isDeleted);
+  insertFixedDesignSearchTerm = "";
+  insertFixedDesignSelectedId = activeFixedDesignRecords.find((record) => record.id === insertFixedDesignSelectedId)?.id
+    || activeFixedDesignRecords[0]?.id
+    || null;
+  setInsertFixedDesignStatus(
+    fixedDesignsLoaded
+      ? (activeFixedDesignRecords.length ? "Choose a fixed design to insert." : "No fixed designs are available yet.")
+      : "Loading fixed designs...",
+    "pending",
+  );
+  presetToolsMenu?.removeAttribute("open");
+  renderInsertFixedDesignPicker();
+  if (typeof insertFixedDesignDialog?.showModal === "function") {
+    insertFixedDesignDialog.showModal();
+  }
+  insertFixedDesignSearchInput?.focus();
+  void loadFixedDesignsForInsertPicker();
+}
+
+function insertSelectedFixedDesignIntoActiveOrder() {
+  const selectedFixedDesign = getSelectedInsertFixedDesign();
+  const activeOrder = getActiveOrder();
+  if (!selectedFixedDesign || !activeOrder) {
+    return;
+  }
+
+  const currentSettings = normalizeSettings(getCurrentSettings());
+  const nextSettings = normalizeSettings({
+    ...currentSettings,
+    lines: [
+      ...currentSettings.lines,
+      createFixedDesignLineSettings(selectedFixedDesign),
+    ],
+  });
+
+  activeOrder.text = currentSettings.text;
+  activeOrder.settings = nextSettings;
+  applySettings(nextSettings);
+  updateActiveOrderFromControls();
+  render();
+  closeInsertFixedDesignDialog();
+  updateWorkflowAlert(`Inserted fixed design ${selectedFixedDesign.displayName}.`, "success");
+}
+
+function removeFixedDesignLine(settingsIndex) {
+  const activeOrder = getActiveOrder();
+  const currentSettings = normalizeSettings(getCurrentSettings());
+  const removedLine = currentSettings.lines[settingsIndex];
+  if (!activeOrder || !isFixedSvgLineSettings(removedLine)) {
+    return;
+  }
+
+  const removedFixedDesign = resolveFixedDesignReference(removedLine, fixedDesignRecords);
+  const nextSettings = normalizeSettings({
+    ...currentSettings,
+    lines: currentSettings.lines.filter((_, index) => index !== settingsIndex),
+  });
+
+  activeOrder.text = currentSettings.text;
+  activeOrder.settings = nextSettings;
+  applySettings(nextSettings);
+  updateActiveOrderFromControls();
+  render();
+  updateWorkflowAlert(`Removed fixed design ${removedFixedDesign.displayName}.`, "success");
+}
+
+function renderFixedDesignWorkspace() {
+  if (!fixedDesignList) {
+    return;
+  }
+
+  if (fixedDesignSearchInput && fixedDesignSearchInput.value !== fixedDesignSearchTerm) {
+    fixedDesignSearchInput.value = fixedDesignSearchTerm;
+  }
+
+  selectFirstFixedDesignIfNeeded();
+  const selectedFixedDesign = getSelectedFixedDesign();
+  const visibleRecords = getVisibleFixedDesignRecords();
+
+  fixedDesignList.replaceChildren();
+  if (!fixedDesignsLoaded && fixedDesignsLoading) {
+    const empty = document.createElement("p");
+    empty.className = "batch-tools-note fixed-design-empty-state";
+    empty.textContent = "Loading fixed designs...";
+    fixedDesignList.append(empty);
+  } else if (!visibleRecords.length) {
+    const empty = document.createElement("p");
+    empty.className = "batch-tools-note fixed-design-empty-state";
+    empty.textContent = fixedDesignSearchTerm.trim()
+      ? "No fixed designs match that search."
+      : "Upload an SVG to add the first fixed design.";
+    fixedDesignList.append(empty);
+  } else {
+    visibleRecords.forEach((fixedDesign) => {
+      const row = document.createElement("article");
+      row.className = "fixed-design-row size-preset-row";
+      row.classList.toggle("is-selected", fixedDesign.id === selectedFixedDesign?.id);
+      row.role = "button";
+      row.tabIndex = 0;
+      row.dataset.fixedDesignId = fixedDesign.id;
+      row.innerHTML = `
+        <span class="size-preset-name fixed-design-row-name"></span>
+        <span class="size-preset-meta fixed-design-row-meta"></span>
+      `;
+      row.querySelector(".fixed-design-row-name").textContent = fixedDesign.displayName;
+      row.querySelector(".fixed-design-row-meta").textContent = `v${fixedDesign.version || 1} - ${fixedDesign.fileName || "SVG"}`;
+      row.addEventListener("click", () => {
+        selectFixedDesign(fixedDesign.id);
+      });
+      row.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter" && event.key !== " ") {
+          return;
+        }
+
+        event.preventDefault();
+        selectFixedDesign(fixedDesign.id);
+      });
+      fixedDesignList.append(row);
+    });
+  }
+
+  selectedFixedDesignName.textContent = selectedFixedDesign?.displayName || "No fixed design selected";
+  selectedFixedDesignMeta.textContent = getFixedDesignMetaLabel(selectedFixedDesign);
+  selectedFixedDesignFileName.textContent = selectedFixedDesign?.fileName || "None";
+  selectedFixedDesignVersion.textContent = selectedFixedDesign ? `v${selectedFixedDesign.version || 1}` : "None";
+  selectedFixedDesignState.textContent = selectedFixedDesign?.stateLabel || "No selection";
+
+  const hasSelectedDesign = Boolean(selectedFixedDesign);
+  [saveFixedDesignButton, loadFixedDesignVersionButton, downloadFixedDesignButton, deleteFixedDesignButton]
+    .filter(Boolean)
+    .forEach((button) => {
+      button.disabled = !hasSelectedDesign;
+    });
+  downloadFixedDesignButton.disabled = !selectedFixedDesign?.publicUrl;
+
+  if (selectedFixedDesign?.publicUrl) {
+    fixedDesignPreviewImage.src = selectedFixedDesign.publicUrl;
+    fixedDesignPreviewImage.alt = `${selectedFixedDesign.displayName} SVG preview`;
+    fixedDesignPreviewImage.hidden = false;
+    fixedDesignPreviewEmptyState.hidden = true;
+  } else {
+    fixedDesignPreviewImage.removeAttribute("src");
+    fixedDesignPreviewImage.alt = "";
+    fixedDesignPreviewImage.hidden = true;
+    fixedDesignPreviewEmptyState.hidden = false;
+    fixedDesignPreviewEmptyState.textContent = selectedFixedDesign
+      ? "This fixed design does not have a preview URL."
+      : "Select or upload an SVG fixed design.";
+  }
 }
 
 function renderFontWorkspace() {
@@ -7166,25 +8290,214 @@ function renderFontWorkspace() {
     : "Uploaded fonts can be replaced with a new version or deleted from future selections.";
 }
 
+function formatFixedDesignDisplayName(fileName) {
+  return String(fileName || "")
+    .replace(/\.[^.]+$/, "")
+    .split(/[\s_-]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ")
+    || "Fixed Design";
+}
+
+async function buildFixedDesignUploadPayload(file, displayName = "") {
+  if (!file || !/\.svg$/i.test(file.name || "")) {
+    throw new Error("Upload an SVG file.");
+  }
+
+  const text = await file.text();
+  return {
+    displayName: displayName.trim() || formatFixedDesignDisplayName(file.name),
+    file: {
+      name: file.name,
+      type: file.type || "image/svg+xml",
+      size: file.size,
+      text,
+    },
+  };
+}
+
+function upsertFixedDesignRecord(record) {
+  const normalized = normalizeFixedDesignRecord(record);
+  if (!normalized) {
+    return null;
+  }
+
+  const existingIndex = fixedDesignRecords.findIndex((candidate) => candidate.id === normalized.id);
+  if (existingIndex >= 0) {
+    fixedDesignRecords = fixedDesignRecords.map((candidate) => (
+      candidate.id === normalized.id ? normalized : candidate
+    ));
+  } else {
+    fixedDesignRecords = [...fixedDesignRecords, normalized];
+  }
+  fixedDesignRecords.sort((a, b) => a.displayName.localeCompare(b.displayName));
+  fixedDesignsLoaded = true;
+  return normalized;
+}
+
+async function handleFixedDesignUploadSelection() {
+  const file = fixedDesignUploadInput?.files?.[0] || null;
+  if (fixedDesignUploadInput) {
+    fixedDesignUploadInput.value = "";
+  }
+  if (!file) {
+    return;
+  }
+
+  try {
+    setFixedDesignEditorStatus("Uploading fixed design...", "pending");
+    const payload = await buildFixedDesignUploadPayload(file);
+    const savedRecord = await createWorkspaceFixedDesign(payload, { accessToken: productionBatchAccessToken });
+    const normalized = upsertFixedDesignRecord(savedRecord);
+    if (normalized) {
+      selectedFixedDesignId = normalized.id;
+    }
+    renderFixedDesignWorkspace();
+    writeAppRoute({ workspace: "fixedDesigns", itemId: selectedFixedDesignId });
+    setFixedDesignEditorStatus("Fixed design uploaded.", "success");
+  } catch (error) {
+    handleFixedDesignApiError(error, "Unable to upload fixed design.");
+  }
+}
+
+function openFixedDesignVersionDialog() {
+  if (!getSelectedFixedDesign()) {
+    return;
+  }
+
+  fixedDesignActionsMenu?.removeAttribute("open");
+  stageFixedDesignVersionFile(null);
+  if (fixedDesignVersionInput) {
+    fixedDesignVersionInput.value = "";
+  }
+  if (typeof fixedDesignVersionDialog?.showModal === "function") {
+    fixedDesignVersionDialog.showModal();
+  }
+}
+
+function closeFixedDesignVersionDialog() {
+  if (fixedDesignVersionDialog?.open) {
+    fixedDesignVersionDialog.close();
+  }
+  stageFixedDesignVersionFile(null);
+  if (fixedDesignVersionInput) {
+    fixedDesignVersionInput.value = "";
+  }
+}
+
+async function replaceSelectedFixedDesignVersion(file) {
+  const selectedFixedDesign = getSelectedFixedDesign();
+  if (!selectedFixedDesign || !file) {
+    setFixedDesignVersionStatus("Choose an SVG file before loading a new version.");
+    return;
+  }
+
+  try {
+    setFixedDesignVersionStatus("Uploading new version...");
+    const payload = await buildFixedDesignUploadPayload(file, selectedFixedDesign.displayName);
+    const savedRecord = await replaceWorkspaceFixedDesign(selectedFixedDesign.id, payload, { accessToken: productionBatchAccessToken });
+    const normalized = upsertFixedDesignRecord(savedRecord);
+    if (normalized) {
+      selectedFixedDesignId = normalized.id;
+    }
+    renderFixedDesignWorkspace();
+    setFixedDesignEditorStatus("Fixed design version uploaded.", "success");
+    closeFixedDesignVersionDialog();
+  } catch (error) {
+    handleFixedDesignApiError(error, "Unable to upload new version.", { versionDialog: true });
+  }
+}
+
+function getFixedDesignDownloadFileName(fixedDesign) {
+  return fixedDesign.fileName || `${fixedDesign.displayName.replace(/\s+/g, "-").toLowerCase()}.svg`;
+}
+
+async function downloadSelectedFixedDesign() {
+  const selectedFixedDesign = getSelectedFixedDesign();
+  if (!selectedFixedDesign?.publicUrl) {
+    setFixedDesignEditorStatus("This fixed design does not have a downloadable SVG URL.", "error");
+    return;
+  }
+
+  fixedDesignActionsMenu?.removeAttribute("open");
+  try {
+    setFixedDesignEditorStatus("Preparing SVG download...", "pending");
+    const response = await fetch(selectedFixedDesign.publicUrl);
+    if (!response.ok) {
+      throw new Error("Unable to download SVG file.");
+    }
+
+    const blob = await response.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = objectUrl;
+    link.download = getFixedDesignDownloadFileName(selectedFixedDesign);
+    document.body.append(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => {
+      URL.revokeObjectURL(objectUrl);
+    }, 0);
+    setFixedDesignEditorStatus("SVG download prepared.", "success");
+  } catch (error) {
+    setFixedDesignEditorStatus(error instanceof Error ? error.message : "Unable to download SVG file.", "error");
+  }
+}
+
+async function deleteSelectedFixedDesign() {
+  const selectedFixedDesign = getSelectedFixedDesign();
+  if (!selectedFixedDesign) {
+    return;
+  }
+
+  fixedDesignActionsMenu?.removeAttribute("open");
+  const confirmed = await showConfirmationDialog({
+    title: "Delete Fixed Design?",
+    description: `Delete ${selectedFixedDesign.displayName} from future fixed design selections? Existing saved orders may still reference it.`,
+    confirmLabel: "Delete",
+    isDanger: true,
+  });
+  if (!confirmed) {
+    return;
+  }
+
+  try {
+    setFixedDesignEditorStatus("Deleting fixed design...", "pending");
+    await deleteWorkspaceFixedDesign(selectedFixedDesign.id, { accessToken: productionBatchAccessToken });
+    fixedDesignRecords = fixedDesignRecords.filter((record) => record.id !== selectedFixedDesign.id);
+    selectedFixedDesignId = null;
+    selectFirstFixedDesignIfNeeded();
+    renderFixedDesignWorkspace();
+    writeAppRoute({ workspace: "fixedDesigns", itemId: selectedFixedDesignId });
+    setFixedDesignEditorStatus("Fixed design deleted.", "success");
+  } catch (error) {
+    handleFixedDesignApiError(error, "Unable to delete fixed design.");
+  }
+}
+
 function setActiveWorkspace(workspace, options = {}) {
   const { updateRoute = true, replaceRoute = false } = options;
   const hasRouteItemId = Object.prototype.hasOwnProperty.call(options, "routeItemId");
-  activeWorkspace = ["orders", "databaseOrders", "presets", "fonts", "sizeGuides"].includes(workspace) ? workspace : DEFAULT_WORKSPACE;
+  activeWorkspace = ["orders", "databaseOrders", "presets", "fonts", "fixedDesigns", "sizeGuides"].includes(workspace) ? workspace : DEFAULT_WORKSPACE;
   appShell.dataset.workspace = activeWorkspace;
   ordersWorkspace.hidden = activeWorkspace !== "orders";
   databaseOrdersWorkspace.hidden = activeWorkspace !== "databaseOrders";
   presetsWorkspace.hidden = activeWorkspace !== "presets";
   fontsWorkspace.hidden = activeWorkspace !== "fonts";
+  fixedDesignsWorkspace.hidden = activeWorkspace !== "fixedDesigns";
   sizeGuideWorkspace.hidden = activeWorkspace !== "sizeGuides";
   orderWorkspaceButton.classList.toggle("is-active", activeWorkspace === "orders");
   databaseOrdersWorkspaceButton.classList.toggle("is-active", activeWorkspace === "databaseOrders");
   presetWorkspaceButton.classList.toggle("is-active", activeWorkspace === "presets");
   fontWorkspaceButton.classList.toggle("is-active", activeWorkspace === "fonts");
+  fixedDesignsWorkspaceButton.classList.toggle("is-active", activeWorkspace === "fixedDesigns");
   sizeGuideWorkspaceButton.classList.toggle("is-active", activeWorkspace === "sizeGuides");
   orderWorkspaceButton.setAttribute("aria-pressed", String(activeWorkspace === "orders"));
   databaseOrdersWorkspaceButton.setAttribute("aria-pressed", String(activeWorkspace === "databaseOrders"));
   presetWorkspaceButton.setAttribute("aria-pressed", String(activeWorkspace === "presets"));
   fontWorkspaceButton.setAttribute("aria-pressed", String(activeWorkspace === "fonts"));
+  fixedDesignsWorkspaceButton.setAttribute("aria-pressed", String(activeWorkspace === "fixedDesigns"));
   sizeGuideWorkspaceButton.setAttribute("aria-pressed", String(activeWorkspace === "sizeGuides"));
   if (activeWorkspace === "presets") {
     selectFirstPresetEditorRowIfNeeded();
@@ -7195,6 +8508,12 @@ function setActiveWorkspace(workspace, options = {}) {
   }
   if (activeWorkspace === "fonts") {
     renderFontWorkspace();
+  }
+  if (activeWorkspace === "fixedDesigns") {
+    renderFixedDesignWorkspace();
+    if (productionBatchAccessToken) {
+      void refreshWorkspaceFixedDesigns(productionBatchAccessToken);
+    }
   }
   if (activeWorkspace === "sizeGuides") {
     selectFirstSizePresetIfNeeded({ updateRoute });
@@ -7637,12 +8956,15 @@ async function importOrdersFromClipboard() {
 
 async function captureActiveOrder({ advanceToNext = false } = {}) {
   const order = getActiveOrder();
-  if (!order || !textInput.value.trim()) {
+  if (!order) {
     return;
   }
 
   order.text = textInput.value;
   order.settings = getCurrentSettings();
+  if (!orderHasRenderableDesign(order)) {
+    return;
+  }
   const layout = buildOrderLayout(order.settings);
   const signature = buildSettingsSignature(order.settings);
   const requestId = crypto.randomUUID();
@@ -8157,14 +9479,12 @@ function getMeasuredLine(text, settings) {
 }
 
 function layoutTextLines(text, lineSettings) {
-  const rawLines = getRawTextLines(text);
-  const normalizedSettings = normalizeSettings({ text, lines: lineSettings }).lines;
-  const lines = rawLines.map((lineText, index) => {
-    const settings = normalizedSettings[index] || createDefaultLineSettings();
-    const measuredLine = getMeasuredLine(lineText, settings);
+  const textLineItems = getTextLineItemsFromSettings({ text, lines: lineSettings });
+  const lines = textLineItems.map(({ text: lineText, line, textLineIndex }) => {
+    const measuredLine = getMeasuredLine(lineText, line);
 
     return {
-      index,
+      index: textLineIndex,
       text: measuredLine.text,
       settings: measuredLine.settings,
       letters: measuredLine.letters,
@@ -8457,6 +9777,51 @@ function createFaceImage(letters, widthMm, heightMm) {
   };
 }
 
+function createFixedSvgPreviewElements(fixedSvgs = [], frame) {
+  return fixedSvgs.map((fixedSvg) => {
+    const commonAttributes = {
+      "data-fixed-svg-id": fixedSvg.id,
+      "data-fixed-svg-name": fixedSvg.name,
+    };
+    const x = frame.designX + fixedSvg.xMm;
+    const y = frame.designY + fixedSvg.yMm;
+
+    if (fixedSvg.publicUrl) {
+      return makeSvgElement("image", {
+        ...commonAttributes,
+        href: fixedSvg.publicUrl,
+        x,
+        y,
+        width: fixedSvg.widthMm,
+        height: fixedSvg.heightMm,
+      });
+    }
+
+    const group = makeSvgElement("g", {
+      ...commonAttributes,
+      transform: `translate(${x} ${y})`,
+    });
+    const rect = makeSvgElement("rect", {
+      width: fixedSvg.widthMm,
+      height: fixedSvg.heightMm,
+      fill: "none",
+      stroke: "#9ca3af",
+      "stroke-dasharray": "2 1.5",
+    });
+    const label = makeSvgElement("text", {
+      x: fixedSvg.widthMm / 2,
+      y: fixedSvg.heightMm / 2,
+      "text-anchor": "middle",
+      "dominant-baseline": "middle",
+      fill: "#6b7280",
+      "font-size": "3",
+    });
+    label.textContent = fixedSvg.stateLabel || "Missing";
+    group.append(rect, label);
+    return group;
+  });
+}
+
 function renderPreviewFromLayout(layout) {
   const analysis = layout.analysis || null;
   const facePreview = createFaceImage(layout.letters, layout.widthMm, layout.heightMm);
@@ -8506,7 +9871,7 @@ function renderPreviewFromLayout(layout) {
         height: layout.heightMm,
       });
 
-  preview.append(backingLayer, faceLayer);
+  preview.append(backingLayer, faceLayer, ...createFixedSvgPreviewElements(layout.fixedSvgs || [], frame));
   appendPreviewGuide(frame.previewBoxX, frame.previewBoxY, layout.guide);
 }
 
@@ -8537,7 +9902,7 @@ function render() {
   const activeOrder = getActiveOrder();
   const signature = buildSettingsSignature(settings);
 
-  if (!settings.text.trim()) {
+  if (!settings.text.trim() && !settingsIncludeFixedSvg(settings)) {
     lastLayout = null;
     renderPreviewGuideOnly();
     return;
@@ -8652,7 +10017,7 @@ async function copyCurrentSvg() {
     await copySvgToClipboard(svgSource);
   } catch {
   } finally {
-    copyButton.disabled = !order.text.trim() || !canCopySvgToClipboard();
+    copyButton.disabled = !orderHasRenderableDesign(order) || !canCopySvgToClipboard();
     setEditorActionLabel(copyButton, "Copy This Design");
     copyButton.removeAttribute("aria-busy");
     renderOrderList();
@@ -8661,12 +10026,13 @@ async function copyCurrentSvg() {
 
 async function requestSvgSource({ layout = null, layouts = null }) {
   const payload = layouts ? { layouts } : layout;
+  const exportPayload = await enrichExportPayloadWithFixedSvgText(payload);
   const response = await fetch("/api/export-svg", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
-    body: JSON.stringify(payload),
+    body: JSON.stringify(exportPayload),
   });
 
   if (!response.ok) {
@@ -8716,7 +10082,7 @@ async function exportAllOrders() {
   saveActiveOrderDraft();
   renderOrderList();
 
-  const exportableOrders = orders.filter((order) => order.text.trim());
+  const exportableOrders = orders.filter(orderHasRenderableDesign);
   if (!exportableOrders.length) {
     return;
   }
@@ -8768,7 +10134,7 @@ async function copyAllOrders() {
   saveActiveOrderDraft();
   renderOrderList();
 
-  const exportableOrders = orders.filter((order) => order.text.trim());
+  const exportableOrders = orders.filter(orderHasRenderableDesign);
   if (!exportableOrders.length || !canCopySvgToClipboard()) {
     return;
   }
@@ -8843,22 +10209,31 @@ function assembleOrderLayout(normalized, sourceLines, fitScale, fitted, guide) {
       verticalScale: line.settings.verticalScale,
     }));
   });
+  const fixedSvgs = buildFixedSvgLayoutItems(normalized.lines, widthMm, heightMm);
+  const expanded = expandLayoutForFixedSvgs({
+    widthMm,
+    heightMm,
+    textBoundsMm,
+    letters: absoluteLetters,
+    fixedSvgs,
+  });
 
   return {
     text,
-    widthMm,
-    heightMm,
+    widthMm: expanded.widthMm,
+    heightMm: expanded.heightMm,
     backingMm,
     weldExportedDesign: normalized.weldExportedDesign,
     boundingSizePresetId: normalized.boundingSizePresetId,
     guide,
-    textBoundsMm,
+    textBoundsMm: expanded.textBoundsMm,
     fit: {
       fitScale,
       lineScaleFactors,
       overflowsGuide,
     },
-    letters: absoluteLetters,
+    letters: expanded.letters,
+    fixedSvgs: expanded.fixedSvgs,
   };
 }
 
@@ -9006,6 +10381,21 @@ reloadPresetButton?.addEventListener("click", () => {
 });
 lineControls.addEventListener("input", handleLineControlsChange);
 lineControls.addEventListener("change", handleLineControlsChange);
+lineControls.addEventListener("click", (event) => {
+  const actionButton = event.target instanceof Element
+    ? event.target.closest("[data-line-action]")
+    : null;
+  if (!(actionButton instanceof HTMLButtonElement)) {
+    return;
+  }
+
+  if (actionButton.dataset.lineAction === "removeFixedDesign") {
+    const settingsIndex = Number(actionButton.dataset.settingsIndex);
+    if (Number.isInteger(settingsIndex)) {
+      removeFixedDesignLine(settingsIndex);
+    }
+  }
+});
 globalHorizontalScaleInput?.addEventListener("input", () => {
   applyGlobalHorizontalScale(globalHorizontalScaleInput.value, { deferPreview: true });
 });
@@ -9050,6 +10440,9 @@ presetWorkspaceButton.addEventListener("click", () => {
 fontWorkspaceButton.addEventListener("click", () => {
   setActiveWorkspace("fonts", { routeItemId: null });
 });
+fixedDesignsWorkspaceButton.addEventListener("click", () => {
+  setActiveWorkspace("fixedDesigns", { routeItemId: null });
+});
 newFontUploadButton?.addEventListener("click", () => {
   fontFileInput.dataset.mode = "create";
   fontFileInput.click();
@@ -9063,6 +10456,59 @@ fontFileInput?.addEventListener("change", () => {
 });
 deleteFontButton?.addEventListener("click", () => {
   void handleDeleteSelectedFont();
+});
+fixedDesignUploadButton?.addEventListener("click", () => {
+  fixedDesignUploadInput?.click();
+});
+fixedDesignUploadInput?.addEventListener("change", () => {
+  void handleFixedDesignUploadSelection();
+});
+fixedDesignSearchInput?.addEventListener("input", () => {
+  fixedDesignSearchTerm = fixedDesignSearchInput.value;
+  renderFixedDesignWorkspace();
+});
+saveFixedDesignButton?.addEventListener("click", () => {
+  fixedDesignActionsMenu?.removeAttribute("open");
+  setFixedDesignEditorStatus("Fixed design details are current.", "success");
+});
+loadFixedDesignVersionButton?.addEventListener("click", openFixedDesignVersionDialog);
+downloadFixedDesignButton?.addEventListener("click", downloadSelectedFixedDesign);
+deleteFixedDesignButton?.addEventListener("click", () => {
+  void deleteSelectedFixedDesign();
+});
+chooseFixedDesignVersionButton?.addEventListener("click", () => {
+  fixedDesignVersionInput?.click();
+});
+fixedDesignVersionInput?.addEventListener("change", () => {
+  const file = fixedDesignVersionInput.files?.[0] || null;
+  stageFixedDesignVersionFile(file);
+});
+cancelFixedDesignVersionButton?.addEventListener("click", closeFixedDesignVersionDialog);
+loadFixedDesignVersionConfirmButton?.addEventListener("click", () => {
+  void replaceSelectedFixedDesignVersion(stagedFixedDesignVersionFile);
+});
+closeFixedDesignVersionDialogButton?.addEventListener("click", closeFixedDesignVersionDialog);
+fixedDesignVersionDialog?.addEventListener("cancel", (event) => {
+  event.preventDefault();
+  closeFixedDesignVersionDialog();
+});
+fixedDesignVersionDialog?.addEventListener("click", (event) => {
+  if (event.target === fixedDesignVersionDialog) {
+    closeFixedDesignVersionDialog();
+  }
+});
+fixedDesignDropZone?.addEventListener("dragover", (event) => {
+  event.preventDefault();
+  fixedDesignDropZone.classList.add("is-dragging");
+});
+fixedDesignDropZone?.addEventListener("dragleave", () => {
+  fixedDesignDropZone.classList.remove("is-dragging");
+});
+fixedDesignDropZone?.addEventListener("drop", (event) => {
+  event.preventDefault();
+  fixedDesignDropZone.classList.remove("is-dragging");
+  const file = event.dataTransfer?.files?.[0] || null;
+  stageFixedDesignVersionFile(file);
 });
 sizeGuideWorkspaceButton.addEventListener("click", () => {
   setActiveWorkspace("sizeGuides", { routeItemId: null });
@@ -9125,6 +10571,13 @@ presetLineRuleControls?.addEventListener("input", (event) => {
   updatePresetSaveButtonState();
 });
 presetLineRuleControls?.addEventListener("change", () => {
+  updatePresetSaveButtonState();
+});
+presetFixedItemList?.addEventListener("input", (event) => {
+  updateRangeOutputForInput(event.target);
+  updatePresetSaveButtonState();
+});
+presetFixedItemList?.addEventListener("change", () => {
   updatePresetSaveButtonState();
 });
 presetAssignmentsList?.addEventListener("click", (event) => {
@@ -9197,6 +10650,23 @@ overwritePresetButton?.addEventListener("click", () => {
 assignPresetToListingButton?.addEventListener("click", () => {
   void assignSelectedPresetToActiveListing();
 });
+insertFixedDesignButton?.addEventListener("click", openInsertFixedDesignDialog);
+insertFixedDesignSearchInput?.addEventListener("input", () => {
+  insertFixedDesignSearchTerm = insertFixedDesignSearchInput.value;
+  renderInsertFixedDesignPicker();
+});
+insertFixedDesignConfirmButton?.addEventListener("click", insertSelectedFixedDesignIntoActiveOrder);
+cancelInsertFixedDesignButton?.addEventListener("click", closeInsertFixedDesignDialog);
+closeInsertFixedDesignDialogButton?.addEventListener("click", closeInsertFixedDesignDialog);
+insertFixedDesignDialog?.addEventListener("cancel", (event) => {
+  event.preventDefault();
+  closeInsertFixedDesignDialog();
+});
+insertFixedDesignDialog?.addEventListener("click", (event) => {
+  if (event.target === insertFixedDesignDialog) {
+    closeInsertFixedDesignDialog();
+  }
+});
 [addOrderButton, importClipboardButton, clearBatchButton, showColorCountsButton, exportCompletedButton, copyCompletedButton]
   .filter(Boolean)
   .forEach((button) => {
@@ -9218,6 +10688,13 @@ assignPresetToListingButton?.addEventListener("click", () => {
       selectedOrderActionsMenu?.removeAttribute("open");
     });
   });
+[saveFixedDesignButton, loadFixedDesignVersionButton, downloadFixedDesignButton, deleteFixedDesignButton]
+  .filter(Boolean)
+  .forEach((button) => {
+    button.addEventListener("click", () => {
+      fixedDesignActionsMenu?.removeAttribute("open");
+    });
+  });
 [copyButton, downloadButton]
   .filter(Boolean)
   .forEach((button) => {
@@ -9225,7 +10702,7 @@ assignPresetToListingButton?.addEventListener("click", () => {
       editorToolsMenu?.removeAttribute("open");
     });
   });
-[copyLayoutControlsButton, pasteLayoutControlsButton, saveAsNewPresetButton, overwritePresetButton, assignPresetToListingButton, reloadPresetButton]
+[copyLayoutControlsButton, pasteLayoutControlsButton, insertFixedDesignButton, saveAsNewPresetButton, overwritePresetButton, assignPresetToListingButton, reloadPresetButton]
   .filter(Boolean)
   .forEach((button) => {
     button.addEventListener("click", () => {
@@ -9235,6 +10712,7 @@ assignPresetToListingButton?.addEventListener("click", () => {
 registerOutsideDismissableDetailsMenu(batchToolsMenu);
 registerOutsideDismissableDetailsMenu(ordersToolsMenu);
 registerOutsideDismissableDetailsMenu(selectedOrderActionsMenu);
+registerOutsideDismissableDetailsMenu(fixedDesignActionsMenu);
 registerOutsideDismissableDetailsMenu(presetToolsMenu);
 registerDatabaseOrderItemMenuDismissal(databaseOrdersWorkspace);
 closeColorCountsButton?.addEventListener("click", closeBatchColorCountsDialog);
@@ -9389,9 +10867,15 @@ renderPresetEditorDraft();
 updateBackingOutput();
 productionBatchAccessToken = await bootstrapProductionBatchAccess();
 await refreshWorkspaceFonts(productionBatchAccessToken);
+if (initialAppRoute.workspace === "fixedDesigns") {
+  await refreshWorkspaceFixedDesigns(productionBatchAccessToken);
+}
 const restoredBatch = productionBatchAccessToken
   ? await restoreInitialBatchState(productionBatchAccessToken)
   : { source: null, count: 0 };
+if (productionBatchAccessToken && !fixedDesignsLoaded && restoredOrdersIncludeFixedSvgs()) {
+  await refreshWorkspaceFixedDesigns(productionBatchAccessToken);
+}
 if (appRouteWriteCount === 0) {
   await applyCurrentAppRoute({
     replaceRoute: window.location.pathname === "/",

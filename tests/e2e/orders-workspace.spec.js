@@ -935,7 +935,7 @@ test("skips duplicate production batch clipboard items without posting to orders
   await expect(page.locator("#pasteSummarySkippedCount")).toHaveText("1");
 });
 
-test("rejects empty Orders clipboard import without posting to orders", async ({ page }) => {
+test("imports Orders clipboard items with blank personalization text", async ({ page }) => {
   const orderPosts = [];
   await installSupabaseSession(page);
   await installClipboardText(page, buildEmptyClipboardPayload());
@@ -947,8 +947,26 @@ test("rejects empty Orders clipboard import without posting to orders", async ({
   await page.getByRole("button", { name: "Orders", exact: true }).click();
   await ordersWorkspace.getByRole("button", { name: "Paste orders" }).click();
 
-  await expect.poll(() => orderPosts).toHaveLength(0);
-  await expect(page.locator("#workflowAlertText")).toHaveText("Clipboard data did not include any importable Etsy designs.");
+  await expect.poll(() => orderPosts).toHaveLength(1);
+  expect(orderPosts[0]).toMatchObject({
+    action: "importClipboardItems",
+    target: "orders",
+    batchId: "batch-1",
+    items: [
+      {
+        text: "",
+        source: {
+          orderNumber: "1004",
+          buyerName: "Empty Clipboard",
+          listingId: "listing-empty",
+          transactionId: "txn-empty",
+        },
+      },
+    ],
+  });
+  await expect(page.locator("#pasteSummaryDialog")).toBeVisible();
+  await expect(page.locator("#pasteSummaryImportedCount")).toHaveText("1");
+  await expect(page.locator("#pasteSummarySkippedCount")).toHaveText("0");
 });
 
 test("adds an individual order item to the active production batch from the item menu", async ({ page }) => {

@@ -93,4 +93,51 @@ describe("preset selection", () => {
 
     expect(result.boundingSizePresetId).toBe("size-2-2x1-5");
   });
+
+  it("appends reusable fixed SVG preset items after rebuilt text line settings", () => {
+    const normalizeSettings = vi.fn((settings) => ({
+      text: settings.text ?? "Avery\nRN",
+      presetId: settings.presetId ?? "preset-old",
+      backingMm: settings.backingMm ?? 9.9,
+      weldExportedDesign: settings.weldExportedDesign ?? false,
+      lines: settings.lines ?? [],
+    }));
+    const fixedItems = [
+      {
+        kind: "fixedSvg",
+        fixedDesignId: "fixed-design-bow",
+        fixedDesignName: "Bow",
+        fixedDesignVersion: 2,
+        svgSizeMm: 34,
+        offsetXMm: 1,
+        offsetYMm: -2,
+      },
+    ];
+
+    const result = buildReloadedPresetSettings({
+      settings: {
+        text: "Avery\nRN",
+        lines: [],
+      },
+      presetId: "preset-with-bow",
+      normalizeSettings,
+      getPresetBaseSettings: () => ({
+        backingMm: 3.1,
+        weldExportedDesign: true,
+      }),
+      buildPresetLines: () => ([
+        { fontId: "skywalk", bridgeMm: 0.6 },
+        { fontId: "somekind", bridgeMm: 0.7 },
+      ]),
+      getPresetFixedItems: () => fixedItems,
+      createDefaultLineSettings: () => ({}),
+      getRawTextLines: () => ["Avery", "RN"],
+    });
+
+    expect(result.lines).toEqual([
+      { fontId: "skywalk", bridgeMm: 0.6 },
+      { fontId: "somekind", bridgeMm: 0.7 },
+      fixedItems[0],
+    ]);
+  });
 });

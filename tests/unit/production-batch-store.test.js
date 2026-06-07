@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 const supabaseMock = vi.hoisted(() => ({
   calls: [],
   batchItems: null,
+  presets: [],
   sizeGuides: [],
 }));
 
@@ -138,6 +139,13 @@ function createSelectChain(table) {
       if (table === "size_guides") {
         return Promise.resolve({
           data: supabaseMock.sizeGuides,
+          error: null,
+        }).then(resolve);
+      }
+
+      if (table === "presets") {
+        return Promise.resolve({
+          data: supabaseMock.presets,
           error: null,
         }).then(resolve);
       }
@@ -297,6 +305,48 @@ describe("production batch store", () => {
     const designsUpsert = supabaseMock.calls.find((call) => call.table === "designs" && call.operation === "upsert");
 
     expect(designsUpsert.payload[0].size_guide_id).toBeNull();
+  });
+
+  it("does not upsert preset ids that are missing from the workspace", async () => {
+    supabaseMock.presets = [{ id: "preset-existing" }];
+    const { saveProductionBatch } = await import("../../api/_lib/production-batch-store.js");
+
+    await saveProductionBatch({
+      userId: "user-1",
+      snapshot: {
+        batch: { id: "batch-1", workspaceId: "workspace-1" },
+        activeOrderItemId: "order-1",
+        orderItems: [
+          {
+            id: "order-1",
+            revision: 1,
+            text: "Lungs",
+            status: "captured",
+            source: {},
+            settings: {
+              text: "Lungs",
+              presetId: "preset-missing",
+              boundingSizePresetId: null,
+              lines: [
+                {
+                  kind: "fixedSvg",
+                  fixedDesignId: "fixed-design-lungs",
+                  fixedDesignName: "Lungs",
+                  fixedDesignVersion: 1,
+                  svgSizeMm: 44.5,
+                  offsetXMm: 0,
+                  offsetYMm: 0,
+                },
+              ],
+            },
+          },
+        ],
+      },
+    });
+
+    const designsUpsert = supabaseMock.calls.find((call) => call.table === "designs" && call.operation === "upsert");
+
+    expect(designsUpsert.payload[0].preset_id).toBeNull();
   });
 
   it("completes order items and removes batch memberships without writing archived status", async () => {

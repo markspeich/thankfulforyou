@@ -93,10 +93,6 @@ export function normalizeImportedEntry(entry, options = {}) {
       : entry.text,
   );
 
-  if (!personalization) {
-    return null;
-  }
-
   const orderNumber = entry.orderNumber == null ? "" : String(entry.orderNumber).trim();
   const listingId = entry.listingId == null ? "" : String(entry.listingId).trim();
   const buyerName = normalizeImportedText(entry.buyerName);
@@ -106,6 +102,12 @@ export function normalizeImportedEntry(entry, options = {}) {
   const listingImageUrl75x75 = typeof entry.listingImageUrl75x75 === "string"
     ? entry.listingImageUrl75x75.trim()
     : "";
+  const transactionId = entry.transactionId == null ? "" : String(entry.transactionId).trim();
+
+  if (!personalization && !orderNumber && !listingId && !transactionId && !buyerName) {
+    return null;
+  }
+
   const presetId = getPresetIdForListingId(listingId);
 
   return {
@@ -119,7 +121,7 @@ export function normalizeImportedEntry(entry, options = {}) {
       quantity,
       listingTitle,
       listingImageUrl75x75,
-      transactionId: entry.transactionId == null ? "" : String(entry.transactionId).trim(),
+      transactionId,
     },
   };
 }

@@ -138,6 +138,7 @@ function buildPresetSnapshot({ presets, lineRules, assignments, sizeGuides }) {
           match: ruleMatchFromRow(rule),
           settings: lineSettingsFromRuleRow(rule),
         })),
+        fixedItems: normalizeJsonValue(preset.fixed_items_json, []),
         listingAssignments: (assignmentsByPresetId.get(preset.id) || []).map((assignment) => ({
           listingId: assignment.listing_id,
           name: assignment.name || "",
@@ -198,7 +199,7 @@ export async function loadPresetSnapshot(workspaceKey) {
   ] = await Promise.all([
     supabase
       .from("presets")
-      .select("id, workspace_id, name, default_size_guide_id, backing_border_mm, weld_exported_design, global_horizontal_scale, global_vertical_scale, is_default, updated_at")
+      .select("id, workspace_id, name, default_size_guide_id, backing_border_mm, weld_exported_design, global_horizontal_scale, global_vertical_scale, fixed_items_json, is_default, updated_at")
       .eq("workspace_id", workspaceId)
       .order("name", { ascending: true }),
     supabase
@@ -280,6 +281,7 @@ export async function savePresetSnapshot(workspaceKey, snapshot) {
     weld_exported_design: preset.globalDefaults?.weldExportedDesign !== false,
     global_horizontal_scale: preset.globalDefaults?.globalHorizontalScale ?? 1,
     global_vertical_scale: preset.globalDefaults?.globalVerticalScale ?? 1,
+    fixed_items_json: preset.fixedItems || [],
     is_builtin: false,
     is_default: preset.id === snapshot.defaultPresetId,
     updated_at: savedAt,

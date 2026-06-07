@@ -9,6 +9,15 @@ const LINE_SETTING_KEYS = [
   "lockTextHeight",
 ];
 
+const FIXED_ITEM_KEYS = [
+  "fixedDesignId",
+  "fixedDesignName",
+  "fixedDesignVersion",
+  "svgSizeMm",
+  "offsetXMm",
+  "offsetYMm",
+];
+
 function diffLineSettings(base, line) {
   return LINE_SETTING_KEYS.reduce((result, key) => {
     if (line[key] !== base[key]) {
@@ -16,6 +25,15 @@ function diffLineSettings(base, line) {
     }
     return result;
   }, {});
+}
+
+function normalizeFixedItem(line) {
+  return FIXED_ITEM_KEYS.reduce((result, key) => {
+    if (Object.hasOwn(line, key)) {
+      result[key] = line[key];
+    }
+    return result;
+  }, { kind: "fixedSvg" });
 }
 
 function getReusableLaterDiff(lineDiffs, lineCount) {
@@ -67,18 +85,22 @@ export function buildPresetIdFromName(name) {
 
 export function inferPresetDefinitionFromSettings({ name, settings }) {
   const lines = Array.isArray(settings?.lines) ? settings.lines : [];
+  const textLines = lines.filter((line) => line?.kind !== "fixedSvg");
+  const fixedItems = lines
+    .filter((line) => line?.kind === "fixedSvg")
+    .map(normalizeFixedItem);
   const shared = LINE_SETTING_KEYS.reduce((result, key) => {
-    const firstValue = lines[0]?.[key];
-    if (lines.length > 0 && lines.every((line) => line?.[key] === firstValue)) {
+    const firstValue = textLines[0]?.[key];
+    if (textLines.length > 0 && textLines.every((line) => line?.[key] === firstValue)) {
       result[key] = firstValue;
     }
     return result;
   }, {});
-  const lineDiffs = lines.map((line) => diffLineSettings(shared, line || {}));
-  const reusableLaterDiff = lines.length > 1 ? getReusableLaterDiff(lineDiffs, lines.length) : {};
+  const lineDiffs = textLines.map((line) => diffLineSettings(shared, line || {}));
+  const reusableLaterDiff = textLines.length > 1 ? getReusableLaterDiff(lineDiffs, textLines.length) : {};
 
   const lineRules = [];
-  const firstDiff = diffLineSettings(shared, lines[0] || {});
+  const firstDiff = diffLineSettings(shared, textLines[0] || {});
   if (Object.keys(firstDiff).length > 0) {
     lineRules.push({ match: { kind: "first" }, settings: firstDiff });
   }
@@ -87,7 +109,7 @@ export function inferPresetDefinitionFromSettings({ name, settings }) {
     lineRules.push({ match: { kind: "remaining" }, settings: reusableLaterDiff });
   }
 
-  lines.slice(1).forEach((line, index) => {
+  textLines.slice(1).forEach((line, index) => {
     const nextDiff = lineDiffs[index + 1] || {};
     if (
       Object.keys(nextDiff).length > 0 &&
@@ -113,6 +135,7 @@ export function inferPresetDefinitionFromSettings({ name, settings }) {
     lineDefaults: shared,
     lineRules:
       lineRules.length > 0 ? lineRules : [{ match: { kind: "all" }, settings: {} }],
+    fixedItems,
     listingAssignments: [],
   };
 }

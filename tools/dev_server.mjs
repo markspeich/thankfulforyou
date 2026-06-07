@@ -32,7 +32,7 @@ const contentTypes = {
   ".ttf": "font/ttf",
 };
 const presetSnapshots = new Map();
-const appRouteRoots = new Set(["orders", "production-batch", "presets", "fonts", "size-guides"]);
+const appRouteRoots = new Set(["orders", "production-batch", "presets", "fonts", "fixed-designs", "size-guides"]);
 
 function sendJson(response, statusCode, payload) {
   response.writeHead(statusCode, { "Content-Type": "application/json; charset=utf-8" });
@@ -160,6 +160,7 @@ const server = createServer(async (request, response) => {
     || requestUrl.pathname === "/api/orders"
     || requestUrl.pathname === "/api/production-batch"
     || requestUrl.pathname === "/api/fonts"
+    || requestUrl.pathname === "/api/fixed-designs"
   ) {
     const requestId = randomUUID();
     const startedAt = Date.now();
@@ -181,6 +182,7 @@ const server = createServer(async (request, response) => {
         "/api/orders": "../api/orders.js",
         "/api/production-batch": "../api/production-batch.js",
         "/api/fonts": "../api/fonts.js",
+        "/api/fixed-designs": "../api/fixed-designs.js",
       };
       const modulePath = modulePathByPathname[requestUrl.pathname];
       const { default: handler } = await import(modulePath);

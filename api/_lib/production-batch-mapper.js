@@ -28,6 +28,14 @@ function normalizeStringValue(value) {
   return typeof value === "string" && value ? value : null;
 }
 
+function normalizeItemKind(kind) {
+  return kind === "fixed_svg" || kind === "fixedSvg" ? "fixed_svg" : "text";
+}
+
+function mapRowItemKindToSettingsKind(kind) {
+  return kind === "fixed_svg" ? "fixedSvg" : "text";
+}
+
 function splitDesignTextLines(text) {
   return String(text ?? "").split(/\r?\n/);
 }
@@ -112,20 +120,31 @@ function buildDesignLineRows(orderItem) {
   const settings = orderItem?.settings && typeof orderItem.settings === "object" ? orderItem.settings : {};
   const textLines = splitDesignTextLines(orderItem.text ?? settings.text ?? "");
   const lines = Array.isArray(settings.lines) ? settings.lines : [];
+  let textLineIndex = 0;
 
-  return lines.map((line, lineIndex) => ({
-    order_item_id: orderItem.id,
-    line_index: lineIndex,
-    text: textLines[lineIndex] ?? "",
-    font_id: line.fontId || "candlepin",
-    letter_bridge_mm: toNumber(line.bridgeMm, 0.5),
-    line_bridge_mm: toNumber(line.lineBridgeMm, 0.5),
-    offset_x_mm: toNumber(line.offsetXMm, 0),
-    text_height_mm: toNumber(line.fontSizeMm, 34),
-    horizontal_scale: toNumber(line.horizontalScale, 1),
-    vertical_scale: toNumber(line.verticalScale, 1),
-    lock_text_height: Boolean(line.lockTextHeight),
-  }));
+  return lines.map((line, lineIndex) => {
+    const itemKind = normalizeItemKind(line.kind);
+    const text = itemKind === "text" ? textLines[textLineIndex++] ?? "" : "";
+
+    return {
+      order_item_id: orderItem.id,
+      line_index: lineIndex,
+      item_kind: itemKind,
+      text,
+      font_id: line.fontId || "candlepin",
+      letter_bridge_mm: toNumber(line.bridgeMm, 0.5),
+      line_bridge_mm: toNumber(line.lineBridgeMm, 0.5),
+      offset_x_mm: toNumber(line.offsetXMm, 0),
+      offset_y_mm: toNumber(line.offsetYMm, 0),
+      text_height_mm: toNumber(line.fontSizeMm, 34),
+      horizontal_scale: toNumber(line.horizontalScale, 1),
+      vertical_scale: toNumber(line.verticalScale, 1),
+      lock_text_height: Boolean(line.lockTextHeight),
+      fixed_design_id: itemKind === "fixed_svg" ? normalizeStringValue(line.fixedDesignId) : null,
+      fixed_design_version: itemKind === "fixed_svg" ? toNumber(line.fixedDesignVersion, null) : null,
+      svg_size_mm: itemKind === "fixed_svg" ? toNumber(line.svgSizeMm, 32) : 32,
+    };
+  });
 }
 
 export function buildProductionBatchRowsFromSnapshot(snapshot, options = {}) {
@@ -195,16 +214,30 @@ function buildOrderItemFromRows({ orderItem, design, designLines }) {
       weldExportedDesign: design?.weld_exported_design !== false,
       globalHorizontalScale: toNumber(design?.global_horizontal_scale, 1),
       globalVerticalScale: toNumber(design?.global_vertical_scale, 1),
-      lines: orderedLines.map((line) => ({
-        fontId: line.font_id || "candlepin",
-        bridgeMm: toNumber(line.letter_bridge_mm, 0.5),
-        lineBridgeMm: toNumber(line.line_bridge_mm, 0.5),
-        offsetXMm: toNumber(line.offset_x_mm, 0),
-        fontSizeMm: toNumber(line.text_height_mm, 34),
-        horizontalScale: toNumber(line.horizontal_scale, 1),
-        verticalScale: toNumber(line.vertical_scale, 1),
-        lockTextHeight: Boolean(line.lock_text_height),
-      })),
+      lines: orderedLines.map((line) => {
+        if (line.item_kind === "fixed_svg") {
+          return {
+            kind: "fixedSvg",
+            fixedDesignId: line.fixed_design_id ?? null,
+            fixedDesignVersion: toNumber(line.fixed_design_version, null),
+            svgSizeMm: toNumber(line.svg_size_mm, 32),
+            offsetXMm: toNumber(line.offset_x_mm, 0),
+            offsetYMm: toNumber(line.offset_y_mm, 0),
+          };
+        }
+
+        const settings = {
+          fontId: line.font_id || "candlepin",
+          bridgeMm: toNumber(line.letter_bridge_mm, 0.5),
+          lineBridgeMm: toNumber(line.line_bridge_mm, 0.5),
+          offsetXMm: toNumber(line.offset_x_mm, 0),
+          fontSizeMm: toNumber(line.text_height_mm, 34),
+          horizontalScale: toNumber(line.horizontal_scale, 1),
+          verticalScale: toNumber(line.vertical_scale, 1),
+          lockTextHeight: Boolean(line.lock_text_height),
+        };
+        return line.item_kind ? { kind: mapRowItemKindToSettingsKind(line.item_kind), ...settings } : settings;
+      }),
     },
   };
 }

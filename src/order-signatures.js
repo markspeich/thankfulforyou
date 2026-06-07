@@ -19,16 +19,29 @@ function buildSignaturePayload(settings = {}, options = {}) {
       : {}),
     backingMm: toFiniteNumber(settings.backingMm),
     weldExportedDesign: Boolean(settings.weldExportedDesign),
-    lines: normalizeLines(settings.lines).map((line = {}) => ({
-      fontId: typeof line.fontId === "string" ? line.fontId : "",
-      bridgeMm: toFiniteNumber(line.bridgeMm),
-      lineBridgeMm: toFiniteNumber(line.lineBridgeMm),
-      offsetXMm: toFiniteNumber(line.offsetXMm),
-      fontSizeMm: toFiniteNumber(line.fontSizeMm),
-      horizontalScale: toFiniteNumber(line.horizontalScale),
-      verticalScale: toFiniteNumber(line.verticalScale),
-      ...(includeLockTextHeight ? { lockTextHeight: Boolean(line.lockTextHeight) } : {}),
-    })),
+    lines: normalizeLines(settings.lines).map((line = {}) => {
+      if (line.kind === "fixedSvg") {
+        return {
+          kind: "fixedSvg",
+          fixedDesignId: typeof line.fixedDesignId === "string" ? line.fixedDesignId : "",
+          fixedDesignVersion: toFiniteNumber(line.fixedDesignVersion),
+          svgSizeMm: toFiniteNumber(line.svgSizeMm),
+          offsetXMm: toFiniteNumber(line.offsetXMm),
+          offsetYMm: toFiniteNumber(line.offsetYMm),
+        };
+      }
+
+      return {
+        fontId: typeof line.fontId === "string" ? line.fontId : "",
+        bridgeMm: toFiniteNumber(line.bridgeMm),
+        lineBridgeMm: toFiniteNumber(line.lineBridgeMm),
+        offsetXMm: toFiniteNumber(line.offsetXMm),
+        fontSizeMm: toFiniteNumber(line.fontSizeMm),
+        horizontalScale: toFiniteNumber(line.horizontalScale),
+        verticalScale: toFiniteNumber(line.verticalScale),
+        ...(includeLockTextHeight ? { lockTextHeight: Boolean(line.lockTextHeight) } : {}),
+      };
+    }),
   };
 
   return payload;

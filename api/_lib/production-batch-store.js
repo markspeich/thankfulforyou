@@ -87,7 +87,7 @@ export async function loadProductionBatch({ batchId, workspaceId }) {
   const { data: designLines, error: designLinesError } = designIds.length
     ? await supabase
       .from("design_lines")
-      .select("design_id, line_index, text, font_id, letter_bridge_mm, line_bridge_mm, offset_x_mm, text_height_mm, horizontal_scale, vertical_scale, lock_text_height")
+      .select("design_id, line_index, item_kind, text, font_id, letter_bridge_mm, line_bridge_mm, offset_x_mm, offset_y_mm, text_height_mm, horizontal_scale, vertical_scale, lock_text_height, fixed_design_id, fixed_design_version, svg_size_mm")
       .in("design_id", designIds)
       .order("line_index", { ascending: true })
     : { data: [], error: null };
@@ -194,6 +194,29 @@ export async function saveProductionBatch({ snapshot, userId, changedOrderItemId
     revision: Number.isInteger(design.revision) ? design.revision + 1 : 1,
     updated_at: savedAt,
   }));
+
+  const referencedPresetIds = [...new Set(nextDesigns
+    .map((design) => design.preset_id)
+    .filter((presetId) => typeof presetId === "string" && presetId))];
+  if (referencedPresetIds.length) {
+    const { data: existingPresets, error: presetsError } = await supabase
+      .from("presets")
+      .select("id")
+      .eq("workspace_id", snapshot.batch.workspaceId)
+      .in("id", referencedPresetIds);
+
+    if (presetsError) {
+      throw presetsError;
+    }
+
+    const validPresetIds = new Set((existingPresets || []).map((preset) => preset.id));
+    nextDesigns = nextDesigns.map((design) => ({
+      ...design,
+      preset_id: !design.preset_id || validPresetIds.has(design.preset_id)
+        ? design.preset_id
+        : null,
+    }));
+  }
 
   const referencedSizeGuideIds = [...new Set(nextDesigns
     .map((design) => design.size_guide_id)

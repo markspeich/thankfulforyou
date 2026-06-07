@@ -227,6 +227,14 @@ const ALLOWED_LINE_SETTINGS = [
   "verticalScale",
   "lockTextHeight",
 ];
+const ALLOWED_FIXED_ITEM_SETTINGS = [
+  "fixedDesignId",
+  "fixedDesignName",
+  "fixedDesignVersion",
+  "svgSizeMm",
+  "offsetXMm",
+  "offsetYMm",
+];
 
 let presetRegistry = createPresetRegistry(FALLBACK_MANIFEST, FALLBACK_PRESET_DEFINITIONS);
 
@@ -240,6 +248,27 @@ function sanitizeLineSettings(settings = {}) {
   });
 
   return next;
+}
+
+function sanitizeFixedItem(item = {}) {
+  const next = { kind: "fixedSvg" };
+
+  ALLOWED_FIXED_ITEM_SETTINGS.forEach((key) => {
+    if (Object.hasOwn(item, key)) {
+      next[key] = item[key];
+    }
+  });
+
+  return next;
+}
+
+function normalizeFixedItems(fixedItems = []) {
+  return Array.isArray(fixedItems)
+    ? fixedItems
+      .filter((item) => item?.kind === "fixedSvg")
+      .map(sanitizeFixedItem)
+      .filter((item) => typeof item.fixedDesignId === "string" && item.fixedDesignId.trim())
+    : [];
 }
 
 function normalizeListingAssignments(listingAssignments = []) {
@@ -298,6 +327,7 @@ function normalizePresetDefinition(definition = {}) {
           settings: sanitizeLineSettings(rule.settings),
         }))
       : [],
+    fixedItems: normalizeFixedItems(definition.fixedItems),
     listingAssignments: normalizeListingAssignments(definition.listingAssignments),
   };
 }
@@ -530,6 +560,10 @@ export function buildPresetLines(presetId, lineCount, createLineSettings, option
     ...createLineSettings(),
     ...getPresetLineOverrides(presetId, lineIndex, listingId),
   }));
+}
+
+export function getPresetFixedItems(presetId) {
+  return normalizeFixedItems(getPresetDefinition(presetId)?.fixedItems);
 }
 
 export function setPresetRegistryForTests(manifest = FALLBACK_MANIFEST, presetDefinitions = FALLBACK_PRESET_DEFINITIONS) {

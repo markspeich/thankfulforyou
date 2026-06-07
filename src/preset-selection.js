@@ -5,6 +5,7 @@ export function buildReloadedPresetSettings({
   normalizeSettings,
   getPresetBaseSettings,
   buildPresetLines,
+  getPresetFixedItems = () => [],
   createDefaultLineSettings,
   getRawTextLines,
 }) {
@@ -18,6 +19,9 @@ export function buildReloadedPresetSettings({
     boundingSizePresetId: presetBaseSettings.boundingSizePresetId,
     backingMm: presetBaseSettings.backingMm,
     weldExportedDesign: presetBaseSettings.weldExportedDesign,
-    lines: buildPresetLines(presetId, rawLines.length, createDefaultLineSettings, { listingId }),
+    lines: [
+      ...buildPresetLines(presetId, rawLines.length, createDefaultLineSettings, { listingId }),
+      ...getPresetFixedItems(presetId),
+    ],
   });
 }
