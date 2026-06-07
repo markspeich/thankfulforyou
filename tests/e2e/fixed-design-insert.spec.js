@@ -384,7 +384,7 @@ test("inserts a fixed SVG design from the preset tools menu with SVG-only contro
 
   const fixedCard = page.locator(".line-control-card", { hasText: "Fixed Design: Paw Print" });
   await expect(fixedCard).toBeVisible();
-  await expect(fixedCard.getByText("SVG Size")).toBeVisible();
+  await expect(fixedCard.getByText("Vertical Size")).toBeVisible();
   await expect(fixedCard.getByText("Horizontal Offset")).toBeVisible();
   await expect(fixedCard.getByText("Vertical Offset From Center")).toBeVisible();
   await expect(fixedCard.getByText("Font")).toHaveCount(0);
