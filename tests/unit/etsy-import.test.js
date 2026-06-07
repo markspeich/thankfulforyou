@@ -49,16 +49,44 @@ describe("Etsy import parsing", () => {
     expect(getPresetIdForListingId).toHaveBeenCalledWith("listing-1");
   });
 
-  it("filters entries without personalization", () => {
+  it("preserves Etsy order entries without personalization text", () => {
     const payload = {
       items: [
-        { personalization: "", listingId: "listing-1" },
-        { listingId: "listing-2" },
+        { personalization: "", listingId: "listing-1", orderNumber: "1001" },
+        { listingId: "listing-2", transactionId: "txn-2" },
         { text: "  Chris  ", listingId: "listing-3" },
       ],
     };
 
     expect(parseImportedItems(JSON.stringify(payload))).toEqual([
+      {
+        text: "",
+        presetId: null,
+        source: {
+          orderNumber: "1001",
+          listingId: "listing-1",
+          buyerName: "",
+          colorName: "",
+          quantity: "",
+          listingTitle: "",
+          listingImageUrl75x75: "",
+          transactionId: "",
+        },
+      },
+      {
+        text: "",
+        presetId: null,
+        source: {
+          orderNumber: "",
+          listingId: "listing-2",
+          buyerName: "",
+          colorName: "",
+          quantity: "",
+          listingTitle: "",
+          listingImageUrl75x75: "",
+          transactionId: "txn-2",
+        },
+      },
       {
         text: "Chris",
         presetId: null,
@@ -121,10 +149,10 @@ describe("Etsy import parsing", () => {
     }, "  Jordan RN  ")).toBe("fallback:1000|listing-1|Morgan|Jordan RN");
   });
 
-  it("returns an empty import list when every raw entry filters away", () => {
+  it("returns an empty import list when every raw entry lacks text and Etsy identity", () => {
     expect(parseImportedItems(JSON.stringify({ items: [
       { personalization: "   " },
-      { listingId: "listing-1" },
+      {},
     ] }))).toEqual([]);
   });
 

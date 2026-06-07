@@ -15,6 +15,15 @@ function getPersonalizationEntries(transaction) {
   });
 }
 
+function getPersonalizationValues(transaction) {
+  const personalizationEntries = getPersonalizationEntries(transaction);
+  if (!personalizationEntries.length) {
+    return [""];
+  }
+
+  return personalizationEntries.map((entry) => entry.value);
+}
+
 function getVariationValue(transaction, propertyName) {
   if (!Array.isArray(transaction?.variations)) {
     return "";
@@ -38,17 +47,6 @@ function getTransactionQuantity(transaction) {
   }
 
   return "1";
-}
-
-function buildSkippedTransactionEntry(order, transaction, reason) {
-  return {
-    orderNumber: String(order?.order_id ?? ""),
-    buyerName: order?.fulfillment?.to_address?.name || "",
-    transactionId: String(transaction?.transaction_id ?? ""),
-    listingId: String(transaction?.listing_id ?? ""),
-    listingTitle: transaction?.product?.title || "",
-    reason,
-  };
 }
 
 function buildOrderItemLabel(orderId, buyerName, itemNumber) {
@@ -75,13 +73,7 @@ function analyzeOrdersForClipboard() {
     let itemNumber = 0;
 
     (order?.transactions || []).forEach((transaction) => {
-      const personalizationEntries = getPersonalizationEntries(transaction);
-      if (!personalizationEntries.length) {
-        skipped.push(buildSkippedTransactionEntry(order, transaction, "Missing Personalization variation"));
-        return;
-      }
-
-      personalizationEntries.forEach((personalizationEntry) => {
+      getPersonalizationValues(transaction).forEach((personalization) => {
         itemNumber += 1;
         items.push({
           orderNumber: String(order.order_id),
@@ -93,7 +85,7 @@ function analyzeOrdersForClipboard() {
           listingTitle: transaction?.product?.title || "",
           listingImageUrl75x75: transaction?.product?.image_url_75x75 || "",
           label: buildOrderItemLabel(order.order_id, buyerName, itemNumber),
-          personalization: personalizationEntry.value,
+          personalization,
         });
       });
     });
@@ -114,7 +106,7 @@ async function copyBadgeBatchPayload() {
   const { items, skipped, totalOrders } = analyzeOrdersForClipboard();
 
   if (!items.length) {
-    console.warn("No personalized Etsy line items found on this page.", skipped);
+    console.warn("No Etsy line items found on this page.", skipped);
     return;
   }
 

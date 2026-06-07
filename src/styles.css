@@ -138,7 +138,7 @@ select {
 
 .workspace-nav {
   display: grid;
-  grid-template-rows: auto auto auto auto auto auto 1fr auto;
+  grid-template-rows: repeat(7, auto) 1fr auto;
   gap: 10px;
   padding: 14px 10px;
   background: linear-gradient(180deg, #163341 0%, #21495d 100%);
@@ -299,21 +299,18 @@ select {
 }
 
 .workspace-nav-icon-fixed-designs::before {
-  left: 3px;
-  top: 2px;
-  width: 13px;
-  height: 15px;
+  inset: 2px;
   border: 2px solid currentColor;
   border-radius: 3px;
 }
 
 .workspace-nav-icon-fixed-designs::after {
-  left: 6px;
-  top: 6px;
-  width: 8px;
-  height: 2px;
+  left: 5px;
+  bottom: 4px;
+  width: 10px;
+  height: 8px;
   background: currentColor;
-  box-shadow: 0 4px 0 currentColor, 0 8px 0 currentColor;
+  clip-path: polygon(0 100%, 32% 48%, 50% 68%, 73% 24%, 100% 100%);
 }
 
 .workspace-nav-icon-size-guide::before {

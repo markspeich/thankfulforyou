@@ -81,7 +81,7 @@ describe("etsy copy badge clipboard", () => {
     expect(append).toHaveBeenCalledWith(createdButton);
   });
 
-  it("reports skipped orders that have no personalization variation", async () => {
+  it("copies orders that have no personalization variation", async () => {
     const { context, warnings, clipboardWrites } = loadClipboardScript([
       {
         order_id: 1,
@@ -119,22 +119,29 @@ describe("etsy copy badge clipboard", () => {
     await context.copyBadgeBatchPayload();
 
     expect(clipboardWrites).toHaveLength(1);
-    expect(warnings).toContainEqual([
-      "Skipped 1 Etsy order(s) while building the badge batch.",
-      [
-        {
-          orderNumber: "2",
-          buyerName: "Jordan",
-          transactionId: "22",
-          listingId: "222",
-          listingTitle: "Admin Assistant Badge Reel",
-          reason: "Missing Personalization variation",
-        },
-      ],
+    const payload = JSON.parse(clipboardWrites[0]);
+    expect(payload.items).toEqual([
+      expect.objectContaining({
+        orderNumber: "1",
+        transactionId: "11",
+        listingId: "111",
+        buyerName: "Taylor",
+        personalization: "Taylor RN",
+      }),
+      expect.objectContaining({
+        orderNumber: "2",
+        transactionId: "22",
+        listingId: "222",
+        buyerName: "Jordan",
+        colorName: "Glitter White",
+        listingTitle: "Admin Assistant Badge Reel",
+        personalization: "",
+      }),
     ]);
+    expect(warnings).toEqual([]);
   });
 
-  it("reports when nothing is copied because every order was skipped", async () => {
+  it("copies orders even when every order has no personalization variation", async () => {
     const { context, warnings, clipboardWrites } = loadClipboardScript([
       {
         order_id: 9,
@@ -155,19 +162,17 @@ describe("etsy copy badge clipboard", () => {
 
     await context.copyBadgeBatchPayload();
 
-    expect(clipboardWrites).toHaveLength(0);
-    expect(warnings).toContainEqual([
-      "No personalized Etsy line items found on this page.",
-      [
-        {
-          orderNumber: "9",
-          buyerName: "Casey",
-          transactionId: "99",
-          listingId: "999",
-          listingTitle: "Acrylic Blank",
-          reason: "Missing Personalization variation",
-        },
-      ],
+    expect(clipboardWrites).toHaveLength(1);
+    expect(JSON.parse(clipboardWrites[0]).items).toEqual([
+      expect.objectContaining({
+        orderNumber: "9",
+        buyerName: "Casey",
+        transactionId: "99",
+        listingId: "999",
+        listingTitle: "Acrylic Blank",
+        personalization: "",
+      }),
     ]);
+    expect(warnings).toEqual([]);
   });
 });

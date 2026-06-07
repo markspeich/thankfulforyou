@@ -237,13 +237,23 @@ test("manages fixed SVG designs from the Fixed Designs workspace", async ({ page
     "Size Guides",
     "Fixed Designs",
   ]);
+  await expect(
+    page.locator(".workspace-nav .workspace-nav-item:not(.workspace-nav-item-logout)").evaluateAll((buttons) => (
+      buttons.map((button) => Math.round(button.getBoundingClientRect().height))
+    )),
+  ).resolves.toEqual([46, 46, 46, 46, 46, 46]);
 
   await page.getByRole("button", { name: "Fixed Designs", exact: true }).click();
   await expect(page).toHaveURL(/\/fixed-designs$/);
 
   const workspace = page.getByRole("region", { name: "Fixed designs workspace" });
   await expect(workspace.getByRole("heading", { name: "Fixed Designs" })).toBeVisible();
-  await expect(workspace.getByRole("button", { name: "Cardiology Heart" })).toBeVisible();
+  const cardiologyHeartRow = workspace.getByRole("button", { name: "Cardiology Heart" });
+  await expect(cardiologyHeartRow).toBeVisible();
+  await expect(cardiologyHeartRow).toHaveCSS("background-color", "rgb(234, 247, 246)");
+  await cardiologyHeartRow.hover();
+  await expect(cardiologyHeartRow).toHaveCSS("background-color", "rgb(234, 247, 246)");
+  await expect(cardiologyHeartRow).toHaveCSS("border-left-color", "rgb(0, 128, 124)");
   await expect(workspace.getByRole("heading", { name: "Cardiology Heart" })).toBeVisible();
   await expect(workspace.getByLabel("Selected fixed design preview")).toBeVisible();
   await expect(workspace.getByRole("button", { name: "Save Design" })).toBeHidden();
@@ -261,6 +271,9 @@ test("manages fixed SVG designs from the Fixed Designs workspace", async ({ page
   });
   await expect(workspace.getByRole("button", { name: "Badge Star" })).toBeVisible();
   await expect(workspace.getByRole("heading", { name: "Badge Star" })).toBeVisible();
+  await cardiologyHeartRow.hover();
+  await expect(cardiologyHeartRow).toHaveCSS("background-color", "rgb(244, 251, 250)");
+  await expect(cardiologyHeartRow).toHaveCSS("border-left-color", "rgb(0, 128, 124)");
 
   await workspace.getByLabel("Fixed design actions", { exact: true }).click();
   const menu = workspace.getByRole("menu", { name: "Selected fixed design actions" });
