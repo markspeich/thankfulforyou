@@ -221,7 +221,7 @@ describe("production batch store", () => {
     expect(orderItemsUpsertIndex).toBeLessThan(batchUpsertIndex);
   });
 
-  it("only bumps and upserts changed order rows for scoped saves", async () => {
+  it("only bumps and upserts changed order rows for scoped saves without rewriting batch positions", async () => {
     const { saveProductionBatch } = await import("../../api/_lib/production-batch-store.js");
 
     await saveProductionBatch({
@@ -265,14 +265,15 @@ describe("production batch store", () => {
     const designsUpsert = supabaseMock.calls.find((call) => call.table === "designs" && call.operation === "upsert");
     const batchItemsDelete = supabaseMock.calls.find((call) => call.table === "batch_items" && call.operation === "delete");
     const batchItemsUpsert = supabaseMock.calls.find((call) => call.table === "batch_items" && call.operation === "upsert");
+    const batchItemsInsert = supabaseMock.calls.find((call) => call.table === "batch_items" && call.operation === "insert");
 
     expect(orderItemsUpsert.payload).toHaveLength(1);
     expect(orderItemsUpsert.payload[0]).toMatchObject({ id: "order-2", revision: 4 });
     expect(designsUpsert.payload).toHaveLength(1);
     expect(designsUpsert.payload[0]).toMatchObject({ order_item_id: "order-2", revision: 4 });
     expect(batchItemsDelete).toBeUndefined();
-    expect(batchItemsUpsert.payload).toHaveLength(1);
-    expect(batchItemsUpsert.payload[0]).toMatchObject({ order_item_id: "order-2" });
+    expect(batchItemsUpsert).toBeUndefined();
+    expect(batchItemsInsert).toBeUndefined();
   });
 
   it("does not upsert stale size guide ids that are missing from the workspace", async () => {
