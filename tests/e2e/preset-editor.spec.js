@@ -1036,7 +1036,7 @@ test("saves a new preset from the design editor without switching to the preset 
   await expect(page.locator("#presetsWorkspace")).toBeHidden();
 });
 
-test.skip("creates a custom size guide and uses it in the order editor preview", async ({ page }) => {
+test("creates a custom size guide and uses it in the order editor preview", async ({ page }) => {
   await installPresetRoutes(page);
 
   await page.goto("/size-guides");
