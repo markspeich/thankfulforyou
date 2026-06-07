@@ -195,6 +195,29 @@ export async function saveProductionBatch({ snapshot, userId, changedOrderItemId
     updated_at: savedAt,
   }));
 
+  const referencedPresetIds = [...new Set(nextDesigns
+    .map((design) => design.preset_id)
+    .filter((presetId) => typeof presetId === "string" && presetId))];
+  if (referencedPresetIds.length) {
+    const { data: existingPresets, error: presetsError } = await supabase
+      .from("presets")
+      .select("id")
+      .eq("workspace_id", snapshot.batch.workspaceId)
+      .in("id", referencedPresetIds);
+
+    if (presetsError) {
+      throw presetsError;
+    }
+
+    const validPresetIds = new Set((existingPresets || []).map((preset) => preset.id));
+    nextDesigns = nextDesigns.map((design) => ({
+      ...design,
+      preset_id: !design.preset_id || validPresetIds.has(design.preset_id)
+        ? design.preset_id
+        : null,
+    }));
+  }
+
   const referencedSizeGuideIds = [...new Set(nextDesigns
     .map((design) => design.size_guide_id)
     .filter((sizeGuideId) => typeof sizeGuideId === "string" && sizeGuideId))];

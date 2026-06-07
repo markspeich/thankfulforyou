@@ -367,6 +367,8 @@ const presetGlobalVerticalScaleOutput = document.querySelector("#presetGlobalVer
 const presetBackingInput = document.querySelector("#presetBackingInput");
 const presetBackingOutput = document.querySelector("#presetBackingOutput");
 const presetLineRuleControls = document.querySelector("#presetLineRuleControls");
+const presetFixedItemList = document.querySelector("#presetFixedItemList");
+const presetFixedItemsEmptyState = document.querySelector("#presetFixedItemsEmptyState");
 const presetAssignmentsList = document.querySelector("#presetAssignmentsList");
 const presetAssignmentsEmptyState = document.querySelector("#presetAssignmentsEmptyState");
 const sizePresetList = document.querySelector("#sizePresetList");
@@ -1790,6 +1792,65 @@ function renderPresetEditorLineControls() {
   presetLineRuleControls.append(...cards);
 }
 
+function createPresetFixedItemCard(item, index) {
+  const normalized = normalizeLineSettings({
+    ...item,
+    kind: "fixedSvg",
+  });
+  const fixedDesign = resolveFixedDesignReference(normalized, fixedDesignRecords);
+  const displayName = fixedDesign.displayName || normalized.fixedDesignName || "Fixed design";
+  const version = Number.isFinite(Number(normalized.fixedDesignVersion))
+    ? Number(normalized.fixedDesignVersion)
+    : Number(fixedDesign.version) || null;
+
+  const card = document.createElement("article");
+  card.className = "preset-fixed-item-card line-control-card";
+  card.dataset.fixedDesignId = normalized.fixedDesignId || "";
+  card.dataset.fixedItemIndex = String(index);
+
+  const header = document.createElement("div");
+  header.className = "line-control-header";
+
+  const title = document.createElement("h3");
+  title.className = "preset-line-control-title";
+  title.textContent = `Fixed Design: ${displayName}`;
+
+  const summary = document.createElement("span");
+  summary.className = "line-control-text";
+  summary.textContent = version ? `v${version}` : "Fixed SVG";
+
+  header.append(title, summary);
+
+  const grid = document.createElement("div");
+  grid.className = "line-control-grid";
+  grid.append(
+    createPresetEditorRangeField(`fixed:${index}`, "svgSizeMm", "SVG Size", 5, 80, 0.5, normalized.svgSizeMm),
+    createPresetEditorRangeField(`fixed:${index}`, "offsetXMm", "Horizontal Offset", -30, 30, 0.1, normalized.offsetXMm),
+    createPresetEditorRangeField(`fixed:${index}`, "offsetYMm", "Vertical Offset From Center", -30, 30, 0.1, normalized.offsetYMm),
+  );
+
+  card.append(header, grid);
+  return card;
+}
+
+function renderPresetEditorFixedItems() {
+  if (!presetFixedItemList || !presetFixedItemsEmptyState) {
+    return;
+  }
+
+  const fixedItems = Array.isArray(presetEditorDraft?.preset?.fixedItems)
+    ? presetEditorDraft.preset.fixedItems.filter(isFixedSvgLineSettings)
+    : [];
+  presetFixedItemList.replaceChildren();
+  presetFixedItemsEmptyState.hidden = fixedItems.length > 0;
+
+  if (!fixedItems.length) {
+    return;
+  }
+
+  presetFixedItemList.append(...fixedItems.map(createPresetFixedItemCard));
+}
+
 function readPresetEditorLineSettings(ruleKey) {
   const card = presetLineRuleControls?.querySelector(`[data-preset-rule-key="${ruleKey}"]`);
   if (!card) {
@@ -1815,6 +1876,36 @@ function readPresetEditorLineSettings(ruleKey) {
     verticalScale: verticalScaleInput?.value,
     lockTextHeight: lockTextHeightInput?.checked,
   });
+}
+
+function readPresetEditorFixedItems(fallbackItems = []) {
+  const cards = Array.from(presetFixedItemList?.querySelectorAll("[data-fixed-item-index]") || []);
+  if (!cards.length) {
+    return Array.isArray(fallbackItems) ? structuredClone(fallbackItems) : [];
+  }
+
+  return cards
+    .map((card) => {
+      const index = Number(card.dataset.fixedItemIndex);
+      const fallback = normalizeLineSettings({
+        ...(Array.isArray(fallbackItems) ? fallbackItems[index] : {}),
+        kind: "fixedSvg",
+      });
+      const svgSizeInput = card.querySelector('[data-setting="svgSizeMm"]');
+      const offsetXInput = card.querySelector('[data-setting="offsetXMm"]');
+      const offsetYInput = card.querySelector('[data-setting="offsetYMm"]');
+
+      return {
+        kind: "fixedSvg",
+        fixedDesignId: fallback.fixedDesignId,
+        fixedDesignName: fallback.fixedDesignName,
+        fixedDesignVersion: fallback.fixedDesignVersion,
+        svgSizeMm: svgSizeInput instanceof HTMLInputElement ? Number(svgSizeInput.value) : fallback.svgSizeMm,
+        offsetXMm: offsetXInput instanceof HTMLInputElement ? Number(offsetXInput.value) : fallback.offsetXMm,
+        offsetYMm: offsetYInput instanceof HTMLInputElement ? Number(offsetYInput.value) : fallback.offsetYMm,
+      };
+    })
+    .filter((item) => typeof item.fixedDesignId === "string" && item.fixedDesignId.trim());
 }
 
 function diffPresetLineSettings(base, next) {
@@ -1891,6 +1982,7 @@ function syncPresetEditorDraftFromControls() {
       lineRules: lineRules.length
         ? lineRules
         : [{ match: { kind: "all" }, settings: {} }],
+      fixedItems: readPresetEditorFixedItems(currentPreset.fixedItems),
     },
   };
 }
@@ -2052,6 +2144,7 @@ function renderPresetEditorEmptyState() {
   updatePresetGlobalVerticalScaleOutput();
   updatePresetBackingOutput();
   renderPresetEditorLineControls();
+  renderPresetEditorFixedItems();
   if (savePresetButton) {
     savePresetButton.disabled = true;
   }
@@ -2102,6 +2195,7 @@ function renderPresetEditorDraft() {
   updatePresetGlobalVerticalScaleOutput();
   updatePresetBackingOutput();
   renderPresetEditorLineControls();
+  renderPresetEditorFixedItems();
   updatePresetSaveButtonState();
   if (deletePresetButton) {
     deletePresetButton.disabled = !presetEditorDraft?.previousId
@@ -10477,6 +10571,13 @@ presetLineRuleControls?.addEventListener("input", (event) => {
   updatePresetSaveButtonState();
 });
 presetLineRuleControls?.addEventListener("change", () => {
+  updatePresetSaveButtonState();
+});
+presetFixedItemList?.addEventListener("input", (event) => {
+  updateRangeOutputForInput(event.target);
+  updatePresetSaveButtonState();
+});
+presetFixedItemList?.addEventListener("change", () => {
   updatePresetSaveButtonState();
 });
 presetAssignmentsList?.addEventListener("click", (event) => {

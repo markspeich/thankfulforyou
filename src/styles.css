@@ -2213,6 +2213,21 @@ button:disabled {
   display: none;
 }
 
+.preset-fixed-items-section {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+}
+
+.preset-fixed-item-list {
+  display: grid;
+  gap: 10px;
+}
+
+.preset-fixed-item-card {
+  background: #fff;
+}
+
 .line-control-grid {
   display: grid;
   grid-template-columns: 1fr;

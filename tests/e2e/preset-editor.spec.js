@@ -125,6 +125,8 @@ async function installPresetRoutes(page) {
       body: JSON.stringify({ error: "Method not allowed." }),
     });
   });
+
+  return store;
 }
 
 async function openPresetTools(page) {
@@ -728,6 +730,73 @@ test("uses a master-detail layout for preset selection and editing", async ({ pa
   await expect(page.locator("#presetDraftName")).toHaveValue("Skywalk, Somekind");
   await expect(presetsWorkspace.locator(".preset-library-row.is-selected")).toHaveAttribute("data-preset-id", "preset-c3e8a1d7f520");
   await expect(presetsWorkspace.locator(".preset-library-row.is-selected")).toContainText("Skywalk, Somekind");
+});
+
+test("edits fixed designs saved on a preset in the preset editor", async ({ page }) => {
+  const store = await installPresetRoutes(page);
+  const lungsPreset = {
+    ...store.snapshot.presets[0],
+    id: "preset-lungs",
+    name: "Lungs",
+    fixedItems: [
+      {
+        kind: "fixedSvg",
+        fixedDesignId: "fixed-design-lungs",
+        fixedDesignName: "Lungs",
+        fixedDesignVersion: 1,
+        svgSizeMm: 44.5,
+        offsetXMm: 0,
+        offsetYMm: 0,
+      },
+      {
+        kind: "fixedSvg",
+        fixedDesignId: "fixed-design-lungs-backing",
+        fixedDesignName: "Lungs Backing",
+        fixedDesignVersion: 1,
+        svgSizeMm: 51,
+        offsetXMm: 0,
+        offsetYMm: 1.1,
+      },
+    ],
+  };
+  store.snapshot.presets.push(lungsPreset);
+  store.definitions.set(lungsPreset.id, lungsPreset);
+
+  await page.goto("/presets/preset-lungs");
+
+  const fixedItems = page.locator("#presetFixedItemList .preset-fixed-item-card");
+  const lungsItem = page.locator('[data-fixed-design-id="fixed-design-lungs"]');
+  const lungsBackingItem = page.locator('[data-fixed-design-id="fixed-design-lungs-backing"]');
+  await expect(page.locator("#presetDraftName")).toHaveValue("Lungs");
+  await expect(fixedItems).toHaveCount(2);
+  await expect.poll(async () => fixedItems.evaluateAll((cards) => cards.every((card) => {
+    const parentCard = card.parentElement?.closest(".line-control-card, .global-control-card");
+    return parentCard == null;
+  }))).toBe(true);
+  await expect(lungsItem).toContainText("Fixed Design: Lungs");
+  await expect(lungsItem.locator('[data-setting="svgSizeMm"]')).toHaveValue("44.5");
+  await expect(lungsBackingItem).toContainText("Fixed Design: Lungs Backing");
+  await expect(lungsBackingItem.locator('[data-setting="svgSizeMm"]')).toHaveValue("51");
+  await expect(lungsBackingItem.locator('[data-setting="offsetYMm"]')).toHaveValue("1.1");
+
+  await setRangeValue(page, '[data-fixed-design-id="fixed-design-lungs-backing"] [data-setting="offsetYMm"]', "2.4");
+  await expect(page.getByRole("button", { name: "Save Preset" })).toBeEnabled();
+  await page.getByRole("button", { name: "Save Preset" }).click();
+  await expect(page.locator("#presetEditorStatus")).toContainText("Saved Lungs");
+
+  const savedLungsPreset = store.snapshot.presets.find((preset) => preset.id === "preset-lungs");
+  expect(savedLungsPreset.fixedItems).toEqual([
+    expect.objectContaining({
+      fixedDesignId: "fixed-design-lungs",
+      svgSizeMm: 44.5,
+      offsetYMm: 0,
+    }),
+    expect.objectContaining({
+      fixedDesignId: "fixed-design-lungs-backing",
+      svgSizeMm: 51,
+      offsetYMm: 2.4,
+    }),
+  ]);
 });
 
 test("enables preset saving only after editor changes", async ({ page }) => {

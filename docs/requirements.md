@@ -474,6 +474,9 @@ The website should be a practical production tool rather than a marketing site. 
 - Copying and pasting layout controls should include fixed SVG items and their size/offset settings, but must not copy fixed-design library metadata, uploaded SVG files, order text, quantity, buyer metadata, listing metadata, completion state, saved export data, or cached analysis results.
 - Saving or overwriting a preset from the selected-order editor should preserve fixed SVG items and their settings, including fixed design identity, version, SVG size, horizontal offset, and vertical offset, while continuing to preserve any entered text-line settings in the same preset.
 - Applying a preset that contains fixed SVG items should restore those fixed SVG items alongside whatever text lines are generated from the current order text.
+- The `Presets` workspace should show and edit fixed SVG items saved on the selected preset, including their fixed design names, versions, SVG size, and horizontal/vertical offsets.
+- Fixed SVG items in the `Presets` workspace should render as independent cards, not grouped together inside a parent card.
+- Saving a production-batch design should not fail when the design references a preset id that is missing from the shared preset table; the concrete saved text-line and fixed-design settings should still be persisted.
 - Orders with fixed SVG items but blank design text should still be considered renderable designs for previewing and saving.
 - The preset dropdown label in the `Preset` card should read `Preset Name`.
 - The `Preset` card should include a `Reload preset` button at the bottom that reapplies the currently selected preset and overwrites all current layout settings for the active design with that preset's current values.
