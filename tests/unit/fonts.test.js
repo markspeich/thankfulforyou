@@ -1,11 +1,16 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   BUILTIN_FONT_DEFINITIONS,
   buildFontOptions,
   normalizeFontRecord,
+  registerBrowserFont,
   resolveFontOption,
 } from "../../src/fonts.js";
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe("font registry", () => {
   it("keeps built-in fonts first and appends uploaded workspace fonts", () => {
@@ -61,5 +66,47 @@ describe("font registry", () => {
     const option = resolveFontOption("font-1", [...BUILTIN_FONT_DEFINITIONS, record]);
     expect(option.label).toBe("Old Font (deleted)");
     expect(option.isDeleted).toBe(true);
+  });
+
+  it("replaces a previously registered browser font face for the same family", async () => {
+    const addedFaces = [];
+    const deletedFaces = [];
+
+    class FontFaceStub {
+      constructor(family, source) {
+        this.family = family;
+        this.source = source;
+      }
+
+      async load() {
+        return this;
+      }
+    }
+
+    vi.stubGlobal("FontFace", FontFaceStub);
+    vi.stubGlobal("document", {
+      fonts: {
+        add(face) {
+          addedFaces.push(face);
+        },
+        delete(face) {
+          deletedFaces.push(face);
+          return true;
+        },
+      },
+    });
+
+    await registerBrowserFont({
+      family: "WorkspaceFont_Sophia_Font_Regular",
+      url: "https://example.test/sophia/v1/SophiaFont-Regular.otf",
+    });
+    await registerBrowserFont({
+      family: "WorkspaceFont_Sophia_Font_Regular",
+      url: "https://example.test/sophia/v2/SophiaFont-Regular.otf",
+    });
+
+    expect(addedFaces).toHaveLength(2);
+    expect(deletedFaces).toEqual([addedFaces[0]]);
+    expect(addedFaces[1].source).toBe('url("https://example.test/sophia/v2/SophiaFont-Regular.otf")');
   });
 });

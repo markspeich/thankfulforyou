@@ -104,6 +104,7 @@ import {
   createWorkspaceFont,
   deleteWorkspaceFont,
   loadWorkspaceFontOptions,
+  registerBrowserFonts,
   replaceWorkspaceFont,
   resolveFontOption,
 } from "./fonts.js";
@@ -842,6 +843,7 @@ function setFontOptions(fontOptions) {
 async function refreshWorkspaceFonts(accessToken = null) {
   try {
     setFontOptions(await loadWorkspaceFontOptions({ accessToken, includeDeleted: true }));
+    await registerBrowserFonts(FONT_OPTIONS.filter((font) => font.isUploaded && !font.isDeleted));
   } catch {
     setFontOptions(buildFontOptions());
   }
@@ -8318,6 +8320,7 @@ function renderFontWorkspace() {
   selectedFontPreview.style.fontFamily = `"${selectedFont.family}", "Segoe Script", cursive`;
   replaceFontButton.disabled = Boolean(selectedFont.isBuiltin);
   deleteFontButton.disabled = Boolean(selectedFont.isBuiltin);
+  delete fontEditorStatus.dataset.state;
   fontEditorStatus.textContent = selectedFont.isBuiltin
     ? "Built-in fonts are protected from deletion."
     : "Uploaded fonts can be replaced with a new version or deleted from future selections.";
@@ -8577,7 +8580,7 @@ async function handleFontFileSelection(mode) {
     await refreshWorkspaceFonts(productionBatchAccessToken);
     selectedFontId = savedFont?.id || selectedFontId;
     renderFontWorkspace();
-    renderLineControls(getActiveOrder()?.settings || readSettingsFromControls());
+    renderLineControls(getActiveOrder()?.settings || getCurrentSettings());
     setFontEditorStatus(mode === "replace" ? "Font version uploaded." : "Font uploaded.", "success");
   } catch (error) {
     setFontEditorStatus(error instanceof Error ? error.message : "Unable to upload font.", "error");
@@ -8605,7 +8608,7 @@ async function handleDeleteSelectedFont() {
     await deleteWorkspaceFont(selectedFont.id, { accessToken: productionBatchAccessToken });
     selectedFontId = "candlepin";
     await refreshWorkspaceFonts(productionBatchAccessToken);
-    renderLineControls(getActiveOrder()?.settings || readSettingsFromControls());
+    renderLineControls(getActiveOrder()?.settings || getCurrentSettings());
     setFontEditorStatus("Font deleted from future selections.", "success");
   } catch (error) {
     setFontEditorStatus(error instanceof Error ? error.message : "Unable to delete font.", "error");

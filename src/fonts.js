@@ -39,6 +39,7 @@ export const BUILTIN_FONT_DEFINITIONS = Object.freeze([
 ]);
 
 const DEFAULT_FONT = BUILTIN_FONT_DEFINITIONS[0];
+const registeredBrowserFontFaces = new Map();
 
 function toTrimmedString(value) {
   return typeof value === "string" ? value.trim() : "";
@@ -113,9 +114,15 @@ export async function registerBrowserFont(font) {
     return null;
   }
 
+  const existingFace = registeredBrowserFontFaces.get(font.family);
+  if (existingFace && typeof document.fonts.delete === "function") {
+    document.fonts.delete(existingFace);
+  }
+
   const face = new FontFace(font.family, `url("${font.url}")`);
   await face.load();
   document.fonts.add(face);
+  registeredBrowserFontFaces.set(font.family, face);
   return face;
 }
 

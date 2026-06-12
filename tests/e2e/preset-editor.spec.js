@@ -545,6 +545,95 @@ test("loads workspace fonts into the Fonts workspace and line controls", async (
   await expect(page.locator("#fontsWorkspace").getByRole("button", { name: /Clinic Sans/ })).toBeVisible();
 });
 
+test("shows uploaded font guidance as neutral information", async ({ page }) => {
+  await page.route("**/api/fonts**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify({
+        fonts: [
+          {
+            id: "font-clinic-sans",
+            display_name: "Clinic Sans",
+            family_name: "ClinicSans",
+            public_url: "public/fonts/Candlepin-Laser.otf",
+            file_format: "otf",
+            version: 1,
+            is_builtin: false,
+            deleted_at: null,
+          },
+        ],
+      }),
+    });
+  });
+
+  await page.goto("/fonts/font-clinic-sans");
+  const status = page.locator("#fontEditorStatus");
+
+  await status.evaluate((element) => {
+    element.dataset.state = "error";
+  });
+  await page.locator("#fontsWorkspace .font-library-row", { hasText: "Clinic Sans" }).click();
+
+  await expect(status).toHaveText("Uploaded fonts can be replaced with a new version or deleted from future selections.");
+  await expect(status).not.toHaveAttribute("data-state", "error");
+});
+
+test("keeps the font workspace stable after a successful upload", async ({ page }) => {
+  const pageErrors = [];
+  await page.route("**/api/fonts**", async (route) => {
+    const request = route.request();
+    if (request.method() === "POST") {
+      await route.fulfill({
+        status: 201,
+        contentType: "application/json; charset=utf-8",
+        body: JSON.stringify({
+          font: {
+            id: "font-uploaded-sophia",
+            display_name: "Sophia Font Regular",
+            family_name: "WorkspaceFont_Sophia_Font_Regular",
+            public_url: "public/fonts/Candlepin-Laser.otf",
+            file_format: "otf",
+            version: 1,
+            is_builtin: false,
+            deleted_at: null,
+          },
+        }),
+      });
+      return;
+    }
+
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify({
+        fonts: [
+          {
+            id: "font-uploaded-sophia",
+            display_name: "Sophia Font Regular",
+            family_name: "WorkspaceFont_Sophia_Font_Regular",
+            public_url: "public/fonts/Candlepin-Laser.otf",
+            file_format: "otf",
+            version: 1,
+            is_builtin: false,
+            deleted_at: null,
+          },
+        ],
+      }),
+    });
+  });
+  page.on("pageerror", (error) => {
+    pageErrors.push(error.message);
+  });
+
+  await page.goto("/fonts");
+  await page.locator("#newFontUploadButton").click();
+  await page.locator("#fontFileInput").setInputFiles(path.join(REPO_ROOT, "public", "fonts", "Candlepin-Laser.otf"));
+
+  await expect(page.locator("#fontEditorStatus")).toHaveText("Font uploaded.");
+  expect(pageErrors).not.toContain("readSettingsFromControls is not defined");
+});
+
 test("shows size guides in the Size Guides workspace", async ({ page }) => {
   await page.goto("/size-guides");
 
