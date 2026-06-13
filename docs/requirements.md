@@ -123,11 +123,13 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - The `Fonts` workspace should allow uploading new font files from the operator's computer.
 - Uploaded fonts should be stored in Supabase so they remain available across sessions, operators, and deployments.
 - Uploaded fonts should be usable in order item designs and reusable presets anywhere the built-in production fonts are currently selectable.
-- The `Fonts` workspace should allow deleting uploaded fonts, with built-in production fonts protected from deletion.
+- The three original production fonts, Candlepin, Skywalk, and Somekind, should not be immutable in the Fonts workspace. Operators should be able to manage them like other workspace fonts, including uploading new file versions while preserving each font's stable id for existing designs and presets.
 - Deleting an uploaded font should require an explicit in-app confirmation and should not silently break existing saved designs that already reference that font.
-- The `Fonts` workspace should allow overwriting an uploaded font by uploading a new version while keeping the same font identity for designs and presets that reference it.
-- Replacing an uploaded font should use a new stored file version rather than reusing the exact same asset path, so previews, analysis, export, and CDN caches can resolve the updated font reliably.
+- The `Fonts` workspace should allow overwriting any workspace font by uploading a new version while keeping the same font identity for designs and presets that reference it.
+- Replacing a font should use a new stored file version rather than reusing the exact same asset path, so previews, analysis, export, and CDN caches can resolve the updated font reliably.
 - The `Fonts` workspace font rows should use the same shared production workspace selector row style as the `Presets` and `Size Guides` workspaces.
+- The `Fonts` workspace font rows should not emphasize whether a font originated as built-in or uploaded. Each row should show a small preview line with the font name rendered in that font.
+- The selected font editor should include a multi-line preview text field above the large preview. The default preview text should be the uppercase alphabet followed by the lowercase alphabet on the next line, and the large preview should render the current field contents in the selected font.
 - Allow horizontal-only stretching per line of text so operators can make a line wider without making it taller.
 - Per-line `Horizontal Stretch` controls should allow values up to `200%`.
 - Allow vertical-only stretching per line of text so operators can make a line taller without making it wider.

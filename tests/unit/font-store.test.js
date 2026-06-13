@@ -5,7 +5,8 @@ import {
   createFontStoreError,
   ensureFontStorageBucket,
   normalizeUploadedFontFile,
-  rejectBuiltinFontMutation,
+  rejectBuiltinFontDeletion,
+  rejectMissingFontReplacement,
   resolveUploadedFontDisplayName,
 } from "../../api/_lib/font-store.js";
 
@@ -53,9 +54,19 @@ describe("font store helpers", () => {
     })).toBe("Candlepin - Laser");
   });
 
-  it("rejects built-in font mutations", () => {
-    expect(() => rejectBuiltinFontMutation({ id: "candlepin", is_builtin: true }))
-      .toThrow("Built-in fonts cannot be deleted or replaced.");
+  it("allows built-in font replacement when a workspace row exists", () => {
+    expect(() => rejectMissingFontReplacement({ id: "candlepin", is_builtin: true }))
+      .not.toThrow();
+  });
+
+  it("rejects replacing a font that has no workspace row", () => {
+    expect(() => rejectMissingFontReplacement(null))
+      .toThrow("Font not found.");
+  });
+
+  it("keeps original production fonts protected from deletion", () => {
+    expect(() => rejectBuiltinFontDeletion({ id: "candlepin", is_builtin: true }))
+      .toThrow("Original production fonts cannot be deleted.");
   });
 
   it("creates exposed http errors for api responses", () => {

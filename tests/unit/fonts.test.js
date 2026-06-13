@@ -36,6 +36,32 @@ describe("font registry", () => {
     });
   });
 
+  it("lets workspace records override built-in font fallback definitions", () => {
+    const options = buildFontOptions([
+      {
+        id: "candlepin",
+        display_name: "Candlepin Shop Version",
+        family_name: "WorkspaceFont_Candlepin_Shop_Version",
+        public_url: "https://example.test/workspace-fonts/candlepin/v2/Candlepin-Shop.otf",
+        file_format: "otf",
+        version: 2,
+        is_builtin: true,
+      },
+    ]);
+
+    expect(options.map((font) => font.id).slice(0, 3)).toEqual(["candlepin", "skywalk", "somekind"]);
+    expect(options[0]).toMatchObject({
+      id: "candlepin",
+      label: "Candlepin Shop Version",
+      family: "WorkspaceFont_Candlepin_Shop_Version",
+      url: "https://example.test/workspace-fonts/candlepin/v2/Candlepin-Shop.otf",
+      exportPath: "https://example.test/workspace-fonts/candlepin/v2/Candlepin-Shop.otf",
+      version: 2,
+      isBuiltin: true,
+      isUploaded: false,
+    });
+  });
+
   it("excludes deleted uploaded fonts from normal choices", () => {
     const options = buildFontOptions([
       {

@@ -76,6 +76,7 @@ export function normalizeFontRecord(record, { includeDeleted = false } = {}) {
 
   const isDeleted = Boolean(deletedAt);
   const version = Number.isFinite(Number(record.version)) ? Number(record.version) : 1;
+  const isBuiltin = Boolean(record.is_builtin ?? record.isBuiltin);
 
   return {
     id,
@@ -86,21 +87,24 @@ export function normalizeFontRecord(record, { includeDeleted = false } = {}) {
     exportPath: url,
     fileFormat: toTrimmedString(record.file_format) || toTrimmedString(record.fileFormat),
     version,
-    isBuiltin: Boolean(record.is_builtin ?? record.isBuiltin),
-    isUploaded: !record.is_builtin && !record.isBuiltin,
+    isBuiltin,
+    isUploaded: !isBuiltin,
     isDeleted,
     deletedAt,
   };
 }
 
 export function buildFontOptions(fontRecords = [], { includeDeleted = false } = {}) {
-  const uploadedOptions = fontRecords
+  const normalizedRecords = fontRecords
     .map((record) => normalizeFontRecord(record, { includeDeleted }))
-    .filter(Boolean)
+    .filter(Boolean);
+  const recordById = new Map(normalizedRecords.map((font) => [font.id, font]));
+  const builtinOptions = BUILTIN_FONT_DEFINITIONS.map((builtin) => recordById.get(builtin.id) || builtin);
+  const uploadedOptions = normalizedRecords
     .filter((font) => !BUILTIN_FONT_DEFINITIONS.some((builtin) => builtin.id === font.id));
 
   return [
-    ...BUILTIN_FONT_DEFINITIONS,
+    ...builtinOptions,
     ...uploadedOptions,
   ];
 }
