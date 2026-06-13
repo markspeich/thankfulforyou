@@ -198,6 +198,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - The preview should center the visible text geometry within the guide box, even when the backing border extends beyond the guide area.
 - The active preview guide box should remain visible even when there is no active text.
 - The preview guide box should show dimension labels for the active size guide outside the box.
+- On touch devices, operators should be able to pinch directly on the design preview to zoom in and out for inspection.
 - Preserve legibility while minimizing separate acrylic pieces.
 - The `Backing Border` slider must remain a single global control for the whole design rather than a per-line control.
 - The global `Backing Border` slider should appear below all per-line control groups.

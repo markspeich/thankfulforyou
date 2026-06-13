@@ -1347,6 +1347,58 @@ test("supports zooming the preview up to the higher production ceiling", async (
   }).toBeGreaterThan(previewWidthBefore * 4);
 });
 
+test("zooms the preview with a two-finger pinch gesture", async ({ page }) => {
+  const previewPanel = page.locator(".preview-panel");
+  const preview = page.locator("#preview");
+  const previewWidthBefore = await preview.evaluate((element) => element.getBoundingClientRect().width);
+  const panelBox = await previewPanel.boundingBox();
+  expect(panelBox).not.toBeNull();
+
+  const centerX = panelBox.x + panelBox.width / 2;
+  const centerY = panelBox.y + panelBox.height / 2;
+
+  await previewPanel.dispatchEvent("pointerdown", {
+    bubbles: true,
+    cancelable: true,
+    pointerId: 11,
+    pointerType: "touch",
+    isPrimary: true,
+    clientX: centerX - 35,
+    clientY: centerY,
+  });
+  await previewPanel.dispatchEvent("pointerdown", {
+    bubbles: true,
+    cancelable: true,
+    pointerId: 12,
+    pointerType: "touch",
+    isPrimary: false,
+    clientX: centerX + 35,
+    clientY: centerY,
+  });
+  await previewPanel.dispatchEvent("pointermove", {
+    bubbles: true,
+    cancelable: true,
+    pointerId: 11,
+    pointerType: "touch",
+    isPrimary: true,
+    clientX: centerX - 70,
+    clientY: centerY,
+  });
+  await previewPanel.dispatchEvent("pointermove", {
+    bubbles: true,
+    cancelable: true,
+    pointerId: 12,
+    pointerType: "touch",
+    isPrimary: false,
+    clientX: centerX + 70,
+    clientY: centerY,
+  });
+
+  await expect.poll(async () => {
+    return preview.evaluate((element) => element.getBoundingClientRect().width);
+  }).toBeGreaterThan(previewWidthBefore * 1.25);
+});
+
 test("pans the preview with middle-click drag", async ({ page }) => {
   const previewPanel = page.locator(".preview-panel");
 

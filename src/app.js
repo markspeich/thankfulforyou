@@ -407,6 +407,8 @@ const measuredLineCache = new Map();
 let lastLayout = null;
 let zoom = DEFAULT_ZOOM;
 let previewMiddlePan = null;
+const previewTouchPointers = new Map();
+let previewPinchState = null;
 let orderSequence = 1;
 let activeOrderItemId = null;
 const orders = [];
@@ -6515,6 +6517,94 @@ function endPreviewMiddlePan() {
   previewPanel.classList.remove("is-middle-panning");
 }
 
+function getPreviewPinchPoints() {
+  return Array.from(previewTouchPointers.entries())
+    .sort(([leftId], [rightId]) => leftId - rightId)
+    .slice(0, 2)
+    .map(([, point]) => point);
+}
+
+function measurePreviewPinch(points) {
+  const [first, second] = points;
+  const deltaX = second.clientX - first.clientX;
+  const deltaY = second.clientY - first.clientY;
+  const distance = Math.hypot(deltaX, deltaY);
+  const panelRect = previewPanel.getBoundingClientRect();
+
+  return {
+    distance,
+    anchor: {
+      x: ((first.clientX + second.clientX) / 2) - panelRect.left,
+      y: ((first.clientY + second.clientY) / 2) - panelRect.top,
+    },
+  };
+}
+
+function updatePreviewPinchState() {
+  const points = getPreviewPinchPoints();
+  if (points.length < 2) {
+    previewPinchState = null;
+    return;
+  }
+
+  const nextPinch = measurePreviewPinch(points);
+  if (nextPinch.distance <= 0) {
+    previewPinchState = null;
+    return;
+  }
+
+  if (previewPinchState) {
+    updateZoom(zoom * (nextPinch.distance / previewPinchState.distance), nextPinch.anchor);
+  }
+
+  previewPinchState = nextPinch;
+}
+
+function handlePreviewPointerDown(event) {
+  if (event.pointerType !== "touch") {
+    return;
+  }
+
+  event.preventDefault();
+  previewTouchPointers.set(event.pointerId, {
+    clientX: event.clientX,
+    clientY: event.clientY,
+  });
+  if (typeof previewPanel.setPointerCapture === "function") {
+    previewPanel.setPointerCapture(event.pointerId);
+  }
+  updatePreviewPinchState();
+}
+
+function handlePreviewPointerMove(event) {
+  if (event.pointerType !== "touch" || !previewTouchPointers.has(event.pointerId)) {
+    return;
+  }
+
+  event.preventDefault();
+  previewTouchPointers.set(event.pointerId, {
+    clientX: event.clientX,
+    clientY: event.clientY,
+  });
+  updatePreviewPinchState();
+}
+
+function endPreviewPointerGesture(event) {
+  if (event.pointerType !== "touch") {
+    return;
+  }
+
+  previewTouchPointers.delete(event.pointerId);
+  if (
+    typeof previewPanel.hasPointerCapture === "function"
+    && typeof previewPanel.releasePointerCapture === "function"
+    && previewPanel.hasPointerCapture(event.pointerId)
+  ) {
+    previewPanel.releasePointerCapture(event.pointerId);
+  }
+  updatePreviewPinchState();
+}
+
 function renderPreviewGuideOnly() {
   const guide = resolveBoundingSizePreset(boundingSizePresetInput?.value || DEFAULT_BOUNDING_SIZE_PRESET_ID);
   const previewWidthMm = guide.maxWidthMm + PREVIEW_MARGIN_MM * 2 + PREVIEW_LABEL_RIGHT_MM;
@@ -10860,6 +10950,11 @@ productionBatchSignInForm?.addEventListener("submit", (event) => {
   void handleProductionBatchSignInSubmit(event);
 });
 previewPanel.addEventListener("mousedown", startPreviewMiddlePan);
+previewPanel.addEventListener("pointerdown", handlePreviewPointerDown);
+previewPanel.addEventListener("pointermove", handlePreviewPointerMove);
+previewPanel.addEventListener("pointerup", endPreviewPointerGesture);
+previewPanel.addEventListener("pointercancel", endPreviewPointerGesture);
+previewPanel.addEventListener("lostpointercapture", endPreviewPointerGesture);
 previewPanel.addEventListener("auxclick", (event) => {
   if (event.button === 1) {
     event.preventDefault();

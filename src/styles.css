@@ -2445,6 +2445,7 @@ button:disabled {
   border: 1px solid var(--line);
   border-radius: 14px;
   cursor: zoom-in;
+  touch-action: none;
   scrollbar-width: none;
   -ms-overflow-style: none;
   contain: size layout paint;
