@@ -198,6 +198,7 @@ const fontLibraryList = document.querySelector("#fontLibraryList");
 const newFontUploadButton = document.querySelector("#newFontUploadButton");
 const fontFileInput = document.querySelector("#fontFileInput");
 const fontDisplayNameInput = document.querySelector("#fontDisplayNameInput");
+const fontPreviewTextInput = document.querySelector("#fontPreviewTextInput");
 const selectedFontName = document.querySelector("#selectedFontName");
 const selectedFontMeta = document.querySelector("#selectedFontMeta");
 const selectedFontPreview = document.querySelector("#selectedFontPreview");
@@ -825,6 +826,8 @@ const statusLabels = {
   captured: "Complete",
   exported: "Exported",
 };
+const DEFAULT_FONT_PREVIEW_TEXT = "ABCDEFGHIJKLMNOPQRSTUVWXYZ\nabcdefghijklmnopqrstuvwxyz";
+let fontPreviewText = DEFAULT_FONT_PREVIEW_TEXT;
 
 function getFontOption(fontId) {
   return resolveFontOption(fontId, FONT_OPTIONS);
@@ -8383,10 +8386,12 @@ function renderFontWorkspace() {
     row.dataset.fontId = font.id;
     row.innerHTML = `
       <p class="size-preset-name font-library-name"></p>
-      <p class="size-preset-meta font-library-meta"></p>
+      <p class="size-preset-meta font-library-preview"></p>
     `;
     row.querySelector(".font-library-name").textContent = font.label;
-    row.querySelector(".font-library-meta").textContent = font.isBuiltin ? "Built-in" : "Uploaded";
+    const preview = row.querySelector(".font-library-preview");
+    preview.textContent = font.label;
+    preview.style.fontFamily = `"${font.family}", "Segoe Script", cursive`;
     row.addEventListener("click", () => {
       selectedFontId = font.id;
       renderFontWorkspace();
@@ -8406,13 +8411,17 @@ function renderFontWorkspace() {
   selectedFontName.textContent = selectedFont.label;
   selectedFontMeta.textContent = getFontMetaLabel(selectedFont);
   fontDisplayNameInput.value = selectedFont.displayName || selectedFont.label;
-  fontDisplayNameInput.disabled = Boolean(selectedFont.isBuiltin);
+  fontDisplayNameInput.disabled = false;
+  if (fontPreviewTextInput.value !== fontPreviewText) {
+    fontPreviewTextInput.value = fontPreviewText;
+  }
+  selectedFontPreview.textContent = fontPreviewText;
   selectedFontPreview.style.fontFamily = `"${selectedFont.family}", "Segoe Script", cursive`;
-  replaceFontButton.disabled = Boolean(selectedFont.isBuiltin);
+  replaceFontButton.disabled = false;
   deleteFontButton.disabled = Boolean(selectedFont.isBuiltin);
   delete fontEditorStatus.dataset.state;
   fontEditorStatus.textContent = selectedFont.isBuiltin
-    ? "Built-in fonts are protected from deletion."
+    ? "Original production fonts can be replaced with a new version while keeping their stable design and preset references."
     : "Uploaded fonts can be replaced with a new version or deleted from future selections.";
 }
 
@@ -10579,6 +10588,10 @@ replaceFontButton?.addEventListener("click", () => {
 });
 fontFileInput?.addEventListener("change", () => {
   void handleFontFileSelection(fontFileInput.dataset.mode === "replace" ? "replace" : "create");
+});
+fontPreviewTextInput?.addEventListener("input", () => {
+  fontPreviewText = fontPreviewTextInput.value;
+  selectedFontPreview.textContent = fontPreviewText;
 });
 deleteFontButton?.addEventListener("click", () => {
   void handleDeleteSelectedFont();

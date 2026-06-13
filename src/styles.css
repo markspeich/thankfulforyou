@@ -1274,11 +1274,11 @@ select {
   --button-current-enabled: #b9382b;
   --button-current-enabled-hover: #a32f23;
   --button-current-enabled-active: #8b241a;
-  --button-current-disabled: #d4867c;
+  --button-current-disabled: var(--button-disabled);
   --button-current-border: #8f261b;
   --button-current-border-hover: #781e15;
   --button-current-border-active: #62170f;
-  --button-current-border-disabled: #c17369;
+  --button-current-border-disabled: var(--button-border-disabled);
   --button-current-shadow-active: inset 0 2px 0 rgba(96, 19, 13, 0.26);
   margin-top: 2px;
   color: var(--button-current-text);
@@ -1886,11 +1886,11 @@ button:disabled {
   --button-current-enabled: #b9382b;
   --button-current-enabled-hover: #a32f23;
   --button-current-enabled-active: #8b241a;
-  --button-current-disabled: #d4867c;
+  --button-current-disabled: var(--button-disabled);
   --button-current-border: #8f261b;
   --button-current-border-hover: #781e15;
   --button-current-border-active: #62170f;
-  --button-current-border-disabled: #c17369;
+  --button-current-border-disabled: var(--button-border-disabled);
   --button-current-shadow-active: inset 0 2px 0 rgba(96, 19, 13, 0.26);
 }
 
@@ -2899,6 +2899,13 @@ button:disabled {
   padding-right: 2px;
 }
 
+.font-library-row .font-library-preview {
+  margin: 0;
+  color: var(--muted);
+  font-size: 1.72rem;
+  line-height: 1.25;
+}
+
 .font-editor-panel .editor-body {
   grid-template-rows: auto;
   align-content: start;
@@ -2933,6 +2940,12 @@ button:disabled {
   font-size: 3rem;
   line-height: 1.05;
   text-align: center;
+  white-space: pre-line;
+}
+
+#fontPreviewTextInput {
+  min-height: 84px;
+  resize: vertical;
 }
 
 .fixed-designs-workspace {

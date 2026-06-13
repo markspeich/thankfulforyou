@@ -451,7 +451,14 @@ test("switches between order items, presets, and size guides from the left nav",
   await expect(page.getByRole("region", { name: "Fonts workspace" })).toBeVisible();
   await expect(fontsWorkspace.getByRole("heading", { name: "Fonts" })).toBeVisible();
   await expect(fontsWorkspace.getByRole("button", { name: /Candlepin Laser/ })).toBeVisible();
+  await expect(fontsWorkspace.getByRole("button", { name: "Upload New Version" })).toBeEnabled();
   await expect(fontsWorkspace.getByRole("button", { name: "Delete font" })).toBeDisabled();
+  await expect(fontsWorkspace.getByText("Built-in", { exact: true })).toHaveCount(0);
+  const candlepinPreview = fontsWorkspace.locator('.font-library-row[data-font-id="candlepin"] .font-library-preview');
+  await expect(candlepinPreview).toHaveText("Candlepin Laser");
+  await expect.poll(async () => (
+    candlepinPreview.evaluate((element) => window.getComputedStyle(element).fontFamily)
+  )).toContain("CandlepinLaser");
   const fontRowTitleTypography = await fontsWorkspace.locator(".font-library-row .font-library-name").first().evaluate((element) => {
     const style = window.getComputedStyle(element);
     return {
@@ -543,6 +550,8 @@ test("loads workspace fonts into the Fonts workspace and line controls", async (
   await expect(page.locator('[data-line-index="0"] [data-setting="fontId"]')).toContainText("Clinic Sans");
   await page.getByRole("button", { name: "Fonts" }).click();
   await expect(page.locator("#fontsWorkspace").getByRole("button", { name: /Clinic Sans/ })).toBeVisible();
+  await expect(page.locator('.font-library-row[data-font-id="font-clinic-sans"] .font-library-preview')).toHaveCSS("font-family", /ClinicSans/);
+  await expect(page.locator("#fontsWorkspace").getByText("Uploaded", { exact: true })).toHaveCount(0);
 });
 
 test("shows uploaded font guidance as neutral information", async ({ page }) => {
@@ -577,6 +586,43 @@ test("shows uploaded font guidance as neutral information", async ({ page }) => 
 
   await expect(status).toHaveText("Uploaded fonts can be replaced with a new version or deleted from future selections.");
   await expect(status).not.toHaveAttribute("data-state", "error");
+});
+
+test("shows original production fonts as versionable but not deletable", async ({ page }) => {
+  await page.route("**/api/fonts**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify({
+        fonts: [
+          {
+            id: "candlepin",
+            display_name: "Candlepin Shop Version",
+            family_name: "WorkspaceFont_Candlepin_Shop_Version",
+            public_url: "public/fonts/Candlepin-Laser.otf",
+            file_format: "otf",
+            version: 2,
+            is_builtin: true,
+            deleted_at: null,
+          },
+        ],
+      }),
+    });
+  });
+
+  await page.goto("/fonts/candlepin");
+
+  await expect(page.locator("#selectedFontName")).toHaveText("Candlepin Shop Version");
+  await expect(page.locator("#selectedFontMeta")).toContainText("Built-in production font");
+  await expect(page.locator("#selectedFontMeta")).toContainText("v2");
+  await expect(page.locator("#fontDisplayNameInput")).toBeEnabled();
+  await expect(page.locator("#fontPreviewTextInput")).toHaveValue("ABCDEFGHIJKLMNOPQRSTUVWXYZ\nabcdefghijklmnopqrstuvwxyz");
+  await expect(page.locator("#selectedFontPreview")).toHaveText("ABCDEFGHIJKLMNOPQRSTUVWXYZ\nabcdefghijklmnopqrstuvwxyz");
+  await page.locator("#fontPreviewTextInput").fill("Badge\nReel");
+  await expect(page.locator("#selectedFontPreview")).toHaveText("Badge\nReel");
+  await expect(page.getByRole("button", { name: "Upload New Version" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Delete font" })).toBeDisabled();
+  await expect(page.locator("#fontEditorStatus")).toHaveText("Original production fonts can be replaced with a new version while keeping their stable design and preset references.");
 });
 
 test("keeps the font workspace stable after a successful upload", async ({ page }) => {

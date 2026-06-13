@@ -88,7 +88,7 @@ describe("fonts api route", () => {
 
   it("returns store errors for protected built-in delete requests", async () => {
     resolveProductionBatchAuthMock.mockResolvedValue({ userId: "user-1", workspaceId: "workspace-1" });
-    deleteWorkspaceFontMock.mockRejectedValue(Object.assign(new Error("Built-in fonts cannot be deleted or replaced."), {
+    deleteWorkspaceFontMock.mockRejectedValue(Object.assign(new Error("Original production fonts cannot be deleted."), {
       statusCode: 400,
       expose: true,
     }));
@@ -106,7 +106,42 @@ describe("fonts api route", () => {
       fontId: "candlepin",
     });
     expect(response.statusCode).toBe(400);
-    expect(response.body).toEqual({ error: "Built-in fonts cannot be deleted or replaced." });
+    expect(response.body).toEqual({ error: "Original production fonts cannot be deleted." });
+  });
+
+  it("routes built-in font replacement requests to the store", async () => {
+    resolveProductionBatchAuthMock.mockResolvedValue({ userId: "user-1", workspaceId: "workspace-1" });
+    replaceWorkspaceFontMock.mockResolvedValue({
+      id: "candlepin",
+      display_name: "Candlepin Shop Version",
+      is_builtin: true,
+      version: 2,
+    });
+    const { default: handler } = await import("../../api/fonts.js");
+    const response = createResponseRecorder();
+    const file = { name: "Candlepin-Shop.otf", size: 100, buffer: [1, 2, 3] };
+
+    await handler({
+      method: "PUT",
+      headers: { authorization: "Bearer token-1" },
+      query: { fontId: "candlepin" },
+      body: { file },
+    }, response);
+
+    expect(replaceWorkspaceFontMock).toHaveBeenCalledWith({
+      workspaceId: "workspace-1",
+      fontId: "candlepin",
+      file,
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toEqual({
+      font: {
+        id: "candlepin",
+        display_name: "Candlepin Shop Version",
+        is_builtin: true,
+        version: 2,
+      },
+    });
   });
 
   it("returns 405 for unsupported methods", async () => {

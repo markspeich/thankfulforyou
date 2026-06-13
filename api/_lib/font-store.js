@@ -18,6 +18,7 @@ const FONT_STORAGE_BUCKET_OPTIONS = Object.freeze({
   ],
 });
 const SUPPORTED_FONT_EXTENSIONS = new Set(["otf", "ttf", "woff", "woff2"]);
+const ORIGINAL_PRODUCTION_FONT_IDS = new Set(["candlepin", "skywalk", "somekind"]);
 const CONTENT_TYPE_BY_FORMAT = {
   otf: "font/otf",
   ttf: "font/ttf",
@@ -218,9 +219,15 @@ export function normalizeUploadedFontFile(file) {
   };
 }
 
-export function rejectBuiltinFontMutation(font) {
-  if (font?.is_builtin || font?.isBuiltin) {
-    throw createFontStoreError(400, "Built-in fonts cannot be deleted or replaced.");
+export function rejectMissingFontReplacement(font) {
+  if (!font) {
+    throw createFontStoreError(404, "Font not found.");
+  }
+}
+
+export function rejectBuiltinFontDeletion(font) {
+  if (font?.is_builtin || font?.isBuiltin || ORIGINAL_PRODUCTION_FONT_IDS.has(font?.id)) {
+    throw createFontStoreError(400, "Original production fonts cannot be deleted.");
   }
 }
 
@@ -394,7 +401,7 @@ async function getWorkspaceFontOrThrow(supabase, { workspaceId, fontId }) {
     throw error;
   }
   if (!data) {
-    throw createFontStoreError(404, "Font not found.");
+    rejectMissingFontReplacement(data);
   }
   return data;
 }
@@ -402,7 +409,7 @@ async function getWorkspaceFontOrThrow(supabase, { workspaceId, fontId }) {
 export async function replaceWorkspaceFont({ workspaceId, fontId, file }) {
   const supabase = createSupabaseAdminClient();
   const existing = await getWorkspaceFontOrThrow(supabase, { workspaceId, fontId });
-  rejectBuiltinFontMutation(existing);
+  rejectMissingFontReplacement(existing);
 
   const upload = normalizeUploadedFontFile(file);
   const version = Number(existing.version || 1) + 1;
@@ -448,7 +455,7 @@ export async function replaceWorkspaceFont({ workspaceId, fontId, file }) {
 export async function deleteWorkspaceFont({ workspaceId, fontId }) {
   const supabase = createSupabaseAdminClient();
   const existing = await getWorkspaceFontOrThrow(supabase, { workspaceId, fontId });
-  rejectBuiltinFontMutation(existing);
+  rejectBuiltinFontDeletion(existing);
 
   const { data, error } = await supabase
     .from("fonts")
