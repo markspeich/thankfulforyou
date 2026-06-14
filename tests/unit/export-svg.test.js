@@ -311,6 +311,41 @@ describe("export_svg face tracing", () => {
     expect(stretched.facePath).not.toBe(base.facePath);
   });
 
+  test("keeps horizontally stretched backing anchored to the glyph origin", { timeout: 15000 }, () => {
+    const baseLayout = {
+      text: "S",
+      widthMm: 25,
+      heightMm: 25,
+      backingMm: 3.1,
+      letters: [
+        {
+          character: "S",
+          fontId: "candlepin",
+          fontPath: "public/fonts/Candlepin-Laser.otf",
+          fontSizeMm: 18,
+          horizontalScale: 1,
+          verticalScale: 1,
+          x: 5,
+          y: 18,
+        },
+      ],
+    };
+
+    const base = pathBounds(analyzeLayout(baseLayout).backingPath);
+    const stretched = pathBounds(analyzeLayout({
+      ...baseLayout,
+      letters: [
+        {
+          ...baseLayout.letters[0],
+          horizontalScale: 1.25,
+        },
+      ],
+    }).backingPath);
+
+    expect(stretched.left).toBeLessThanOrEqual(base.left);
+    expect(stretched.right).toBeGreaterThan(base.right);
+  });
+
   test("analyzes multi-character letter tokens without crashing outline export", { timeout: 15000 }, () => {
     const analysis = analyzeLayout({
       text: "Chuck!",

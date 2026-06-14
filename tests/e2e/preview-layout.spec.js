@@ -566,6 +566,26 @@ test("shows a size guide control in global settings", async ({ page }) => {
   await expect(page.locator("#preview .preview-guide-min-box")).not.toHaveAttribute("rx", /.+/);
 });
 
+test("previews welded face geometry when welded export is enabled", async ({ page }) => {
+  await page.route("**/api/layout-analyze", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(buildMockAnalysisResponse({
+        facePath: "M0 0 L4 0 L4 10 L0 10 Z M8 0 L12 0 L12 10 L8 10 Z",
+        exportFacePath: "M0 0 L12 0 L12 10 L0 10 Z",
+      })),
+    });
+  });
+
+  await page.locator("#textInput").fill("Test\nLPN");
+  await expect(page.locator("#weldExportedDesignInput")).toBeChecked();
+  await clickButtonBySelector(page, "#captureButton");
+
+  await expect(page.locator("#connectionStatusLabel")).toHaveText("Single connected face piece");
+  await expect(page.locator("#preview path.face-layer")).toHaveAttribute("d", "M0 0 L12 0 L12 10 L0 10 Z");
+});
+
 test("All Candlepin keeps the What / do you / mean layout to at most two outline pieces", async ({ page }) => {
   let analysisResponse = null;
 

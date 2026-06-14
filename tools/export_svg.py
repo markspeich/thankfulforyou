@@ -886,7 +886,7 @@ def render_text_mask(
                 Image.Resampling.BICUBIC,
             )
 
-        paste_x = round(float(letter["x"]) * scale + left)
+        paste_x = round(float(letter["x"]) * scale + left * horizontal_scale)
         paste_y = round(float(letter["y"]) * scale + top * vertical_scale)
         image.paste(glyph_image, (paste_x, paste_y), glyph_image)
 
