@@ -1399,6 +1399,64 @@ test("zooms the preview with a two-finger pinch gesture", async ({ page }) => {
   }).toBeGreaterThan(previewWidthBefore * 1.25);
 });
 
+test("pans the zoomed preview with a one-finger drag gesture", async ({ page }) => {
+  const previewPanel = page.locator(".preview-panel");
+
+  await previewPanel.hover();
+  await page.mouse.wheel(0, -1000);
+
+  const panelBox = await previewPanel.boundingBox();
+  expect(panelBox).not.toBeNull();
+
+  await previewPanel.evaluate((element) => {
+    element.scrollLeft = 220;
+    element.scrollTop = 180;
+  });
+
+  const beforePan = await previewPanel.evaluate((element) => ({
+    scrollLeft: element.scrollLeft,
+    scrollTop: element.scrollTop,
+  }));
+
+  const startX = panelBox.x + (panelBox.width * 0.55);
+  const startY = panelBox.y + (panelBox.height * 0.55);
+
+  await previewPanel.dispatchEvent("pointerdown", {
+    bubbles: true,
+    cancelable: true,
+    pointerId: 21,
+    pointerType: "touch",
+    isPrimary: true,
+    clientX: startX,
+    clientY: startY,
+  });
+  await previewPanel.dispatchEvent("pointermove", {
+    bubbles: true,
+    cancelable: true,
+    pointerId: 21,
+    pointerType: "touch",
+    isPrimary: true,
+    clientX: startX + 80,
+    clientY: startY + 60,
+  });
+  await previewPanel.dispatchEvent("pointerup", {
+    bubbles: true,
+    cancelable: true,
+    pointerId: 21,
+    pointerType: "touch",
+    isPrimary: true,
+    clientX: startX + 80,
+    clientY: startY + 60,
+  });
+
+  const afterPan = await previewPanel.evaluate((element) => ({
+    scrollLeft: element.scrollLeft,
+    scrollTop: element.scrollTop,
+  }));
+
+  expect(afterPan.scrollLeft).toBeLessThan(beforePan.scrollLeft);
+});
+
 test("pans the preview with middle-click drag", async ({ page }) => {
   const previewPanel = page.locator(".preview-panel");
 

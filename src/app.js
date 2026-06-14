@@ -410,6 +410,7 @@ let zoom = DEFAULT_ZOOM;
 let previewMiddlePan = null;
 const previewTouchPointers = new Map();
 let previewPinchState = null;
+let previewTouchPan = null;
 let orderSequence = 1;
 let activeOrderItemId = null;
 const orders = [];
@@ -6563,6 +6564,27 @@ function updatePreviewPinchState() {
   previewPinchState = nextPinch;
 }
 
+function startPreviewTouchPan(event) {
+  previewTouchPan = {
+    pointerId: event.pointerId,
+    clientX: event.clientX,
+    clientY: event.clientY,
+  };
+}
+
+function updatePreviewTouchPan(event) {
+  if (!previewTouchPan || previewTouchPan.pointerId !== event.pointerId) {
+    return;
+  }
+
+  const deltaX = event.clientX - previewTouchPan.clientX;
+  const deltaY = event.clientY - previewTouchPan.clientY;
+  previewPanel.scrollLeft -= deltaX;
+  previewPanel.scrollTop -= deltaY;
+  previewTouchPan.clientX = event.clientX;
+  previewTouchPan.clientY = event.clientY;
+}
+
 function handlePreviewPointerDown(event) {
   if (event.pointerType !== "touch") {
     return;
@@ -6576,6 +6598,11 @@ function handlePreviewPointerDown(event) {
   if (typeof previewPanel.setPointerCapture === "function") {
     previewPanel.setPointerCapture(event.pointerId);
   }
+  if (previewTouchPointers.size === 1) {
+    startPreviewTouchPan(event);
+  } else {
+    previewTouchPan = null;
+  }
   updatePreviewPinchState();
 }
 
@@ -6585,10 +6612,19 @@ function handlePreviewPointerMove(event) {
   }
 
   event.preventDefault();
+  const previousPoint = previewTouchPointers.get(event.pointerId);
   previewTouchPointers.set(event.pointerId, {
     clientX: event.clientX,
     clientY: event.clientY,
   });
+  if (!previewTouchPan && previewTouchPointers.size === 1 && previousPoint) {
+    previewTouchPan = {
+      pointerId: event.pointerId,
+      clientX: previousPoint.clientX,
+      clientY: previousPoint.clientY,
+    };
+  }
+  updatePreviewTouchPan(event);
   updatePreviewPinchState();
 }
 
@@ -6604,6 +6640,9 @@ function endPreviewPointerGesture(event) {
     && previewPanel.hasPointerCapture(event.pointerId)
   ) {
     previewPanel.releasePointerCapture(event.pointerId);
+  }
+  if (previewTouchPan?.pointerId === event.pointerId) {
+    previewTouchPan = null;
   }
   updatePreviewPinchState();
 }
