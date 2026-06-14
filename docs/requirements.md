@@ -77,6 +77,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Selecting an item in a workspace's left detail column must update the URL with that item's stable id so operators can bookmark and reopen a specific order, production-batch design, preset, font, or size guide.
 - Loading one of those item URLs must restore the matching top-level workspace and selected detail item after shared data has loaded; missing item ids should fall back to the workspace page URL instead of selecting an unrelated item silently.
 - `Production Batch` should open the existing production batch workspace with the production batch and selected-order editor.
+- The production batch design screen should show summary cards for total `Order Items`, `Complete`, and `In Progress` counts. `Order Items` should sum the quantity field across all order items in the batch.
 - `Presets` should open a dedicated preset editor workspace for viewing, editing, and creating presets.
 - `Size Guides` should open a dedicated size guide workspace for viewing, editing, and creating the named guide boxes used to constrain badge reel design sizes.
 - `Fixed Designs` should open a dedicated workspace for uploading, viewing, versioning, downloading, and deleting reusable fixed SVG artwork.

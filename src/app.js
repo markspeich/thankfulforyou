@@ -296,6 +296,7 @@ const savePresetAsCloseButton = document.querySelector("#savePresetAsCloseButton
 const savePresetAsCancelButton = document.querySelector("#savePresetAsCancelButton");
 const orderSearchInput = document.querySelector("#orderSearchInput");
 const orderCountOutput = document.querySelector("#orderCountOutput");
+const orderItemCountOutput = document.querySelector("#orderItemCountOutput");
 const completeCountOutput = document.querySelector("#completeCountOutput");
 const progressCountOutput = document.querySelector("#progressCountOutput");
 const notStartedCountOutput = document.querySelector("#notStartedCountOutput");
@@ -7780,11 +7781,13 @@ function renderOrderList() {
   const completeCount = orders.filter((order) => order.status === "captured" || order.status === "exported").length;
   const progressCount = orders.filter((order) => order.status === "in-progress").length;
   const notStartedCount = orders.filter((order) => order.status === "not-started").length;
+  const orderItemCount = orders.reduce((total, order) => total + parseColorCountQuantity(order), 0);
   const exportableCount = orders.filter(orderHasRenderableDesign).length;
   const readyToExportCount = orders.filter(isOrderReadyForExport).length;
   const allExportableOrdersReady = exportableCount > 0 && readyToExportCount === exportableCount;
 
   orderCountOutput.textContent = String(orders.length);
+  orderItemCountOutput.textContent = String(orderItemCount);
   completeCountOutput.textContent = String(completeCount);
   progressCountOutput.textContent = String(progressCount);
   if (notStartedCountOutput) {

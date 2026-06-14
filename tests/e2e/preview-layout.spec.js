@@ -586,6 +586,17 @@ test("previews welded face geometry when welded export is enabled", async ({ pag
   await expect(page.locator("#preview path.face-layer")).toHaveAttribute("d", "M0 0 L12 0 L12 10 L0 10 Z");
 });
 
+test("shows the total order item count in the design status summary", async ({ page }) => {
+  const statusSummary = page.getByLabel("Design status summary");
+  const orderItemsCard = statusSummary.locator("div").filter({ hasText: "Order Items" });
+
+  await expect(orderItemsCard.locator("strong")).toHaveText("1");
+
+  await clickBatchAction(page, "Add Design");
+
+  await expect(orderItemsCard.locator("strong")).toHaveText("2");
+});
+
 test("All Candlepin keeps the What / do you / mean layout to at most two outline pieces", async ({ page }) => {
   let analysisResponse = null;
 
@@ -1183,6 +1194,7 @@ test("uses the refined desktop B1 workspace proportions", async ({ page }) => {
       previewPanel: rect(previewPanel),
       hasBatchMenu: queueMenu instanceof HTMLElement,
       visibleStatCount: stats.length,
+      statTops: stats.map((node) => Math.round(node.getBoundingClientRect().top)),
     };
   });
 
@@ -1191,7 +1203,8 @@ test("uses the refined desktop B1 workspace proportions", async ({ page }) => {
   expect(layout.queue.width / layout.workspace.width).toBeLessThan(0.31);
   expect(layout.previewWorkspace.width).toBeGreaterThan(layout.lineRail.width);
   expect(layout.previewPanel.height).toBeGreaterThan(420);
-  expect(layout.visibleStatCount).toBe(2);
+  expect(layout.visibleStatCount).toBe(3);
+  expect(new Set(layout.statTops).size).toBe(1);
   expect(layout.hasBatchMenu).toBe(true);
 });
 
@@ -3102,6 +3115,7 @@ test("shows imported Etsy color and quantity below design text and highlights wh
 
   await clickButtonBySelector(page, "#importClipboardButton");
 
+  await expect(page.getByLabel("Design status summary").locator("div").filter({ hasText: "Order Items" }).locator("strong")).toHaveText("3");
   await expect(page.locator("#importedColorField")).toBeVisible();
   await expect(page.locator("#importedColorValue")).toHaveText("White Glitter");
   await expect(page.locator("#importedColorValue")).toHaveClass(/highlight-light-color/);
