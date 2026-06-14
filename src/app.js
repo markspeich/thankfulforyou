@@ -5649,13 +5649,14 @@ function createDatabaseOrderItemPreviewGraphic(savedBuild) {
 
   const analysis = savedBuild?.analysis && typeof savedBuild.analysis === "object" ? savedBuild.analysis : null;
   if (typeof analysis?.backingPath === "string" && typeof analysis?.facePath === "string") {
+    const previewFacePath = getPreviewFacePath(layout, analysis);
     svg.append(
       makeSvgElement("path", {
         d: analysis.backingPath,
         fill: "rgb(255, 0, 0)",
       }),
       makeSvgElement("path", {
-        d: analysis.facePath,
+        d: previewFacePath,
         fill: "#f8fbfc",
       }),
     );
@@ -9759,6 +9760,14 @@ function makeSvgElement(name, attributes = {}) {
   return element;
 }
 
+function getPreviewFacePath(layout, analysis) {
+  if (layout?.weldExportedDesign && typeof analysis?.exportFacePath === "string" && analysis.exportFacePath) {
+    return analysis.exportFacePath;
+  }
+
+  return analysis?.facePath;
+}
+
 async function analyzeLayout(layout) {
   const response = await fetch("/api/layout-analyze", {
     method: "POST",
@@ -10032,7 +10041,7 @@ function renderPreviewFromLayout(layout) {
   const faceLayer = analysis
     ? makeSvgElement("path", {
         class: "face-layer",
-        d: analysis.facePath,
+        d: getPreviewFacePath(layout, analysis),
         fill: "#f8fbfc",
         transform: `translate(${frame.designX} ${frame.designY})`,
       })
