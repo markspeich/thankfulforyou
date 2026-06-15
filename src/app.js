@@ -51,6 +51,11 @@ import {
   applyLayoutControlsSnapshot,
   buildLayoutControlsSnapshot,
 } from "./layout-controls-clipboard.js";
+import {
+  buildGlyphLayoutRuns,
+  resolveNextGlyphMaskOrigin,
+  resolveNextLineOffsetMm,
+} from "./glyph-layout.js";
 import { buildReloadedPresetSettings } from "./preset-selection.js";
 import {
   completeProductionBatch,
@@ -108,6 +113,7 @@ import {
   registerBrowserFonts,
   replaceWorkspaceFont,
   resolveFontOption,
+  updateWorkspaceFontSettings,
 } from "./fonts.js";
 import {
   createWorkspaceFixedDesign,
@@ -199,6 +205,7 @@ const fontLibraryList = document.querySelector("#fontLibraryList");
 const newFontUploadButton = document.querySelector("#newFontUploadButton");
 const fontFileInput = document.querySelector("#fontFileInput");
 const fontDisplayNameInput = document.querySelector("#fontDisplayNameInput");
+const fontBridgingEnabledInput = document.querySelector("#fontBridgingEnabledInput");
 const fontPreviewTextInput = document.querySelector("#fontPreviewTextInput");
 const selectedFontName = document.querySelector("#selectedFontName");
 const selectedFontMeta = document.querySelector("#selectedFontMeta");
@@ -971,6 +978,21 @@ function normalizeLineSettings(lineSettings = {}) {
   };
 }
 
+function applyFontBridgePolicy(lineSettings) {
+  if (!lineSettings || lineSettings.kind === "fixedSvg") {
+    return lineSettings;
+  }
+
+  const font = getFontOption(lineSettings.fontId);
+  const fontBridgingEnabled = font.bridgingEnabled !== false;
+  return {
+    ...lineSettings,
+    bridgeMm: fontBridgingEnabled ? lineSettings.bridgeMm : 0,
+    lineBridgeMm: fontBridgingEnabled ? lineSettings.lineBridgeMm : 0,
+    fontBridgingEnabled,
+  };
+}
+
 function buildNormalizedLineSettings(rawLines, configuredLines, presetId) {
   if (!Array.isArray(configuredLines)) {
     return rawLines.map((_, index) => normalizeLineSettings({
@@ -1229,7 +1251,7 @@ function normalizeSettings(settings = {}) {
     weldExportedDesign: typeof settings.weldExportedDesign === "boolean"
       ? settings.weldExportedDesign
       : presetBaseSettings.weldExportedDesign,
-    lines: buildNormalizedLineSettings(rawLines, configuredLines, presetId),
+    lines: buildNormalizedLineSettings(rawLines, configuredLines, presetId).map(applyFontBridgePolicy),
   };
 }
 
@@ -8458,6 +8480,10 @@ function renderFontWorkspace() {
   selectedFontMeta.textContent = getFontMetaLabel(selectedFont);
   fontDisplayNameInput.value = selectedFont.displayName || selectedFont.label;
   fontDisplayNameInput.disabled = false;
+  if (fontBridgingEnabledInput) {
+    fontBridgingEnabledInput.checked = selectedFont.bridgingEnabled !== false;
+    fontBridgingEnabledInput.disabled = false;
+  }
   if (fontPreviewTextInput.value !== fontPreviewText) {
     fontPreviewTextInput.value = fontPreviewText;
   }
@@ -8729,6 +8755,29 @@ async function handleFontFileSelection(mode) {
     setFontEditorStatus(mode === "replace" ? "Font version uploaded." : "Font uploaded.", "success");
   } catch (error) {
     setFontEditorStatus(error instanceof Error ? error.message : "Unable to upload font.", "error");
+  }
+}
+
+async function handleFontBridgingEnabledChange() {
+  const selectedFont = getFontOption(selectedFontId);
+  const bridgingEnabled = Boolean(fontBridgingEnabledInput?.checked);
+
+  try {
+    setFontEditorStatus("Saving font bridge setting...", "pending");
+    await updateWorkspaceFontSettings(selectedFont.id, { bridgingEnabled }, {
+      accessToken: productionBatchAccessToken,
+    });
+    await refreshWorkspaceFonts(productionBatchAccessToken);
+    renderFontWorkspace();
+    renderLineControls(getActiveOrder()?.settings || getCurrentSettings());
+    render();
+    updateActiveOrderFromControls();
+    setFontEditorStatus("Font bridge setting saved.", "success");
+  } catch (error) {
+    if (fontBridgingEnabledInput) {
+      fontBridgingEnabledInput.checked = selectedFont.bridgingEnabled !== false;
+    }
+    setFontEditorStatus(error instanceof Error ? error.message : "Unable to save font bridge setting.", "error");
   }
 }
 
@@ -9565,6 +9614,7 @@ function buildMeasuredLineCacheKey(text, settings) {
     settings.fontId,
     settings.bridgeMm,
     settings.lineBridgeMm,
+    settings.fontBridgingEnabled,
     settings.offsetXMm,
     settings.fontSizeMm,
     settings.horizontalScale,
@@ -9593,8 +9643,16 @@ function findLineOffsetMm(upperMask, lowerMask, bridgeMm) {
   return (upperMask.height - MASK_PADDING_PX * 2) / scale - bridgeMm;
 }
 
-function layoutCharacters(text, fontSizeMm, bridgeMm, fontId, horizontalScale, verticalScale) {
-  const characters = [...text];
+function layoutCharacters(text, settings) {
+  const {
+    bridgeMm,
+    fontBridgingEnabled,
+    fontId,
+    fontSizeMm,
+    horizontalScale,
+    verticalScale,
+  } = settings;
+  const characters = buildGlyphLayoutRuns(text, fontBridgingEnabled);
   if (!characters.length) {
     return [];
   }
@@ -9607,8 +9665,16 @@ function layoutCharacters(text, fontSizeMm, bridgeMm, fontId, horizontalScale, v
     const mask = masks[index];
     const maskOrigin = index === 0
       ? 0
-      : positions[index - 1].maskOrigin + findPairOffsetMm(masks[index - 1], mask, bridgeMm);
-    positions.push({ maskOrigin });
+      : resolveNextGlyphMaskOrigin({
+          bridgeMm,
+          findPairOffset: findPairOffsetMm,
+          fontBridgingEnabled,
+          leftMask: masks[index - 1],
+          previousAdvanceMm: positions[index - 1].advance,
+          previousMaskOriginMm: positions[index - 1].maskOrigin,
+          rightMask: mask,
+        });
+    positions.push({ advance: metrics.advance, maskOrigin });
 
     const x = maskOrigin + mask.leftMm;
     const leftEdge = x - metrics.left;
@@ -9629,14 +9695,7 @@ function layoutCharacters(text, fontSizeMm, bridgeMm, fontId, horizontalScale, v
 }
 
 function buildMeasuredLine(text, settings) {
-  const letters = layoutCharacters(
-    text,
-    settings.fontSizeMm,
-    settings.bridgeMm,
-    settings.fontId,
-    settings.horizontalScale,
-    settings.verticalScale,
-  );
+  const letters = layoutCharacters(text, settings);
 
   return {
     text,
@@ -9682,7 +9741,13 @@ function layoutTextLines(text, lineSettings) {
     }
 
     const previous = lines[index - 1];
-    line.y = previous.y + findLineOffsetMm(previous.mask, line.mask, line.settings.lineBridgeMm);
+    line.y = previous.y + resolveNextLineOffsetMm({
+      bridgeMm: line.settings.lineBridgeMm,
+      findLineOffset: findLineOffsetMm,
+      fontBridgingEnabled: line.settings.fontBridgingEnabled,
+      lowerMask: line.mask,
+      upperMask: previous.mask,
+    });
   });
 
   return lines;
@@ -10646,6 +10711,9 @@ fontFileInput?.addEventListener("change", () => {
 fontPreviewTextInput?.addEventListener("input", () => {
   fontPreviewText = fontPreviewTextInput.value;
   selectedFontPreview.textContent = fontPreviewText;
+});
+fontBridgingEnabledInput?.addEventListener("change", () => {
+  void handleFontBridgingEnabledChange();
 });
 deleteFontButton?.addEventListener("click", () => {
   void handleDeleteSelectedFont();

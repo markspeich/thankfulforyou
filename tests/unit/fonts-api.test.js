@@ -4,6 +4,7 @@ const resolveProductionBatchAuthMock = vi.fn();
 const listWorkspaceFontsMock = vi.fn();
 const createWorkspaceFontMock = vi.fn();
 const replaceWorkspaceFontMock = vi.fn();
+const updateWorkspaceFontSettingsMock = vi.fn();
 const deleteWorkspaceFontMock = vi.fn();
 
 vi.mock("../../api/_lib/production-batch-auth.js", () => ({
@@ -14,6 +15,7 @@ vi.mock("../../api/_lib/font-store.js", () => ({
   listWorkspaceFonts: listWorkspaceFontsMock,
   createWorkspaceFont: createWorkspaceFontMock,
   replaceWorkspaceFont: replaceWorkspaceFontMock,
+  updateWorkspaceFontSettings: updateWorkspaceFontSettingsMock,
   deleteWorkspaceFont: deleteWorkspaceFontMock,
 }));
 
@@ -42,6 +44,7 @@ beforeEach(() => {
   listWorkspaceFontsMock.mockReset();
   createWorkspaceFontMock.mockReset();
   replaceWorkspaceFontMock.mockReset();
+  updateWorkspaceFontSettingsMock.mockReset();
   deleteWorkspaceFontMock.mockReset();
 });
 
@@ -144,15 +147,47 @@ describe("fonts api route", () => {
     });
   });
 
+  it("updates the font bridging setting without requiring a file upload", async () => {
+    resolveProductionBatchAuthMock.mockResolvedValue({ userId: "user-1", workspaceId: "workspace-1" });
+    updateWorkspaceFontSettingsMock.mockResolvedValue({
+      id: "connected-script",
+      display_name: "Connected Script",
+      bridging_enabled: false,
+    });
+    const { default: handler } = await import("../../api/fonts.js");
+    const response = createResponseRecorder();
+
+    await handler({
+      method: "PATCH",
+      headers: { authorization: "Bearer token-1" },
+      query: { fontId: "connected-script" },
+      body: { bridgingEnabled: false },
+    }, response);
+
+    expect(updateWorkspaceFontSettingsMock).toHaveBeenCalledWith({
+      workspaceId: "workspace-1",
+      fontId: "connected-script",
+      bridgingEnabled: false,
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toEqual({
+      font: {
+        id: "connected-script",
+        display_name: "Connected Script",
+        bridging_enabled: false,
+      },
+    });
+  });
+
   it("returns 405 for unsupported methods", async () => {
     resolveProductionBatchAuthMock.mockResolvedValue({ userId: "user-1", workspaceId: "workspace-1" });
     const { default: handler } = await import("../../api/fonts.js");
     const response = createResponseRecorder();
 
-    await handler({ method: "PATCH", headers: {}, query: {} }, response);
+    await handler({ method: "OPTIONS", headers: {}, query: {} }, response);
 
     expect(response.statusCode).toBe(405);
-    expect(response.headers.Allow).toBe("GET, POST, PUT, DELETE");
+    expect(response.headers.Allow).toBe("GET, POST, PUT, PATCH, DELETE");
     expect(response.body).toEqual({ error: "Method not allowed." });
   });
 });

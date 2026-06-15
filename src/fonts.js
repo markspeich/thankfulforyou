@@ -3,6 +3,7 @@ import {
   deleteWorkspaceFont,
   fetchWorkspaceFonts,
   replaceWorkspaceFont,
+  updateWorkspaceFontSettings,
 } from "./font-api.js";
 
 export const BUILTIN_FONT_DEFINITIONS = Object.freeze([
@@ -15,6 +16,7 @@ export const BUILTIN_FONT_DEFINITIONS = Object.freeze([
     fileFormat: "otf",
     version: 1,
     isBuiltin: true,
+    bridgingEnabled: true,
   },
   {
     id: "skywalk",
@@ -25,6 +27,7 @@ export const BUILTIN_FONT_DEFINITIONS = Object.freeze([
     fileFormat: "otf",
     version: 1,
     isBuiltin: true,
+    bridgingEnabled: true,
   },
   {
     id: "somekind",
@@ -35,6 +38,7 @@ export const BUILTIN_FONT_DEFINITIONS = Object.freeze([
     fileFormat: "ttf",
     version: 1,
     isBuiltin: true,
+    bridgingEnabled: true,
   },
 ]);
 
@@ -77,6 +81,7 @@ export function normalizeFontRecord(record, { includeDeleted = false } = {}) {
   const isDeleted = Boolean(deletedAt);
   const version = Number.isFinite(Number(record.version)) ? Number(record.version) : 1;
   const isBuiltin = Boolean(record.is_builtin ?? record.isBuiltin);
+  const bridgingEnabled = record.bridging_enabled ?? record.bridgingEnabled;
 
   return {
     id,
@@ -91,6 +96,7 @@ export function normalizeFontRecord(record, { includeDeleted = false } = {}) {
     isUploaded: !isBuiltin,
     isDeleted,
     deletedAt,
+    bridgingEnabled: typeof bridgingEnabled === "boolean" ? bridgingEnabled : true,
   };
 }
 
@@ -158,4 +164,5 @@ export {
   createWorkspaceFont,
   deleteWorkspaceFont,
   replaceWorkspaceFont,
+  updateWorkspaceFontSettings,
 };

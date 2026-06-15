@@ -6,7 +6,7 @@ import {
 } from "../../src/order-signatures.js";
 
 describe("order signatures", () => {
-  it("includes lockTextHeight and horizontalScale in the current signature format", () => {
+  it("includes lockTextHeight, horizontalScale, and font bridging policy in the current signature format", () => {
     const signature = buildSettingsSignature({
       text: "Mark\nRN",
       presetId: "preset-c3e8a1d7f520",
@@ -22,19 +22,48 @@ describe("order signatures", () => {
           horizontalScale: 1.2,
           verticalScale: 1,
           lockTextHeight: true,
+          fontBridgingEnabled: false,
         },
       ],
     });
 
     expect(JSON.parse(signature)).toMatchObject({
-      version: 3,
+      version: 4,
       lines: [
         {
           horizontalScale: 1.2,
           lockTextHeight: true,
+          fontBridgingEnabled: false,
         },
       ],
     });
+  });
+
+  it("changes the current settings signature when the selected font bridging policy changes", () => {
+    const baseSettings = {
+      text: "Ada",
+      presetId: "preset-a1f4c8e2b601",
+      backingMm: 3.1,
+      weldExportedDesign: true,
+      lines: [
+        {
+          fontId: "connected-script",
+          bridgeMm: 0,
+          lineBridgeMm: 0,
+          offsetXMm: 0,
+          fontSizeMm: 34,
+          horizontalScale: 1,
+          verticalScale: 1,
+          lockTextHeight: false,
+          fontBridgingEnabled: false,
+        },
+      ],
+    };
+
+    expect(buildSettingsSignature({
+      ...baseSettings,
+      lines: [{ ...baseSettings.lines[0], fontBridgingEnabled: true }],
+    })).not.toBe(buildSettingsSignature(baseSettings));
   });
 
   it("returns both current and legacy signatures for compatibility", () => {
@@ -59,8 +88,8 @@ describe("order signatures", () => {
 
     expect(candidates).toHaveLength(3);
     expect(JSON.parse(candidates[0])).toMatchObject({
-      version: 3,
-      lines: [{ horizontalScale: 1.2, lockTextHeight: true }],
+      version: 4,
+      lines: [{ horizontalScale: 1.2, lockTextHeight: true, fontBridgingEnabled: true }],
     });
     expect(JSON.parse(candidates[1])).toMatchObject({
       version: 2,
@@ -80,6 +109,35 @@ describe("order signatures", () => {
       ],
     });
     expect(JSON.parse(candidates[2]).lines[0]).not.toHaveProperty("lockTextHeight");
+    expect(JSON.parse(candidates[2]).lines[0]).not.toHaveProperty("fontBridgingEnabled");
+  });
+
+  it("does not return legacy signature candidates when font bridging is disabled", () => {
+    const candidates = getSettingsSignatureCandidates({
+      text: "Ada",
+      presetId: "preset-a1f4c8e2b601",
+      backingMm: 3.1,
+      weldExportedDesign: true,
+      lines: [
+        {
+          fontId: "connected-script",
+          bridgeMm: 0,
+          lineBridgeMm: 0,
+          offsetXMm: 0,
+          fontSizeMm: 34,
+          horizontalScale: 1,
+          verticalScale: 1,
+          lockTextHeight: false,
+          fontBridgingEnabled: false,
+        },
+      ],
+    });
+
+    expect(candidates).toHaveLength(1);
+    expect(JSON.parse(candidates[0])).toMatchObject({
+      version: 4,
+      lines: [{ fontBridgingEnabled: false }],
+    });
   });
 
   it("returns the pre-guide-fingerprint v2 signature for saved design compatibility", () => {

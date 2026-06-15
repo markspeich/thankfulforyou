@@ -5,6 +5,7 @@ import {
   createFontStoreError,
   ensureFontStorageBucket,
   normalizeUploadedFontFile,
+  normalizeFontRow,
   rejectBuiltinFontDeletion,
   rejectMissingFontReplacement,
   resolveUploadedFontDisplayName,
@@ -75,6 +76,27 @@ describe("font store helpers", () => {
       message: "Nope.",
       statusCode: 400,
       expose: true,
+    });
+  });
+
+  it("normalizes font rows with bridging enabled by default", () => {
+    expect(normalizeFontRow({
+      id: "font-1",
+      workspace_id: "workspace-1",
+      display_name: "Connected Script",
+      bridging_enabled: false,
+    })).toMatchObject({
+      id: "font-1",
+      bridging_enabled: false,
+    });
+
+    expect(normalizeFontRow({
+      id: "font-2",
+      workspace_id: "workspace-1",
+      display_name: "Legacy Font",
+    })).toMatchObject({
+      id: "font-2",
+      bridging_enabled: true,
     });
   });
 

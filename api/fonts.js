@@ -4,6 +4,7 @@ import {
   deleteWorkspaceFont,
   listWorkspaceFonts,
   replaceWorkspaceFont,
+  updateWorkspaceFontSettings,
 } from "./_lib/font-store.js";
 
 function readJsonBody(req) {
@@ -25,6 +26,13 @@ function readUploadPayload(req) {
   const file = body.file ?? body.fontFile ?? null;
   const displayName = typeof body.displayName === "string" ? body.displayName.trim() : "";
   return { file, displayName };
+}
+
+function readFontSettingsPayload(req) {
+  const body = readJsonBody(req);
+  return {
+    bridgingEnabled: body.bridgingEnabled,
+  };
 }
 
 function sendError(res, error, fallbackMessage = "Unable to manage fonts.") {
@@ -86,6 +94,26 @@ export default async function handler(req, res) {
       return;
     }
 
+    if (req.method === "PATCH") {
+      const fontId = readFontId(req);
+      const { bridgingEnabled } = readFontSettingsPayload(req);
+      if (!fontId) {
+        res.status(400).json({ error: "fontId is required." });
+        return;
+      }
+      if (typeof bridgingEnabled !== "boolean") {
+        res.status(400).json({ error: "bridgingEnabled must be true or false." });
+        return;
+      }
+      const font = await updateWorkspaceFontSettings({
+        workspaceId: req.auth.workspaceId,
+        fontId,
+        bridgingEnabled,
+      });
+      res.status(200).json({ font });
+      return;
+    }
+
     if (req.method === "DELETE") {
       const fontId = readFontId(req);
       if (!fontId) {
@@ -100,7 +128,7 @@ export default async function handler(req, res) {
       return;
     }
 
-    res.setHeader("Allow", "GET, POST, PUT, DELETE");
+    res.setHeader("Allow", "GET, POST, PUT, PATCH, DELETE");
     res.status(405).json({ error: "Method not allowed." });
   } catch (error) {
     sendError(res, error);

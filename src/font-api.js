@@ -66,6 +66,24 @@ export async function replaceWorkspaceFont(fontId, uploadPayload, { accessToken 
   return payload.font;
 }
 
+export async function updateWorkspaceFontSettings(fontId, settingsPayload, { accessToken = null } = {}) {
+  const response = await fetch(`/api/fonts?fontId=${encodeURIComponent(fontId)}`, {
+    method: "PATCH",
+    headers: buildAuthHeaders(accessToken, {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    }),
+    body: JSON.stringify(settingsPayload),
+  });
+  const payload = await readJsonOrFallback(response, {});
+
+  if (!response.ok) {
+    throw new Error(payload.error || "Unable to update font settings.");
+  }
+
+  return payload.font;
+}
+
 export async function deleteWorkspaceFont(fontId, { accessToken = null } = {}) {
   const response = await fetch(`/api/fonts?fontId=${encodeURIComponent(fontId)}`, {
     method: "DELETE",

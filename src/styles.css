@@ -2928,6 +2928,21 @@ button:disabled {
   width: min(860px, 100%);
 }
 
+.font-bridge-setting {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--ink);
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.font-bridge-setting input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--button-enabled);
+}
+
 .font-preview-sample {
   min-height: 160px;
   display: grid;

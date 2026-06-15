@@ -59,6 +59,24 @@ describe("font registry", () => {
       version: 2,
       isBuiltin: true,
       isUploaded: false,
+      bridgingEnabled: true,
+    });
+  });
+
+  it("normalizes the per-font bridging setting from workspace records", () => {
+    const option = normalizeFontRecord({
+      id: "font-1",
+      display_name: "Connected Script",
+      family_name: "ConnectedScript",
+      public_url: "https://example.test/connected.otf",
+      file_format: "otf",
+      version: 1,
+      bridging_enabled: false,
+    });
+
+    expect(option).toMatchObject({
+      id: "font-1",
+      bridgingEnabled: false,
     });
   });
 
