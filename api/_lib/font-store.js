@@ -231,7 +231,7 @@ export function rejectBuiltinFontDeletion(font) {
   }
 }
 
-function normalizeFontRow(row) {
+export function normalizeFontRow(row) {
   if (!row) {
     return null;
   }
@@ -247,6 +247,7 @@ function normalizeFontRow(row) {
     file_format: row.file_format,
     version: row.version,
     is_builtin: row.is_builtin,
+    bridging_enabled: typeof row.bridging_enabled === "boolean" ? row.bridging_enabled : true,
     deleted_at: row.deleted_at,
     created_at: row.created_at,
     updated_at: row.updated_at,
@@ -322,7 +323,7 @@ export async function listWorkspaceFonts({ workspaceId, includeDeleted = false }
   const supabase = createSupabaseAdminClient();
   let query = supabase
     .from("fonts")
-    .select("id, workspace_id, display_name, family_name, storage_bucket, storage_path, public_url, file_name, file_format, version, is_builtin, deleted_at, created_at, updated_at")
+    .select("id, workspace_id, display_name, family_name, storage_bucket, storage_path, public_url, file_name, file_format, version, is_builtin, bridging_enabled, deleted_at, created_at, updated_at")
     .eq("workspace_id", workspaceId)
     .order("is_builtin", { ascending: false })
     .order("display_name", { ascending: true });
@@ -373,6 +374,7 @@ export async function createWorkspaceFont({ workspaceId, displayName, file }) {
     file_format: upload.fileFormat,
     version,
     is_builtin: false,
+    bridging_enabled: true,
     deleted_at: null,
   };
 
@@ -438,6 +440,28 @@ export async function replaceWorkspaceFont({ workspaceId, fontId, file }) {
       file_format: upload.fileFormat,
       version,
       deleted_at: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("workspace_id", workspaceId)
+    .eq("id", fontId)
+    .select()
+    .single();
+
+  if (error) {
+    throw error;
+  }
+
+  return normalizeFontRow(data);
+}
+
+export async function updateWorkspaceFontSettings({ workspaceId, fontId, bridgingEnabled }) {
+  const supabase = createSupabaseAdminClient();
+  await getWorkspaceFontOrThrow(supabase, { workspaceId, fontId });
+
+  const { data, error } = await supabase
+    .from("fonts")
+    .update({
+      bridging_enabled: Boolean(bridgingEnabled),
       updated_at: new Date().toISOString(),
     })
     .eq("workspace_id", workspaceId)

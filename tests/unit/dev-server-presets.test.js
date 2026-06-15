@@ -97,6 +97,36 @@ function putMalformedJson(port, path) {
   });
 }
 
+function patchMalformedJson(port, path) {
+  return new Promise((resolve, reject) => {
+    const req = request({
+      method: "PATCH",
+      host: "127.0.0.1",
+      port,
+      path,
+      headers: {
+        "Content-Type": "application/json",
+      },
+    }, (response) => {
+      let body = "";
+      response.setEncoding("utf8");
+      response.on("data", (chunk) => {
+        body += chunk;
+      });
+      response.on("end", () => {
+        resolve({
+          contentType: response.headers["content-type"],
+          statusCode: response.statusCode,
+          body,
+        });
+      });
+    });
+
+    req.on("error", reject);
+    req.end("{not-json");
+  });
+}
+
 function putMalformedPresetSnapshotJson(port) {
   return putMalformedJson(port, "/api/preset-snapshot");
 }
@@ -158,6 +188,19 @@ describe("dev server orders api wrapper", () => {
     await startDevServer(port);
 
     const response = await postMalformedOrdersJson(port);
+
+    expect(response.statusCode).toBe(400);
+    expect(response.contentType).toContain("application/json");
+    expect(JSON.parse(response.body)).toEqual({ error: "API payload must be valid JSON." });
+  }, 15000);
+});
+
+describe("dev server fonts api wrapper", () => {
+  it("parses PATCH JSON bodies before routing to the fonts API handler", async () => {
+    const port = await reserveAvailableDevServerTestPort();
+    await startDevServer(port);
+
+    const response = await patchMalformedJson(port, "/api/fonts?fontId=candlepin");
 
     expect(response.statusCode).toBe(400);
     expect(response.contentType).toContain("application/json");

@@ -667,6 +667,68 @@ test("does not offer deleted fonts as new production batch font choices", async 
   await expect(fontSelect).not.toContainText("Deleted Upload");
 });
 
+test("saves the font bridging setting from the Fonts workspace checkbox", async ({ page }) => {
+  let bridgingEnabled = true;
+  let patchPayload = null;
+
+  await page.route("**/api/fonts**", async (route) => {
+    const request = route.request();
+
+    if (request.method() === "PATCH") {
+      patchPayload = request.postDataJSON();
+      bridgingEnabled = patchPayload.bridgingEnabled;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json; charset=utf-8",
+        body: JSON.stringify({
+          font: {
+            id: "font-connected-script",
+            display_name: "Connected Script",
+            family_name: "ConnectedScript",
+            public_url: "public/fonts/Candlepin-Laser.otf",
+            file_format: "otf",
+            version: 1,
+            is_builtin: false,
+            bridging_enabled: bridgingEnabled,
+            deleted_at: null,
+          },
+        }),
+      });
+      return;
+    }
+
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify({
+        fonts: [
+          {
+            id: "font-connected-script",
+            display_name: "Connected Script",
+            family_name: "ConnectedScript",
+            public_url: "public/fonts/Candlepin-Laser.otf",
+            file_format: "otf",
+            version: 1,
+            is_builtin: false,
+            bridging_enabled: bridgingEnabled,
+            deleted_at: null,
+          },
+        ],
+      }),
+    });
+  });
+
+  await page.goto("/fonts/font-connected-script");
+
+  const checkbox = page.locator("#fontBridgingEnabledInput");
+  await expect(checkbox).toBeChecked();
+  await checkbox.uncheck();
+
+  await expect.poll(() => patchPayload).toEqual({ bridgingEnabled: false });
+  await expect(checkbox).not.toBeChecked();
+  await expect(page.locator("#fontEditorStatus")).toHaveText("Font bridge setting saved.");
+});
+
 test("keeps the font workspace stable after a successful upload", async ({ page }) => {
   const pageErrors = [];
   await page.route("**/api/fonts**", async (route) => {

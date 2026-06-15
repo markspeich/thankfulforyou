@@ -164,7 +164,9 @@ const server = createServer(async (request, response) => {
   ) {
     const requestId = randomUUID();
     const startedAt = Date.now();
-    const bodyText = request.method === "PUT" || request.method === "POST" ? await readRequestBody(request) : "";
+    const bodyText = request.method === "PUT" || request.method === "POST" || request.method === "PATCH"
+      ? await readRequestBody(request)
+      : "";
     let payload = undefined;
 
     if (bodyText) {

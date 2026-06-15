@@ -8,7 +8,12 @@ function toFiniteNumber(value) {
 }
 
 function buildSignaturePayload(settings = {}, options = {}) {
-  const { includeLockTextHeight = true, includeSizeGuideFingerprint = false, version = null } = options;
+  const {
+    includeFontBridgingPolicy = false,
+    includeLockTextHeight = true,
+    includeSizeGuideFingerprint = false,
+    version = null,
+  } = options;
   const payload = {
     ...(version == null ? {} : { version }),
     text: typeof settings.text === "string" ? settings.text : "",
@@ -39,6 +44,7 @@ function buildSignaturePayload(settings = {}, options = {}) {
         fontSizeMm: toFiniteNumber(line.fontSizeMm),
         horizontalScale: toFiniteNumber(line.horizontalScale),
         verticalScale: toFiniteNumber(line.verticalScale),
+        ...(includeFontBridgingPolicy ? { fontBridgingEnabled: line.fontBridgingEnabled !== false } : {}),
         ...(includeLockTextHeight ? { lockTextHeight: Boolean(line.lockTextHeight) } : {}),
       };
     }),
@@ -49,9 +55,10 @@ function buildSignaturePayload(settings = {}, options = {}) {
 
 export function buildSettingsSignature(settings = {}) {
   return JSON.stringify(buildSignaturePayload(settings, {
+    includeFontBridgingPolicy: true,
     includeLockTextHeight: true,
     includeSizeGuideFingerprint: true,
-    version: 3,
+    version: 4,
   }));
 }
 
@@ -70,8 +77,13 @@ export function buildLegacySettingsSignature(settings = {}) {
 
 export function getSettingsSignatureCandidates(settings = {}) {
   const currentSignature = buildSettingsSignature(settings);
+  const canUseLegacyBridgeSignatures = normalizeLines(settings.lines)
+    .every((line) => line?.kind === "fixedSvg" || line?.fontBridgingEnabled !== false);
+  if (!canUseLegacyBridgeSignatures) {
+    return [currentSignature];
+  }
+
   const preGuideFingerprintSignature = buildPreGuideFingerprintSettingsSignature(settings);
   const legacySignature = buildLegacySettingsSignature(settings);
-
   return [...new Set([currentSignature, preGuideFingerprintSignature, legacySignature])];
 }
