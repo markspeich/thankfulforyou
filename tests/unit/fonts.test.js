@@ -62,6 +62,30 @@ describe("font registry", () => {
     });
   });
 
+  it("keeps bundled built-in fonts active when a workspace built-in row was deleted", () => {
+    const options = buildFontOptions([
+      {
+        id: "candlepin",
+        display_name: "Candlepin Shop Version",
+        family_name: "WorkspaceFont_Candlepin_Shop_Version",
+        public_url: "https://example.test/workspace-fonts/candlepin/v2/Candlepin-Shop.otf",
+        file_format: "otf",
+        version: 2,
+        is_builtin: true,
+        deleted_at: "2026-06-14T00:00:00.000Z",
+      },
+    ], { includeDeleted: true });
+
+    expect(options[0]).toMatchObject({
+      id: "candlepin",
+      label: "Candlepin Laser",
+      family: "CandlepinLaser",
+      url: "public/fonts/Candlepin-Laser.otf",
+      isBuiltin: true,
+    });
+    expect(options[0].isDeleted).not.toBe(true);
+  });
+
   it("excludes deleted uploaded fonts from normal choices", () => {
     const options = buildFontOptions([
       {
@@ -92,6 +116,34 @@ describe("font registry", () => {
     const option = resolveFontOption("font-1", [...BUILTIN_FONT_DEFINITIONS, record]);
     expect(option.label).toBe("Old Font (deleted)");
     expect(option.isDeleted).toBe(true);
+  });
+
+  it("returns only active fonts as selectable choices unless the current font is deleted", async () => {
+    const { getSelectableFontOptions } = await import("../../src/fonts.js");
+    const options = buildFontOptions([
+      {
+        id: "font-active",
+        display_name: "Active Font",
+        family_name: "ActiveFont",
+        public_url: "https://example.test/active.otf",
+        file_format: "otf",
+      },
+      {
+        id: "font-deleted",
+        display_name: "Deleted Font",
+        family_name: "DeletedFont",
+        public_url: "https://example.test/deleted.otf",
+        file_format: "otf",
+        deleted_at: "2026-06-14T00:00:00.000Z",
+      },
+    ], { includeDeleted: true });
+
+    expect(getSelectableFontOptions(options).map((font) => font.id)).not.toContain("font-deleted");
+    expect(getSelectableFontOptions(options, "font-deleted").at(-1)).toMatchObject({
+      id: "font-deleted",
+      label: "Deleted Font (deleted)",
+      isDeleted: true,
+    });
   });
 
   it("replaces a previously registered browser font face for the same family", async () => {

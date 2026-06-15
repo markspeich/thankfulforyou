@@ -103,6 +103,7 @@ import {
   buildFontOptions,
   createWorkspaceFont,
   deleteWorkspaceFont,
+  getSelectableFontOptions,
   loadWorkspaceFontOptions,
   registerBrowserFonts,
   replaceWorkspaceFont,
@@ -1669,11 +1670,12 @@ function createPresetEditorFontField(ruleKey, fontId) {
   select.dataset.presetRuleKey = ruleKey;
   select.dataset.setting = "fontId";
 
-  FONT_OPTIONS.forEach((font) => {
+  getSelectableFontOptions(FONT_OPTIONS, fontId).forEach((font) => {
     const option = document.createElement("option");
     option.value = font.id;
     option.textContent = font.label;
     option.selected = font.id === fontId;
+    option.disabled = Boolean(font.isDeleted);
     select.append(option);
   });
 
@@ -7062,11 +7064,12 @@ function createFontField(lineIndex, fontId) {
   select.dataset.lineIndex = String(lineIndex);
   select.dataset.setting = "fontId";
 
-  FONT_OPTIONS.forEach((font) => {
+  getSelectableFontOptions(FONT_OPTIONS, fontId).forEach((font) => {
     const option = document.createElement("option");
     option.value = font.id;
     option.textContent = font.label;
     option.selected = font.id === fontId;
+    option.disabled = Boolean(font.isDeleted);
     select.append(option);
   });
 
