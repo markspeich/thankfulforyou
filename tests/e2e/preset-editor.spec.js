@@ -625,6 +625,48 @@ test("shows original production fonts as versionable but not deletable", async (
   await expect(page.locator("#fontEditorStatus")).toHaveText("Original production fonts can be replaced with a new version while keeping their stable design and preset references.");
 });
 
+test("does not offer deleted fonts as new production batch font choices", async ({ page }) => {
+  await page.route("**/api/fonts**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify({
+        fonts: [
+          {
+            id: "candlepin",
+            display_name: "Candlepin",
+            family_name: "WorkspaceFont_Candlepin_Deleted",
+            public_url: "public/fonts/Candlepin-Laser.otf",
+            file_format: "otf",
+            version: 2,
+            is_builtin: true,
+            deleted_at: "2026-06-14T00:00:00.000Z",
+          },
+          {
+            id: "font-deleted",
+            display_name: "Deleted Upload",
+            family_name: "DeletedUpload",
+            public_url: "public/fonts/Candlepin-Laser.otf",
+            file_format: "otf",
+            version: 1,
+            is_builtin: false,
+            deleted_at: "2026-06-14T00:00:00.000Z",
+          },
+        ],
+      }),
+    });
+  });
+
+  await page.goto("/");
+  await clickBatchAction(page, "Add Design");
+  await page.getByRole("textbox", { name: "Design Text" }).fill("Nurse Joy");
+
+  const fontSelect = page.locator('[data-line-index="0"] [data-setting="fontId"]');
+  await expect(fontSelect).toContainText("Candlepin Laser");
+  await expect(fontSelect).not.toContainText("Candlepin (deleted)");
+  await expect(fontSelect).not.toContainText("Deleted Upload");
+});
+
 test("keeps the font workspace stable after a successful upload", async ({ page }) => {
   const pageErrors = [];
   await page.route("**/api/fonts**", async (route) => {

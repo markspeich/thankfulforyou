@@ -98,15 +98,28 @@ export function buildFontOptions(fontRecords = [], { includeDeleted = false } = 
   const normalizedRecords = fontRecords
     .map((record) => normalizeFontRecord(record, { includeDeleted }))
     .filter(Boolean);
-  const recordById = new Map(normalizedRecords.map((font) => [font.id, font]));
+  const builtinIds = new Set(BUILTIN_FONT_DEFINITIONS.map((builtin) => builtin.id));
+  const recordById = new Map(
+    normalizedRecords
+      .filter((font) => !(font.isDeleted && builtinIds.has(font.id)))
+      .map((font) => [font.id, font]),
+  );
   const builtinOptions = BUILTIN_FONT_DEFINITIONS.map((builtin) => recordById.get(builtin.id) || builtin);
   const uploadedOptions = normalizedRecords
-    .filter((font) => !BUILTIN_FONT_DEFINITIONS.some((builtin) => builtin.id === font.id));
+    .filter((font) => !builtinIds.has(font.id));
 
   return [
     ...builtinOptions,
     ...uploadedOptions,
   ];
+}
+
+export function getSelectableFontOptions(fontOptions = BUILTIN_FONT_DEFINITIONS, selectedFontId = "") {
+  const activeOptions = fontOptions.filter((font) => !font.isDeleted);
+  const selectedDeletedOption = fontOptions.find((font) => font.isDeleted && font.id === selectedFontId);
+  return selectedDeletedOption
+    ? [...activeOptions, selectedDeletedOption]
+    : activeOptions;
 }
 
 export function resolveFontOption(fontId, fontOptions = BUILTIN_FONT_DEFINITIONS) {
