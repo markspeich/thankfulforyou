@@ -106,6 +106,8 @@ Production order purge is guarded to the live Supabase project ref `oezjskcygvfy
 
 Operators sign in through the app with invite-only email-and-password Supabase Auth accounts. The app does not expose self-service sign-up for production batch access.
 
+Operator sessions are intended to last two weeks before requiring re-authentication. Keep access-token JWT expiry short, and set the Supabase Auth session timebox to `336h` / 14 days for production project `oezjskcygvfyezvoulzw` in Authentication > Sessions when the hosted project plan supports Supabase session controls. The local Supabase CLI config mirrors this with `[auth.sessions].timebox = "336h"`. Supabase hosted session controls require a Pro plan or higher; on lower plans, daily re-authentication is more likely to come from Vercel Deployment Protection or another outer access layer than from Supabase session timeboxing.
+
 If browser Supabase config is missing or the current production batch session expires, the app shows a blocking sign-in or configuration state instead of falling back to local-only batch persistence.
 
 The server-side production batch routes read:

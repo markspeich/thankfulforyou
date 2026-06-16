@@ -298,6 +298,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Shared batch access should require authenticated operator sessions rather than anonymous browser access.
 - The first in-app production-batch authentication flow should use Supabase Auth with invite-only operator accounts and email-plus-password sign-in.
 - The operator UI should not expose self-service sign-up for production batch access.
+- Operator sessions should remain valid for two weeks before requiring re-authentication. This should be implemented as a Supabase Auth session timebox, not by extending short-lived access-token JWTs or by adding a parallel Vercel/app session.
 - Shared batch API requests should carry the browser's authenticated session token, and server routes should verify that token before loading or saving shared production data.
 - Server-side shared batch authorization should resolve the signed-in operator's workspace membership and populate request auth context from verified identity rather than trusting browser-supplied workspace ids directly.
 - On startup, the app should load the current production batch, order items, designs, presets, and size guides from Supabase Postgres. Browser local storage must not be used as a source of truth for production data.
