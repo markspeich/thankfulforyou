@@ -125,6 +125,7 @@ import {
   normalizeFixedDesignRecord,
   normalizeFixedDesignRecords,
   resolveFixedDesignReference,
+  settingsNeedFixedDesignRecords,
 } from "./fixed-designs.js";
 
 let FONT_OPTIONS = buildFontOptions();
@@ -1042,6 +1043,21 @@ function orderHasRenderableDesign(order) {
 
 function restoredOrdersIncludeFixedSvgs() {
   return orders.some((order) => settingsIncludeFixedSvg(order.settings));
+}
+
+async function ensureFixedDesignRecordsForSettings(settings = getCurrentSettings()) {
+  if (!settingsNeedFixedDesignRecords(settings, { recordsLoaded: fixedDesignsLoaded })) {
+    return false;
+  }
+
+  const accessToken = productionBatchAccessToken || readProductionBatchAccessTokenOverride() || await getAccessToken();
+  if (!accessToken) {
+    return false;
+  }
+
+  productionBatchAccessToken = accessToken;
+  await refreshWorkspaceFixedDesigns(accessToken);
+  return fixedDesignsLoaded;
 }
 
 function countFixedSvgLines(settings = {}) {
@@ -7285,6 +7301,12 @@ function applyPresetSelection(presetId) {
 
   applySettings(nextSettings);
   render();
+  void ensureFixedDesignRecordsForSettings(nextSettings).then((loaded) => {
+    if (loaded) {
+      renderLineControls(getCurrentSettings());
+      render();
+    }
+  });
   updateActiveOrderFromControls();
 }
 
@@ -8851,6 +8873,12 @@ function selectOrder(orderId, options = {}) {
 
   syncOrderPresetFromListing(order);
   applySettings(order.settings);
+  void ensureFixedDesignRecordsForSettings(order.settings).then((loaded) => {
+    if (loaded && order.id === activeOrderItemId) {
+      renderLineControls(order.settings);
+      render();
+    }
+  });
   if (persistSelection) {
     persistBatchState();
   }

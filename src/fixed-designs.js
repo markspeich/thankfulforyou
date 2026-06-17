@@ -54,6 +54,15 @@ export function normalizeFixedDesignRecords(records) {
     .filter(Boolean);
 }
 
+export function settingsNeedFixedDesignRecords(settings = {}, { recordsLoaded = false } = {}) {
+  if (recordsLoaded) {
+    return false;
+  }
+
+  return Array.isArray(settings?.lines)
+    && settings.lines.some((line) => line?.kind === "fixedSvg" && normalizeString(line.fixedDesignId));
+}
+
 export function resolveFixedDesignReference(lineSettings, records = []) {
   const fixedDesignId = normalizeString(lineSettings?.fixedDesignId);
   const fixedDesign = records.find((record) => record.id === fixedDesignId);

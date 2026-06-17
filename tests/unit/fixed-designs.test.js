@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  settingsNeedFixedDesignRecords,
   normalizeFixedDesignRecord,
   normalizeFixedDesignRecords,
   resolveFixedDesignReference,
@@ -80,5 +81,18 @@ describe("fixed design client model", () => {
       stateLabel: "Missing",
       isDeleted: false,
     });
+  });
+
+  it("detects when fixed SVG settings need the fixed-design records catalog loaded", () => {
+    const settings = {
+      lines: [
+        { kind: "text", fontId: "candlepin" },
+        { kind: "fixedSvg", fixedDesignId: "dog-paw", fixedDesignName: "Dog Paw" },
+      ],
+    };
+
+    expect(settingsNeedFixedDesignRecords(settings, { recordsLoaded: false })).toBe(true);
+    expect(settingsNeedFixedDesignRecords(settings, { recordsLoaded: true })).toBe(false);
+    expect(settingsNeedFixedDesignRecords({ lines: [{ kind: "text" }] }, { recordsLoaded: false })).toBe(false);
   });
 });
