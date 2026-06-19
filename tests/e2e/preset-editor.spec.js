@@ -732,6 +732,75 @@ test("saves the font bridging setting from the Fonts workspace checkbox", async 
   await expect(page.locator("#fontEditorStatus")).toHaveText("Font bridge setting saved.");
 });
 
+test("saves font display name changes from the Fonts workspace Save button", async ({ page }) => {
+  let displayName = "Connected Script";
+  let patchPayload = null;
+
+  await page.route("**/api/fonts**", async (route) => {
+    const request = route.request();
+
+    if (request.method() === "PATCH") {
+      patchPayload = request.postDataJSON();
+      displayName = patchPayload.displayName;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json; charset=utf-8",
+        body: JSON.stringify({
+          font: {
+            id: "font-connected-script",
+            display_name: displayName,
+            family_name: "ConnectedScript",
+            public_url: "public/fonts/Candlepin-Laser.otf",
+            file_format: "otf",
+            version: 1,
+            is_builtin: false,
+            bridging_enabled: true,
+            deleted_at: null,
+          },
+        }),
+      });
+      return;
+    }
+
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify({
+        fonts: [
+          {
+            id: "font-connected-script",
+            display_name: displayName,
+            family_name: "ConnectedScript",
+            public_url: "public/fonts/Candlepin-Laser.otf",
+            file_format: "otf",
+            version: 1,
+            is_builtin: false,
+            bridging_enabled: true,
+            deleted_at: null,
+          },
+        ],
+      }),
+    });
+  });
+
+  await page.goto("/fonts/font-connected-script");
+
+  const saveButton = page.getByRole("button", { name: "Save font display name" });
+  await expect(page.locator("#fontEditorStatus")).toHaveText("Uploaded fonts can be replaced with a new version or deleted from future selections.");
+  await expect(saveButton).toBeDisabled();
+
+  await page.locator("#fontDisplayNameInput").fill("Connected Script Display");
+  await expect(saveButton).toBeEnabled();
+  await saveButton.click();
+
+  await expect.poll(() => patchPayload).toEqual({
+    displayName: "Connected Script Display",
+    bridgingEnabled: true,
+  });
+  await expect(page.locator("#selectedFontName")).toHaveText("Connected Script Display");
+  await expect(saveButton).toBeDisabled();
+  await expect(page.locator("#fontEditorStatus")).toHaveText("Font display name saved.");
+});
 test("keeps the font workspace stable after a successful upload", async ({ page }) => {
   const pageErrors = [];
   await page.route("**/api/fonts**", async (route) => {

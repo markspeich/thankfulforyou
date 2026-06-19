@@ -132,6 +132,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - The `Fonts` workspace font rows should use the same shared production workspace selector row style as the `Presets` and `Size Guides` workspaces.
 - The `Fonts` workspace font rows should not emphasize whether a font originated as built-in or uploaded. Each row should show a small preview line with the font name rendered in that font.
 - The selected font editor should include a multi-line preview text field above the large preview. The default preview text should be the uppercase alphabet followed by the lowercase alphabet on the next line, and the large preview should render the current field contents in the selected font.
+- The selected font editor should save display-name changes through an explicit `Save` button that is enabled only while the display name has unsaved changes.
 - Allow horizontal-only stretching per line of text so operators can make a line wider without making it taller.
 - Per-line `Horizontal Stretch` controls should allow values up to `200%`.
 - Allow vertical-only stretching per line of text so operators can make a line taller without making it wider.
