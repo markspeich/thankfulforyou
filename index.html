@@ -664,6 +664,10 @@
                 </button>
               </div>
               <p class="batch-tools-note">Choose a saved preset to edit reusable layout defaults and listing assignments.</p>
+              <label class="search-field">
+                <span class="visually-hidden">Search presets</span>
+                <input id="presetSearchInput" type="search" autocomplete="off" placeholder="Search presets...">
+              </label>
               <div id="presetLibraryList" class="preset-library-list" aria-label="Preset library"></div>
             </aside>
             <section class="editor-panel preset-editor-panel" aria-label="Preset editor panel">
@@ -733,6 +737,17 @@
                       <p id="presetFixedItemsEmptyState" class="line-control-empty">No fixed designs are saved on this preset.</p>
                       <div id="presetFixedItemList" class="preset-fixed-item-list"></div>
                     </section>
+                  </section>
+                  <section id="presetFixedDesignsSection" class="preset-fixed-designs-card" aria-labelledby="presetFixedDesignsTitle">
+                    <div class="preset-assignment-header">
+                      <div>
+                        <p class="preset-assignment-eyebrow">Fixed Design</p>
+                        <h3 id="presetFixedDesignsTitle">Fixed Designs</h3>
+                      </div>
+                    </div>
+                    <p class="note">Fixed designs stay attached to this preset for listing-specific production layouts.</p>
+                    <p id="presetFixedDesignsEmptyState" class="preset-assignment-empty">No fixed designs are attached to this preset.</p>
+                    <div id="presetFixedDesignsList" class="preset-fixed-designs-list" aria-live="polite"></div>
                   </section>
                   <section class="preset-assignment-card" aria-labelledby="presetAssignmentsTitle">
                     <div class="preset-assignment-header">

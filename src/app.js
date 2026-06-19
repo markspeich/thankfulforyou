@@ -23,6 +23,7 @@ import {
   getDefaultPresetId,
   getPresetDefinitionForEditor,
   getPresetFixedItems,
+  getPresetFixedDesignText,
   getPresetGlobalDefaults,
   getPresetIdForListingId,
   getPresetOptions,
@@ -364,6 +365,7 @@ const captureButton = document.querySelector("#captureButton");
 const cancelDesignButton = document.querySelector("#cancelDesignButton");
 const completeNextButton = document.querySelector("#completeNextButton");
 const presetLibraryList = document.querySelector("#presetLibraryList");
+const presetSearchInput = document.querySelector("#presetSearchInput");
 const newPresetDraftButton = document.querySelector("#newPresetDraftButton");
 const presetDraftNameInput = document.querySelector("#presetDraftName");
 const DEFAULT_PRESET_NAME_PLACEHOLDER = presetDraftNameInput?.getAttribute("placeholder") || "";
@@ -381,6 +383,8 @@ const presetBackingOutput = document.querySelector("#presetBackingOutput");
 const presetLineRuleControls = document.querySelector("#presetLineRuleControls");
 const presetFixedItemList = document.querySelector("#presetFixedItemList");
 const presetFixedItemsEmptyState = document.querySelector("#presetFixedItemsEmptyState");
+const presetFixedDesignsList = document.querySelector("#presetFixedDesignsList");
+const presetFixedDesignsEmptyState = document.querySelector("#presetFixedDesignsEmptyState");
 const presetAssignmentsList = document.querySelector("#presetAssignmentsList");
 const presetAssignmentsEmptyState = document.querySelector("#presetAssignmentsEmptyState");
 const sizePresetList = document.querySelector("#sizePresetList");
@@ -457,6 +461,7 @@ let stagedFixedDesignVersionFile = null;
 let navCollapsed = readNavCollapsedPreference();
 let presetEditorDraft = null;
 let presetEditorBaselineKey = null;
+let presetLibrarySearchTerm = "";
 let activeConfirmationRequest = null;
 let confirmationDialogRestoreFocusTarget = null;
 let activeSavePresetAsRequest = null;
@@ -2136,38 +2141,169 @@ function createPresetLibraryRow({ id, label, meta }, selectedPresetId) {
   return row;
 }
 
+function getPresetSearchText(definition, option, meta) {
+  const listingText = Array.isArray(definition?.listingAssignments)
+    ? definition.listingAssignments
+      .map((assignment) => [assignment.listingId, assignment.name].filter(Boolean).join(" "))
+      .join(" ")
+    : "";
+  const fixedDesignText = Array.isArray(definition?.fixedDesigns)
+    ? definition.fixedDesigns
+      .map((design) => [
+        design.id,
+        design.name,
+        design.title,
+        design.listingId,
+        design.designText,
+        design.text,
+        design.note,
+        ...(Array.isArray(design.textLines) ? design.textLines : []),
+      ].filter(Boolean).join(" "))
+      .join(" ")
+    : "";
+
+  return [option?.label, meta, listingText, fixedDesignText]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+}
+
 function renderPresetLibraryRows(selectedPresetId = "") {
   if (!presetLibraryList) {
     return;
   }
 
   const shouldShowDraftRow = selectedPresetId === "";
+  const searchTerm = presetLibrarySearchTerm.trim().toLowerCase();
+  const draftMatchesSearch = !searchTerm || "new preset draft start from default reusable settings".includes(searchTerm);
+  const savedRows = getPresetOptions()
+    .map((preset) => {
+      const definition = getPresetDefinitionForEditor(preset.id);
+      const assignmentCount = Array.isArray(definition?.listingAssignments)
+        ? definition.listingAssignments.length
+        : 0;
+      const fixedDesignCount = Array.isArray(definition?.fixedDesigns)
+        ? definition.fixedDesigns.length
+        : 0;
+      const meta = [
+        assignmentCount
+          ? `${assignmentCount} assigned listing${assignmentCount === 1 ? "" : "s"}`
+          : "No assigned listings",
+        fixedDesignCount
+          ? `${fixedDesignCount} fixed design${fixedDesignCount === 1 ? "" : "s"}`
+          : "",
+      ].filter(Boolean).join(" · ");
+
+      return {
+        definition,
+        meta,
+        option: preset,
+        row: createPresetLibraryRow({
+          id: preset.id,
+          label: preset.label,
+          meta,
+        }, selectedPresetId),
+      };
+    })
+    .filter(({ definition, option, meta }) => !searchTerm || getPresetSearchText(definition, option, meta).includes(searchTerm))
+    .map(({ row }) => row);
   const rows = [
-    ...(shouldShowDraftRow
+    ...(shouldShowDraftRow && draftMatchesSearch
       ? [createPresetLibraryRow({
           id: "",
           label: "New preset draft",
           meta: "Start from default reusable settings",
         }, selectedPresetId)]
       : []),
-    ...getPresetOptions().map((preset) => {
-      const definition = getPresetDefinitionForEditor(preset.id);
-      const assignmentCount = Array.isArray(definition?.listingAssignments)
-        ? definition.listingAssignments.length
-        : 0;
-      const meta = assignmentCount
-        ? `${assignmentCount} assigned listing${assignmentCount === 1 ? "" : "s"}`
-        : "No assigned listings";
-
-      return createPresetLibraryRow({
-        id: preset.id,
-        label: preset.label,
-        meta,
-      }, selectedPresetId);
-    }),
+    ...savedRows,
   ];
 
+  if (!rows.length) {
+    const empty = document.createElement("p");
+    empty.className = "preset-library-empty";
+    empty.textContent = "No presets match the current search.";
+    presetLibraryList.replaceChildren(empty);
+    return;
+  }
+
   presetLibraryList.replaceChildren(...rows);
+}
+
+function getFixedDesignText(design) {
+  if (Array.isArray(design?.textLines)) {
+    return design.textLines.map((line) => String(line).trim()).filter(Boolean).join(" / ");
+  }
+
+  if (Array.isArray(design?.lines)) {
+    return design.lines.map((line) => String(line?.text ?? line).trim()).filter(Boolean).join(" / ");
+  }
+
+  if (typeof design?.designText === "string") {
+    return design.designText.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).join(" / ");
+  }
+
+  if (typeof design?.text === "string") {
+    return design.text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).join(" / ");
+  }
+
+  return "";
+}
+
+function createPresetFixedDesignCard(design) {
+  const card = document.createElement("article");
+  card.className = "preset-fixed-design-card";
+
+  const title = document.createElement("h4");
+  title.className = "preset-fixed-design-title";
+  title.textContent = design.name || design.title || "Fixed Design";
+  card.append(title);
+
+  const text = getFixedDesignText(design);
+  if (text) {
+    const textNode = document.createElement("p");
+    textNode.className = "preset-fixed-design-text";
+    textNode.textContent = text;
+    card.append(textNode);
+  }
+
+  const metaItems = [
+    design.listingId ? `Listing ID ${design.listingId}` : "",
+    design.id ? `Design ID ${design.id}` : "",
+  ].filter(Boolean);
+  if (metaItems.length) {
+    const meta = document.createElement("p");
+    meta.className = "preset-fixed-design-meta";
+    meta.textContent = metaItems.join(" · ");
+    card.append(meta);
+  }
+
+  if (design.note) {
+    const note = document.createElement("p");
+    note.className = "preset-fixed-design-note";
+    note.textContent = design.note;
+    card.append(note);
+  }
+
+  return card;
+}
+
+function renderPresetFixedDesigns() {
+  if (!presetFixedDesignsList || !presetFixedDesignsEmptyState) {
+    return;
+  }
+
+  presetFixedDesignsList.replaceChildren();
+  const fixedDesigns = Array.isArray(presetEditorDraft?.preset?.fixedDesigns)
+    ? presetEditorDraft.preset.fixedDesigns
+    : [];
+
+  if (!fixedDesigns.length) {
+    presetFixedDesignsEmptyState.hidden = false;
+    return;
+  }
+
+  presetFixedDesignsEmptyState.hidden = true;
+  presetFixedDesignsList.append(...fixedDesigns.map(createPresetFixedDesignCard));
 }
 
 function renderPresetEditorEmptyState() {
@@ -2204,6 +2340,7 @@ function renderPresetEditorEmptyState() {
     deletePresetButton.disabled = true;
   }
   renderPresetAssignmentList();
+  renderPresetFixedDesigns();
 }
 
 function renderPresetEditorDraft() {
@@ -2252,6 +2389,7 @@ function renderPresetEditorDraft() {
       || getPresetOptions().length <= 1;
   }
   renderPresetAssignmentList();
+  renderPresetFixedDesigns();
 }
 
 function selectFirstPresetEditorRowIfNeeded() {
@@ -2574,6 +2712,9 @@ function buildOverwrittenPresetDefinition({ preset, settings }) {
     fixedItems: inferredPreset.fixedItems,
     listingAssignments: Array.isArray(preset?.listingAssignments)
       ? structuredClone(preset.listingAssignments)
+      : [],
+    fixedDesigns: Array.isArray(preset?.fixedDesigns)
+      ? structuredClone(preset.fixedDesigns)
       : [],
   };
 }
@@ -7291,6 +7432,7 @@ function applyPresetSelection(presetId) {
     settings: currentSettings,
     presetId,
     listingId: activeOrder?.source?.listingId ?? null,
+    fixedDesignText: getPresetFixedDesignText(presetId, activeOrder?.source?.listingId ?? null),
     normalizeSettings,
     getPresetBaseSettings,
     buildPresetLines,
@@ -10890,6 +11032,13 @@ clearBatchButton.addEventListener("click", completeCurrentProductionBatch);
 databaseOrdersSearchInput?.addEventListener("input", () => {
   databaseOrdersSearchTerm = databaseOrdersSearchInput.value;
   renderDatabaseOrdersWorkspace();
+});
+presetSearchInput?.addEventListener("input", () => {
+  presetLibrarySearchTerm = presetSearchInput.value;
+  const selectedPresetId = presetEditorDraft?.previousId && isValidPresetId(presetEditorDraft.previousId)
+    ? presetEditorDraft.previousId
+    : "";
+  renderPresetLibraryRows(selectedPresetId);
 });
 databaseOrdersStatusFilter?.addEventListener("change", () => {
   databaseOrdersStatusFilterValue = databaseOrdersStatusFilter.value;

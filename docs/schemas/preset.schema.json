@@ -48,6 +48,12 @@
       "items": {
         "$ref": "#/$defs/listingAssignment"
       }
+    },
+    "fixedDesigns": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/fixedDesign"
+      }
     }
   },
   "$defs": {
@@ -199,6 +205,61 @@
           "items": {
             "$ref": "#/$defs/listingLineOverride"
           }
+        }
+      }
+    },
+    "fixedDesign": {
+      "type": "object",
+      "additionalProperties": false,
+      "anyOf": [
+        { "required": ["id"] },
+        { "required": ["name"] },
+        { "required": ["title"] },
+        { "required": ["designText"] },
+        { "required": ["text"] },
+        { "required": ["textLines"] },
+        { "required": ["lines"] }
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "listingId": {
+          "type": "string",
+          "pattern": "^[0-9]+$"
+        },
+        "designText": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        },
+        "textLines": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "lines": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              { "type": "string" },
+              {
+                "type": "object",
+                "additionalProperties": true
+              }
+            ]
+          }
+        },
+        "note": {
+          "type": "string"
         }
       }
     }

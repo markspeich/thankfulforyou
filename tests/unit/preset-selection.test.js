@@ -140,4 +140,48 @@ describe("preset selection", () => {
       fixedItems[0],
     ]);
   });
+
+  it("uses fixed design text when the selected preset supplies it", () => {
+    const normalizeSettings = vi.fn((settings) => ({
+      text: settings.text ?? "Original custom text",
+      presetId: settings.presetId ?? "preset-old",
+      backingMm: settings.backingMm ?? 8.8,
+      weldExportedDesign: settings.weldExportedDesign ?? false,
+      lines: settings.lines ?? [],
+    }));
+    const getRawTextLines = vi.fn((text) => String(text).split(/\r?\n/).filter(Boolean));
+    const buildPresetLines = vi.fn(() => ([
+      { fontId: "skywalk" },
+      { fontId: "somekind" },
+    ]));
+
+    const result = buildReloadedPresetSettings({
+      settings: {
+        text: "Original custom text",
+        presetId: "preset-old",
+        backingMm: 8.8,
+        weldExportedDesign: false,
+      },
+      presetId: "preset-radiology",
+      fixedDesignText: "Radiology\nTech",
+      getPresetBaseSettings: () => ({
+        backingMm: 3.1,
+        weldExportedDesign: true,
+      }),
+      buildPresetLines,
+      createDefaultLineSettings: () => ({}),
+      getRawTextLines,
+      normalizeSettings,
+    });
+
+    expect(getRawTextLines).toHaveBeenCalledWith("Radiology\nTech");
+    expect(buildPresetLines).toHaveBeenCalledWith("preset-radiology", 2, expect.any(Function), {
+      listingId: null,
+    });
+    expect(result.text).toBe("Radiology\nTech");
+    expect(result.lines).toEqual([
+      { fontId: "skywalk" },
+      { fontId: "somekind" },
+    ]);
+  });
 });

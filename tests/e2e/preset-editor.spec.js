@@ -36,8 +36,11 @@ async function createPresetFixtureStore() {
   };
 }
 
-async function installPresetRoutes(page) {
+async function installPresetRoutes(page, options = {}) {
   const store = await createPresetFixtureStore();
+  if (typeof options.modifyStore === "function") {
+    options.modifyStore(store);
+  }
 
   await page.route("**/public/presets/manifest.json", async (route) => {
     await route.fulfill({
@@ -1036,6 +1039,102 @@ test("edits fixed designs saved on a preset in the preset editor", async ({ page
       offsetYMm: 2.4,
     }),
   ]);
+});
+
+test("filters preset rows with the preset search field", async ({ page }) => {
+  await installPresetRoutes(page);
+  await page.goto("/presets");
+
+  const presetsWorkspace = page.locator("#presetsWorkspace");
+  const searchInput = presetsWorkspace.getByRole("searchbox", { name: "Search presets" });
+  await expect(searchInput).toBeVisible();
+  await expect(searchInput).toHaveCSS("border-radius", "12px");
+  await expect(presetsWorkspace.locator(".preset-library-row")).toHaveCount(4);
+
+  await searchInput.fill("somekind");
+  await expect(presetsWorkspace.locator(".preset-library-row")).toHaveCount(1);
+  await expect(presetsWorkspace.locator(".preset-library-row")).toContainText("Skywalk, Somekind");
+
+  await searchInput.fill("4439916732");
+  await expect(presetsWorkspace.locator(".preset-library-row")).toHaveCount(1);
+  await expect(presetsWorkspace.locator(".preset-library-row")).toContainText("Candlepin, Skywalk");
+
+  await searchInput.fill("no matching preset");
+  await expect(presetsWorkspace.locator(".preset-library-row")).toHaveCount(0);
+  await expect(presetsWorkspace.locator(".preset-library-empty")).toContainText("No presets match the current search.");
+});
+
+test("shows fixed designs from the selected preset in fixed design cards", async ({ page }) => {
+  await installPresetRoutes(page, {
+    modifyStore(store) {
+      const fixedDesigns = [
+        {
+          id: "fixed-stethoscope-rn",
+          name: "Stethoscope RN",
+          listingId: "1884223710",
+          designText: "Morgan\nRN",
+          note: "Keep the credential line locked.",
+        },
+        {
+          id: "fixed-heart-badge",
+          title: "Heart Badge",
+          listingId: "1884223710",
+          textLines: ["Avery", "LPN"],
+        },
+      ];
+      const preset = store.definitions.get("preset-c3e8a1d7f520");
+      preset.fixedDesigns = fixedDesigns;
+      store.snapshot.presets = store.snapshot.presets.map((snapshotPreset) => (
+        snapshotPreset.id === "preset-c3e8a1d7f520"
+          ? { ...snapshotPreset, fixedDesigns }
+          : snapshotPreset
+      ));
+    },
+  });
+  await page.goto("/presets/preset-c3e8a1d7f520");
+
+  const fixedDesignSection = page.locator("#presetFixedDesignsSection");
+  await expect(fixedDesignSection).toBeVisible();
+  await expect(fixedDesignSection.getByRole("heading", { name: "Fixed Designs" })).toBeVisible();
+  await expect(fixedDesignSection.locator(".preset-fixed-design-card")).toHaveCount(2);
+  await expect(fixedDesignSection.locator(".preset-fixed-design-card").first()).toContainText("Stethoscope RN");
+  await expect(fixedDesignSection.locator(".preset-fixed-design-card").first()).toContainText("Morgan / RN");
+  await expect(fixedDesignSection.locator(".preset-fixed-design-card").first()).toContainText("Listing ID 1884223710");
+  await expect(fixedDesignSection.locator(".preset-fixed-design-card").first()).toContainText("Keep the credential line locked.");
+
+  await page.locator(".preset-library-row", { hasText: "All Candlepin" }).click();
+  await expect(fixedDesignSection.locator(".preset-fixed-design-card")).toHaveCount(0);
+  await expect(page.locator("#presetFixedDesignsEmptyState")).toContainText("No fixed designs are attached to this preset.");
+});
+
+test("applies fixed design text in production when selected preset is not linked to the listing", async ({ page }) => {
+  await installPresetRoutes(page, {
+    modifyStore(store) {
+      const fixedDesigns = [
+        {
+          id: "fixed-radiology",
+          name: "Radiology",
+          designText: "Radiology\nTech",
+        },
+      ];
+      const preset = store.definitions.get("preset-c3e8a1d7f520");
+      preset.name = "Radiology";
+      preset.fixedDesigns = fixedDesigns;
+      store.snapshot.presets = store.snapshot.presets.map((snapshotPreset) => (
+        snapshotPreset.id === "preset-c3e8a1d7f520"
+          ? { ...snapshotPreset, name: "Radiology", fixedDesigns }
+          : snapshotPreset
+      ));
+    },
+  });
+  await page.goto("/");
+
+  await clickBatchAction(page, "Add Design");
+  await page.locator("#textInput").fill("Custom name");
+  await page.locator("#presetInput").selectOption("preset-c3e8a1d7f520");
+
+  await expect(page.locator("#textInput")).toHaveValue("Radiology\nTech");
+  await expect(page.locator("#lineControlCards .line-control-card")).toHaveCount(2);
 });
 
 test("enables preset saving only after editor changes", async ({ page }) => {

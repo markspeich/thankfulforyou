@@ -2848,6 +2848,10 @@ button:disabled {
   grid-template-rows: auto auto auto minmax(0, 1fr);
 }
 
+.preset-library-panel .search-field {
+  display: block;
+}
+
 .preset-library-list {
   display: grid;
   align-content: start;
@@ -2856,6 +2860,17 @@ button:disabled {
   overflow: auto;
   padding-right: 2px;
   gap: 10px;
+}
+
+.preset-library-empty {
+  margin: 0;
+  padding: 12px 14px;
+  color: var(--muted);
+  font-size: 0.85rem;
+  line-height: 1.4;
+  background: #f7f9fb;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
 }
 
 .preset-editor-panel .editor-body {
@@ -2880,6 +2895,54 @@ button:disabled {
   grid-auto-rows: max-content;
   gap: 12px;
   width: min(860px, 100%);
+}
+
+.preset-fixed-designs-card {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  background: #fbfcfd;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+}
+
+.preset-fixed-designs-list {
+  display: grid;
+  gap: 10px;
+}
+
+.preset-fixed-design-card {
+  display: grid;
+  gap: 5px;
+  padding: 12px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.preset-fixed-design-title {
+  margin: 0;
+  color: var(--ink);
+  font-size: 0.95rem;
+  font-weight: 800;
+}
+
+.preset-fixed-design-text,
+.preset-fixed-design-meta,
+.preset-fixed-design-note {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.35;
+}
+
+.preset-fixed-design-text {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.preset-fixed-design-meta,
+.preset-fixed-design-note {
+  color: var(--muted);
 }
 
 .fonts-workspace {

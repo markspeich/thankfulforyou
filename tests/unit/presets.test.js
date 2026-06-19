@@ -7,6 +7,7 @@ import {
   getDefaultPresetId,
   getBoundingSizePresetDefinitionsForEditor,
   getPresetDefinitionForEditor,
+  getPresetFixedDesignText,
   getPresetGlobalDefaults,
   getPresetOptions,
   getPresetSnapshot,
@@ -47,6 +48,29 @@ describe("presets", () => {
       { id: "preset-c3e8a1d7f520", label: "Skywalk, Somekind" },
       { id: "preset-d9b4f2a6c731", label: "Skywalk, Candlepin" },
     ]);
+  });
+
+  it("resolves fixed design text from a preset and prefers matching listing ids", () => {
+    setPresetRegistryForTests(
+      { defaultPresetId: "preset-radiology" },
+      [
+        {
+          schemaVersion: 1,
+          id: "preset-radiology",
+          name: "Radiology",
+          lineDefaults: { fontId: "skywalk" },
+          lineRules: [{ match: { kind: "all" }, settings: { fontId: "skywalk" } }],
+          listingAssignments: [],
+          fixedDesigns: [
+            { id: "fixed-default", designText: "Radiology\nTech" },
+            { id: "fixed-mri", listingId: "444", textLines: ["MRI", "Tech"] },
+          ],
+        },
+      ],
+    );
+
+    expect(getPresetFixedDesignText("preset-radiology", "444")).toBe("MRI\nTech");
+    expect(getPresetFixedDesignText("preset-radiology", "unlinked-listing")).toBe("Radiology\nTech");
   });
 
   it("keeps the authoring slug helper stable for name-based derivations", () => {
@@ -628,3 +652,4 @@ describe("presets", () => {
     expect(() => deletePresetDefinitionLocally("only-preset")).toThrow("At least one preset must remain available.");
   });
 });
+

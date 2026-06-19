@@ -2,6 +2,7 @@ export function buildReloadedPresetSettings({
   settings,
   presetId,
   listingId = null,
+  fixedDesignText = null,
   normalizeSettings,
   getPresetBaseSettings,
   buildPresetLines,
@@ -10,11 +11,15 @@ export function buildReloadedPresetSettings({
   getRawTextLines,
 }) {
   const normalized = normalizeSettings(settings);
-  const rawLines = getRawTextLines(normalized.text);
+  const nextText = typeof fixedDesignText === "string" && fixedDesignText.trim()
+    ? fixedDesignText
+    : normalized.text;
+  const rawLines = getRawTextLines(nextText);
   const presetBaseSettings = getPresetBaseSettings(presetId);
 
   return normalizeSettings({
     ...normalized,
+    text: nextText,
     presetId,
     boundingSizePresetId: presetBaseSettings.boundingSizePresetId,
     backingMm: presetBaseSettings.backingMm,
@@ -25,3 +30,4 @@ export function buildReloadedPresetSettings({
     ],
   });
 }
+

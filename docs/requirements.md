@@ -524,6 +524,10 @@ The website should be a practical production tool rather than a marketing site. 
 - The preset editor should provide a `New Preset` action that starts from a blank or inferred preset draft and can be saved as a new schema-valid preset file and manifest entry.
 - The preset editor should represent reusable line settings through operator-friendly sections for `Line Defaults`, `First Line`, `Remaining Lines`, and any exact-index line overrides that exist for that preset.
 - The preset editor should show the Etsy listings currently assigned to the selected preset.
+- The `Presets` page left preset column should include a search field styled consistently with the app's existing search fields.
+- Presets may include fixed designs that are attached to the preset for listing-specific production layouts.
+- In the Production Batch editor, selecting a preset that has fixed designs must apply a fixed design to the active design text and preview even when the active Etsy listing is not yet assigned to that preset. If a fixed design matches the active listing id, use that design; otherwise use the first fixed design attached to the selected preset.
+- When a selected preset includes fixed designs, the `Presets` page editor should show them as `Fixed Design` cards in the second column.
 - The preset editor should allow unassigning individual listing ids from the selected preset.
 - The preset editor should allow deleting a saved preset from the `Presets` workspace.
 - Deleting a preset must require an explicit in-app confirmation dialog before the preset is removed.
@@ -585,3 +589,4 @@ For batch Etsy order sessions, the preferred workflow is:
 - The selected-order `Cancel` button should stay disabled until the active design has unsaved changes relative to its last saved shared design state.
 - Clicking `Cancel` should restore the active design text and layout settings to the last saved shared design state without publishing a new production batch revision.
 - The `Save & Next` button should be disabled whenever there are no other batched designs that are still incomplete.
+
