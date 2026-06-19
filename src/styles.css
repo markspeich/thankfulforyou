@@ -2991,6 +2991,16 @@ button:disabled {
   width: min(860px, 100%);
 }
 
+.font-display-name-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 12px;
+}
+
+.font-display-name-field {
+  min-width: 0;
+}
 .font-bridge-setting {
   display: flex;
   align-items: center;

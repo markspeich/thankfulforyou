@@ -207,6 +207,7 @@ const fontLibraryList = document.querySelector("#fontLibraryList");
 const newFontUploadButton = document.querySelector("#newFontUploadButton");
 const fontFileInput = document.querySelector("#fontFileInput");
 const fontDisplayNameInput = document.querySelector("#fontDisplayNameInput");
+const saveFontDisplayNameButton = document.querySelector("#saveFontDisplayNameButton");
 const fontBridgingEnabledInput = document.querySelector("#fontBridgingEnabledInput");
 const fontPreviewTextInput = document.querySelector("#fontPreviewTextInput");
 const selectedFontName = document.querySelector("#selectedFontName");
@@ -890,6 +891,21 @@ function setFontEditorStatus(message, state = "pending") {
   }
   fontEditorStatus.textContent = message;
   fontEditorStatus.dataset.state = state;
+}
+
+function getFontDisplayNameDraft() {
+  return fontDisplayNameInput?.value.trim() || "";
+}
+
+function updateSaveFontDisplayNameButton() {
+  if (!saveFontDisplayNameButton) {
+    return;
+  }
+
+  const selectedFont = getFontOption(selectedFontId);
+  const persistedDisplayName = String(selectedFont.displayName || selectedFont.label || "").trim();
+  const draftDisplayName = getFontDisplayNameDraft();
+  saveFontDisplayNameButton.disabled = !draftDisplayName || draftDisplayName === persistedDisplayName;
 }
 
 function createDefaultLineSettings() {
@@ -8922,6 +8938,34 @@ async function handleFontFileSelection(mode) {
   }
 }
 
+async function handleSaveFontDisplayName() {
+  const selectedFont = getFontOption(selectedFontId);
+  const displayName = getFontDisplayNameDraft();
+  const bridgingEnabled = Boolean(fontBridgingEnabledInput?.checked);
+  if (!displayName || displayName === String(selectedFont.displayName || selectedFont.label || "").trim()) {
+    updateSaveFontDisplayNameButton();
+    return;
+  }
+
+  try {
+    if (saveFontDisplayNameButton) {
+      saveFontDisplayNameButton.disabled = true;
+    }
+    setFontEditorStatus("Saving font display name...", "pending");
+    await updateWorkspaceFontSettings(selectedFont.id, { displayName, bridgingEnabled }, {
+      accessToken: productionBatchAccessToken,
+    });
+    await refreshWorkspaceFonts(productionBatchAccessToken);
+    selectedFontId = selectedFont.id;
+    renderFontWorkspace();
+    renderLineControls(getActiveOrder()?.settings || getCurrentSettings());
+    setFontEditorStatus("Font display name saved.", "success");
+  } catch (error) {
+    updateSaveFontDisplayNameButton();
+    setFontEditorStatus(error instanceof Error ? error.message : "Unable to save font display name.", "error");
+  }
+}
+
 async function handleFontBridgingEnabledChange() {
   const selectedFont = getFontOption(selectedFontId);
   const bridgingEnabled = Boolean(fontBridgingEnabledInput?.checked);
@@ -10881,6 +10925,12 @@ fontFileInput?.addEventListener("change", () => {
 fontPreviewTextInput?.addEventListener("input", () => {
   fontPreviewText = fontPreviewTextInput.value;
   selectedFontPreview.textContent = fontPreviewText;
+});
+fontDisplayNameInput?.addEventListener("input", () => {
+  updateSaveFontDisplayNameButton();
+});
+saveFontDisplayNameButton?.addEventListener("click", () => {
+  void handleSaveFontDisplayName();
 });
 fontBridgingEnabledInput?.addEventListener("change", () => {
   void handleFontBridgingEnabledChange();

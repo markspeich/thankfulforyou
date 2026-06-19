@@ -454,16 +454,23 @@ export async function replaceWorkspaceFont({ workspaceId, fontId, file }) {
   return normalizeFontRow(data);
 }
 
-export async function updateWorkspaceFontSettings({ workspaceId, fontId, bridgingEnabled }) {
+export async function updateWorkspaceFontSettings({ workspaceId, fontId, displayName, bridgingEnabled }) {
   const supabase = createSupabaseAdminClient();
   await getWorkspaceFontOrThrow(supabase, { workspaceId, fontId });
 
+  const trimmedDisplayName = typeof displayName === "string" ? displayName.trim() : "";
+  const updates = {
+    bridging_enabled: Boolean(bridgingEnabled),
+    updated_at: new Date().toISOString(),
+  };
+  if (trimmedDisplayName) {
+    updates.display_name = trimmedDisplayName;
+    updates.family_name = inferFamilyName(trimmedDisplayName, fontId);
+  }
+
   const { data, error } = await supabase
     .from("fonts")
-    .update({
-      bridging_enabled: Boolean(bridgingEnabled),
-      updated_at: new Date().toISOString(),
-    })
+    .update(updates)
     .eq("workspace_id", workspaceId)
     .eq("id", fontId)
     .select()

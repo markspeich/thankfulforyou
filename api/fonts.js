@@ -31,6 +31,7 @@ function readUploadPayload(req) {
 function readFontSettingsPayload(req) {
   const body = readJsonBody(req);
   return {
+    displayName: typeof body.displayName === "string" ? body.displayName.trim() : undefined,
     bridgingEnabled: body.bridgingEnabled,
   };
 }
@@ -96,7 +97,7 @@ export default async function handler(req, res) {
 
     if (req.method === "PATCH") {
       const fontId = readFontId(req);
-      const { bridgingEnabled } = readFontSettingsPayload(req);
+      const { displayName, bridgingEnabled } = readFontSettingsPayload(req);
       if (!fontId) {
         res.status(400).json({ error: "fontId is required." });
         return;
@@ -105,9 +106,14 @@ export default async function handler(req, res) {
         res.status(400).json({ error: "bridgingEnabled must be true or false." });
         return;
       }
+      if (displayName !== undefined && !displayName) {
+        res.status(400).json({ error: "Font display name is required." });
+        return;
+      }
       const font = await updateWorkspaceFontSettings({
         workspaceId: req.auth.workspaceId,
         fontId,
+        displayName,
         bridgingEnabled,
       });
       res.status(200).json({ font });

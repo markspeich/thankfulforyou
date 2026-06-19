@@ -799,10 +799,15 @@
               </header>
               <div class="editor-body">
                 <section class="font-editor" aria-label="Font editor">
-                  <label class="field compact-field">
-                    <span>Display Name</span>
-                    <input id="fontDisplayNameInput" type="text" autocomplete="off" placeholder="Font name">
-                  </label>
+                  <div class="font-display-name-row">
+                    <label class="field compact-field font-display-name-field">
+                      <span>Display Name</span>
+                      <input id="fontDisplayNameInput" type="text" autocomplete="off" placeholder="Font name">
+                    </label>
+                    <button id="saveFontDisplayNameButton" class="editor-action-button" type="button" aria-label="Save font display name" disabled>
+                      <span class="editor-action-label">Save</span>
+                    </button>
+                  </div>
                   <label class="checkbox-field font-bridge-setting">
                     <input id="fontBridgingEnabledInput" type="checkbox" checked>
                     <span>Use bridging for this font</span>
