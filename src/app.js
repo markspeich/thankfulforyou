@@ -110,6 +110,7 @@ import {
   buildFontOptions,
   createWorkspaceFont,
   deleteWorkspaceFont,
+  getFontLibraryOptions,
   getSelectableFontOptions,
   loadWorkspaceFontOptions,
   registerBrowserFonts,
@@ -205,6 +206,7 @@ const sizeGuideWorkspaceButton = document.querySelector("#sizeGuideWorkspaceButt
 const productionBatchLogoutButton = document.querySelector("#productionBatchLogoutButton");
 const navCollapseButton = document.querySelector("#navCollapseButton");
 const fontLibraryList = document.querySelector("#fontLibraryList");
+const showDeletedFontsInput = document.querySelector("#showDeletedFontsInput");
 const newFontUploadButton = document.querySelector("#newFontUploadButton");
 const fontFileInput = document.querySelector("#fontFileInput");
 const fontDisplayNameInput = document.querySelector("#fontDisplayNameInput");
@@ -449,6 +451,7 @@ let databaseOrdersSearchTerm = "";
 let databaseOrdersStatusFilterValue = "open";
 let databaseOrdersBatchFilterValue = "all";
 let selectedFontId = "candlepin";
+let showDeletedFonts = false;
 let fixedDesignRecords = [];
 let selectedFixedDesignId = initialAppRoute.workspace === "fixedDesigns" ? initialAppRoute.itemId : null;
 let fixedDesignSearchTerm = "";
@@ -8625,8 +8628,11 @@ function renderFontWorkspace() {
   }
 
   const selectedFont = getFontOption(selectedFontId);
+  if (showDeletedFontsInput) {
+    showDeletedFontsInput.checked = showDeletedFonts;
+  }
   fontLibraryList.replaceChildren();
-  FONT_OPTIONS.forEach((font) => {
+  getFontLibraryOptions(FONT_OPTIONS, { showDeleted: showDeletedFonts }).forEach((font) => {
     const row = document.createElement("article");
     row.className = "font-library-row size-preset-row";
     row.classList.toggle("is-selected", font.id === selectedFont.id);
@@ -10936,6 +10942,10 @@ saveFontDisplayNameButton?.addEventListener("click", () => {
 });
 fontBridgingEnabledInput?.addEventListener("change", () => {
   void handleFontBridgingEnabledChange();
+});
+showDeletedFontsInput?.addEventListener("change", () => {
+  showDeletedFonts = Boolean(showDeletedFontsInput.checked);
+  renderFontWorkspace();
 });
 deleteFontButton?.addEventListener("click", () => {
   void handleDeleteSelectedFont();

@@ -252,6 +252,30 @@ describe("font registry", () => {
     expect(style).toBe(appended[0]);
     expect(style.textContent).toContain('font-family: "WorkspaceFont_Quincy_Laser"');
   });
+  it("hides deleted fonts from the font library unless requested", async () => {
+    const { getFontLibraryOptions } = await import("../../src/fonts.js");
+    const options = buildFontOptions([
+      {
+        id: "font-active",
+        display_name: "Active Font",
+        family_name: "ActiveFont",
+        public_url: "https://example.test/active.otf",
+        file_format: "otf",
+      },
+      {
+        id: "font-deleted",
+        display_name: "Deleted Font",
+        family_name: "DeletedFont",
+        public_url: "https://example.test/deleted.otf",
+        file_format: "otf",
+        deleted_at: "2026-06-14T00:00:00.000Z",
+      },
+    ], { includeDeleted: true });
+
+    expect(getFontLibraryOptions(options).map((font) => font.id)).not.toContain("font-deleted");
+    expect(getFontLibraryOptions(options, { showDeleted: true }).map((font) => font.id)).toContain("font-deleted");
+  });
+
   it("replaces a previously registered browser font face for the same family", async () => {
     const addedFaces = [];
     const deletedFaces = [];
