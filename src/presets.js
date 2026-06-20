@@ -290,6 +290,31 @@ function normalizeListingAssignments(listingAssignments = []) {
     .filter((assignment) => assignment.listingId);
 }
 
+function normalizeFixedDesigns(fixedDesigns = []) {
+  return fixedDesigns
+    .filter((design) => design && typeof design === "object")
+    .map((design) => ({
+      ...(typeof design.id === "string" && design.id.trim() ? { id: design.id.trim() } : {}),
+      ...(typeof design.name === "string" && design.name.trim() ? { name: design.name.trim() } : {}),
+      ...(typeof design.title === "string" && design.title.trim() ? { title: design.title.trim() } : {}),
+      ...(typeof design.listingId === "string" && design.listingId.trim() ? { listingId: design.listingId.trim() } : {}),
+      ...(typeof design.designText === "string" ? { designText: design.designText } : {}),
+      ...(typeof design.text === "string" ? { text: design.text } : {}),
+      ...(typeof design.note === "string" && design.note.trim() ? { note: design.note.trim() } : {}),
+      ...(Array.isArray(design.textLines)
+        ? { textLines: design.textLines.map((line) => String(line)).filter((line) => line.trim()) }
+        : {}),
+      ...(Array.isArray(design.lines)
+        ? {
+            lines: design.lines
+              .map((line) => (line && typeof line === "object" ? { ...line } : String(line)))
+              .filter((line) => (typeof line === "string" ? line.trim() : true)),
+          }
+        : {}),
+    }))
+    .filter((design) => design.id || design.name || design.title || design.designText || design.text || design.textLines?.length || design.lines?.length);
+}
+
 function normalizePresetDefinition(definition = {}) {
   const presetId = String(definition.id ?? "").trim();
   const backingMm = definition.globalDefaults?.backingMm;
@@ -329,6 +354,7 @@ function normalizePresetDefinition(definition = {}) {
       : [],
     fixedItems: normalizeFixedItems(definition.fixedItems),
     listingAssignments: normalizeListingAssignments(definition.listingAssignments),
+    fixedDesigns: normalizeFixedDesigns(definition.fixedDesigns),
   };
 }
 
@@ -411,6 +437,46 @@ function matchesLineRule(match = {}, lineIndex) {
 
 function getListingAssignment(listingId) {
   return presetRegistry.listingAssignmentMap.get(String(listingId ?? "")) || null;
+}
+
+function getFixedDesignText(design) {
+  if (Array.isArray(design?.textLines)) {
+    return design.textLines.map((line) => String(line).trim()).filter(Boolean).join("\n");
+  }
+
+  if (Array.isArray(design?.lines)) {
+    return design.lines
+      .map((line) => (line && typeof line === "object" ? line.text : line))
+      .map((line) => String(line ?? "").trim())
+      .filter(Boolean)
+      .join("\n");
+  }
+
+  if (typeof design?.designText === "string") {
+    return design.designText;
+  }
+
+  if (typeof design?.text === "string") {
+    return design.text;
+  }
+
+  return "";
+}
+
+export function getPresetFixedDesignText(presetId, listingId = null) {
+  const preset = getPresetDefinition(presetId);
+  const fixedDesigns = Array.isArray(preset?.fixedDesigns) ? preset.fixedDesigns : [];
+  if (!fixedDesigns.length) {
+    return null;
+  }
+
+  const normalizedListingId = String(listingId ?? "").trim();
+  const selectedDesign = normalizedListingId
+    ? fixedDesigns.find((design) => design.listingId === normalizedListingId) || fixedDesigns[0]
+    : fixedDesigns[0];
+  const fixedText = getFixedDesignText(selectedDesign).trim();
+
+  return fixedText ? fixedText : null;
 }
 
 async function loadJson(url) {
@@ -761,3 +827,4 @@ export {
   removeListingAssignment,
   upsertListingAssignment,
 } from "./preset-authoring.js";
+

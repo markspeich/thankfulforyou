@@ -179,6 +179,38 @@ describe("fonts api route", () => {
     });
   });
 
+  it("updates the font display name without requiring a file upload", async () => {
+    resolveProductionBatchAuthMock.mockResolvedValue({ userId: "user-1", workspaceId: "workspace-1" });
+    updateWorkspaceFontSettingsMock.mockResolvedValue({
+      id: "connected-script",
+      display_name: "Connected Script Display",
+      bridging_enabled: true,
+    });
+    const { default: handler } = await import("../../api/fonts.js");
+    const response = createResponseRecorder();
+
+    await handler({
+      method: "PATCH",
+      headers: { authorization: "Bearer token-1" },
+      query: { fontId: "connected-script" },
+      body: { displayName: " Connected Script Display ", bridgingEnabled: true },
+    }, response);
+
+    expect(updateWorkspaceFontSettingsMock).toHaveBeenCalledWith({
+      workspaceId: "workspace-1",
+      fontId: "connected-script",
+      displayName: "Connected Script Display",
+      bridgingEnabled: true,
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toEqual({
+      font: {
+        id: "connected-script",
+        display_name: "Connected Script Display",
+        bridging_enabled: true,
+      },
+    });
+  });
   it("returns 405 for unsupported methods", async () => {
     resolveProductionBatchAuthMock.mockResolvedValue({ userId: "user-1", workspaceId: "workspace-1" });
     const { default: handler } = await import("../../api/fonts.js");
