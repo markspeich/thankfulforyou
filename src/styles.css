@@ -2950,7 +2950,22 @@ button:disabled {
 }
 
 .fonts-library-panel {
-  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+}
+
+.font-library-filter {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--ink);
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.font-library-filter input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--button-enabled);
 }
 
 .font-library-list {

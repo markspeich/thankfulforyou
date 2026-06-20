@@ -149,6 +149,11 @@ export function getSelectableFontOptions(fontOptions = BUILTIN_FONT_DEFINITIONS,
   return activeOptions;
 }
 
+export function getFontLibraryOptions(fontOptions = BUILTIN_FONT_DEFINITIONS, { showDeleted = false } = {}) {
+  return showDeleted
+    ? fontOptions
+    : fontOptions.filter((font) => !font.isDeleted);
+}
 export function resolveFontOption(fontId, fontOptions = BUILTIN_FONT_DEFINITIONS) {
   return fontOptions.find((font) => font.id === fontId) || DEFAULT_FONT;
 }
