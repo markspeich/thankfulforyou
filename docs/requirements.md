@@ -124,6 +124,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - The `Fonts` workspace should allow uploading new font files from the operator's computer.
 - Uploaded fonts should be stored in Supabase so they remain available across sessions, operators, and deployments.
 - Uploaded fonts should be usable in order item designs and reusable presets anywhere the built-in production fonts are currently selectable.
+- Saved designs and presets that reference a custom font must preserve that font id even if the current font registry refresh cannot load the font record; the UI may show the font as missing, but it must not silently rewrite the line to Candlepin.
 - The three original production fonts, Candlepin, Skywalk, and Somekind, should not be immutable in the Fonts workspace. Operators should be able to manage them like other workspace fonts, including uploading new file versions while preserving each font's stable id for existing designs and presets.
 - Deleting an uploaded font should require an explicit in-app confirmation and should not silently break existing saved designs that already reference that font.
 - The `Fonts` workspace should allow overwriting any workspace font by uploading a new version while keeping the same font identity for designs and presets that reference it.

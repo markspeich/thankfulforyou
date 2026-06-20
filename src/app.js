@@ -39,6 +39,7 @@ import {
 } from "./presets.js";
 import { savePresetSnapshot } from "./preset-api.js";
 import { computeLineMaskMetrics } from "./text-metrics.js";
+import { shouldUseRasterTextPreview } from "./preview-rendering.js";
 import { findPairOffsetPx } from "./bridge-geometry.js";
 import {
   buildSettingsSignature,
@@ -985,7 +986,7 @@ function normalizeLineSettings(lineSettings = {}) {
 
   return {
     kind: "text",
-    fontId: FONT_BY_ID.has(lineSettings.fontId) ? lineSettings.fontId : DEFAULT_LINE_SETTINGS.fontId,
+    fontId: typeof lineSettings.fontId === "string" && lineSettings.fontId.trim() ? lineSettings.fontId.trim() : DEFAULT_LINE_SETTINGS.fontId,
     bridgeMm: Number.isFinite(Number(lineSettings.bridgeMm)) ? Number(lineSettings.bridgeMm) : DEFAULT_LINE_SETTINGS.bridgeMm,
     lineBridgeMm: Number.isFinite(Number(lineSettings.lineBridgeMm)) ? Number(lineSettings.lineBridgeMm) : DEFAULT_LINE_SETTINGS.lineBridgeMm,
     offsetXMm: Number.isFinite(Number(lineSettings.offsetXMm)) ? Number(lineSettings.offsetXMm) : DEFAULT_LINE_SETTINGS.offsetXMm,
@@ -10292,6 +10293,7 @@ function createFixedSvgPreviewElements(fixedSvgs = [], frame) {
 
 function renderPreviewFromLayout(layout) {
   const analysis = layout.analysis || null;
+  const useRasterTextPreview = shouldUseRasterTextPreview(layout);
   const facePreview = createFaceImage(layout.letters, layout.widthMm, layout.heightMm);
   const previewBounds = facePreview.boundsMm.width > 0 && facePreview.boundsMm.height > 0
     ? facePreview.boundsMm
@@ -10310,7 +10312,7 @@ function renderPreviewFromLayout(layout) {
   preview.setAttribute("viewBox", `0 0 ${frame.previewWidthMm} ${frame.previewHeightMm}`);
   updateZoom(zoom);
 
-  const backingLayer = analysis
+  const backingLayer = analysis && !useRasterTextPreview
     ? makeSvgElement("path", {
         d: analysis.backingPath,
         fill: "rgb(255, 0, 0)",
@@ -10323,7 +10325,7 @@ function renderPreviewFromLayout(layout) {
         width: layout.widthMm,
         height: layout.heightMm,
       });
-  const faceLayer = analysis
+  const faceLayer = analysis && !useRasterTextPreview
     ? makeSvgElement("path", {
         class: "face-layer",
         d: getPreviewFacePath(layout, analysis),

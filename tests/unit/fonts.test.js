@@ -164,6 +164,94 @@ describe("font registry", () => {
     });
   });
 
+  it("keeps a missing selected font id available so saved designs do not silently fall back", async () => {
+    const { getSelectableFontOptions } = await import("../../src/fonts.js");
+
+    const options = getSelectableFontOptions(BUILTIN_FONT_DEFINITIONS, "quincy");
+
+    expect(options.at(-1)).toMatchObject({
+      id: "quincy",
+      label: "Missing font (quincy)",
+      isMissing: true,
+    });
+  });
+
+  it("registers uploaded fonts with a stylesheet when the FontFace constructor is unavailable", async () => {
+    const appended = [];
+
+    vi.stubGlobal("FontFace", undefined);
+    vi.stubGlobal("document", {
+      createElement(tagName) {
+        return {
+          tagName: tagName.toUpperCase(),
+          dataset: {},
+          remove: vi.fn(),
+          textContent: "",
+        };
+      },
+      head: {
+        appendChild(element) {
+          appended.push(element);
+        },
+      },
+    });
+
+    const style = await registerBrowserFont({
+      family: "WorkspaceFont_Quincy_Laser",
+      url: "http://127.0.0.1:57320/storage/v1/object/public/workspace-fonts/quincy.otf",
+    });
+
+    expect(style).toBe(appended[0]);
+    expect(style.textContent).toContain('@font-face');
+    expect(style.textContent).toContain('font-family: "WorkspaceFont_Quincy_Laser"');
+    expect(style.textContent).toContain('quincy.otf');
+  });
+  it("falls back to a stylesheet when FontFace loading fails", async () => {
+    const appended = [];
+    const deletedFaces = [];
+
+    class FailingFontFaceStub {
+      constructor(family, source) {
+        this.family = family;
+        this.source = source;
+      }
+
+      async load() {
+        throw new Error("Font load failed");
+      }
+    }
+
+    vi.stubGlobal("FontFace", FailingFontFaceStub);
+    vi.stubGlobal("document", {
+      createElement(tagName) {
+        return {
+          tagName: tagName.toUpperCase(),
+          dataset: {},
+          remove: vi.fn(),
+          textContent: "",
+        };
+      },
+      fonts: {
+        delete(face) {
+          deletedFaces.push(face);
+          return true;
+        },
+      },
+      head: {
+        appendChild(element) {
+          appended.push(element);
+        },
+      },
+    });
+
+    const style = await registerBrowserFont({
+      family: "WorkspaceFont_Quincy_Laser",
+      url: "http://127.0.0.1:57320/storage/v1/object/public/workspace-fonts/quincy.otf",
+    });
+
+    expect(style).toBe(appended[0]);
+    expect(style.textContent).toContain('font-family: "WorkspaceFont_Quincy_Laser"');
+  });
   it("replaces a previously registered browser font face for the same family", async () => {
     const addedFaces = [];
     const deletedFaces = [];

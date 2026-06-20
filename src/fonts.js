@@ -44,6 +44,7 @@ export const BUILTIN_FONT_DEFINITIONS = Object.freeze([
 
 const DEFAULT_FONT = BUILTIN_FONT_DEFINITIONS[0];
 const registeredBrowserFontFaces = new Map();
+const registeredBrowserFontStyles = new Map();
 
 function toTrimmedString(value) {
   return typeof value === "string" ? value.trim() : "";
@@ -122,31 +123,86 @@ export function buildFontOptions(fontRecords = [], { includeDeleted = false } = 
 
 export function getSelectableFontOptions(fontOptions = BUILTIN_FONT_DEFINITIONS, selectedFontId = "") {
   const activeOptions = fontOptions.filter((font) => !font.isDeleted);
-  const selectedDeletedOption = fontOptions.find((font) => font.isDeleted && font.id === selectedFontId);
-  return selectedDeletedOption
-    ? [...activeOptions, selectedDeletedOption]
-    : activeOptions;
+  const selectedOption = fontOptions.find((font) => font.id === selectedFontId);
+  if (selectedOption?.isDeleted) {
+    return [...activeOptions, selectedOption];
+  }
+
+  if (selectedFontId && !selectedOption) {
+    return [
+      ...activeOptions,
+      {
+        id: selectedFontId,
+        label: `Missing font (${selectedFontId})`,
+        family: DEFAULT_FONT.family,
+        url: DEFAULT_FONT.url,
+        exportPath: DEFAULT_FONT.exportPath,
+        fileFormat: DEFAULT_FONT.fileFormat,
+        version: 0,
+        isMissing: true,
+        isDeleted: true,
+        bridgingEnabled: true,
+      },
+    ];
+  }
+
+  return activeOptions;
 }
 
 export function resolveFontOption(fontId, fontOptions = BUILTIN_FONT_DEFINITIONS) {
   return fontOptions.find((font) => font.id === fontId) || DEFAULT_FONT;
 }
 
-export async function registerBrowserFont(font) {
-  if (!font || !font.family || !font.url || typeof FontFace === "undefined" || !document?.fonts) {
+function removeRegisteredBrowserFontStyle(family) {
+  const existingStyle = registeredBrowserFontStyles.get(family);
+  if (existingStyle && typeof existingStyle.remove === "function") {
+    existingStyle.remove();
+  }
+  registeredBrowserFontStyles.delete(family);
+}
+
+function registerBrowserFontStyle(font) {
+  if (typeof document === "undefined" || !document?.head || typeof document.createElement !== "function") {
     return null;
+  }
+
+  removeRegisteredBrowserFontStyle(font.family);
+  const style = document.createElement("style");
+  style.dataset.workspaceFontFamily = font.family;
+  style.textContent = `@font-face {
+  font-family: ${JSON.stringify(font.family)};
+  src: url(${JSON.stringify(font.url)});
+  font-display: block;
+}`;
+  document.head.appendChild(style);
+  registeredBrowserFontStyles.set(font.family, style);
+  return style;
+}
+
+export async function registerBrowserFont(font) {
+  if (!font || !font.family || !font.url) {
+    return null;
+  }
+
+  if (typeof FontFace === "undefined" || typeof document === "undefined" || !document?.fonts) {
+    return registerBrowserFontStyle(font);
   }
 
   const existingFace = registeredBrowserFontFaces.get(font.family);
   if (existingFace && typeof document.fonts.delete === "function") {
     document.fonts.delete(existingFace);
   }
+  removeRegisteredBrowserFontStyle(font.family);
 
-  const face = new FontFace(font.family, `url("${font.url}")`);
-  await face.load();
-  document.fonts.add(face);
-  registeredBrowserFontFaces.set(font.family, face);
-  return face;
+  try {
+    const face = new FontFace(font.family, `url("${font.url}")`);
+    await face.load();
+    document.fonts.add(face);
+    registeredBrowserFontFaces.set(font.family, face);
+    return face;
+  } catch {
+    return registerBrowserFontStyle(font);
+  }
 }
 
 export async function registerBrowserFonts(fontOptions) {
