@@ -13,6 +13,7 @@ export const PREVIEW_BOX_HEIGHT_MM = DEFAULT_PREVIEW_GUIDE.maxHeightMm;
 export const PREVIEW_MARGIN_MM = 6;
 export const PREVIEW_LABEL_RIGHT_MM = 10;
 export const DESIGN_BLEED_MM = 1;
+export const BACKING_RENDER_SAFETY_MM = 3;
 export const DEFAULT_BACKING_MM = 3.1;
 export const MAX_FIT_WIDTH_MM = MAX_RENDER_WIDTH_MM - TEXT_FIT_SAFETY_MARGIN_MM;
 export const MAX_FIT_HEIGHT_MM = MAX_RENDER_HEIGHT_MM - TEXT_FIT_SAFETY_MARGIN_MM;
@@ -210,8 +211,8 @@ export function computeGuideOverflow(lines, textWidthMm, textHeightMm, guide = D
 
 export function buildScaledTextBounds(textWidthMm, textHeightMm, backingMm, scaleFactor) {
   return {
-    left: DESIGN_BLEED_MM + backingMm,
-    top: DESIGN_BLEED_MM + backingMm,
+    left: DESIGN_BLEED_MM + backingMm + BACKING_RENDER_SAFETY_MM,
+    top: DESIGN_BLEED_MM + backingMm + BACKING_RENDER_SAFETY_MM,
     width: textWidthMm * scaleFactor,
     height: textHeightMm * scaleFactor,
   };

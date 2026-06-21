@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  BACKING_RENDER_SAFETY_MM,
   computeGuideOverflow,
   computeLineScaleFactors,
   computeMixedFitScale,
@@ -254,8 +255,8 @@ describe("layout math", () => {
   it("keeps the backing border at its authored physical size after text fit scaling", () => {
     const textBoundsMm = buildScaledTextBounds(70, 20, 3.1, 0.5);
 
-    expect(textBoundsMm.left).toBeCloseTo(DESIGN_BLEED_MM + 3.1, 6);
-    expect(textBoundsMm.top).toBeCloseTo(DESIGN_BLEED_MM + 3.1, 6);
+    expect(textBoundsMm.left).toBeCloseTo(DESIGN_BLEED_MM + 3.1 + BACKING_RENDER_SAFETY_MM, 6);
+    expect(textBoundsMm.top).toBeCloseTo(DESIGN_BLEED_MM + 3.1 + BACKING_RENDER_SAFETY_MM, 6);
     expect(textBoundsMm.width).toBeCloseTo(35, 6);
     expect(textBoundsMm.height).toBeCloseTo(10, 6);
   });

@@ -482,6 +482,182 @@ async function measureVisibleTextBounds(page) {
   });
 }
 
+function measureSvgPathPointExtents(pathData) {
+  const tokens = String(pathData || "").match(/[AaCcHhLlMmQqSsTtVvZz]|[-+]?(?:\d*\.\d+|\d+\.?)(?:[eE][-+]?\d+)?/g) || [];
+  let index = 0;
+  let command = null;
+  let currentX = 0;
+  let currentY = 0;
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+
+  function isCommand(token) {
+    return /^[A-Za-z]$/.test(token);
+  }
+
+  function readNumber() {
+    return Number(tokens[index++]);
+  }
+
+  function recordPoint(x, y) {
+    minX = Math.min(minX, x);
+    minY = Math.min(minY, y);
+    maxX = Math.max(maxX, x);
+    maxY = Math.max(maxY, y);
+  }
+
+  function consumePoint(relative = false) {
+    const x = readNumber();
+    const y = readNumber();
+    currentX = relative ? currentX + x : x;
+    currentY = relative ? currentY + y : y;
+    recordPoint(currentX, currentY);
+  }
+
+  function consumeControlPoint(relative = false) {
+    const x = readNumber();
+    const y = readNumber();
+    recordPoint(relative ? currentX + x : x, relative ? currentY + y : y);
+  }
+
+  while (index < tokens.length) {
+    if (isCommand(tokens[index])) {
+      command = tokens[index++];
+    }
+    if (!command) {
+      break;
+    }
+
+    const relative = command === command.toLowerCase();
+    const normalizedCommand = command.toUpperCase();
+    if (normalizedCommand === "M" || normalizedCommand === "L" || normalizedCommand === "T") {
+      while (index + 1 < tokens.length && !isCommand(tokens[index])) {
+        consumePoint(relative);
+      }
+    } else if (normalizedCommand === "H") {
+      while (index < tokens.length && !isCommand(tokens[index])) {
+        const x = readNumber();
+        currentX = relative ? currentX + x : x;
+        recordPoint(currentX, currentY);
+      }
+    } else if (normalizedCommand === "V") {
+      while (index < tokens.length && !isCommand(tokens[index])) {
+        const y = readNumber();
+        currentY = relative ? currentY + y : y;
+        recordPoint(currentX, currentY);
+      }
+    } else if (normalizedCommand === "Q" || normalizedCommand === "S") {
+      while (index + 3 < tokens.length && !isCommand(tokens[index])) {
+        consumeControlPoint(relative);
+        consumePoint(relative);
+      }
+    } else if (normalizedCommand === "C") {
+      while (index + 5 < tokens.length && !isCommand(tokens[index])) {
+        consumeControlPoint(relative);
+        consumeControlPoint(relative);
+        consumePoint(relative);
+      }
+    } else if (normalizedCommand === "A") {
+      while (index + 6 < tokens.length && !isCommand(tokens[index])) {
+        readNumber();
+        readNumber();
+        readNumber();
+        readNumber();
+        readNumber();
+        consumePoint(relative);
+      }
+    } else if (normalizedCommand === "Z") {
+      continue;
+    } else {
+      break;
+    }
+  }
+
+  return {
+    minX,
+    minY,
+    maxX,
+    maxY,
+  };
+}
+
+async function measurePreviewImageEdges(page, selector) {
+  return page.evaluate(async (imageSelector) => {
+    const svgImage = document.querySelector(imageSelector);
+    if (!(svgImage instanceof SVGImageElement)) {
+      return null;
+    }
+
+    const href = svgImage.getAttribute("href");
+    if (!href) {
+      return null;
+    }
+
+    const image = new Image();
+    image.src = href;
+    await image.decode();
+
+    const canvas = document.createElement("canvas");
+    canvas.width = image.naturalWidth;
+    canvas.height = image.naturalHeight;
+    const context = canvas.getContext("2d");
+    context.drawImage(image, 0, 0);
+    const { data, width, height } = context.getImageData(0, 0, canvas.width, canvas.height);
+    let minX = width;
+    let minY = height;
+    let maxX = -1;
+    let maxY = -1;
+    let topCount = 0;
+    let bottomCount = 0;
+    let leftCount = 0;
+    let rightCount = 0;
+
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        const alpha = data[(y * width + x) * 4 + 3];
+        if (alpha <= 32) {
+          continue;
+        }
+
+        minX = Math.min(minX, x);
+        minY = Math.min(minY, y);
+        maxX = Math.max(maxX, x);
+        maxY = Math.max(maxY, y);
+        if (y === 0) {
+          topCount += 1;
+        }
+        if (y === height - 1) {
+          bottomCount += 1;
+        }
+        if (x === 0) {
+          leftCount += 1;
+        }
+        if (x === width - 1) {
+          rightCount += 1;
+        }
+      }
+    }
+
+    return {
+      width,
+      height,
+      edgeCounts: {
+        topCount,
+        bottomCount,
+        leftCount,
+        rightCount,
+      },
+      paddingPx: {
+        top: minY,
+        bottom: height - 1 - maxY,
+        left: minX,
+        right: width - 1 - maxX,
+      },
+    };
+  }, selector);
+}
 test.beforeEach(async ({ page, request }, testInfo) => {
   if (
     testInfo.title === PRODUCTION_BATCH_REMOTE_RESTORE_TEST_TITLE
@@ -1693,6 +1869,46 @@ test("renders the live backing preview in red while editing", async ({ page }) =
   expect(backingPixel).toEqual([255, 0, 0, 255]);
 });
 
+test("keeps stretched live backing preview away from raster image edges", async ({ page }) => {
+  await page.locator("#textInput").fill("DPMOT");
+  await page.locator("#globalVerticalScaleInput").fill("1.5");
+  await page.locator('.line-control-card[data-line-index="0"] [data-setting="verticalScale"]').fill("1.5");
+  await expect(page.locator("#preview image:not(.face-layer)")).toHaveCount(1);
+
+  const backingEdges = await measurePreviewImageEdges(page, "#preview image:not(.face-layer)");
+
+  expect(backingEdges).not.toBeNull();
+  expect(backingEdges.edgeCounts).toEqual({
+    topCount: 0,
+    bottomCount: 0,
+    leftCount: 0,
+    rightCount: 0,
+  });
+  expect(backingEdges.paddingPx.top).toBeGreaterThan(0);
+  expect(backingEdges.paddingPx.bottom).toBeGreaterThan(0);
+  expect(backingEdges.paddingPx.left).toBeGreaterThan(0);
+  expect(backingEdges.paddingPx.right).toBeGreaterThan(0);
+});
+
+test("keeps stretched cached backing SVG inside the analyzed layout bounds", async ({ page }) => {
+  await page.locator("#textInput").fill("DPMOT");
+  await page.locator("#globalVerticalScaleInput").fill("1.5");
+  await page.locator('.line-control-card[data-line-index="0"] [data-setting="verticalScale"]').fill("1.5");
+
+  await completeDesign(page, "Design 1");
+  await expect(page.locator("#preview path:not(.face-layer)")).toHaveCount(1);
+
+  const savedSnapshot = productionBatchSnapshots.get(page);
+  const savedBuild = savedSnapshot?.orderItems?.[0]?.cachedBuild;
+  const savedLayout = savedBuild?.layout;
+  const backingPath = savedBuild?.analysis?.backingPath;
+
+  expect(typeof backingPath).toBe("string");
+  expect(backingPath.length).toBeGreaterThan(0);
+
+  const backingExtents = measureSvgPathPointExtents(backingPath);
+  expect(backingExtents.maxY).toBeLessThan(savedLayout.heightMm - 0.5);
+});
 test("keeps descenders inside the live face preview image", async ({ page }) => {
   await page.locator("#textInput").fill("Mackenzie");
   await page.locator('.line-control-card[data-line-index="0"] [data-setting="fontSizeMm"]').fill("28");
