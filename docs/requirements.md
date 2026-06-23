@@ -86,6 +86,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Uploaded fixed SVG designs should be stored in Supabase so they remain available across sessions, operators, and deployments.
 - The `Fixed Designs` workspace should allow loading a new SVG version for an existing fixed design while keeping the same fixed design identity for saved designs that reference it.
 - Loading a new fixed design version should use an in-app popup opened from the selected design's ellipsis menu. The popup should include a drag/drop upload area, a `Choose SVG File` button that opens a file selector, `Cancel`, and `Load Version`.
+- The fixed SVG upload popup should show a preview of the selected or dropped SVG before the operator confirms the initial upload or new version load.
 - Replacing a fixed SVG should use a new stored file version rather than reusing the exact same asset path, so previews, export, and CDN caches can resolve the updated SVG reliably.
 - The selected fixed design editor actions should live behind an ellipsis menu rather than always-visible header buttons. The menu should include `Save Design`, `Load New Version`, `Download SVG`, and `Delete`.
 - `Download SVG` should download the currently selected fixed design as an SVG file.

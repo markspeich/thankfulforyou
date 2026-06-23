@@ -264,11 +264,20 @@ test("manages fixed SVG designs from the Fixed Designs workspace", async ({ page
   await expect(workspace.getByText("No fixed designs match that search.")).toBeVisible();
   await workspace.getByPlaceholder("Search fixed designs").fill("");
 
-  await page.locator("#fixedDesignUploadInput").setInputFiles({
-    name: "badge-star.svg",
-    mimeType: "image/svg+xml",
-    buffer: Buffer.from(SECOND_SVG),
-  });
+  await workspace.getByRole("button", { name: "Upload SVG" }).click();
+  const uploadDialog = page.getByRole("dialog", { name: "Upload SVG" });
+  await expect(uploadDialog.getByText("Drop an SVG here or choose a file.")).toBeVisible();
+  const uploadDataTransfer = await page.evaluateHandle((svgText) => {
+    const dataTransfer = new DataTransfer();
+    dataTransfer.items.add(new File([svgText], "badge-star.svg", { type: "image/svg+xml" }));
+    return dataTransfer;
+  }, SECOND_SVG);
+  await uploadDialog.locator("#fixedDesignDropZone").dispatchEvent("drop", { dataTransfer: uploadDataTransfer });
+  await expect(uploadDialog.locator("#fixedDesignVersionStatus")).toContainText("badge-star.svg");
+  await expect(uploadDialog.locator("#fixedDesignVersionPreviewImage")).toBeVisible();
+  await expect(uploadDialog.locator("#fixedDesignVersionPreviewImage")).toHaveAttribute("alt", "Preview of badge-star.svg");
+  await uploadDialog.getByRole("button", { name: "Upload Design" }).click();
+  await expect(uploadDialog).toBeHidden();
   await expect(workspace.getByRole("button", { name: "Badge Star" })).toBeVisible();
   await expect(workspace.getByRole("heading", { name: "Badge Star" })).toBeVisible();
   await cardiologyHeartRow.hover();
