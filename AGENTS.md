@@ -98,6 +98,8 @@ Whenever reporting a started server, include:
 - Test password: `TestOperator123!`.
 - Local Supabase Studio URL.
 
+Format the test user and test password as separate fenced `text` code blocks in server-start responses so each credential can be copied independently from the chat UI when supported.
+
 When the user asks to start the app, start a server, or initialize the app, follow this exact local workflow unless they explicitly ask for remote:
 
 1. Read `AGENTS.md` and `docs/requirements.md` if they have not already been read this turn.
@@ -114,6 +116,7 @@ When the user asks to start the app, start a server, or initialize the app, foll
 11. Verify initialization by signing in as `test.operator@example.com` and calling `<printed URL>/api/batch-session` with the access token.
 12. Whenever starting or reporting a local server, include the server URL, the test login `test.operator@example.com`, the test password `TestOperator123!`, and the local Supabase Studio URL for this worktree.
 13. Report the server URL, HTTP status, operator, workspace, batch, test login, test password, and Supabase Studio URL.
+14. In the final server-start report, place the test login and test password in separate fenced `text` code blocks so each credential has its own copy affordance where the chat UI supports it.
 
 - When the user says `start a server`, start the local dev server unless they explicitly ask for remote.
 - To start the local dev server in this worktree, run `npm run start:local` from the repository root.
