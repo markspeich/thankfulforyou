@@ -3197,6 +3197,28 @@ button:disabled {
   background: #eef8f7;
 }
 
+.fixed-design-version-preview {
+  display: grid;
+  place-items: center;
+  min-height: 160px;
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid #d6e8e6;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.fixed-design-version-preview[hidden] {
+  display: none;
+}
+
+.fixed-design-version-preview-image {
+  display: block;
+  max-width: min(100%, 320px);
+  max-height: 220px;
+  object-fit: contain;
+}
+
 .size-guide-panel {
   grid-template-rows: auto auto minmax(0, 1fr);
 }
