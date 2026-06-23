@@ -36,10 +36,36 @@ export function mergeDevServerState(patch, options = {}) {
   return next;
 }
 
-export function clearDevServerPid(options = {}) {
+function withoutRuntimeFields(server) {
+  if (!server || typeof server !== "object") {
+    return server;
+  }
+
+  const { pid, startedAt, ...rest } = server;
+  return rest;
+}
+
+export function clearDevServerPid({ role, ...options } = {}) {
   const current = readDevServerState(options);
   if (!current) {
     return null;
+  }
+
+  if (role && current.servers && typeof current.servers === "object") {
+    const servers = {
+      ...current.servers,
+      [role]: withoutRuntimeFields(current.servers[role]),
+    };
+    const next = { ...current, servers };
+
+    if (current.pid === current.servers?.[role]?.pid) {
+      const { pid, startedAt, ...rest } = next;
+      writeDevServerState(rest, options);
+      return rest;
+    }
+
+    writeDevServerState(next, options);
+    return next;
   }
 
   const { pid, startedAt, ...rest } = current;

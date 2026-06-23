@@ -26,7 +26,15 @@ describe("dev port helper", () => {
     expect(resolveDevPort({
       cwd: "C:/Users/Mark/.codex/worktrees/3910/thankfulforyou",
       env: {},
-    })).toBe(WORKTREE_PORT_BASE + 410);
+    })).toBe(WORKTREE_PORT_BASE + 320);
+  });
+
+  it("derives adjacent stable user and test ports for each worktree", () => {
+    const cwd = "C:/Users/Mark/.codex/worktrees/3910/thankfulforyou";
+
+    expect(computeWorktreePort(cwd, { role: "user" })).toBe(WORKTREE_PORT_BASE + 320);
+    expect(computeWorktreePort(cwd, { role: "test" })).toBe(WORKTREE_PORT_BASE + 321);
+    expect(resolveDevPort({ cwd, env: { DEV_SERVER_PORT_ROLE: "test" } })).toBe(WORKTREE_PORT_BASE + 321);
   });
 
   it("honors an explicit PORT override", () => {
@@ -42,14 +50,18 @@ describe("dev port helper", () => {
 
     expect(first).toBe(second);
     expect(first).toBeGreaterThanOrEqual(WORKTREE_PORT_BASE);
-    expect(first).toBeLessThan(WORKTREE_PORT_BASE + 500);
+    expect(first).toBeLessThan(WORKTREE_PORT_BASE + WORKTREE_PORT_SPAN);
   });
 
   it("builds a local base URL from the shared port resolution", () => {
     expect(resolveDevBaseUrl({
       cwd: "C:/Users/Mark/.codex/worktrees/3910/thankfulforyou",
       env: {},
-    })).toBe("http://127.0.0.1:4710");
+    })).toBe("http://127.0.0.1:4620");
+    expect(resolveDevBaseUrl({
+      cwd: "C:/Users/Mark/.codex/worktrees/3910/thankfulforyou",
+      env: { DEV_SERVER_PORT_ROLE: "test" },
+    })).toBe("http://127.0.0.1:4621");
   });
 
   it("uses the legacy default when no path context exists", () => {
@@ -58,7 +70,7 @@ describe("dev port helper", () => {
 
   it("reuses a persisted worktree port when PORT is unset", async () => {
     const cwd = "C:/Users/Mark/.codex/worktrees/440a/thankfulforyou";
-    const state = { port: 4666 };
+    const state = { ports: { user: computeWorktreePort(cwd, { role: "user" }) } };
     const port = await allocateDevPort({
       cwd,
       env: {},
@@ -67,45 +79,69 @@ describe("dev port helper", () => {
       isPortAvailable: async () => true,
     });
 
-    expect(port).toBe(4666);
+    expect(port).toBe(computeWorktreePort(cwd, { role: "user" }));
   });
 
-  it("persists the first available candidate when no state exists", async () => {
+
+  it("ignores stale persisted ports that do not match the deterministic role port", () => {
     const cwd = "C:/Users/Mark/.codex/worktrees/440a/thankfulforyou";
-    const candidate = computeWorktreePort(cwd);
+    const candidate = computeWorktreePort(cwd, { role: "user" });
+
+    expect(resolveDevPort({
+      cwd,
+      env: {},
+      readState: () => ({ ports: { user: candidate + 2 } }),
+    })).toBe(candidate);
+  });
+  it("uses the role-specific persisted port instead of another role's port", () => {
+    const cwd = "C:/Users/Mark/.codex/worktrees/440a/thankfulforyou";
+    const userPort = computeWorktreePort(cwd, { role: "user" });
+    const testPort = computeWorktreePort(cwd, { role: "test" });
+
+    expect(resolveDevPort({
+      cwd,
+      env: { DEV_SERVER_PORT_ROLE: "test" },
+      readState: () => ({ ports: { user: userPort } }),
+    })).toBe(testPort);
+  });
+
+  it("persists the assigned role candidate when no state exists", async () => {
+    const cwd = "C:/Users/Mark/.codex/worktrees/440a/thankfulforyou";
+    const candidate = computeWorktreePort(cwd, { role: "test" });
     const writes = [];
     const port = await allocateDevPort({
       cwd,
-      env: {},
+      env: { DEV_SERVER_PORT_ROLE: "test" },
       readState: () => null,
       writeState: (state) => writes.push(state),
-      isPortAvailable: async (checkedPort) => checkedPort !== candidate,
+      isPortAvailable: async () => true,
     });
 
-    expect(port).toBe(candidate + 1);
+    expect(port).toBe(candidate);
     expect(writes).toEqual([
       expect.objectContaining({
-        port: candidate + 1,
+        ports: expect.objectContaining({ test: candidate }),
         worktreeRoot: cwd,
       }),
     ]);
   });
 
-  it("wraps allocation within the worktree port range", async () => {
+  it("fails instead of silently switching when the assigned role port is occupied", async () => {
     const cwd = "C:/Users/Mark/.codex/worktrees/9999/thankfulforyou";
+    const candidate = computeWorktreePort(cwd, { role: "user" });
     const checked = [];
-    const port = await allocateDevPort({
+
+    await expect(allocateDevPort({
       cwd,
       env: {},
       readState: () => null,
       writeState: () => {},
       isPortAvailable: async (checkedPort) => {
         checked.push(checkedPort);
-        return checked.length === 2;
+        return false;
       },
-    });
+    })).rejects.toThrow(`Assigned user dev server port ${candidate} is already in use`);
 
-    expect(checked[0]).toBe(WORKTREE_PORT_BASE + (9999 % WORKTREE_PORT_SPAN));
-    expect(port).toBe(WORKTREE_PORT_BASE);
+    expect(checked).toEqual([candidate]);
   });
 });

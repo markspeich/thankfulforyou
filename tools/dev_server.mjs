@@ -7,10 +7,11 @@ import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
 import { buildPublicAppConfigScript } from "./app_config.mjs";
 import { allocateDevPort } from "./dev_port.mjs";
-import { clearDevServerPid, mergeDevServerState } from "./dev_server_state.mjs";
+import { clearDevServerPid, mergeDevServerState, readDevServerState } from "./dev_server_state.mjs";
 import { buildLocalServerInfo, formatLocalServerInfo } from "./local_server_info.mjs";
 
-const port = await allocateDevPort();
+const serverRole = process.env.DEV_SERVER_PORT_ROLE === "test" ? "test" : "user";
+const port = await allocateDevPort({ role: serverRole });
 const root = process.cwd();
 const productionBatchLogPath = process.env.PRODUCTION_BATCH_LOG_PATH
   || join(process.platform === "win32" ? "C:\\tmp" : "/tmp", "thankfulforyou-production-batch.log");
@@ -387,11 +388,26 @@ const server = createServer(async (request, response) => {
 
 server.listen(port, async () => {
   try {
+    const startedAt = new Date().toISOString();
+    const currentState = readDevServerState({ cwd: root }) || {};
     mergeDevServerState({
       worktreeRoot: root,
       port,
       pid: process.pid,
-      startedAt: new Date().toISOString(),
+      startedAt,
+      ports: {
+        ...(currentState.ports && typeof currentState.ports === "object" ? currentState.ports : {}),
+        [serverRole]: port,
+      },
+      servers: {
+        ...(currentState.servers && typeof currentState.servers === "object" ? currentState.servers : {}),
+        [serverRole]: {
+          worktreeRoot: root,
+          port,
+          pid: process.pid,
+          startedAt,
+        },
+      },
     }, { cwd: root });
     presetSnapshots.set("primary", await loadBundledPresetSnapshot());
     console.log(`Badge reel layout tool: http://localhost:${port}`);
@@ -405,7 +421,7 @@ server.listen(port, async () => {
 });
 
 function shutdown() {
-  clearDevServerPid({ cwd: root });
+  clearDevServerPid({ cwd: root, role: serverRole });
 }
 
 process.once("exit", shutdown);

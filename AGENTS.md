@@ -142,7 +142,10 @@ When the user asks to start the app, start a server, or initialize the app, foll
 - Do not rely on deployed code, Vercel environment variables, or a local reset as evidence that production has the matching schema. Verify production migration history or production schema after the user approves applying a migration.
 - When shared queue auth or shared queue API routes must work from Codex, start the chosen dev server command with escalated/network permissions. A sandboxed dev server can serve the frontend but fail Supabase token verification, which appears to the user as an expired shared queue session.
 - The dev server port is determined by `tools/dev_port.mjs`. Do not hardcode or guess a worktree URL from `AGENTS.md`.
-- Each worktree should keep a stable app server port in `.local/dev-server.json`; once assigned, reuse that port whenever starting the server in that worktree unless `PORT` is explicitly set.
+- Each worktree should keep stable app server ports in `.local/dev-server.json`; once assigned, reuse the role-specific port whenever starting the server in that worktree unless `PORT` is explicitly set.
+- Manual/operator testing servers use the default `DEV_SERVER_PORT_ROLE=user` port for the worktree.
+- Agent automated testing servers, including Playwright and `npm run test:e2e`, use `DEV_SERVER_PORT_ROLE=test`, which is the adjacent paired port for the same worktree.
+- Dev-server startup should fail clearly if the assigned role port is occupied instead of silently moving to an unexpected port.
 - To stop this worktree's local dev server, run `npm run stop:local` from the repository root. Do not stop servers by killing every process whose command line contains `tools/dev_server.mjs`, because that can stop servers from other worktrees.
 - After starting the server, read the printed `Badge reel layout tool: http://localhost:...` line and use that exact URL.
 - The dev server startup banner prints the server URL, test login, test password, and local Supabase Studio URL. Include those values in the response whenever you start or restart the server for the user.

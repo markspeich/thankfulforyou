@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 describe("run_playwright helper", () => {
-  it("targets the current worktree dev URL and port for local test runs", async () => {
+  it("targets the current worktree test dev URL and port for local test runs", async () => {
     const { resolveRunPlaywrightOptions } = await import("../../tools/run_playwright.mjs");
     const { resolveDevBaseUrl, resolveDevPort } = await import("../../tools/dev_port.mjs");
     const cwd = "C:/Users/Mark/.codex/worktrees/78b9/thankfulforyou";
     const env = {};
+    const testEnv = { DEV_SERVER_PORT_ROLE: "test" };
 
     const options = resolveRunPlaywrightOptions({
       argv: ["test", "tests/e2e/orders-workspace.spec.js"],
@@ -14,8 +15,9 @@ describe("run_playwright helper", () => {
     });
 
     expect(options.cliArgs).toEqual(["test", "tests/e2e/orders-workspace.spec.js"]);
-    expect(options.childEnv.PLAYWRIGHT_BASE_URL).toBe(resolveDevBaseUrl({ cwd, env }));
-    expect(options.childEnv.PORT).toBe(String(resolveDevPort({ cwd, env })));
+    expect(options.childEnv.DEV_SERVER_PORT_ROLE).toBe("test");
+    expect(options.childEnv.PLAYWRIGHT_BASE_URL).toBe(resolveDevBaseUrl({ cwd, env: testEnv }));
+    expect(options.childEnv.PORT).toBe(String(resolveDevPort({ cwd, env: testEnv })));
     expect(options.childEnv.PLAYWRIGHT_TARGET).toBeUndefined();
   });
 

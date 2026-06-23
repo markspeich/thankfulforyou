@@ -13,6 +13,18 @@ function normalizePathText(value) {
   return String(value || "").replace(/\\/g, "/").toLowerCase();
 }
 
+function normalizeRole(role) {
+  return role === "test" ? "test" : "user";
+}
+
+function selectServerState(state, role) {
+  if (state?.servers?.[role]) {
+    return state.servers[role];
+  }
+
+  return state;
+}
+
 function isDevServerCommand(processInfo) {
   return normalizePathText(processInfo?.commandLine).includes("tools/dev_server.mjs");
 }
@@ -106,13 +118,17 @@ async function defaultKillProcess(pid) {
 
 export async function stopDevServer({
   cwd = process.cwd(),
+  env = process.env,
+  role,
   readState = () => readDevServerState({ cwd }),
   findListeningPid = defaultFindListeningPid,
   getProcessInfo = defaultGetProcessInfo,
   killProcess = defaultKillProcess,
-  clearPid = () => clearDevServerPid({ cwd }),
+  clearPid = (resolvedRole) => clearDevServerPid({ cwd, role: resolvedRole }),
 } = {}) {
-  const state = readState();
+  const resolvedRole = normalizeRole(role || env?.DEV_SERVER_PORT_ROLE);
+  const rootState = readState();
+  const state = selectServerState(rootState, resolvedRole);
   if (!state?.port && !state?.pid) {
     return { stopped: false, reason: "missing-state" };
   }
@@ -129,14 +145,14 @@ export async function stopDevServer({
       }
 
       await killProcess(state.pid);
-      clearPid();
+      clearPid(resolvedRole);
       return { stopped: true, pid: state.pid, source: "state-pid" };
     }
   }
 
   const listeningPid = await findListeningPid(state.port);
   if (!listeningPid) {
-    clearPid();
+    clearPid(resolvedRole);
     return { stopped: false, reason: "not-running" };
   }
 
@@ -147,7 +163,7 @@ export async function stopDevServer({
   }
 
   await killProcess(plan.pid);
-  clearPid();
+  clearPid(resolvedRole);
   return { stopped: true, pid: plan.pid, source: "state-port" };
 }
 

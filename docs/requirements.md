@@ -594,3 +594,11 @@ For batch Etsy order sessions, the preferred workflow is:
 - Clicking `Cancel` should restore the active design text and layout settings to the last saved shared design state without publishing a new production batch revision.
 - The `Save & Next` button should be disabled whenever there are no other batched designs that are still incomplete.
 
+
+## Local Development Port Requirements
+
+- Each checkout or Codex worktree must derive a stable pair of local app server ports from that worktree identity.
+- Servers started for operator/manual testing use the worktree's `user` dev-server port by default.
+- Servers started by automated agent testing, including Playwright through `npm run test:e2e`, use the same worktree's separate `test` dev-server port.
+- The two ports for a worktree must be adjacent and must not overlap with the paired ports assigned to another worktree slot.
+- Dev-server startup should fail clearly when the assigned role port is already occupied instead of silently moving to a different port. A one-off `PORT` override remains allowed when an explicit temporary port is needed.

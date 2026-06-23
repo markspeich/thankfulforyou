@@ -57,8 +57,9 @@ export function resolveRunPlaywrightOptions({
   if (target === "preview") {
     childEnv.PLAYWRIGHT_TARGET = "preview";
   } else {
-    const localPort = resolveDevPort({ cwd, env });
-    const localBaseUrl = resolveDevBaseUrl({ cwd, env });
+    childEnv.DEV_SERVER_PORT_ROLE = "test";
+    const localPort = resolveDevPort({ cwd, env: childEnv });
+    const localBaseUrl = resolveDevBaseUrl({ cwd, env: childEnv });
     childEnv.PLAYWRIGHT_BASE_URL = localBaseUrl;
     childEnv.PORT = String(localPort);
     delete childEnv.PLAYWRIGHT_TARGET;

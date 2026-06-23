@@ -7,7 +7,7 @@ const rootCwd = "C:/Users/Mark/CodexProjects/thankfulforyou";
 const previewUrl = "https://preview.example.com/";
 
 describe("playwright targeting", () => {
-  it("defaults to the local worktree-aware URL even when .env.local contains a preview URL", () => {
+  it("defaults to the local worktree test URL even when .env.local contains a preview URL", () => {
     const result = resolvePlaywrightRuntimeOptions({
       cwd: rootCwd,
       env: {},
@@ -17,7 +17,8 @@ describe("playwright targeting", () => {
     });
 
     expect(result.baseURL).toBe(result.localBaseUrl);
-    expect(result.baseURL).toBe(resolveDevBaseUrl({ cwd: rootCwd, env: {} }));
+    expect(result.baseURL).toBe(resolveDevBaseUrl({ cwd: rootCwd, env: { DEV_SERVER_PORT_ROLE: "test" } }));
+    expect(result.localPortRole).toBe("test");
     expect(result.usePreviewTarget).toBe(false);
   });
 

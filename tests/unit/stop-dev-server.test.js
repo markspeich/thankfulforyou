@@ -59,6 +59,29 @@ describe("stop dev server", () => {
     expect(killed).toEqual([123]);
   });
 
+
+  it("stops the user role server when user and test servers are both recorded", async () => {
+    const killed = [];
+    const result = await stopDevServer({
+      cwd,
+      readState: () => ({
+        servers: {
+          user: { pid: 111, port: 4678, worktreeRoot: cwd },
+          test: { pid: 222, port: 4679, worktreeRoot: cwd },
+        },
+      }),
+      findListeningPid: async () => null,
+      getProcessInfo: async ({ pid }) => ({
+        pid,
+        commandLine: `node --watch ${cwd}/tools/dev_server.mjs`,
+      }),
+      killProcess: async (pid) => killed.push(pid),
+      clearPid: () => {},
+    });
+
+    expect(result).toEqual({ stopped: true, pid: 111, source: "state-pid" });
+    expect(killed).toEqual([111]);
+  });
   it("refuses to stop a pid whose command line belongs to another worktree", async () => {
     const result = await stopDevServer({
       cwd,

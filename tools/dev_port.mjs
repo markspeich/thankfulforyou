@@ -8,6 +8,17 @@ import {
 export const DEFAULT_DEV_PORT = 4173;
 export const WORKTREE_PORT_BASE = 4300;
 export const WORKTREE_PORT_SPAN = 500;
+export const WORKTREE_PORTS_PER_SLOT = 2;
+export const WORKTREE_PORT_SLOT_COUNT = Math.floor(WORKTREE_PORT_SPAN / WORKTREE_PORTS_PER_SLOT);
+export const DEV_PORT_ROLES = Object.freeze({
+  USER: "user",
+  TEST: "test",
+});
+
+const ROLE_OFFSETS = Object.freeze({
+  [DEV_PORT_ROLES.USER]: 0,
+  [DEV_PORT_ROLES.TEST]: 1,
+});
 
 function parsePort(value) {
   if (value === undefined || value === null || value === "") {
@@ -30,6 +41,14 @@ function hashString(value) {
   return hash;
 }
 
+function normalizeRole(role) {
+  return Object.hasOwn(ROLE_OFFSETS, role) ? role : DEV_PORT_ROLES.USER;
+}
+
+function resolveRole({ role, env = process.env } = {}) {
+  return normalizeRole(role || env?.DEV_SERVER_PORT_ROLE);
+}
+
 export function extractWorktreeId(workspacePath) {
   if (typeof workspacePath !== "string" || !workspacePath.trim()) {
     return null;
@@ -43,24 +62,42 @@ export function extractWorktreeId(workspacePath) {
   return /^\d+$/.test(match[1]) ? Number(match[1]) : match[1];
 }
 
-export function computeWorktreePort(workspacePath) {
+function computeWorktreeSlot(workspacePath) {
   const worktreeId = extractWorktreeId(workspacePath);
   if (worktreeId !== null) {
-    const worktreePortOffset = typeof worktreeId === "number"
-      ? worktreeId % WORKTREE_PORT_SPAN
-      : hashString(worktreeId) % WORKTREE_PORT_SPAN;
-    return WORKTREE_PORT_BASE + worktreePortOffset;
+    return typeof worktreeId === "number"
+      ? worktreeId % WORKTREE_PORT_SLOT_COUNT
+      : hashString(worktreeId) % WORKTREE_PORT_SLOT_COUNT;
   }
 
   if (typeof workspacePath === "string" && workspacePath.trim()) {
     const normalizedPath = path.resolve(workspacePath);
-    return WORKTREE_PORT_BASE + (hashString(normalizedPath) % WORKTREE_PORT_SPAN);
+    return hashString(normalizedPath) % WORKTREE_PORT_SLOT_COUNT;
   }
 
-  return DEFAULT_DEV_PORT;
+  return null;
 }
 
-export function resolveDevPort({ cwd = process.cwd(), env = process.env } = {}) {
+export function computeWorktreePort(workspacePath, { role } = {}) {
+  const slot = computeWorktreeSlot(workspacePath);
+  if (slot === null) {
+    return DEFAULT_DEV_PORT;
+  }
+
+  const normalizedRole = normalizeRole(role);
+  return WORKTREE_PORT_BASE + (slot * WORKTREE_PORTS_PER_SLOT) + ROLE_OFFSETS[normalizedRole];
+}
+
+function readRolePort(state, role) {
+  return parsePort(state?.ports?.[role]);
+}
+
+export function resolveDevPort({
+  cwd = process.cwd(),
+  env = process.env,
+  role,
+  readState = () => readDevServerState({ cwd }),
+} = {}) {
   const explicitPort = parsePort(env?.PORT);
   if (explicitPort) {
     return explicitPort;
@@ -70,12 +107,14 @@ export function resolveDevPort({ cwd = process.cwd(), env = process.env } = {}) 
     return DEFAULT_DEV_PORT;
   }
 
-  const statePort = parsePort(readDevServerState({ cwd })?.port);
-  return statePort ?? computeWorktreePort(cwd);
+  const resolvedRole = resolveRole({ role, env });
+  const candidate = computeWorktreePort(cwd, { role: resolvedRole });
+  const statePort = readRolePort(readState(), resolvedRole);
+  return statePort === candidate ? statePort : candidate;
 }
 
-export function resolveDevBaseUrl({ cwd = process.cwd(), env = process.env, hostname = "127.0.0.1" } = {}) {
-  return `http://${hostname}:${resolveDevPort({ cwd, env })}`;
+export function resolveDevBaseUrl({ cwd = process.cwd(), env = process.env, hostname = "127.0.0.1", role } = {}) {
+  return `http://${hostname}:${resolveDevPort({ cwd, env, role })}`;
 }
 
 export async function isPortAvailable(port, host = "127.0.0.1") {
@@ -92,6 +131,7 @@ export async function isPortAvailable(port, host = "127.0.0.1") {
 export async function allocateDevPort({
   cwd = process.cwd(),
   env = process.env,
+  role,
   readState = () => readDevServerState({ cwd }),
   writeState = (state) => mergeDevServerState(state, { cwd }),
   isPortAvailable: isCandidatePortAvailable = isPortAvailable,
@@ -101,26 +141,28 @@ export async function allocateDevPort({
     return explicitPort;
   }
 
-  const statePort = parsePort(readState()?.port);
-  if (statePort) {
+  const resolvedRole = resolveRole({ role, env });
+  const currentState = readState() || {};
+  const candidate = computeWorktreePort(cwd, { role: resolvedRole });
+  const statePort = readRolePort(currentState, resolvedRole);
+  if (statePort === candidate) {
     return statePort;
   }
-
-  const firstCandidate = computeWorktreePort(cwd);
-  const startOffset = firstCandidate - WORKTREE_PORT_BASE;
-
-  for (let attempt = 0; attempt < WORKTREE_PORT_SPAN; attempt += 1) {
-    const offset = (startOffset + attempt) % WORKTREE_PORT_SPAN;
-    const candidate = WORKTREE_PORT_BASE + offset;
-    if (await isCandidatePortAvailable(candidate)) {
-      writeState({
-        worktreeRoot: cwd,
-        port: candidate,
-        assignedAt: new Date().toISOString(),
-      });
-      return candidate;
-    }
+  if (!await isCandidatePortAvailable(candidate)) {
+    throw new Error(
+      `Assigned ${resolvedRole} dev server port ${candidate} is already in use. `
+      + "Stop that server or set PORT explicitly for a one-off override.",
+    );
   }
 
-  throw new Error(`No available dev server ports in ${WORKTREE_PORT_BASE}-${WORKTREE_PORT_BASE + WORKTREE_PORT_SPAN - 1}.`);
+  writeState({
+    worktreeRoot: cwd,
+    port: candidate,
+    ports: {
+      ...(currentState.ports && typeof currentState.ports === "object" ? currentState.ports : {}),
+      [resolvedRole]: candidate,
+    },
+    assignedAt: new Date().toISOString(),
+  });
+  return candidate;
 }

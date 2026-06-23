@@ -38,8 +38,10 @@ export function resolvePlaywrightRuntimeOptions({
   env = process.env,
   envFileValues = loadEnvFile(path.join(cwd, ".env.local")),
 } = {}) {
-  const localBaseUrl = resolveDevBaseUrl({ cwd, env });
-  const localPort = resolveDevPort({ cwd, env });
+  const localPortRole = "test";
+  const localEnv = { ...env, DEV_SERVER_PORT_ROLE: localPortRole };
+  const localBaseUrl = resolveDevBaseUrl({ cwd, env: localEnv });
+  const localPort = resolveDevPort({ cwd, env: localEnv });
   const previewBaseUrl = envFileValues.PLAYWRIGHT_BASE_URL || "";
   const explicitBaseUrl = env.PLAYWRIGHT_BASE_URL || "";
   const usePreviewTarget = !explicitBaseUrl && env.PLAYWRIGHT_TARGET === "preview" && Boolean(previewBaseUrl);
@@ -60,6 +62,7 @@ export function resolvePlaywrightRuntimeOptions({
     extraHTTPHeaders,
     localBaseUrl,
     localPort,
+    localPortRole,
     previewBaseUrl,
     usePreviewTarget,
   };
