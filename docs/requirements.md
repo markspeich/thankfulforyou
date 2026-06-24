@@ -362,12 +362,12 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Completing a batch should hide all current batch items from the active design queue after refresh while preserving the underlying hosted order-item and design records in Supabase for later retrieval.
 - Completed order items should use `order_items.status = 'complete'`; open order items should use `order_items.status = 'open'`.
 - In the selected-order editor, when imported listing title and 75 by 75 image data are available, show the listing title above the listing image and place both above the main text-entry controls.
-- SVG export should place the face text layer and offset backing layer side by side, with the backing layer to the right of the text layer.
-- In batch export SVG output, each order's face and backing paths should appear below the previous order's paths in a single vertically stacked file.
+- SVG export for both a single design and a batch should lay out each exported instance in four fixed columns: a mirrored version of the design without the backing border, the design without the backing border, a mirrored version of the backing border, and the imported color label.
+- In batch export SVG output, each order's design and backing paths should appear below the previous order's paths in a single vertically stacked file.
 - In batch export SVG output, each design should start about `2.03 inches` below the top of the previous design so stacked exports use a tighter, more consistent vertical pitch.
 - In batch export SVG output, each order's text path should be grouped separately from its backing path so the name can be selected as one group without including the backing border.
-- Copied and exported SVG output should emit each design instance as three separate top-level selectable objects: one grouped name object, one backing-border path object, and one color-label text object when color metadata is present.
-- Batch export SVG output should lay those three objects out in fixed-width text, backing-border, and color columns, with each object horizontally and vertically centered in its row/column position.
+- Copied and exported SVG output should emit each design instance as separate top-level selectable objects: one mirrored grouped design object, one grouped design object, one mirrored backing-border path object, and one color-label text object when color metadata is present.
+- Batch export SVG output should lay those objects out in fixed-width mirrored-design, design, mirrored-backing-border, and color columns, with each object horizontally and vertically centered in its row/column position.
 - The exported backing layer should be an actual outline path for LightBurn, not only a filled shape or SVG stroke effect. The path can be imported and manually assigned to a LightBurn cut layer.
 - Exported face-layer paths should also be welded/unioned so overlapping letters do not create internal cut lines.
 - Exported cut paths should be smooth enough for laser production and should avoid visibly pixelated/stair-stepped contours.

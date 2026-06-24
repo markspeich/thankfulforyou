@@ -1674,7 +1674,7 @@ def fixed_svg_backing_path(fixed_svg):
     )
 
 
-def build_fixed_svg_layers(order, instance_id, face_x, item_y):
+def build_fixed_svg_layers(order, instance_id, face_x, item_y, id_suffix=""):
     parts = []
     for fixed_svg in order.get("fixed_svgs", []):
         scale = min(
@@ -1684,7 +1684,7 @@ def build_fixed_svg_layers(order, instance_id, face_x, item_y):
         translate_x = face_x + fixed_svg["x"] - fixed_svg["source_x"] * scale
         translate_y = item_y + fixed_svg["y"] - fixed_svg["source_y"] * scale
         parts.append(
-            f"""  <g id="{instance_id}-fixed-svg-{fixed_svg["id"]}" data-fixed-svg-name="{fixed_svg["name"]}" transform="translate({translate_x:.3f} {translate_y:.3f}) scale({scale:.6f} {scale:.6f})" fill="rgb(255, 0, 0)" stroke="none">
+            f"""  <g id="{instance_id}{id_suffix}-fixed-svg-{fixed_svg["id"]}" data-fixed-svg-name="{fixed_svg["name"]}" transform="translate({translate_x:.3f} {translate_y:.3f}) scale({scale:.6f} {scale:.6f})" fill="rgb(255, 0, 0)" stroke="none">
     {fixed_svg["markup"]}
   </g>"""
         )
@@ -1692,7 +1692,7 @@ def build_fixed_svg_layers(order, instance_id, face_x, item_y):
     return "\n".join(parts)
 
 
-def build_fixed_svg_backing_layers(order, instance_id, backing_x, item_y):
+def build_fixed_svg_backing_layers(order, instance_id, backing_x, item_y, mirrored=False, id_suffix=""):
     parts = []
     for fixed_svg in order.get("fixed_svgs", []):
         if not fixed_svg.get("backing_border"):
@@ -1702,8 +1702,9 @@ def build_fixed_svg_backing_layers(order, instance_id, backing_x, item_y):
         if not backing_path:
             continue
 
+        transform = f"translate({backing_x + order['width']:.3f} {item_y:.3f}) scale(-1 1)" if mirrored else f"translate({backing_x:.3f} {item_y:.3f})"
         parts.append(
-            f'  <path id="{instance_id}-fixed-svg-{fixed_svg["id"]}-backing-border" d="{backing_path}" transform="translate({backing_x:.3f} {item_y:.3f})" fill="rgb(255, 0, 0)" stroke="none"/>'
+            f'  <path id="{instance_id}{id_suffix}-fixed-svg-{fixed_svg["id"]}-backing-border" d="{backing_path}" transform="{transform}" fill="rgb(255, 0, 0)" stroke="none"/>'
         )
 
     return "\n".join(parts)
@@ -1721,15 +1722,36 @@ def expand_export_instances(order_paths):
     return instances
 
 
+def build_name_group(order, instance_id, x, y, mirrored=False):
+    group_id = f"{instance_id}-mirror-name-group" if mirrored else f"{instance_id}-name-group"
+    transform = f"translate({x + order['width']:.3f} {y:.3f}) scale(-1 1)" if mirrored else f"translate({x:.3f} {y:.3f})"
+    if mirrored:
+        fixed_svg_layers = build_fixed_svg_layers(order, instance_id, 0.0, 0.0, "-mirror")
+        if fixed_svg_layers:
+            fixed_svg_layers = "\n" + fixed_svg_layers
+        return f"""  <g id="{group_id}" transform="{transform}" fill="rgb(255, 0, 0)" stroke="none">
+    <path d="{order["face_path"]}"/>{fixed_svg_layers}
+  </g>"""
+
+    return f"""  <g id="{group_id}" transform="{transform}" fill="rgb(255, 0, 0)" stroke="none">
+    <path d="{order["face_path"]}"/>
+  </g>"""
+
+
+def build_backing_layer(order, instance_id, x, y, mirrored=False):
+    layer_id = f"{instance_id}-mirror-backing-border" if mirrored else f"{instance_id}-backing-border"
+    transform = f"translate({x + order['width']:.3f} {y:.3f}) scale(-1 1)" if mirrored else f"translate({x:.3f} {y:.3f})"
+    return f"""  <path id="{layer_id}" d="{order["backing_path"]}" transform="{transform}" fill="rgb(255, 0, 0)" stroke="none"/>"""
+
+
 def build_svg_document(title, desc, instances, fixed_columns=False):
-    export_fill = "rgb(255, 0, 0)"
     column_width = None
     if fixed_columns:
         column_width = max(
             BATCH_EXPORT_COLUMN_WIDTH_MM,
             *(instance["order"]["width"] for instance in instances),
         )
-        export_width = column_width * 3
+        export_width = column_width * 4
     else:
         export_width = max(instance["order"]["export_width"] for instance in instances)
 
@@ -1751,32 +1773,42 @@ def build_svg_document(title, desc, instances, fixed_columns=False):
         order = instance["order"]
         instance_id = instance["instance_id"]
         face_x = 0.0
+        mirror_face_x = None
         backing_x = order["backing_x"]
         color_label_x = None
         item_y = current_y
         color_label_y = None
         center_color_label = False
         if fixed_columns:
-            face_x = (column_width - order["width"]) / 2
-            backing_x = column_width + (column_width - order["width"]) / 2
-            color_label_x = column_width * 2 + column_width / 2
+            column_item_x = (column_width - order["width"]) / 2
+            mirror_face_x = column_item_x
+            face_x = column_width + column_item_x
+            backing_x = column_width * 2 + column_item_x
+            color_label_x = column_width * 3 + column_width / 2
             item_y = current_y + max(0.0, (BATCH_EXPORT_START_STEP_MM - order["height"]) / 2)
             color_label_y = current_y + BATCH_EXPORT_START_STEP_MM / 2
             center_color_label = True
-        parts.append(
-            f"""  <g id="{instance_id}-name-group" transform="translate({face_x:.3f} {item_y:.3f})" fill="{export_fill}" stroke="none">
-    <path d="{order["face_path"]}"/>
-  </g>"""
-        )
-        fixed_svg_layers = build_fixed_svg_layers(order, instance_id, face_x, item_y)
-        if fixed_svg_layers:
-            parts.append(fixed_svg_layers)
-        fixed_svg_backing_layers = build_fixed_svg_backing_layers(order, instance_id, backing_x, item_y)
-        if fixed_svg_backing_layers:
-            parts.append(fixed_svg_backing_layers)
-        parts.append(
-            f"""  <path id="{instance_id}-backing-border" d="{order["backing_path"]}" transform="translate({backing_x:.3f} {item_y:.3f})" fill="{export_fill}" stroke="none"/>"""
-        )
+
+        if fixed_columns:
+            parts.append(build_name_group(order, instance_id, mirror_face_x, item_y, mirrored=True))
+            parts.append(build_name_group(order, instance_id, face_x, item_y))
+            fixed_svg_layers = build_fixed_svg_layers(order, instance_id, face_x, item_y)
+            if fixed_svg_layers:
+                parts.append(fixed_svg_layers)
+            fixed_svg_backing_layers = build_fixed_svg_backing_layers(order, instance_id, backing_x, item_y, mirrored=True, id_suffix="-mirror")
+            if fixed_svg_backing_layers:
+                parts.append(fixed_svg_backing_layers)
+            parts.append(build_backing_layer(order, instance_id, backing_x, item_y, mirrored=True))
+        else:
+            parts.append(build_name_group(order, instance_id, face_x, item_y))
+            fixed_svg_layers = build_fixed_svg_layers(order, instance_id, face_x, item_y)
+            if fixed_svg_layers:
+                parts.append(fixed_svg_layers)
+            fixed_svg_backing_layers = build_fixed_svg_backing_layers(order, instance_id, backing_x, item_y)
+            if fixed_svg_backing_layers:
+                parts.append(fixed_svg_backing_layers)
+            parts.append(build_backing_layer(order, instance_id, backing_x, item_y))
+
         color_label = build_color_label(
             order,
             instance_id,
@@ -1792,7 +1824,6 @@ def build_svg_document(title, desc, instances, fixed_columns=False):
     parts.append("</svg>\n")
     return "\n".join(parts)
 
-
 def build_svg(payload):
     root = Path(__file__).resolve().parents[1]
 
@@ -1802,14 +1833,14 @@ def build_svg(payload):
     order = build_single_order_paths(root, payload)
     instances = expand_export_instances([order])
     desc = (
-        f'Text: {order["text"]}. Face layer is on the left. Offset backing layer is on the right. '
+        f'Text: {order["text"]}. Columns are mirrored design, design, mirrored backing border, and color. '
         f'Generated as vector paths from the selected production fonts. Connected components: {order["connected_component_count"]}.'
     )
     if order.get("color_name"):
         desc += f' Color label: {order["color_name"]}.'
     if order.get("quantity", 1) > 1:
         desc += f' Quantity exported: {order["quantity"]}.'
-    return build_svg_document("Badge reel layout", desc, instances)
+    return build_svg_document("Badge reel layout", desc, instances, fixed_columns=True)
 
 
 def build_batch_svg(root, layouts):
@@ -1820,7 +1851,7 @@ def build_batch_svg(root, layouts):
     ]
     desc = (
         f'{"; ".join(desc_items)}. Each exported instance is stacked below the previous one. '
-        f'Face layer is on the left. Offset backing layer is on the right. Generated as vector paths from the selected production fonts.'
+        f'Columns are mirrored design, design, mirrored backing border, and color. Generated as vector paths from the selected production fonts.'
     )
     return build_svg_document("Badge reel batch layout", desc, expand_export_instances(order_paths), fixed_columns=True)
 

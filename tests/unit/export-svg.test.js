@@ -521,16 +521,20 @@ describe("export_svg face tracing", () => {
     expect(svg).toContain('fill="rgb(255, 0, 0)"');
     expect(svg).toContain('stroke="none"');
     expect(svg).toContain("Text: Cached");
-    expect(svg).toContain('height="71.562mm"');
-    expect(svg).toContain('id="order-1-copy-1-name-group" transform="translate(0.000 0.000)"');
+    expect(svg).toContain('width="206.248mm"');
+    expect(svg).toContain('height="103.124mm"');
+    expect(svg).toContain('id="order-1-copy-1-mirror-name-group" transform="translate(45.781 15.781) scale(-1 1)"');
+    expect(svg).toContain('id="order-1-copy-1-name-group" transform="translate(57.343 15.781)"');
     expect(svg).toContain('id="order-1-copy-1-fixed-svg-nurse-cross"');
-    expect(svg).toContain('transform="translate(17.000 4.000) scale(0.800000 0.800000)"');
+    expect(svg).toContain('transform="translate(74.343 19.781) scale(0.800000 0.800000)"');
     expect(svg).toContain('id="cross-mark"');
-    expect(svg).toContain('id="order-1-copy-1-backing-border" d="M20 0 L30 0 L30 10 Z" transform="translate(50.000 0.000)"');
-    expect(svg).toContain('id="order-1-copy-2-name-group" transform="translate(0.000 51.562)"');
+    expect(svg).toContain('id="order-1-copy-1-mirror-backing-border" d="M20 0 L30 0 L30 10 Z" transform="translate(148.905 15.781) scale(-1 1)"');
+    expect(svg).not.toContain('id="order-1-copy-1-backing-border"');
+    expect(svg).toContain('id="order-1-copy-2-mirror-name-group" transform="translate(45.781 67.343) scale(-1 1)"');
+    expect(svg).toContain('id="order-1-copy-2-name-group" transform="translate(57.343 67.343)"');
     expect(svg).toContain('id="order-1-copy-2-fixed-svg-nurse-cross"');
-    expect(svg).toContain('transform="translate(17.000 55.562) scale(0.800000 0.800000)"');
-    expect(svg).toContain('id="order-1-copy-2-backing-border" d="M20 0 L30 0 L30 10 Z" transform="translate(50.000 51.562)"');
+    expect(svg).toContain('transform="translate(74.343 71.343) scale(0.800000 0.800000)"');
+    expect(svg).toContain('id="order-1-copy-2-mirror-backing-border" d="M20 0 L30 0 L30 10 Z" transform="translate(148.905 67.343) scale(-1 1)"');
     expect(svg).toContain('id="order-1-copy-1-color-label"');
     expect(svg).toContain('font-family="Arial"');
     expect(svg).toContain(">Red</text>");
@@ -624,10 +628,10 @@ describe("export_svg face tracing", () => {
     });
 
     expect(svg).toContain('id="order-1-copy-1-fixed-svg-badge-star"');
-    expect(svg).toContain('id="order-1-copy-1-fixed-svg-badge-star-backing-border"');
+    expect(svg).toContain('id="order-1-copy-1-mirror-fixed-svg-badge-star-backing-border"');
     expect(svg).not.toContain('d="M8.000 1.000 H20.000 Q23.000 1.000 23.000 4.000 V16.000 Q23.000 19.000 20.000 19.000 H8.000 Q5.000 19.000 5.000 16.000 V4.000 Q5.000 1.000 8.000 1.000 Z"');
     expect(svg).toMatch(/fixed-svg-badge-star-backing-border" d="[^"]*Q/);
-    expect(svg).toContain('transform="translate(50.000 0.000)"');
+    expect(svg).toContain('transform="translate(148.905 15.781) scale(-1 1)"');
   });
 
   test("sanitizes fixed SVG vector markup before export", () => {
@@ -798,10 +802,14 @@ else:
     });
 
     expect(svg).toContain('height="154.686mm"');
-    expect(svg).toContain('id="order-1-copy-1-name-group" transform="translate(5.781 15.781)"');
-    expect(svg).toContain('id="order-1-copy-2-name-group" transform="translate(5.781 67.343)"');
-    expect(svg).toContain('id="order-2-copy-1-name-group" transform="translate(5.781 118.905)"');
-    expect(svg).toContain('id="order-2-copy-1-backing-border" d="M20 0 L30 0 L30 10 Z" transform="translate(57.343 118.905)"');
+    expect(svg).toContain('width="206.248mm"');
+    expect(svg).toContain('id="order-1-copy-1-mirror-name-group" transform="translate(45.781 15.781) scale(-1 1)"');
+    expect(svg).toContain('id="order-1-copy-1-name-group" transform="translate(57.343 15.781)"');
+    expect(svg).toContain('id="order-1-copy-2-mirror-name-group" transform="translate(45.781 67.343) scale(-1 1)"');
+    expect(svg).toContain('id="order-1-copy-2-name-group" transform="translate(57.343 67.343)"');
+    expect(svg).toContain('id="order-2-copy-1-mirror-name-group" transform="translate(45.781 118.905) scale(-1 1)"');
+    expect(svg).toContain('id="order-2-copy-1-name-group" transform="translate(57.343 118.905)"');
+    expect(svg).toContain('id="order-2-copy-1-mirror-backing-border" d="M20 0 L30 0 L30 10 Z" transform="translate(148.905 118.905) scale(-1 1)"');
     expect(svg).toContain(">Sage Green</text>");
     expect(svg).toContain(">Red</text>");
   });
@@ -834,14 +842,16 @@ else:
       ],
     });
 
-    expect(svg).toContain('width="154.686mm"');
+    expect(svg).toContain('width="206.248mm"');
     expect(svg).toContain('height="103.124mm"');
-    expect(svg).toContain('id="order-1-copy-1-name-group" transform="translate(5.781 15.781)"');
-    expect(svg).toContain('id="order-1-copy-1-backing-border" d="M20 0 L30 0 L30 10 Z" transform="translate(57.343 15.781)"');
-    expect(svg).toContain('id="order-2-copy-1-name-group" transform="translate(10.781 67.343)"');
-    expect(svg).toContain('id="order-2-copy-1-backing-border" d="M20 0 L30 0 L30 10 Z" transform="translate(62.343 67.343)"');
-    expect(svg).toContain('id="order-1-copy-1-color-label" x="128.905" y="25.781"');
-    expect(svg).toContain('id="order-2-copy-1-color-label" x="128.905" y="77.343"');
+    expect(svg).toContain('id="order-1-copy-1-mirror-name-group" transform="translate(45.781 15.781) scale(-1 1)"');
+    expect(svg).toContain('id="order-1-copy-1-name-group" transform="translate(57.343 15.781)"');
+    expect(svg).toContain('id="order-1-copy-1-mirror-backing-border" d="M20 0 L30 0 L30 10 Z" transform="translate(148.905 15.781) scale(-1 1)"');
+    expect(svg).toContain('id="order-2-copy-1-mirror-name-group" transform="translate(40.781 67.343) scale(-1 1)"');
+    expect(svg).toContain('id="order-2-copy-1-name-group" transform="translate(62.343 67.343)"');
+    expect(svg).toContain('id="order-2-copy-1-mirror-backing-border" d="M20 0 L30 0 L30 10 Z" transform="translate(143.905 67.343) scale(-1 1)"');
+    expect(svg).toContain('id="order-1-copy-1-color-label" x="180.467" y="25.781"');
+    expect(svg).toContain('id="order-2-copy-1-color-label" x="180.467" y="77.343"');
     expect(svg).toContain('font-size="9.000mm"');
     expect(svg).toContain('text-anchor="middle"');
     expect(svg).toContain('dominant-baseline="middle"');
