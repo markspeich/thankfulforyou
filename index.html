@@ -356,25 +356,66 @@
                 <div id="importStatus" class="note batch-alert" role="status" aria-live="polite" hidden><span id="workflowAlertText"></span><button id="workflowAlertActionButton" class="workflow-alert-action" type="button" hidden></button></div>
                 <section class="editor-top-card" aria-label="Order-level information">
                   <div class="editor-top-grid">
-                    <section class="top-card-section top-card-reference" aria-label="Listing details">
-                      <section id="listingReferenceCard" class="listing-reference-card is-hidden" aria-label="Imported Etsy listing reference">
-                        <p id="listingReferenceTitle" class="listing-reference-title"></p>
+                    <section class="top-card-section top-card-reference" aria-label="Order item details">
+                      <section id="listingReferenceCard" class="listing-reference-card is-hidden" aria-label="Order item metadata">
+                        <div class="listing-reference-header">
+                          <p id="listingReferenceTitle" class="listing-reference-title"></p>
+                        </div>
                         <div class="listing-reference-meta">
                           <img id="listingReferenceImage" class="listing-reference-image" alt="">
                           <div class="listing-reference-details">
-                            <div id="importedColorField" class="imported-color-field is-hidden" aria-live="polite">
+                            <div id="importedColorField" class="order-metadata-row" aria-live="polite">
                               <span class="imported-color-label">Color</span>
-                              <span id="importedColorValue" class="imported-color-value"></span>
+                              <span id="importedColorValue" class="imported-color-value order-metadata-value"></span>
+                              <input id="orderColorInput" class="order-metadata-input" type="text" autocomplete="off" placeholder="Enter color" hidden>
+                              <div class="order-metadata-actions" aria-label="Color actions">
+                                <button id="editOrderColorButton" class="metadata-icon-button" type="button" aria-label="Edit color" title="Edit color">
+                                  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                                    <path d="M4 20h4l10.5-10.5a2.1 2.1 0 0 0-3-3L5 17v3Z" />
+                                    <path d="M13.5 8.5 16 11" />
+                                  </svg>
+                                </button>
+                                <button id="saveOrderColorButton" class="metadata-icon-button metadata-save-button" type="button" aria-label="Save color" title="Save color" hidden disabled>
+                                  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                                    <path d="M5 12.5 9.5 17 19 7" />
+                                  </svg>
+                                </button>
+                                <button id="cancelOrderColorButton" class="metadata-icon-button" type="button" aria-label="Cancel color edit" title="Cancel color edit" hidden>
+                                  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                                    <path d="M7 7 17 17" />
+                                    <path d="M17 7 7 17" />
+                                  </svg>
+                                </button>
+                              </div>
                             </div>
-                            <div id="importedQuantityField" class="imported-color-field is-hidden" aria-live="polite">
+                            <div id="importedQuantityField" class="order-metadata-row" aria-live="polite">
                               <span class="imported-color-label">Quantity</span>
-                              <span id="importedQuantityValue" class="imported-color-value"></span>
+                              <span id="importedQuantityValue" class="imported-color-value order-metadata-value"></span>
+                              <input id="orderQuantityInput" class="order-metadata-input" type="number" min="1" step="1" inputmode="numeric" pattern="[0-9]*" autocomplete="off" placeholder="1" hidden>
+                              <div class="order-metadata-actions" aria-label="Quantity actions">
+                                <button id="editOrderQuantityButton" class="metadata-icon-button" type="button" aria-label="Edit quantity" title="Edit quantity">
+                                  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                                    <path d="M4 20h4l10.5-10.5a2.1 2.1 0 0 0-3-3L5 17v3Z" />
+                                    <path d="M13.5 8.5 16 11" />
+                                  </svg>
+                                </button>
+                                <button id="saveOrderQuantityButton" class="metadata-icon-button metadata-save-button" type="button" aria-label="Save quantity" title="Save quantity" hidden disabled>
+                                  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                                    <path d="M5 12.5 9.5 17 19 7" />
+                                  </svg>
+                                </button>
+                                <button id="cancelOrderQuantityButton" class="metadata-icon-button" type="button" aria-label="Cancel quantity edit" title="Cancel quantity edit" hidden>
+                                  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                                    <path d="M7 7 17 17" />
+                                    <path d="M17 7 7 17" />
+                                  </svg>
+                                </button>
+                              </div>
                             </div>
                           </div>
                         </div>
                       </section>
                     </section>
-
                     <section class="top-card-section top-card-text" aria-label="Design text">
                       <label class="field compact-field design-text-field">
                         <span>Design Text</span>
