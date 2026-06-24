@@ -395,6 +395,17 @@ test("inserts a fixed SVG design from the preset tools menu with SVG-only contro
   await expect(fixedCard.getByText("Vertical Stretch")).toHaveCount(0);
   await expect(fixedCard.getByText("Lock Text Height")).toHaveCount(0);
 
+  const backingBorderInput = fixedCard.getByLabel("Backing Border");
+  await expect(backingBorderInput).not.toBeChecked();
+  await backingBorderInput.check();
+  const fixedBackingPreview = page.locator('#preview image[data-fixed-svg-backing-id="fixed-design-2"]');
+  await expect(fixedBackingPreview).toBeVisible();
+  await expect.poll(async () => fixedBackingPreview.getAttribute("href")).toMatch(/^data:image\/png;base64,/);
+  await expect(fixedBackingPreview).not.toHaveAttribute("filter", /fixed-svg-backing-filter/);
+  await expect(page.locator('#preview path[data-fixed-svg-backing-id="fixed-design-2"]')).toHaveCount(0);
+  await backingBorderInput.uncheck();
+  await expect(page.locator('#preview [data-fixed-svg-backing-id="fixed-design-2"]')).toHaveCount(0);
+
   await expect(page.locator('.line-control-card[data-line-kind="text"][data-line-index="0"]').getByText("Font").first()).toBeVisible();
 
   const fixedPreview = page.locator('#preview [data-fixed-svg-id="fixed-design-2"]');
@@ -463,6 +474,51 @@ test("inserts a fixed SVG design from the preset tools menu with SVG-only contro
   await expect(page.locator('.line-control-card[data-line-kind="text"][data-line-index="0"]').getByText("Font").first()).toBeVisible();
 });
 
+test("renders fixed SVG backing as analyzed vector geometry after Save", async ({ page }) => {
+  await page.route("**/api/layout-analyze", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify({
+        text: "Ava",
+        widthMm: 40,
+        heightMm: 20,
+        backingMm: 3.1,
+        facePath: "M0 0 L10 0 L10 10 Z",
+        faceBoundsMm: { left: 0, top: 0, width: 10, height: 10 },
+        exportFacePath: "M0 0 L10 0 L10 10 Z",
+        backingPath: "M20 0 L30 0 L30 10 Z",
+        fixedSvgBackingPaths: [
+          { id: "fixed-design-2", path: "M8 4 Q14 0 20 4 Q24 10 20 16 Q14 20 8 16 Q4 10 8 4 Z" },
+        ],
+        connectedComponentCount: 1,
+        isConnected: true,
+      }),
+    });
+  });
+
+  await page.goto("/production-batch");
+  await expect(page.locator("#initialBatchLoading")).toBeHidden();
+  await openPresetTools(page);
+  await page.getByRole("button", { name: "Insert Fixed Design" }).click();
+
+  const dialog = page.locator("#insertFixedDesignDialog");
+  await expect(dialog).toBeVisible();
+  await dialog.locator("#insertFixedDesignSearchInput").fill("paw");
+  await dialog.getByRole("button", { name: /Paw Print/ }).click();
+  await dialog.getByRole("button", { name: "Insert Fixed Design" }).click();
+
+  const fixedCard = page.locator(".line-control-card", { hasText: "Fixed Design: Paw Print" });
+  await expect(fixedCard).toBeVisible();
+  await fixedCard.getByLabel("Backing Border").check();
+  await expect(page.locator('#preview image[data-fixed-svg-backing-id="fixed-design-2"]')).toBeVisible();
+
+  await page.locator("#captureButton").click();
+  const vectorBacking = page.locator('#preview path[data-fixed-svg-backing-id="fixed-design-2"]');
+  await expect(vectorBacking).toBeVisible();
+  await expect(vectorBacking).toHaveAttribute("d", /Q14 0 20 4/);
+  await expect(page.locator('#preview image[data-fixed-svg-backing-id="fixed-design-2"]')).toHaveCount(0);
+});
 test("resolves deleted fixed SVG references for saved designs without offering them for insert", async ({ page }) => {
   await page.unroute("**/api/batch-session");
   await page.unroute("**/api/production-batch**");

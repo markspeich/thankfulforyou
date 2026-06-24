@@ -239,11 +239,37 @@ describe("order signatures", () => {
       { svgSizeMm: 36 },
       { offsetXMm: 2 },
       { offsetYMm: -1 },
+      { backingBorder: true },
     ]) {
       expect(buildSettingsSignature({
         ...baseSettings,
         lines: [{ ...baseSettings.lines[0], ...changedLine }],
       })).not.toBe(buildSettingsSignature(baseSettings));
     }
+  });
+
+  it("includes fixed SVG backing border state in the current signature format", () => {
+    const parsed = JSON.parse(buildSettingsSignature({
+      text: "",
+      presetId: "preset-a1f4c8e2b601",
+      backingMm: 3.1,
+      weldExportedDesign: true,
+      lines: [
+        {
+          kind: "fixedSvg",
+          fixedDesignId: "fixed-design-1",
+          fixedDesignVersion: 2,
+          svgSizeMm: 32,
+          offsetXMm: 0,
+          offsetYMm: 0,
+          backingBorder: true,
+        },
+      ],
+    }));
+
+    expect(parsed.lines[0]).toMatchObject({
+      kind: "fixedSvg",
+      backingBorder: true,
+    });
   });
 });

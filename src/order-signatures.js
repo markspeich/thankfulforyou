@@ -33,6 +33,7 @@ function buildSignaturePayload(settings = {}, options = {}) {
           svgSizeMm: toFiniteNumber(line.svgSizeMm),
           offsetXMm: toFiniteNumber(line.offsetXMm),
           offsetYMm: toFiniteNumber(line.offsetYMm),
+          backingBorder: Boolean(line.backingBorder),
         };
       }
 

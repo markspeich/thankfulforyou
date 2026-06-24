@@ -143,6 +143,7 @@ function buildDesignLineRows(orderItem) {
       fixed_design_id: itemKind === "fixed_svg" ? normalizeStringValue(line.fixedDesignId) : null,
       fixed_design_version: itemKind === "fixed_svg" ? toNumber(line.fixedDesignVersion, null) : null,
       svg_size_mm: itemKind === "fixed_svg" ? toNumber(line.svgSizeMm, 32) : 32,
+      fixed_svg_backing_border: itemKind === "fixed_svg" ? Boolean(line.backingBorder) : false,
     };
   });
 }
@@ -223,6 +224,7 @@ function buildOrderItemFromRows({ orderItem, design, designLines }) {
             svgSizeMm: toNumber(line.svg_size_mm, 32),
             offsetXMm: toNumber(line.offset_x_mm, 0),
             offsetYMm: toNumber(line.offset_y_mm, 0),
+            backingBorder: Boolean(line.fixed_svg_backing_border),
           };
         }
 

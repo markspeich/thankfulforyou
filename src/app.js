@@ -440,6 +440,9 @@ let orderListRenderFrameId = null;
 let deferredPreviewRenderToken = 0;
 let suppressBatchSyncLocalNotice = false;
 let copiedLayoutControlsSnapshot = null;
+const fixedSvgBackingPreviewCache = new Map();
+const TRANSPARENT_PREVIEW_PIXEL = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
+const FIXED_SVG_BACKING_TRACE_PADDING_MM = 4;
 const initialAppRoute = readAppRoute();
 let activeWorkspace = initialAppRoute.workspace;
 let databaseOrders = [];
@@ -940,6 +943,7 @@ function createFixedDesignLineSettings(fixedDesign) {
     svgSizeMm: 32,
     offsetXMm: 0,
     offsetYMm: 0,
+    backingBorder: false,
   };
 }
 
@@ -989,6 +993,7 @@ function normalizeLineSettings(lineSettings = {}) {
       svgSizeMm: Number.isFinite(Number(lineSettings.svgSizeMm)) ? Number(lineSettings.svgSizeMm) : 32,
       offsetXMm: Number.isFinite(Number(lineSettings.offsetXMm)) ? Number(lineSettings.offsetXMm) : 0,
       offsetYMm: Number.isFinite(Number(lineSettings.offsetYMm)) ? Number(lineSettings.offsetYMm) : 0,
+      backingBorder: Boolean(lineSettings.backingBorder),
     };
   }
 
@@ -1117,7 +1122,7 @@ function parseSvgViewBoxAspectRatio(fixedDesign) {
   return 1;
 }
 
-function buildFixedSvgLayoutItems(lines, layoutWidthMm, layoutHeightMm) {
+function buildFixedSvgLayoutItems(lines, layoutWidthMm, layoutHeightMm, backingMm = DEFAULT_BACKING_MM) {
   const centerX = layoutWidthMm / 2;
   const centerY = layoutHeightMm / 2;
 
@@ -1144,6 +1149,8 @@ function buildFixedSvgLayoutItems(lines, layoutWidthMm, layoutHeightMm) {
         svgSizeMm: sizeMm,
         offsetXMm: Number(line.offsetXMm || 0),
         offsetYMm: Number(line.offsetYMm || 0),
+        backingBorder: Boolean(line.backingBorder),
+        backingMm: Boolean(line.backingBorder) ? Number(backingMm || DEFAULT_BACKING_MM) : 0,
       };
     });
 }
@@ -1159,10 +1166,11 @@ function expandLayoutForFixedSvgs({ widthMm, heightMm, textBoundsMm, letters, fi
     };
   }
 
-  const minX = Math.min(0, ...fixedSvgs.map((item) => item.xMm));
-  const minY = Math.min(0, ...fixedSvgs.map((item) => item.yMm));
-  const maxX = Math.max(widthMm, ...fixedSvgs.map((item) => item.xMm + item.widthMm));
-  const maxY = Math.max(heightMm, ...fixedSvgs.map((item) => item.yMm + item.heightMm));
+  const fixedSvgPaddingMm = (item) => Number(item.backingMm || 0) + (item.backingBorder ? FIXED_SVG_BACKING_TRACE_PADDING_MM : 0);
+  const minX = Math.min(0, ...fixedSvgs.map((item) => item.xMm - fixedSvgPaddingMm(item)));
+  const minY = Math.min(0, ...fixedSvgs.map((item) => item.yMm - fixedSvgPaddingMm(item)));
+  const maxX = Math.max(widthMm, ...fixedSvgs.map((item) => item.xMm + item.widthMm + fixedSvgPaddingMm(item)));
+  const maxY = Math.max(heightMm, ...fixedSvgs.map((item) => item.yMm + item.heightMm + fixedSvgPaddingMm(item)));
   const shiftX = -minX;
   const shiftY = -minY;
 
@@ -1212,7 +1220,7 @@ function enrichCachedLayoutWithFixedSvgs(layout, settings = {}) {
   const normalized = normalizeSettings(settings);
   const widthMm = Number.isFinite(Number(layout?.widthMm)) ? Number(layout.widthMm) : 1;
   const heightMm = Number.isFinite(Number(layout?.heightMm)) ? Number(layout.heightMm) : 1;
-  const fixedSvgs = buildFixedSvgLayoutItems(normalized.lines, widthMm, heightMm);
+  const fixedSvgs = buildFixedSvgLayoutItems(normalized.lines, widthMm, heightMm, normalized.backingMm);
   const expanded = expandLayoutForFixedSvgs({
     widthMm,
     heightMm,
@@ -1906,6 +1914,7 @@ function createPresetFixedItemCard(item, index) {
     createPresetEditorRangeField(`fixed:${index}`, "svgSizeMm", "Vertical Size", 5, 80, 0.5, normalized.svgSizeMm),
     createPresetEditorRangeField(`fixed:${index}`, "offsetXMm", "Horizontal Offset", -30, 30, 0.1, normalized.offsetXMm),
     createPresetEditorRangeField(`fixed:${index}`, "offsetYMm", "Vertical Offset From Center", -30, 30, 0.1, normalized.offsetYMm),
+    createPresetEditorFixedCheckboxField(index, "backingBorder", "Backing Border", normalized.backingBorder),
   );
 
   card.append(header, grid);
@@ -1973,6 +1982,7 @@ function readPresetEditorFixedItems(fallbackItems = []) {
       const svgSizeInput = card.querySelector('[data-setting="svgSizeMm"]');
       const offsetXInput = card.querySelector('[data-setting="offsetXMm"]');
       const offsetYInput = card.querySelector('[data-setting="offsetYMm"]');
+      const backingBorderInput = card.querySelector('[data-setting="backingBorder"]');
 
       return {
         kind: "fixedSvg",
@@ -1982,6 +1992,7 @@ function readPresetEditorFixedItems(fallbackItems = []) {
         svgSizeMm: svgSizeInput instanceof HTMLInputElement ? Number(svgSizeInput.value) : fallback.svgSizeMm,
         offsetXMm: offsetXInput instanceof HTMLInputElement ? Number(offsetXInput.value) : fallback.offsetXMm,
         offsetYMm: offsetYInput instanceof HTMLInputElement ? Number(offsetYInput.value) : fallback.offsetYMm,
+        backingBorder: backingBorderInput instanceof HTMLInputElement ? backingBorderInput.checked : fallback.backingBorder,
       };
     })
     .filter((item) => typeof item.fixedDesignId === "string" && item.fixedDesignId.trim());
@@ -7176,6 +7187,7 @@ function renderLineControls(settings = getCurrentSettings()) {
         createFixedDesignRangeField(settingsIndex, "svgSizeMm", "Vertical Size", 5, 80, 0.5, line.svgSizeMm),
         createFixedDesignRangeField(settingsIndex, "offsetXMm", "Horizontal Offset", -30, 30, 0.1, line.offsetXMm),
         createFixedDesignRangeField(settingsIndex, "offsetYMm", "Vertical Offset From Center", -30, 30, 0.1, line.offsetYMm),
+        createFixedDesignCheckboxField(settingsIndex, "backingBorder", "Backing Border", line.backingBorder),
       );
       card.append(grid);
       lineControlCards.append(card);
@@ -7248,12 +7260,14 @@ function readFixedDesignLineSettingsFromControls({ settingsIndex, fallbackLineSe
   const svgSizeInput = lineCard.querySelector('[data-setting="svgSizeMm"]');
   const offsetXInput = lineCard.querySelector('[data-setting="offsetXMm"]');
   const offsetYInput = lineCard.querySelector('[data-setting="offsetYMm"]');
+  const backingBorderInput = lineCard.querySelector('[data-setting="backingBorder"]');
 
   return normalizeLineSettings({
     ...fallback,
     svgSizeMm: svgSizeInput instanceof HTMLInputElement ? Number(svgSizeInput.value) : fallback.svgSizeMm,
     offsetXMm: offsetXInput instanceof HTMLInputElement ? Number(offsetXInput.value) : fallback.offsetXMm,
     offsetYMm: offsetYInput instanceof HTMLInputElement ? Number(offsetYInput.value) : fallback.offsetYMm,
+    backingBorder: backingBorderInput instanceof HTMLInputElement ? backingBorderInput.checked : fallback.backingBorder,
   });
 }
 
@@ -7334,6 +7348,40 @@ function createFixedDesignRangeField(settingsIndex, setting, labelText, min, max
   row.append(input, output);
   label.append(span, row);
 
+  return label;
+}
+
+function createFixedDesignCheckboxField(settingsIndex, setting, labelText, checked) {
+  const label = document.createElement("label");
+  label.className = "check-field line-control-toggle";
+
+  const input = document.createElement("input");
+  input.type = "checkbox";
+  input.checked = Boolean(checked);
+  input.dataset.settingsIndex = String(settingsIndex);
+  input.dataset.setting = setting;
+
+  const span = document.createElement("span");
+  span.textContent = labelText;
+
+  label.append(input, span);
+  return label;
+}
+
+function createPresetEditorFixedCheckboxField(index, setting, labelText, checked) {
+  const label = document.createElement("label");
+  label.className = "check-field line-control-toggle";
+
+  const input = document.createElement("input");
+  input.type = "checkbox";
+  input.checked = Boolean(checked);
+  input.dataset.fixedItemIndex = String(index);
+  input.dataset.setting = setting;
+
+  const span = document.createElement("span");
+  span.textContent = labelText;
+
+  label.append(input, span);
   return label;
 }
 
@@ -10158,6 +10206,7 @@ function getPreviewFacePath(layout, analysis) {
 }
 
 async function analyzeLayout(layout) {
+  const analysisLayout = await enrichExportLayoutWithFixedSvgText(layout);
   const response = await fetch("/api/layout-analyze", {
     method: "POST",
     headers: {
@@ -10165,7 +10214,7 @@ async function analyzeLayout(layout) {
     },
     body: JSON.stringify({
       mode: "analyze",
-      layout,
+      layout: analysisLayout,
     }),
   });
 
@@ -10349,6 +10398,184 @@ function createFaceImage(letters, widthMm, heightMm) {
   };
 }
 
+function svgIdToken(value) {
+  return String(value || "fixed")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "") || "fixed";
+}
+
+function fixedSvgBackingPath(fixedSvg) {
+  const backingMm = Number(fixedSvg.backingMm || 0);
+  if (!fixedSvg.backingBorder || backingMm <= 0) {
+    return "";
+  }
+
+  const x = fixedSvg.xMm - backingMm;
+  const y = fixedSvg.yMm - backingMm;
+  const width = fixedSvg.widthMm + backingMm * 2;
+  const height = fixedSvg.heightMm + backingMm * 2;
+  const radius = Math.min(backingMm, width / 2, height / 2);
+  const right = x + width;
+  const bottom = y + height;
+
+  if (radius <= 0) {
+    return `M${x.toFixed(3)} ${y.toFixed(3)} H${right.toFixed(3)} V${bottom.toFixed(3)} H${x.toFixed(3)} Z`;
+  }
+
+  return [
+    `M${(x + radius).toFixed(3)} ${y.toFixed(3)}`,
+    `H${(right - radius).toFixed(3)}`,
+    `Q${right.toFixed(3)} ${y.toFixed(3)} ${right.toFixed(3)} ${(y + radius).toFixed(3)}`,
+    `V${(bottom - radius).toFixed(3)}`,
+    `Q${right.toFixed(3)} ${bottom.toFixed(3)} ${(right - radius).toFixed(3)} ${bottom.toFixed(3)}`,
+    `H${(x + radius).toFixed(3)}`,
+    `Q${x.toFixed(3)} ${bottom.toFixed(3)} ${x.toFixed(3)} ${(bottom - radius).toFixed(3)}`,
+    `V${(y + radius).toFixed(3)}`,
+    `Q${x.toFixed(3)} ${y.toFixed(3)} ${(x + radius).toFixed(3)} ${y.toFixed(3)}`,
+    "Z",
+  ].join(" ");
+}
+
+function getFixedSvgBackingPreviewCacheKey(fixedSvg, backingMm) {
+  return [
+    fixedSvg.publicUrl || "",
+    fixedSvg.widthMm,
+    fixedSvg.heightMm,
+    backingMm,
+  ].join("|");
+}
+
+function loadImageElement(src) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.crossOrigin = "anonymous";
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error(`Unable to load fixed SVG preview image: ${src}`));
+    image.src = src;
+  });
+}
+
+function createFixedSvgBackingImageHref(fixedSvg, backingMm) {
+  const scale = PX_PER_MM * 3;
+  const widthPx = Math.max(1, Math.ceil((fixedSvg.widthMm + backingMm * 2) * scale));
+  const heightPx = Math.max(1, Math.ceil((fixedSvg.heightMm + backingMm * 2) * scale));
+  const artworkWidthPx = Math.max(1, Math.round(fixedSvg.widthMm * scale));
+  const artworkHeightPx = Math.max(1, Math.round(fixedSvg.heightMm * scale));
+  const backingPx = Math.max(0, Math.round(backingMm * scale));
+
+  return loadImageElement(fixedSvg.publicUrl).then((image) => {
+    const sourceCanvas = document.createElement("canvas");
+    sourceCanvas.width = artworkWidthPx;
+    sourceCanvas.height = artworkHeightPx;
+    const sourceContext = sourceCanvas.getContext("2d", { willReadFrequently: true });
+    sourceContext.drawImage(image, 0, 0, artworkWidthPx, artworkHeightPx);
+    sourceContext.globalCompositeOperation = "source-in";
+    sourceContext.fillStyle = "rgb(255, 0, 0)";
+    sourceContext.fillRect(0, 0, artworkWidthPx, artworkHeightPx);
+    sourceContext.globalCompositeOperation = "source-over";
+
+    const backingCanvas = document.createElement("canvas");
+    backingCanvas.width = widthPx;
+    backingCanvas.height = heightPx;
+    const backingContext = backingCanvas.getContext("2d", { willReadFrequently: true });
+
+    for (let dy = -backingPx; dy <= backingPx; dy += 1) {
+      const dxLimit = Math.floor(Math.sqrt(Math.max(0, backingPx * backingPx - dy * dy)));
+      for (let dx = -dxLimit; dx <= dxLimit; dx += 1) {
+        backingContext.drawImage(sourceCanvas, backingPx + dx, backingPx + dy);
+      }
+    }
+
+    const imageData = backingContext.getImageData(0, 0, widthPx, heightPx);
+    fillBackingHoles(imageData, widthPx, heightPx);
+    backingContext.putImageData(imageData, 0, 0);
+
+    return backingCanvas.toDataURL("image/png");
+  });
+}
+
+function resolveFixedSvgBackingPreviewHref(fixedSvg, backingMm, imageElement, cacheKey) {
+  const cached = fixedSvgBackingPreviewCache.get(cacheKey);
+  if (typeof cached === "string") {
+    imageElement.setAttribute("href", cached);
+    return;
+  }
+
+  if (cached instanceof Promise) {
+    cached.then((href) => {
+      if (imageElement.isConnected && imageElement.dataset.backingCacheKey === cacheKey) {
+        imageElement.setAttribute("href", href);
+      }
+    }).catch(() => {});
+    return;
+  }
+
+  const pending = createFixedSvgBackingImageHref(fixedSvg, backingMm)
+    .then((href) => {
+      fixedSvgBackingPreviewCache.set(cacheKey, href);
+      if (imageElement.isConnected && imageElement.dataset.backingCacheKey === cacheKey) {
+        imageElement.setAttribute("href", href);
+      }
+      return href;
+    })
+    .catch((error) => {
+      fixedSvgBackingPreviewCache.delete(cacheKey);
+      console.warn(error);
+      return TRANSPARENT_PREVIEW_PIXEL;
+    });
+  fixedSvgBackingPreviewCache.set(cacheKey, pending);
+}
+
+function findFixedSvgBackingAnalysisPath(analysis, fixedSvg) {
+  const paths = Array.isArray(analysis?.fixedSvgBackingPaths) ? analysis.fixedSvgBackingPaths : [];
+  return paths.find((candidate) => candidate?.id === fixedSvg.id && typeof candidate.path === "string" && candidate.path.trim())?.path || "";
+}
+function createFixedSvgBackingPreviewElements(fixedSvgs = [], frame, analysis = null) {
+  return fixedSvgs.flatMap((fixedSvg) => {
+    const backingMm = Number(fixedSvg.backingMm || 0);
+    if (!fixedSvg.backingBorder || backingMm <= 0) {
+      return [];
+    }
+
+    const analyzedBackingPath = findFixedSvgBackingAnalysisPath(analysis, fixedSvg);
+    if (analyzedBackingPath) {
+      return [makeSvgElement("path", {
+        "data-fixed-svg-backing-id": fixedSvg.id,
+        d: analyzedBackingPath,
+        fill: "rgb(255, 0, 0)",
+        transform: `translate(${frame.designX} ${frame.designY})`,
+      })];
+    }
+
+    if (fixedSvg.publicUrl) {
+      const cacheKey = getFixedSvgBackingPreviewCacheKey(fixedSvg, backingMm);
+      const backingImage = makeSvgElement("image", {
+        "data-fixed-svg-backing-id": fixedSvg.id,
+        "data-backing-cache-key": cacheKey,
+        href: TRANSPARENT_PREVIEW_PIXEL,
+        x: frame.designX + fixedSvg.xMm - backingMm,
+        y: frame.designY + fixedSvg.yMm - backingMm,
+        width: fixedSvg.widthMm + backingMm * 2,
+        height: fixedSvg.heightMm + backingMm * 2,
+      });
+      resolveFixedSvgBackingPreviewHref(fixedSvg, backingMm, backingImage, cacheKey);
+      return [backingImage];
+    }
+
+    const backingPath = fixedSvgBackingPath(fixedSvg);
+    if (!backingPath) {
+      return [];
+    }
+
+    return [makeSvgElement("path", {
+      "data-fixed-svg-backing-id": fixedSvg.id,
+      d: backingPath,
+      fill: "rgb(255, 0, 0)",
+      transform: `translate(${frame.designX} ${frame.designY})`,
+    })];
+  });
+}
 function createFixedSvgPreviewElements(fixedSvgs = [], frame) {
   return fixedSvgs.map((fixedSvg) => {
     const commonAttributes = {
@@ -10444,7 +10671,12 @@ function renderPreviewFromLayout(layout) {
         height: layout.heightMm,
       });
 
-  preview.append(backingLayer, faceLayer, ...createFixedSvgPreviewElements(layout.fixedSvgs || [], frame));
+  preview.append(
+    backingLayer,
+    ...createFixedSvgBackingPreviewElements(layout.fixedSvgs || [], frame, analysis),
+    faceLayer,
+    ...createFixedSvgPreviewElements(layout.fixedSvgs || [], frame),
+  );
   appendPreviewGuide(frame.previewBoxX, frame.previewBoxY, layout.guide);
 }
 
@@ -10782,7 +11014,7 @@ function assembleOrderLayout(normalized, sourceLines, fitScale, fitted, guide) {
       verticalScale: line.settings.verticalScale,
     }));
   });
-  const fixedSvgs = buildFixedSvgLayoutItems(normalized.lines, widthMm, heightMm);
+  const fixedSvgs = buildFixedSvgLayoutItems(normalized.lines, widthMm, heightMm, normalized.backingMm);
   const expanded = expandLayoutForFixedSvgs({
     widthMm,
     heightMm,

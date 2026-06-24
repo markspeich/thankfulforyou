@@ -234,6 +234,7 @@ const ALLOWED_FIXED_ITEM_SETTINGS = [
   "svgSizeMm",
   "offsetXMm",
   "offsetYMm",
+  "backingBorder",
 ];
 
 let presetRegistry = createPresetRegistry(FALLBACK_MANIFEST, FALLBACK_PRESET_DEFINITIONS);

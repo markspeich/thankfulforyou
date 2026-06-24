@@ -54,6 +54,12 @@
       "items": {
         "$ref": "#/$defs/fixedDesign"
       }
+    },
+    "fixedItems": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/fixedItem"
+      }
     }
   },
   "$defs": {
@@ -212,13 +218,41 @@
       "type": "object",
       "additionalProperties": false,
       "anyOf": [
-        { "required": ["id"] },
-        { "required": ["name"] },
-        { "required": ["title"] },
-        { "required": ["designText"] },
-        { "required": ["text"] },
-        { "required": ["textLines"] },
-        { "required": ["lines"] }
+        {
+          "required": [
+            "id"
+          ]
+        },
+        {
+          "required": [
+            "name"
+          ]
+        },
+        {
+          "required": [
+            "title"
+          ]
+        },
+        {
+          "required": [
+            "designText"
+          ]
+        },
+        {
+          "required": [
+            "text"
+          ]
+        },
+        {
+          "required": [
+            "textLines"
+          ]
+        },
+        {
+          "required": [
+            "lines"
+          ]
+        }
       ],
       "properties": {
         "id": {
@@ -250,7 +284,9 @@
           "type": "array",
           "items": {
             "oneOf": [
-              { "type": "string" },
+              {
+                "type": "string"
+              },
               {
                 "type": "object",
                 "additionalProperties": true
@@ -260,6 +296,47 @@
         },
         "note": {
           "type": "string"
+        }
+      }
+    },
+    "fixedItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "fixedDesignId"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "fixedSvg"
+        },
+        "fixedDesignId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fixedDesignName": {
+          "type": "string"
+        },
+        "fixedDesignVersion": {
+          "type": [
+            "number",
+            "integer",
+            "null"
+          ]
+        },
+        "svgSizeMm": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "offsetXMm": {
+          "type": "number"
+        },
+        "offsetYMm": {
+          "type": "number"
+        },
+        "backingBorder": {
+          "type": "boolean"
         }
       }
     }

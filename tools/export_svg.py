@@ -1,7 +1,9 @@
 import json
 import hashlib
 import ipaddress
+import math
 import os
+import re
 import sys
 import tempfile
 import urllib.parse
@@ -15,13 +17,18 @@ from fontTools.pens.boundsPen import BoundsPen
 from fontTools.pens.svgPathPen import SVGPathPen
 from fontTools.pens.transformPen import TransformPen
 from fontTools.ttLib import TTFont
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFilter, ImageFont
+import pyclipper
 
 MM_PER_INCH = 25.4
 BATCH_EXPORT_START_STEP_MM = 2.03 * MM_PER_INCH
 BATCH_EXPORT_COLUMN_WIDTH_MM = BATCH_EXPORT_START_STEP_MM
 EXPORT_GAP_MM = 10.0
 COLOR_LABEL_MARGIN_MM = 3.0
+FIXED_SVG_BACKING_TRACE_SCALE = 24
+FIXED_SVG_BACKING_TOLERANCE_MM = 0.065
+FIXED_SVG_BACKING_TRACE_PADDING_MM = 4.0
+FIXED_SVG_VECTOR_OFFSET_SCALE = 1000
 COLOR_LABEL_FONT_SIZE_MM = 9.0
 COLOR_LABEL_LINE_HEIGHT_MM = 4.8
 REMOTE_FONT_MAX_BYTES = 2 * 1024 * 1024
@@ -589,10 +596,12 @@ def parse_svg_markup(svg_text):
         source_height = parse_svg_dimension(root.attrib.get("height")) or source_width
 
     children = []
+    child_elements = []
     for child in list(root):
         if local_svg_name(child) in BLOCKED_FIXED_SVG_TAGS:
             continue
         sanitized_child = sanitize_fixed_svg_element(child)
+        child_elements.append(sanitized_child)
         children.append(ET.tostring(sanitized_child, encoding="unicode"))
 
     if not children:
@@ -603,6 +612,7 @@ def parse_svg_markup(svg_text):
         "source_y": source_y,
         "source_width": source_width,
         "source_height": source_height,
+        "source_elements": child_elements,
         "markup": "\n    ".join(children),
     }
 
@@ -639,6 +649,13 @@ def normalize_fixed_svgs(payload):
         if not parsed_svg:
             continue
 
+        backing_mm = 0.0
+        if fixed_svg.get("backingBorder") is True:
+            try:
+                backing_mm = float(fixed_svg.get("backingMm", 0))
+            except (TypeError, ValueError):
+                backing_mm = 0.0
+
         fixed_svgs.append({
             "id": svg_id_token(fixed_svg.get("id") or fixed_svg.get("fixedDesignId") or index + 1),
             "name": svg_escape(fixed_svg.get("name") or fixed_svg.get("fixedDesignName") or "Fixed SVG"),
@@ -646,6 +663,8 @@ def normalize_fixed_svgs(payload):
             "y": y,
             "width": width,
             "height": height,
+            "backing_border": backing_mm > 0,
+            "backing_mm": max(0.0, backing_mm),
             **parsed_svg,
         })
 
@@ -941,6 +960,28 @@ def get_trace_profile(payload):
     return profile
 
 
+def build_fixed_svg_backing_analysis_paths(payload, width, height):
+    fixed_svgs = normalize_fixed_svgs(payload)
+    if not fixed_svgs:
+        return []
+
+    order = {
+        "width": width,
+        "height": height,
+        "fixed_svgs": fixed_svgs,
+    }
+    paths = []
+    for fixed_svg in fixed_svgs:
+        if not fixed_svg.get("backing_border"):
+            continue
+        backing_path = fixed_svg_offset_backing_path(order, fixed_svg)
+        if backing_path:
+            paths.append({
+                "id": fixed_svg["id"],
+                "path": backing_path,
+            })
+    return paths
+
 def analyze_single_layout(root, payload):
     profile = get_trace_profile(payload)
     scale = profile["scale"]
@@ -975,16 +1016,19 @@ def analyze_single_layout(root, payload):
         curve_mode=profile["backing_curve_mode"],
     )
     component_count = count_connected_components(face_mask)
+    width_mm = float(payload["widthMm"])
+    height_mm = float(payload["heightMm"])
 
     return {
-        "widthMm": float(payload["widthMm"]),
-        "heightMm": float(payload["heightMm"]),
+        "widthMm": width_mm,
+        "heightMm": height_mm,
         "backingMm": backing,
         "text": payload.get("text", ""),
         "facePath": face_outline["path"],
         "faceBoundsMm": face_outline["bounds"],
         "exportFacePath": welded_face_path if weld_exported_design else face_outline["path"],
         "backingPath": backing_path,
+        "fixedSvgBackingPaths": build_fixed_svg_backing_analysis_paths(payload, width_mm, height_mm),
         "connectedComponentCount": component_count,
         "isConnected": component_count <= 1,
     }
@@ -1087,6 +1131,549 @@ def build_color_label(order, instance_id, translate_y, x=None, y=None, center_ve
     )
 
 
+
+SVG_PATH_TOKEN_RE = re.compile(r"[AaCcHhLlMmQqSsTtVvZz]|[-+]?(?:\d*\.\d+|\d+\.?)(?:[eE][-+]?\d+)?")
+TRANSFORM_RE = re.compile(r"(matrix|translate|scale)\s*\(([^)]*)\)")
+
+
+def matrix_multiply(left, right):
+    la, lb, lc, ld, le, lf = left
+    ra, rb, rc, rd, re_value, rf = right
+    return (
+        la * ra + lc * rb,
+        lb * ra + ld * rb,
+        la * rc + lc * rd,
+        lb * rc + ld * rd,
+        la * re_value + lc * rf + le,
+        lb * re_value + ld * rf + lf,
+    )
+
+
+def apply_matrix(matrix, x, y):
+    a, b, c, d, e, f = matrix
+    return (a * x + c * y + e, b * x + d * y + f)
+
+
+def parse_transform(value):
+    matrix = (1.0, 0.0, 0.0, 1.0, 0.0, 0.0)
+    for match in TRANSFORM_RE.finditer(str(value or "")):
+        kind = match.group(1)
+        try:
+            numbers = [float(part) for part in re.split(r"[\s,]+", match.group(2).strip()) if part]
+        except ValueError:
+            continue
+
+        if kind == "matrix" and len(numbers) == 6:
+            next_matrix = tuple(numbers)
+        elif kind == "translate" and numbers:
+            next_matrix = (1.0, 0.0, 0.0, 1.0, numbers[0], numbers[1] if len(numbers) > 1 else 0.0)
+        elif kind == "scale" and numbers:
+            sx = numbers[0]
+            sy = numbers[1] if len(numbers) > 1 else sx
+            next_matrix = (sx, 0.0, 0.0, sy, 0.0, 0.0)
+        else:
+            continue
+
+        matrix = matrix_multiply(matrix, next_matrix)
+
+    return matrix
+
+
+def svg_number(value, fallback=0.0):
+    parsed = parse_svg_dimension(value)
+    return parsed if parsed is not None else fallback
+
+
+def sample_quadratic(start, control, end, steps=16):
+    points = []
+    for index in range(1, steps + 1):
+        t = index / steps
+        mt = 1 - t
+        points.append((
+            mt * mt * start[0] + 2 * mt * t * control[0] + t * t * end[0],
+            mt * mt * start[1] + 2 * mt * t * control[1] + t * t * end[1],
+        ))
+    return points
+
+
+def sample_cubic(start, first, second, end, steps=20):
+    points = []
+    for index in range(1, steps + 1):
+        t = index / steps
+        mt = 1 - t
+        points.append((
+            mt ** 3 * start[0] + 3 * mt * mt * t * first[0] + 3 * mt * t * t * second[0] + t ** 3 * end[0],
+            mt ** 3 * start[1] + 3 * mt * mt * t * first[1] + 3 * mt * t * t * second[1] + t ** 3 * end[1],
+        ))
+    return points
+
+
+def parse_svg_path_subpaths(path_data):
+    tokens = SVG_PATH_TOKEN_RE.findall(str(path_data or ""))
+    subpaths = []
+    current_path = []
+    command = None
+    index = 0
+    current = (0.0, 0.0)
+    start = (0.0, 0.0)
+    last_cubic_control = None
+    last_quadratic_control = None
+    previous_op = None
+
+    def is_command(token):
+        return len(token) == 1 and token.isalpha()
+
+    def has_numbers(count):
+        return index + count <= len(tokens) and not any(is_command(tokens[index + offset]) for offset in range(count))
+
+    def read_number():
+        nonlocal index
+        value = float(tokens[index])
+        index += 1
+        return value
+
+    def read_point(relative=False):
+        x = read_number()
+        y = read_number()
+        if relative:
+            return (current[0] + x, current[1] + y)
+        return (x, y)
+
+    def reset_controls():
+        nonlocal last_cubic_control, last_quadratic_control
+        last_cubic_control = None
+        last_quadratic_control = None
+
+    while index < len(tokens):
+        if is_command(tokens[index]):
+            command = tokens[index]
+            index += 1
+        if not command:
+            break
+
+        relative = command.islower()
+        op = command.upper()
+
+        try:
+            if op == "M":
+                point = read_point(relative)
+                if current_path:
+                    subpaths.append(current_path)
+                current_path = [point]
+                current = point
+                start = point
+                command = "l" if relative else "L"
+                reset_controls()
+                previous_op = "M"
+            elif op == "L":
+                while has_numbers(2):
+                    point = read_point(relative)
+                    current_path.append(point)
+                    current = point
+                reset_controls()
+                previous_op = "L"
+            elif op == "H":
+                while has_numbers(1):
+                    x = read_number()
+                    point = (current[0] + x if relative else x, current[1])
+                    current_path.append(point)
+                    current = point
+                reset_controls()
+                previous_op = "H"
+            elif op == "V":
+                while has_numbers(1):
+                    y = read_number()
+                    point = (current[0], current[1] + y if relative else y)
+                    current_path.append(point)
+                    current = point
+                reset_controls()
+                previous_op = "V"
+            elif op == "Q":
+                while has_numbers(4):
+                    control = read_point(relative)
+                    end = read_point(relative)
+                    current_path.extend(sample_quadratic(current, control, end))
+                    current = end
+                    last_quadratic_control = control
+                    last_cubic_control = None
+                previous_op = "Q"
+            elif op == "T":
+                while has_numbers(2):
+                    if previous_op in {"Q", "T"} and last_quadratic_control:
+                        control = (2 * current[0] - last_quadratic_control[0], 2 * current[1] - last_quadratic_control[1])
+                    else:
+                        control = current
+                    end = read_point(relative)
+                    current_path.extend(sample_quadratic(current, control, end))
+                    current = end
+                    last_quadratic_control = control
+                    last_cubic_control = None
+                    previous_op = "T"
+            elif op == "C":
+                while has_numbers(6):
+                    first = read_point(relative)
+                    second = read_point(relative)
+                    end = read_point(relative)
+                    current_path.extend(sample_cubic(current, first, second, end))
+                    current = end
+                    last_cubic_control = second
+                    last_quadratic_control = None
+                previous_op = "C"
+            elif op == "S":
+                while has_numbers(4):
+                    if previous_op in {"C", "S"} and last_cubic_control:
+                        first = (2 * current[0] - last_cubic_control[0], 2 * current[1] - last_cubic_control[1])
+                    else:
+                        first = current
+                    second = read_point(relative)
+                    end = read_point(relative)
+                    current_path.extend(sample_cubic(current, first, second, end))
+                    current = end
+                    last_cubic_control = second
+                    last_quadratic_control = None
+                    previous_op = "S"
+            elif op == "A":
+                while has_numbers(7):
+                    _rx = read_number()
+                    _ry = read_number()
+                    _rotation = read_number()
+                    _large_arc = read_number()
+                    _sweep = read_number()
+                    end = read_point(relative)
+                    current_path.append(end)
+                    current = end
+                reset_controls()
+                previous_op = "A"
+            elif op == "Z":
+                if current_path and current_path[-1] != start:
+                    current_path.append(start)
+                if current_path:
+                    subpaths.append(current_path)
+                current_path = []
+                current = start
+                command = None
+                reset_controls()
+                previous_op = "Z"
+            else:
+                break
+        except (IndexError, ValueError):
+            break
+
+    if current_path:
+        subpaths.append(current_path)
+
+    return [path for path in subpaths if len(path) >= 3]
+
+def parse_point_list(value):
+    try:
+        numbers = [float(part) for part in re.split(r"[\s,]+", str(value or "").strip()) if part]
+    except ValueError:
+        return []
+    return list(zip(numbers[0::2], numbers[1::2]))
+
+
+def element_subpaths(element):
+    name = local_svg_name(element)
+    if name == "path":
+        return parse_svg_path_subpaths(element.attrib.get("d"))
+    if name == "polygon":
+        points = parse_point_list(element.attrib.get("points"))
+        return [points] if len(points) >= 3 else []
+    if name == "polyline":
+        points = parse_point_list(element.attrib.get("points"))
+        return [points] if len(points) >= 3 else []
+    if name == "rect":
+        x = svg_number(element.attrib.get("x"))
+        y = svg_number(element.attrib.get("y"))
+        width = svg_number(element.attrib.get("width"))
+        height = svg_number(element.attrib.get("height"))
+        if width <= 0 or height <= 0:
+            return []
+        return [[(x, y), (x + width, y), (x + width, y + height), (x, y + height), (x, y)]]
+    if name in {"circle", "ellipse"}:
+        cx = svg_number(element.attrib.get("cx"))
+        cy = svg_number(element.attrib.get("cy"))
+        rx = svg_number(element.attrib.get("r")) if name == "circle" else svg_number(element.attrib.get("rx"))
+        ry = rx if name == "circle" else svg_number(element.attrib.get("ry"))
+        if rx <= 0 or ry <= 0:
+            return []
+        points = []
+        for index in range(48):
+            angle = 2 * 3.141592653589793 * index / 48
+            points.append((cx + rx * math.cos(angle), cy + ry * math.sin(angle)))
+        points.append(points[0])
+        return [points]
+    return []
+
+
+def transformed_svg_subpaths_mm(
+    element,
+    fixed_svg,
+    transform=(1.0, 0.0, 0.0, 1.0, 0.0, 0.0),
+):
+    next_transform = matrix_multiply(transform, parse_transform(element.attrib.get("transform")))
+    source_scale = min(
+        fixed_svg["width"] / fixed_svg["source_width"],
+        fixed_svg["height"] / fixed_svg["source_height"],
+    )
+    paths = []
+
+    for subpath in element_subpaths(element):
+        points = []
+        for x, y in subpath:
+            tx, ty = apply_matrix(next_transform, x, y)
+            final_x = fixed_svg["x"] + (tx - fixed_svg["source_x"]) * source_scale
+            final_y = fixed_svg["y"] + (ty - fixed_svg["source_y"]) * source_scale
+            points.append((final_x, final_y))
+        if len(points) >= 3:
+            paths.append(points)
+
+    for child in list(element):
+        if local_svg_name(child) in BLOCKED_FIXED_SVG_TAGS:
+            continue
+        paths.extend(transformed_svg_subpaths_mm(child, fixed_svg, next_transform))
+
+    return paths
+
+
+def polygon_area(points):
+    area = 0.0
+    for index, (x1, y1) in enumerate(points):
+        x2, y2 = points[(index + 1) % len(points)]
+        area += x1 * y2 - x2 * y1
+    return area / 2.0
+
+
+def scale_polygon_for_clipper(points, scale=FIXED_SVG_VECTOR_OFFSET_SCALE):
+    return [(int(round(x * scale)), int(round(y * scale))) for x, y in points]
+
+
+def unscale_polygon_from_clipper(points, scale=FIXED_SVG_VECTOR_OFFSET_SCALE):
+    return [(x / scale, y / scale) for x, y in points]
+
+
+def svg_path_from_mm_polygons(polygons):
+    fragments = []
+    for polygon in polygons:
+        if len(polygon) < 3:
+            continue
+        fragments.append(quadratic_closed_path([(x, y) for x, y in polygon], 1))
+    return " ".join(fragment for fragment in fragments if fragment)
+
+
+def fixed_svg_vector_offset_backing_path(fixed_svg):
+    backing = float(fixed_svg.get("backing_mm", 0.0))
+    if backing <= 0:
+        return ""
+
+    subject_paths = []
+    for element in fixed_svg.get("source_elements") or []:
+        for subpath in transformed_svg_subpaths_mm(element, fixed_svg):
+            cleaned = []
+            for point in subpath:
+                if not cleaned or point != cleaned[-1]:
+                    cleaned.append(point)
+            if len(cleaned) >= 2 and cleaned[0] == cleaned[-1]:
+                cleaned = cleaned[:-1]
+            if len(cleaned) < 3 or abs(polygon_area(cleaned)) < 0.0001:
+                continue
+            scaled = scale_polygon_for_clipper(cleaned)
+            if pyclipper.Area(scaled) < 0:
+                scaled.reverse()
+            subject_paths.append(scaled)
+
+    if not subject_paths:
+        return ""
+
+    clipper = pyclipper.Pyclipper()
+    clipper.AddPaths(subject_paths, pyclipper.PT_SUBJECT, True)
+    unioned = clipper.Execute(pyclipper.CT_UNION, pyclipper.PFT_NONZERO, pyclipper.PFT_NONZERO)
+    if not unioned:
+        return ""
+
+    offset = pyclipper.PyclipperOffset(arc_tolerance=0.05 * FIXED_SVG_VECTOR_OFFSET_SCALE)
+    offset.AddPaths(unioned, pyclipper.JT_ROUND, pyclipper.ET_CLOSEDPOLYGON)
+    expanded = offset.Execute(backing * FIXED_SVG_VECTOR_OFFSET_SCALE)
+    expanded = pyclipper.CleanPolygons(expanded, 0.015 * FIXED_SVG_VECTOR_OFFSET_SCALE)
+    if not expanded:
+        return ""
+
+    return svg_path_from_mm_polygons([unscale_polygon_from_clipper(path) for path in expanded])
+
+
+def draw_svg_element_to_mask(
+    draw,
+    element,
+    fixed_svg,
+    layout_scale,
+    transform=(1.0, 0.0, 0.0, 1.0, 0.0, 0.0),
+    stroke_width=0,
+    offset_x_mm=0.0,
+    offset_y_mm=0.0,
+):
+    next_transform = matrix_multiply(transform, parse_transform(element.attrib.get("transform")))
+    source_scale = min(
+        fixed_svg["width"] / fixed_svg["source_width"],
+        fixed_svg["height"] / fixed_svg["source_height"],
+    )
+
+    for subpath in element_subpaths(element):
+        points = []
+        for x, y in subpath:
+            tx, ty = apply_matrix(next_transform, x, y)
+            final_x = fixed_svg["x"] + (tx - fixed_svg["source_x"]) * source_scale + offset_x_mm
+            final_y = fixed_svg["y"] + (ty - fixed_svg["source_y"]) * source_scale + offset_y_mm
+            points.append((final_x * layout_scale, final_y * layout_scale))
+        if len(points) >= 3:
+            draw.polygon(points, fill=255)
+            if stroke_width > 0:
+                draw.line(points, fill=255, width=stroke_width, joint="curve")
+
+    for child in list(element):
+        if local_svg_name(child) in BLOCKED_FIXED_SVG_TAGS:
+            continue
+        draw_svg_element_to_mask(draw, child, fixed_svg, layout_scale, next_transform, stroke_width, offset_x_mm, offset_y_mm)
+
+def dilate_mask(mask, radius_px):
+    radius_px = max(0, int(radius_px))
+    if radius_px <= 0:
+        return mask
+
+    expanded = mask
+    max_step = 8
+    remaining = radius_px
+    while remaining > 0:
+        step = min(max_step, remaining)
+        size = step * 2 + 1
+        expanded = expanded.filter(ImageFilter.MaxFilter(size))
+        remaining -= step
+    return expanded
+
+def format_svg_number(value):
+    return f"{value:.3f}".rstrip("0").rstrip(".") or "0"
+
+
+def translate_trace_path(path, dx, dy):
+    tokens = SVG_PATH_TOKEN_RE.findall(str(path or ""))
+    translated = []
+    command = None
+    index = 0
+
+    def is_command(token):
+        return len(token) == 1 and token.isalpha()
+
+    def read_number():
+        nonlocal index
+        value = float(tokens[index])
+        index += 1
+        return value
+
+    while index < len(tokens):
+        if is_command(tokens[index]):
+            command = tokens[index]
+            translated.append(command)
+            index += 1
+            continue
+        if not command:
+            break
+
+        op = command.upper()
+        is_relative = command.islower()
+        if op in {"M", "L", "T"} and index + 1 < len(tokens):
+            x = read_number()
+            y = read_number()
+            translated.append(format_svg_number(x if is_relative else x + dx))
+            translated.append(format_svg_number(y if is_relative else y + dy))
+        elif op == "Q" and index + 3 < len(tokens):
+            x1 = read_number()
+            y1 = read_number()
+            x = read_number()
+            y = read_number()
+            translated.append(format_svg_number(x1 if is_relative else x1 + dx))
+            translated.append(format_svg_number(y1 if is_relative else y1 + dy))
+            translated.append(format_svg_number(x if is_relative else x + dx))
+            translated.append(format_svg_number(y if is_relative else y + dy))
+        elif op == "C" and index + 5 < len(tokens):
+            values = [read_number() for _ in range(6)]
+            for value_index, value in enumerate(values):
+                if is_relative:
+                    translated.append(format_svg_number(value))
+                else:
+                    translated.append(format_svg_number(value + (dx if value_index % 2 == 0 else dy)))
+        elif op == "H":
+            x = read_number()
+            translated.append(format_svg_number(x if is_relative else x + dx))
+        elif op == "V":
+            y = read_number()
+            translated.append(format_svg_number(y if is_relative else y + dy))
+        else:
+            translated.append(tokens[index])
+            index += 1
+
+    return " ".join(translated)
+
+
+def fixed_svg_offset_backing_path(order, fixed_svg, scale=FIXED_SVG_BACKING_TRACE_SCALE, tolerance_mm=FIXED_SVG_BACKING_TOLERANCE_MM):
+    vector_path = fixed_svg_vector_offset_backing_path(fixed_svg)
+    if vector_path:
+        return vector_path
+
+    backing = float(fixed_svg.get("backing_mm", 0.0))
+    if backing <= 0:
+        return ""
+
+    padding_mm = max(FIXED_SVG_BACKING_TRACE_PADDING_MM, backing + 1.0)
+    width_px = max(1, int(round((order["width"] + padding_mm * 2) * scale)))
+    height_px = max(1, int(round((order["height"] + padding_mm * 2) * scale)))
+    mask = Image.new("L", (width_px, height_px), 0)
+    draw = ImageDraw.Draw(mask)
+
+    for element in fixed_svg.get("source_elements") or []:
+        draw_svg_element_to_mask(draw, element, fixed_svg, scale, offset_x_mm=padding_mm, offset_y_mm=padding_mm)
+
+    if not mask.getbbox():
+        return ""
+
+    expanded = dilate_mask(mask, int(round(backing * scale)))
+    # A small smoothing/threshold pass removes pixel stair-steps from the dilation
+    # while keeping the requested physical offset close to the mask.
+    expanded = expanded.filter(ImageFilter.GaussianBlur(max(0.5, scale * 0.03)))
+    expanded = expanded.point(lambda value: 255 if value >= 96 else 0)
+    fill_mask_holes(expanded)
+    traced_path = text_outline_path(
+        expanded,
+        scale,
+        tolerance_mm=tolerance_mm,
+        smooth_iterations=2,
+        curve_mode="quadratic",
+    )
+    return translate_trace_path(traced_path, -padding_mm, -padding_mm)
+
+def fixed_svg_backing_path(fixed_svg):
+    backing = float(fixed_svg.get("backing_mm", 0.0))
+    if backing <= 0:
+        return ""
+
+    x = fixed_svg["x"] - backing
+    y = fixed_svg["y"] - backing
+    width = fixed_svg["width"] + backing * 2
+    height = fixed_svg["height"] + backing * 2
+    radius = min(backing, width / 2, height / 2)
+    right = x + width
+    bottom = y + height
+
+    if radius <= 0:
+        return f"M{x:.3f} {y:.3f} H{right:.3f} V{bottom:.3f} H{x:.3f} Z"
+
+    return (
+        f"M{x + radius:.3f} {y:.3f} H{right - radius:.3f} "
+        f"Q{right:.3f} {y:.3f} {right:.3f} {y + radius:.3f} "
+        f"V{bottom - radius:.3f} Q{right:.3f} {bottom:.3f} {right - radius:.3f} {bottom:.3f} "
+        f"H{x + radius:.3f} Q{x:.3f} {bottom:.3f} {x:.3f} {bottom - radius:.3f} "
+        f"V{y + radius:.3f} Q{x:.3f} {y:.3f} {x + radius:.3f} {y:.3f} Z"
+    )
+
+
 def build_fixed_svg_layers(order, instance_id, face_x, item_y):
     parts = []
     for fixed_svg in order.get("fixed_svgs", []):
@@ -1100,6 +1687,23 @@ def build_fixed_svg_layers(order, instance_id, face_x, item_y):
             f"""  <g id="{instance_id}-fixed-svg-{fixed_svg["id"]}" data-fixed-svg-name="{fixed_svg["name"]}" transform="translate({translate_x:.3f} {translate_y:.3f}) scale({scale:.6f} {scale:.6f})" fill="rgb(255, 0, 0)" stroke="none">
     {fixed_svg["markup"]}
   </g>"""
+        )
+
+    return "\n".join(parts)
+
+
+def build_fixed_svg_backing_layers(order, instance_id, backing_x, item_y):
+    parts = []
+    for fixed_svg in order.get("fixed_svgs", []):
+        if not fixed_svg.get("backing_border"):
+            continue
+
+        backing_path = fixed_svg_offset_backing_path(order, fixed_svg)
+        if not backing_path:
+            continue
+
+        parts.append(
+            f'  <path id="{instance_id}-fixed-svg-{fixed_svg["id"]}-backing-border" d="{backing_path}" transform="translate({backing_x:.3f} {item_y:.3f})" fill="rgb(255, 0, 0)" stroke="none"/>'
         )
 
     return "\n".join(parts)
@@ -1167,6 +1771,9 @@ def build_svg_document(title, desc, instances, fixed_columns=False):
         fixed_svg_layers = build_fixed_svg_layers(order, instance_id, face_x, item_y)
         if fixed_svg_layers:
             parts.append(fixed_svg_layers)
+        fixed_svg_backing_layers = build_fixed_svg_backing_layers(order, instance_id, backing_x, item_y)
+        if fixed_svg_backing_layers:
+            parts.append(fixed_svg_backing_layers)
         parts.append(
             f"""  <path id="{instance_id}-backing-border" d="{order["backing_path"]}" transform="translate({backing_x:.3f} {item_y:.3f})" fill="{export_fill}" stroke="none"/>"""
         )
