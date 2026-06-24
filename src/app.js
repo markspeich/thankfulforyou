@@ -131,6 +131,15 @@ import {
   settingsNeedFixedDesignRecords,
 } from "./fixed-designs.js";
 
+const orderMetadataEditing = {
+  colorName: false,
+  quantity: false,
+};
+const orderMetadataOriginalValues = {
+  colorName: "",
+  quantity: "",
+};
+
 let FONT_OPTIONS = buildFontOptions();
 let FONT_BY_ID = new Map(FONT_OPTIONS.map((font) => [font.id, font]));
 const DEFAULT_PREVIEW_WIDTH_MM = PREVIEW_BOX_WIDTH_MM + PREVIEW_MARGIN_MM * 2 + PREVIEW_LABEL_RIGHT_MM;
@@ -325,6 +334,14 @@ const listingReferenceCard = document.querySelector("#listingReferenceCard");
 const listingReferenceTitle = document.querySelector("#listingReferenceTitle");
 const listingReferenceImage = document.querySelector("#listingReferenceImage");
 const textInput = document.querySelector("#textInput");
+const orderColorInput = document.querySelector("#orderColorInput");
+const orderQuantityInput = document.querySelector("#orderQuantityInput");
+const editOrderColorButton = document.querySelector("#editOrderColorButton");
+const saveOrderColorButton = document.querySelector("#saveOrderColorButton");
+const cancelOrderColorButton = document.querySelector("#cancelOrderColorButton");
+const editOrderQuantityButton = document.querySelector("#editOrderQuantityButton");
+const saveOrderQuantityButton = document.querySelector("#saveOrderQuantityButton");
+const cancelOrderQuantityButton = document.querySelector("#cancelOrderQuantityButton");
 const importedColorField = document.querySelector("#importedColorField");
 const importedColorValue = document.querySelector("#importedColorValue");
 const importedQuantityField = document.querySelector("#importedQuantityField");
@@ -3403,6 +3420,213 @@ function normalizeStoredSource(source) {
     importSource: typeof source.importSource === "string" ? source.importSource.trim() : "",
     manualPresetOverride: Boolean(source.manualPresetOverride),
   };
+}
+
+function normalizeEditableOrderSource(source = null) {
+  return normalizeStoredSource(source || {}) || {
+    orderNumber: "",
+    listingId: "",
+    buyerName: "",
+    colorName: "",
+    quantity: "",
+    listingTitle: "",
+    listingImageUrl75x75: "",
+    transactionId: "",
+    importSource: "",
+    manualPresetOverride: false,
+  };
+}
+
+function sourceHasMeaningfulMetadata(source) {
+  if (!source || typeof source !== "object") {
+    return false;
+  }
+
+  return Boolean(
+    source.orderNumber
+    || source.listingId
+    || source.buyerName
+    || source.colorName
+    || source.quantity
+    || source.listingTitle
+    || source.listingImageUrl75x75
+    || source.transactionId
+    || source.importSource
+    || source.manualPresetOverride
+  );
+}
+
+function getOrderMetadataFieldValue(order, field) {
+  return field === "colorName"
+    ? order?.source?.colorName?.trim() || ""
+    : order?.source?.quantity?.trim() || "";
+}
+
+function getOrderMetadataInput(field) {
+  return field === "colorName" ? orderColorInput : orderQuantityInput;
+}
+
+function getOrderMetadataValueElement(field) {
+  return field === "colorName" ? importedColorValue : importedQuantityValue;
+}
+
+function getOrderMetadataButtons(field) {
+  return field === "colorName"
+    ? { edit: editOrderColorButton, save: saveOrderColorButton, cancel: cancelOrderColorButton }
+    : { edit: editOrderQuantityButton, save: saveOrderQuantityButton, cancel: cancelOrderQuantityButton };
+}
+
+function sanitizeOrderQuantityInput() {
+  if (!orderQuantityInput) {
+    return;
+  }
+
+  const numericValue = orderQuantityInput.value.replace(/\D+/g, "");
+  if (orderQuantityInput.value !== numericValue) {
+    orderQuantityInput.value = numericValue;
+  }
+}
+function readOrderMetadataControls() {
+  return {
+    colorName: orderColorInput?.value.trim() || "",
+    quantity: orderQuantityInput?.value.trim() || "",
+  };
+}
+
+function hasOrderMetadataFieldChanges(field) {
+  const input = getOrderMetadataInput(field);
+  return Boolean(input && input.value.trim() !== orderMetadataOriginalValues[field]);
+}
+
+function renderOrderMetadataFieldEditState(field, order = getActiveOrder()) {
+  const input = getOrderMetadataInput(field);
+  const valueElement = getOrderMetadataValueElement(field);
+  const buttons = getOrderMetadataButtons(field);
+  const editing = Boolean(orderMetadataEditing[field]);
+
+  if (input) {
+    input.hidden = !editing;
+    input.disabled = !order;
+  }
+
+  if (valueElement) {
+    valueElement.hidden = editing;
+  }
+
+  if (buttons.edit) {
+    buttons.edit.hidden = editing;
+    buttons.edit.disabled = !order;
+  }
+
+  if (buttons.save) {
+    buttons.save.hidden = !editing;
+    buttons.save.disabled = !order || !hasOrderMetadataFieldChanges(field);
+  }
+
+  if (buttons.cancel) {
+    buttons.cancel.hidden = !editing;
+    buttons.cancel.disabled = !order;
+  }
+}
+
+function renderOrderMetadataEditState(order = getActiveOrder()) {
+  renderOrderMetadataFieldEditState("colorName", order);
+  renderOrderMetadataFieldEditState("quantity", order);
+}
+
+function syncOrderMetadataControls(order) {
+  if (!orderColorInput || !orderQuantityInput) {
+    return;
+  }
+
+  if (!orderMetadataEditing.colorName) {
+    orderColorInput.value = getOrderMetadataFieldValue(order, "colorName");
+  }
+
+  if (!orderMetadataEditing.quantity) {
+    orderQuantityInput.value = getOrderMetadataFieldValue(order, "quantity");
+  }
+
+  renderOrderMetadataEditState(order);
+}
+
+function beginOrderMetadataFieldEdit(field) {
+  const order = getActiveOrder();
+  const input = getOrderMetadataInput(field);
+  if (!order || !input) {
+    return;
+  }
+
+  orderMetadataOriginalValues[field] = getOrderMetadataFieldValue(order, field);
+  orderMetadataEditing[field] = true;
+  input.value = orderMetadataOriginalValues[field];
+  renderOrderMetadataFieldEditState(field, order);
+  input.focus();
+  input.select();
+}
+
+function cancelOrderMetadataFieldEdit(field) {
+  const input = getOrderMetadataInput(field);
+  if (input) {
+    input.value = orderMetadataOriginalValues[field];
+  }
+
+  orderMetadataEditing[field] = false;
+  renderOrderMetadataFieldEditState(field, getActiveOrder());
+}
+
+function isAnyOrderMetadataFieldEditing() {
+  return orderMetadataEditing.colorName || orderMetadataEditing.quantity;
+}
+
+function resetOrderMetadataEditState() {
+  orderMetadataEditing.colorName = false;
+  orderMetadataEditing.quantity = false;
+  orderMetadataOriginalValues.colorName = "";
+  orderMetadataOriginalValues.quantity = "";
+}
+
+function updateActiveOrderMetadataFromControls({ persist = true } = {}) {
+  const order = getActiveOrder();
+  if (!order) {
+    return;
+  }
+
+  const previousSource = order.source ? { ...order.source } : null;
+  const source = normalizeEditableOrderSource(order.source);
+  const metadata = readOrderMetadataControls();
+  source.colorName = metadata.colorName;
+  source.quantity = metadata.quantity;
+  order.source = sourceHasMeaningfulMetadata(source) ? source : null;
+
+  if (JSON.stringify(previousSource) === JSON.stringify(order.source)) {
+    return;
+  }
+
+  order.saveErrorMessage = null;
+  renderImportedColor(order);
+  renderListingReference(order);
+  renderOrderList();
+  if (persist) {
+    persistBatchState();
+  }
+}
+
+async function saveOrderMetadataFieldEdit(field) {
+  const order = getActiveOrder();
+  if (!order || !hasOrderMetadataFieldChanges(field)) {
+    return;
+  }
+
+  updateActiveOrderMetadataFromControls({ persist: false });
+  orderMetadataEditing[field] = false;
+  orderMetadataOriginalValues[field] = getOrderMetadataFieldValue(order, field);
+  syncOrderMetadataControls(order);
+  await saveBatchSnapshotToRemote({
+    publishOrderIds: [order.id],
+    persistActiveDraft: false,
+    successMessage: false,
+  });
 }
 
 function normalizeStoredAuditActor(actor) {
@@ -7545,11 +7769,12 @@ function summarizeOrderText(text) {
 }
 
 function renderListingReference(order) {
-  const listingTitle = order?.source?.listingTitle?.trim() || order?.source?.listingId?.trim() || "Imported Etsy listing";
+  const hasImportedReference = Boolean(order?.source?.orderNumber || order?.source?.listingId || order?.source?.transactionId || order?.source?.importSource);
+  const listingTitle = order?.source?.listingTitle?.trim() || order?.source?.listingId?.trim() || (hasImportedReference ? "Imported Etsy listing" : "Design details");
   const listingImageUrl = order?.source?.listingImageUrl75x75?.trim();
   const colorName = order?.source?.colorName?.trim() || "";
   const quantity = order?.source?.quantity?.trim() || "";
-  const hasReference = Boolean(listingImageUrl || colorName || quantity);
+  const hasReference = Boolean(order);
 
   listingReferenceCard.classList.toggle("is-hidden", !hasReference);
 
@@ -7578,17 +7803,12 @@ function renderImportedColor(order) {
   const quantity = order?.source?.quantity?.trim() || "";
   const hasQuantity = Boolean(quantity);
 
-  importedColorField.classList.toggle("is-hidden", !hasColor);
-  importedColorValue.classList.toggle("highlight-light-color", /\bwhite\b/i.test(colorName));
-  importedQuantityField.classList.toggle("is-hidden", !hasQuantity);
+  importedColorField.classList.toggle("is-hidden", !order);
+  importedColorValue.classList.toggle("highlight-light-color", hasColor && /\bwhite\b/i.test(colorName));
+  importedQuantityField.classList.toggle("is-hidden", !order);
 
-  if (!hasColor) {
-    importedColorValue.textContent = "";
-  } else {
-    importedColorValue.textContent = colorName;
-  }
-
-  importedQuantityValue.textContent = hasQuantity ? quantity : "";
+  importedColorValue.textContent = hasColor ? colorName : "Not set";
+  importedQuantityValue.textContent = hasQuantity ? quantity : "1";
 }
 
 function clearOrderCompletionState(order, settings = order?.settings) {
@@ -7619,6 +7839,9 @@ function saveActiveOrderDraft() {
 
   order.text = textInput.value;
   order.settings = getCurrentSettings();
+  if (!isAnyOrderMetadataFieldEditing()) {
+    updateActiveOrderMetadataFromControls({ persist: false });
+  }
   if (order.status !== "captured" && order.status !== "exported") {
     order.status = "in-progress";
     order.analysisBadge = null;
@@ -7768,6 +7991,9 @@ function updateActiveOrderFromControls() {
   const previousSignature = buildSettingsSignature(order.settings);
   order.text = textInput.value;
   order.settings = getCurrentSettings();
+  if (!isAnyOrderMetadataFieldEditing()) {
+    updateActiveOrderMetadataFromControls({ persist: false });
+  }
   const currentSignature = buildSettingsSignature(order.settings);
   if (currentSignature !== previousSignature) {
     order.saveErrorMessage = null;
@@ -8144,6 +8370,7 @@ function renderOrderList() {
 
   const activeOrder = getActiveOrder();
   editorPanel.classList.toggle("is-hidden", !activeOrder);
+  syncOrderMetadataControls(activeOrder);
   renderListingReference(activeOrder);
   renderImportedColor(activeOrder);
   renderPresetListingIndicator(activeOrder);
@@ -9198,6 +9425,7 @@ function selectOrder(orderId, options = {}) {
   const { updateRoute = true, replaceRoute = false, persistSelection = true } = options;
   const selectionScrollState = captureSelectionScrollState();
   saveActiveOrderDraft();
+  resetOrderMetadataEditState();
 
   const order = orders.find((candidate) => candidate.id === orderId);
   if (!order) {
@@ -9260,6 +9488,8 @@ function resetEditorToEmptyState() {
     weldExportedDesign: presetBaseSettings.weldExportedDesign,
     lines: [],
   });
+  resetOrderMetadataEditState();
+  syncOrderMetadataControls(null);
   renderImportedColor(null);
   renderPreviewGuideOnly();
 }
@@ -11166,6 +11396,17 @@ function applyGlobalVerticalScale(value, options = {}) {
 }
 
 textInput.addEventListener("input", handleTextInput);
+editOrderColorButton?.addEventListener("click", () => beginOrderMetadataFieldEdit("colorName"));
+saveOrderColorButton?.addEventListener("click", () => void saveOrderMetadataFieldEdit("colorName"));
+cancelOrderColorButton?.addEventListener("click", () => cancelOrderMetadataFieldEdit("colorName"));
+editOrderQuantityButton?.addEventListener("click", () => beginOrderMetadataFieldEdit("quantity"));
+saveOrderQuantityButton?.addEventListener("click", () => void saveOrderMetadataFieldEdit("quantity"));
+cancelOrderQuantityButton?.addEventListener("click", () => cancelOrderMetadataFieldEdit("quantity"));
+orderColorInput?.addEventListener("input", () => renderOrderMetadataFieldEditState("colorName"));
+orderQuantityInput?.addEventListener("input", () => {
+  sanitizeOrderQuantityInput();
+  renderOrderMetadataFieldEditState("quantity");
+});
 presetInput.addEventListener("change", () => {
   const order = getActiveOrder();
   if (order?.source) {

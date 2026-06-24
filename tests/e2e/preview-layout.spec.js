@@ -3356,6 +3356,114 @@ test("shows imported Etsy color and quantity below design text and highlights wh
   await expect(page.locator("#importedQuantityValue")).toHaveText("1");
 });
 
+test("edits color and quantity for manual and imported designs", async ({ page }) => {
+  await expect(page.locator("#orderColorInput")).toBeHidden();
+  await expect(page.locator("#orderQuantityInput")).toBeHidden();
+  await expect(page.locator("#saveOrderColorButton")).toBeHidden();
+  await expect(page.locator("#cancelOrderColorButton")).toBeHidden();
+  await expect(page.locator("#saveOrderQuantityButton")).toBeHidden();
+  await expect(page.locator("#cancelOrderQuantityButton")).toBeHidden();
+  await expect(page.locator("#importedColorValue")).toHaveText("Not set");
+  await expect(page.locator("#importedQuantityValue")).toHaveText("1");
+
+  await page.locator("#editOrderColorButton").click();
+  await expect(page.locator("#orderColorInput")).toBeVisible();
+  await expect(page.locator("#saveOrderColorButton")).toBeVisible();
+  await expect(page.locator("#saveOrderColorButton")).toBeDisabled();
+  await expect(page.locator("#cancelOrderColorButton")).toBeVisible();
+  await expect(page.locator("#cancelOrderQuantityButton")).toBeHidden();
+  await page.locator("#orderColorInput").fill("Glitter Pink");
+  await expect(page.locator("#saveOrderColorButton")).toBeEnabled();
+  await page.locator("#saveOrderColorButton").click();
+  await expect(page.locator("#importedColorValue")).toHaveText("Glitter Pink");
+
+  await page.locator("#editOrderQuantityButton").click();
+  await expect(page.locator("#orderQuantityInput")).toBeVisible();
+  await expect(page.locator("#orderQuantityInput")).toHaveAttribute("type", "number");
+  await expect(page.locator("#orderQuantityInput")).toHaveAttribute("min", "1");
+  await expect(page.locator("#orderQuantityInput")).toHaveAttribute("step", "1");
+  await expect(page.locator("#saveOrderQuantityButton")).toBeDisabled();
+  await expect(page.locator("#cancelOrderQuantityButton")).toBeVisible();
+  await expect(page.locator("#cancelOrderColorButton")).toBeHidden();
+  await page.locator("#orderQuantityInput").fill("2");
+  await page.locator("#orderQuantityInput").press("ArrowUp");
+  await expect(page.locator("#orderQuantityInput")).toHaveValue("3");
+  await expect(page.locator("#saveOrderQuantityButton")).toBeEnabled();
+  await page.locator("#saveOrderQuantityButton").click();
+  await setDesignText(page, "Manual RN");
+
+  await expect(page.locator("#orderColorInput")).toBeHidden();
+  await expect(page.locator("#orderQuantityInput")).toBeHidden();
+  await expect(page.locator("#importedColorValue")).toHaveText("Glitter Pink");
+  await expect(page.locator("#importedQuantityValue")).toHaveText("3");
+  await expectSavedProductionBatchSnapshot(page, (snapshot) => snapshot.orderItems.some((order) => (
+    order.source?.colorName === "Glitter Pink"
+    && order.source?.quantity === "3"
+  )));
+
+  const payload = JSON.stringify({
+    items: [
+      {
+        orderNumber: "4057600528",
+        listingId: "1884223710",
+        transactionId: "5078093505",
+        buyerName: "Marilyn Lopez",
+        colorName: "White Glitter",
+        quantity: "2",
+        personalization: "Yohanna APN",
+      },
+    ],
+  });
+
+  await page.evaluate((clipboardPayload) => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        readText: async () => clipboardPayload,
+      },
+    });
+  }, payload);
+
+  await clickButtonBySelector(page, "#importClipboardButton");
+  await page.locator("#pasteSummaryDoneButton").click();
+  await expect(page.locator("#pasteSummaryDialog")).not.toBeVisible();
+
+  await clickOrderItemByText(page, "#4057600528");
+  await expect(page.locator("#importedColorValue")).toHaveText("White Glitter");
+  await expect(page.locator("#importedQuantityValue")).toHaveText("2");
+
+  await page.locator("#editOrderColorButton").click();
+  await expect(page.locator("#orderColorInput")).toHaveValue("White Glitter");
+  await page.locator("#orderColorInput").fill("Temporary Blue");
+  await expect(page.locator("#saveOrderColorButton")).toBeEnabled();
+  await page.locator("#cancelOrderColorButton").click();
+  await expect(page.locator("#importedColorValue")).toHaveText("White Glitter");
+
+  await page.locator("#editOrderColorButton").click();
+  await page.locator("#orderColorInput").fill("Opal White");
+  await page.locator("#saveOrderColorButton").click();
+  await page.locator("#editOrderQuantityButton").click();
+  await page.locator("#orderQuantityInput").fill("4");
+  await page.locator("#saveOrderQuantityButton").click();
+  await expect(page.locator("#importedColorValue")).toHaveText("Opal White");
+  await expect(page.locator("#importedQuantityValue")).toHaveText("4");
+
+  await page.reload();
+  await waitForProductionBatchStartup(page);
+  await clickOrderItemByText(page, "Design 1");
+  await expect(page.locator("#importedColorValue")).toHaveText("Glitter Pink");
+  await expect(page.locator("#importedQuantityValue")).toHaveText("3");
+
+  await clickOrderItemByText(page, "#4057600528");
+  await expect(page.locator("#importedColorValue")).toHaveText("Opal White");
+  await expect(page.locator("#importedQuantityValue")).toHaveText("4");
+
+  await clickBatchAction(page, "View Color Counts");
+  const rows = page.locator("#colorCountsDialog tbody tr");
+  await expect(rows).toHaveCount(2);
+  await expect(rows.filter({ hasText: "Glitter Pink" }).locator("td").nth(1)).toHaveText("3");
+  await expect(rows.filter({ hasText: "Opal White" }).locator("td").nth(1)).toHaveText("4");
+});
 test("shows batch color counts from the queue tools menu", async ({ page }) => {
   const payload = JSON.stringify({
     items: [

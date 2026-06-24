@@ -60,6 +60,8 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 ## Current Production Requirements
 
 - Accept text input for a badge reel design.
+- The selected-order editor must allow operators to enter or edit `Color` and numeric-only `Quantity` for both manually added designs and imported Etsy designs by using small square per-field pencil actions placed after each existing read-only metadata field; each field must show its own compact save and cancel actions while editing, hide cancel outside edit mode, and keep save disabled until that field has changes.
+- Edited design `Color` and `Quantity` values must persist with the order item and feed batch color counts, design export labels, and saved production-batch data.
 - Support choosing or loading a font.
 - Support the three primary production fonts early: modified Candlepin, modified Skywalk, and Somekind.
 - Render text as actual font outlines, not just browser text.
