@@ -16,6 +16,7 @@ const FIXED_ITEM_KEYS = [
   "svgSizeMm",
   "offsetXMm",
   "offsetYMm",
+  "backingBorder",
 ];
 
 function diffLineSettings(base, line) {

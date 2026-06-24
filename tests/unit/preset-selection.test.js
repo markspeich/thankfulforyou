@@ -111,6 +111,7 @@ describe("preset selection", () => {
         svgSizeMm: 34,
         offsetXMm: 1,
         offsetYMm: -2,
+        backingBorder: true,
       },
     ];
 

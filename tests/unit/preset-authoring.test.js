@@ -116,6 +116,7 @@ describe("preset authoring", () => {
             svgSizeMm: 36,
             offsetXMm: 2.5,
             offsetYMm: -3,
+            backingBorder: true,
           },
           makeSettings().lines[1],
         ],
@@ -131,6 +132,7 @@ describe("preset authoring", () => {
         svgSizeMm: 36,
         offsetXMm: 2.5,
         offsetYMm: -3,
+        backingBorder: true,
       },
     ]);
     expect(preset.lineRules).toEqual([

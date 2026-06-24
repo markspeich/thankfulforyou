@@ -156,6 +156,7 @@ function buildDesignLineRows(item, designId) {
       fixed_design_id: itemKind === "fixed_svg" ? nullableString(line.settings.fixedDesignId) : null,
       fixed_design_version: itemKind === "fixed_svg" ? toNumber(line.settings.fixedDesignVersion, null) : null,
       svg_size_mm: itemKind === "fixed_svg" ? toNumber(line.settings.svgSizeMm, 32) : 32,
+      fixed_svg_backing_border: itemKind === "fixed_svg" ? Boolean(line.settings.backingBorder) : false,
     };
   });
 }
@@ -177,6 +178,7 @@ function normalizeDesignLine(row) {
     fixedDesignId: row.fixed_design_id ?? null,
     fixedDesignVersion: row.fixed_design_version == null ? null : toNumber(row.fixed_design_version, null),
     svgSizeMm: toNumber(row.svg_size_mm, 32),
+    backingBorder: Boolean(row.fixed_svg_backing_border),
   };
 }
 
@@ -371,7 +373,7 @@ export async function listWorkspaceOrders({ workspaceId, activeBatchId = null, s
   const { data: designLines, error: designLinesError } = designIds.length
     ? await supabase
       .from("design_lines")
-      .select("design_id, line_index, item_kind, text, font_id, letter_bridge_mm, line_bridge_mm, offset_x_mm, offset_y_mm, text_height_mm, horizontal_scale, vertical_scale, lock_text_height, fixed_design_id, fixed_design_version, svg_size_mm")
+      .select("design_id, line_index, item_kind, text, font_id, letter_bridge_mm, line_bridge_mm, offset_x_mm, offset_y_mm, text_height_mm, horizontal_scale, vertical_scale, lock_text_height, fixed_design_id, fixed_design_version, svg_size_mm, fixed_svg_backing_border")
       .in("design_id", designIds)
       .order("line_index", { ascending: true })
     : { data: [], error: null };

@@ -536,6 +536,100 @@ describe("export_svg face tracing", () => {
     expect(svg).toContain(">Red</text>");
   });
 
+  test("analyzes fixed SVG backing borders into reusable vector paths", () => {
+    const analysis = analyzeLayout({
+      text: "",
+      widthMm: 40,
+      heightMm: 24,
+      backingMm: 3.1,
+      letters: [],
+      fixedSvgs: [
+        {
+          id: "badge-star",
+          name: "Badge Star",
+          svgText: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M10 0 L12 8 L20 8 L13 12 L16 20 L10 15 L4 20 L7 12 L0 8 L8 8 Z"/></svg>`,
+          xMm: 8,
+          yMm: 4,
+          widthMm: 12,
+          heightMm: 12,
+          backingBorder: true,
+          backingMm: 3.1,
+        },
+      ],
+    });
+
+    expect(analysis.fixedSvgBackingPaths).toEqual([
+      expect.objectContaining({
+        id: "badge-star",
+        path: expect.stringMatching(/^M/),
+      }),
+    ]);
+    expect(analysis.fixedSvgBackingPaths[0].path).toContain("Q");
+  });
+  test("traces fixed SVG backing across smooth curves without clipping at layout edges", () => {
+    const analysis = analyzeLayout({
+      text: "",
+      widthMm: 20,
+      heightMm: 20,
+      backingMm: 3,
+      letters: [],
+      fixedSvgs: [
+        {
+          id: "smooth-edge",
+          name: "Smooth Edge",
+          svgText: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M1 10 C4 0 8 0 10 10 S16 20 19 10 Q19 4 12 2 T1 10 Z"/></svg>`,
+          xMm: 0,
+          yMm: 0,
+          widthMm: 20,
+          heightMm: 20,
+          backingBorder: true,
+          backingMm: 3,
+        },
+      ],
+    });
+
+    const backingPath = analysis.fixedSvgBackingPaths[0]?.path || "";
+    const bounds = pathBounds(backingPath);
+
+    expect(backingPath).toContain("Q");
+    expect(bounds.left).toBeLessThan(0);
+    expect(bounds.top).toBeLessThan(0);
+    expect(bounds.right).toBeGreaterThan(20);
+    expect(bounds.bottom).toBeGreaterThan(20);
+  });
+
+  test("exports backing borders for fixed SVG artwork when enabled", () => {
+    const svg = exportSvg({
+      text: "Fixed Border",
+      widthMm: 40,
+      heightMm: 20,
+      fixedSvgs: [
+        {
+          id: "badge-star",
+          name: "Badge Star",
+          svgText: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path id="star-path" d="M10 0 L12 8 L20 8 L13 12 L16 20 L10 15 L4 20 L7 12 L0 8 L8 8 Z"/></svg>`,
+          xMm: 8,
+          yMm: 4,
+          widthMm: 12,
+          heightMm: 12,
+          backingBorder: true,
+          backingMm: 3,
+        },
+      ],
+      analysis: {
+        exportFacePath: "M0 0 L10 0 L10 10 Z",
+        backingPath: "M20 0 L30 0 L30 10 Z",
+        connectedComponentCount: 1,
+      },
+    });
+
+    expect(svg).toContain('id="order-1-copy-1-fixed-svg-badge-star"');
+    expect(svg).toContain('id="order-1-copy-1-fixed-svg-badge-star-backing-border"');
+    expect(svg).not.toContain('d="M8.000 1.000 H20.000 Q23.000 1.000 23.000 4.000 V16.000 Q23.000 19.000 20.000 19.000 H8.000 Q5.000 19.000 5.000 16.000 V4.000 Q5.000 1.000 8.000 1.000 Z"');
+    expect(svg).toMatch(/fixed-svg-badge-star-backing-border" d="[^"]*Q/);
+    expect(svg).toContain('transform="translate(50.000 0.000)"');
+  });
+
   test("sanitizes fixed SVG vector markup before export", () => {
     const svg = exportSvg({
       text: "Safe",

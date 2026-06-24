@@ -446,6 +446,7 @@ describe("layout controls clipboard", () => {
             svgSizeMm: 38,
             offsetXMm: 2,
             offsetYMm: -7,
+            backingBorder: true,
             publicUrl: "https://example.invalid/nurse-cross.svg",
             storagePath: "do-not-copy",
           },
@@ -462,6 +463,7 @@ describe("layout controls clipboard", () => {
         svgSizeMm: 38,
         offsetXMm: 2,
         offsetYMm: -7,
+        backingBorder: true,
       },
     ]);
   });
@@ -511,6 +513,7 @@ describe("layout controls clipboard", () => {
               svgSizeMm: 42,
               offsetXMm: 3,
               offsetYMm: -5,
+              backingBorder: true,
             },
           ],
         },
@@ -538,6 +541,7 @@ describe("layout controls clipboard", () => {
             svgSizeMm: 42,
             offsetXMm: 3,
             offsetYMm: -5,
+            backingBorder: true,
           },
         ],
       },
