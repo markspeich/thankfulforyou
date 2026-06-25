@@ -102,6 +102,20 @@ function mergeSnapshotWithCurrentForUnchangedOrders(incomingSnapshot, currentSna
   };
 }
 
+function scopedSaveContainsNewOrderItems(incomingSnapshot, currentSnapshot, changedOrderItemIds = null) {
+  if (!changedOrderItemIds || !Array.isArray(currentSnapshot?.orderItems)) {
+    return false;
+  }
+
+  const currentOrderItemIds = new Set(
+    currentSnapshot.orderItems
+      .map((orderItem) => (typeof orderItem?.id === "string" ? orderItem.id.trim() : ""))
+      .filter(Boolean),
+  );
+
+  return changedOrderItemIds.some((orderItemId) => !currentOrderItemIds.has(orderItemId));
+}
+
 function findRevisionConflict(incomingSnapshot, currentSnapshot, changedOrderItemIds = null) {
   if (!incomingSnapshot || !currentSnapshot || !Array.isArray(incomingSnapshot.orderItems) || !Array.isArray(currentSnapshot.orderItems)) {
     return null;
@@ -206,9 +220,13 @@ export default async function handler(req, res) {
         return;
       }
 
+      const mergedSnapshot = mergeSnapshotWithCurrentForUnchangedOrders(snapshot, normalizedCurrentSnapshot, changedOrderItemIds);
+      const effectiveChangedOrderItemIds = scopedSaveContainsNewOrderItems(snapshot, normalizedCurrentSnapshot, changedOrderItemIds)
+        ? null
+        : changedOrderItemIds;
       const savedSnapshot = await saveProductionBatch({
-        snapshot: mergeSnapshotWithCurrentForUnchangedOrders(snapshot, normalizedCurrentSnapshot, changedOrderItemIds),
-        changedOrderItemIds,
+        snapshot: mergedSnapshot,
+        changedOrderItemIds: effectiveChangedOrderItemIds,
         userId: req.auth.userId,
       });
 

@@ -261,6 +261,60 @@ describe("production batch api route", () => {
     });
   });
 
+  it("promotes scoped saves with new order items to full saves so batch membership persists", async () => {
+    resolveProductionBatchAuthMock.mockResolvedValue({
+      userId: "user-1",
+      workspaceId: "workspace-1",
+    });
+    loadProductionBatchMock.mockResolvedValue({
+      batch: { id: "batch-1", workspaceId: "workspace-1" },
+      activeOrderItemId: "order-1",
+      orderItems: [
+        { id: "order-1", revision: 9, text: "Current existing" },
+      ],
+    });
+    saveProductionBatchMock.mockResolvedValue({
+      batch: { id: "batch-1", workspaceId: "workspace-1" },
+      activeOrderItemId: "order-2",
+      orderItems: [
+        { id: "order-1", revision: 9, text: "Current existing" },
+        { id: "order-2", revision: 1, text: "New manual design" },
+      ],
+    });
+
+    const { default: handler } = await import("../../api/production-batch.js");
+    const response = createResponseRecorder();
+
+    await handler({
+      method: "PUT",
+      headers: { authorization: "Bearer token-1" },
+      body: {
+        changedOrderItemIds: ["order-2"],
+        snapshot: {
+          batch: { id: "batch-1", workspaceId: "workspace-1" },
+          activeOrderItemId: "order-2",
+          orderItems: [
+            { id: "order-1", revision: 1, text: "Stale existing" },
+            { id: "order-2", revision: null, text: "New manual design" },
+          ],
+        },
+      },
+    }, response);
+
+    expect(response.statusCode).toBe(200);
+    expect(saveProductionBatchMock).toHaveBeenCalledWith({
+      changedOrderItemIds: null,
+      userId: "user-1",
+      snapshot: {
+        batch: { id: "batch-1", workspaceId: "workspace-1" },
+        activeOrderItemId: "order-2",
+        orderItems: [
+          { id: "order-1", revision: 9, text: "Current existing" },
+          { id: "order-2", revision: null, text: "New manual design" },
+        ],
+      },
+    });
+  });
   it("returns 409 before saving when the current production batch has a newer row revision", async () => {
     resolveProductionBatchAuthMock.mockResolvedValue({
       userId: "user-1",

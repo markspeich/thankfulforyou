@@ -4028,10 +4028,15 @@ function hasPendingProductionBatchChanges() {
 
 function resolveProductionBatchSaveOrderIds(publishOrderIds) {
   if (Array.isArray(publishOrderIds)) {
-    return publishOrderIds.filter((value) => typeof value === "string" && value);
+    const orderIds = publishOrderIds.filter((value) => typeof value === "string" && value);
+    const includesUnpublishedOrder = orderIds.some((orderId) => {
+      const order = orders.find((candidate) => candidate.id === orderId);
+      return order && !order.publishedSnapshot;
+    });
+    return includesUnpublishedOrder ? null : orderIds;
   }
 
-  return orders
+  const changedOrderIds = orders
     .filter((order) => {
       if (!order.publishedSnapshot) {
         return true;
@@ -4044,6 +4049,12 @@ function resolveProductionBatchSaveOrderIds(publishOrderIds) {
       return order.status !== order.publishedSnapshot.status;
     })
     .map((order) => order.id);
+  const includesUnpublishedOrder = changedOrderIds.some((orderId) => {
+    const order = orders.find((candidate) => candidate.id === orderId);
+    return order && !order.publishedSnapshot;
+  });
+
+  return includesUnpublishedOrder ? null : changedOrderIds;
 }
 
 function markSaveErrorForOrderIds(orderIds, message) {
@@ -4986,6 +4997,10 @@ async function saveBatchSnapshotToRemote(options = {}) {
     }
     mergeProductionBatchPublishedStateFromSnapshot(savedSnapshot || snapshot);
     mergeProductionBatchAuditFromSnapshot(savedSnapshot);
+    invalidateDatabaseOrders();
+    if (activeWorkspace === "databaseOrders") {
+      void loadDatabaseOrders({ force: true });
+    }
     lastProductionBatchSaveKey = buildProductionBatchSaveKey(savedSnapshot || snapshot);
     suppressBatchSyncLocalNotice = true;
     suppressProductionBatchAutosave = true;
@@ -5453,9 +5468,33 @@ function registerDatabaseOrderItemMenuDismissal(container) {
 
 function getDatabaseOrderNumber(order) {
   const rawOrderNumber = typeof order?.orderNumber === "string" ? order.orderNumber.trim() : "";
-  return rawOrderNumber || String(order?.id || "").replace(/^order:/, "") || "Unknown";
+  if (rawOrderNumber) {
+    return rawOrderNumber;
+  }
+
+  const items = Array.isArray(order?.items) ? order.items : [];
+  const manualDesignText = items.length === 1 ? getDatabaseOrderItemDesignText(items[0]) : "";
+  if (manualDesignText && manualDesignText !== "No design text") {
+    return manualDesignText;
+  }
+
+  return String(order?.id || "").replace(/^order:/, "") || "Unknown";
 }
 
+function getDatabaseOrderTitle(order) {
+  const rawOrderNumber = typeof order?.orderNumber === "string" ? order.orderNumber.trim() : "";
+  if (rawOrderNumber) {
+    return `Order ${rawOrderNumber}`;
+  }
+
+  const items = Array.isArray(order?.items) ? order.items : [];
+  const manualDesignText = items.length === 1 ? getDatabaseOrderItemDesignText(items[0]) : "";
+  if (manualDesignText && manualDesignText !== "No design text") {
+    return `Manual Order: ${manualDesignText}`;
+  }
+
+  return `Order ${String(order?.id || "").replace(/^order:/, "") || "Unknown"}`;
+}
 function getDatabaseOrderMeta(order) {
   const parts = [];
   if (typeof order?.buyerName === "string" && order.buyerName.trim()) {
@@ -6048,7 +6087,8 @@ function renderDatabaseOrdersWorkspace() {
 
     const title = document.createElement("span");
     title.className = "database-order-row-title";
-    title.textContent = order.status === "skipped" ? `Order ${orderNumber} (Skipped)` : `Order ${orderNumber}`;
+    const orderTitle = getDatabaseOrderTitle(order);
+    title.textContent = order.status === "skipped" ? `${orderTitle} (Skipped)` : orderTitle;
 
     const meta = document.createElement("span");
     meta.className = "database-order-row-meta";
@@ -6139,7 +6179,7 @@ function renderSelectedDatabaseOrderItems() {
 
   if (selectedDatabaseOrderTitle) {
     selectedDatabaseOrderTitle.textContent = selectedOrder
-      ? `Order ${getDatabaseOrderNumber(selectedOrder)}`
+      ? getDatabaseOrderTitle(selectedOrder)
       : "Selected order items";
   }
   if (selectedDatabaseOrderMeta) {
