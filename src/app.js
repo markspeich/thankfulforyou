@@ -1984,7 +1984,7 @@ function readPresetEditorLineSettings(ruleKey) {
 }
 
 function readPresetEditorFixedItems(fallbackItems = []) {
-  const cards = Array.from(presetFixedItemList?.querySelectorAll("[data-fixed-item-index]") || []);
+  const cards = Array.from(presetFixedItemList?.querySelectorAll(".preset-fixed-item-card[data-fixed-item-index]") || []);
   if (!cards.length) {
     return Array.isArray(fallbackItems) ? structuredClone(fallbackItems) : [];
   }

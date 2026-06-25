@@ -161,13 +161,23 @@ function postMalformedOrdersJson(port) {
   });
 }
 
-afterEach(() => {
-  while (sessions.length) {
-    const child = sessions.pop();
-    if (child && !child.killed) {
+function stopDevServer(child) {
+  return new Promise((resolve) => {
+    if (!child || child.exitCode !== null || child.signalCode !== null) {
+      resolve();
+      return;
+    }
+
+    child.once("exit", () => resolve());
+    if (!child.killed) {
       child.kill();
     }
-  }
+  });
+}
+
+afterEach(async () => {
+  const children = sessions.splice(0);
+  await Promise.all(children.map(stopDevServer));
 });
 
 describe("dev server preset api wrapper", () => {
