@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+﻿import { readFileSync } from "node:fs";
 import { expect, test } from "playwright/test";
 
 test.describe.configure({ mode: "serial" });
@@ -3553,6 +3553,9 @@ test("includes imported color and quantity in the export payload", async ({ page
 
   await page.route("**/api/export-svg", async (route) => {
     exportPayload = route.request().postDataJSON();
+    await new Promise((resolve) => {
+      setTimeout(resolve, 50);
+    });
     await route.fulfill({
       status: 200,
       contentType: "image/svg+xml; charset=utf-8",
@@ -3577,6 +3580,13 @@ test("includes imported color and quantity in the export payload", async ({ page
   await clickOrderItemByText(page, "#4057600528");
   await clickEditorToolButton(page, "#downloadButton");
 
+  await expect(page.locator(".editor-tools-menu")).toHaveAttribute("open", "");
+  await expect(exportDesignButton(page)).toBeVisible();
+  await expect(exportDesignButton(page)).toContainText("Exporting...");
+  await expect(exportDesignButton(page)).toHaveAttribute("data-export-state", "exporting");
+  await expect(exportDesignButton(page)).toContainText("Exported");
+  await expect(exportDesignButton(page)).toHaveAttribute("data-export-state", "success");
+
   await expect.poll(() => exportPayload, { timeout: 20000 }).not.toBeNull();
   expect(exportPayload.colorName).toBe("White Glitter");
   expect(exportPayload.quantity).toBe("2");
@@ -3598,7 +3608,7 @@ test("copies the current design and all batched designs to the clipboard", async
         readText: async () => "",
         write: async (items) => {
           const [item] = items;
-          const svgBlob = item.data["image/svg+xml"];
+          const svgBlob = await item.data["image/svg+xml"];
           const svgText = await svgBlob.text();
           window.__copiedSvgPayloads.push(svgText);
         },
@@ -3634,6 +3644,10 @@ test("copies the current design and all batched designs to the clipboard", async
   await setDesignText(page, "Beta");
   await completeDesign(page, "Design 2");
   await clickBatchAction(page, "Copy All Designs");
+  await expect(page.locator(".batch-header .batch-tools-menu")).toHaveAttribute("open", "");
+  await expect(page.locator("#copyCompletedButton")).toBeVisible();
+  await expect(page.locator("#copyCompletedButton")).toHaveAttribute("data-copy-state", "success");
+
 
   await expect.poll(async () => {
     return page.evaluate(() => window.__copiedSvgPayloads);
@@ -3641,6 +3655,82 @@ test("copies the current design and all batched designs to the clipboard", async
     "<svg xmlns=\"http://www.w3.org/2000/svg\" data-export-kind=\"single\"></svg>",
     "<svg xmlns=\"http://www.w3.org/2000/svg\" data-export-kind=\"batch\"></svg>",
   ]);
+
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+});
+
+test("starts SVG clipboard writes during the copy button activation and shows copy progress", async ({ page }) => {
+  await page.evaluate(() => {
+    window.__copiedSvgPayloads = [];
+    window.__clipboardWriteOutsideActivation = false;
+    window.__copyActivationOpen = false;
+    window.ClipboardItem = class ClipboardItem {
+      constructor(data) {
+        this.data = data;
+      }
+    };
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        readText: async () => "",
+        write: async (items) => {
+          if (!window.__copyActivationOpen) {
+            window.__clipboardWriteOutsideActivation = true;
+          }
+          const [item] = items;
+          const svgBlob = await item.data["image/svg+xml"];
+          const svgText = await svgBlob.text();
+          window.__copiedSvgPayloads.push(svgText);
+        },
+      },
+    });
+  });
+
+  await page.route("**/api/export-svg", async (route) => {
+    await new Promise((resolve) => {
+      setTimeout(resolve, 50);
+    });
+    await route.fulfill({
+      status: 200,
+      contentType: "image/svg+xml; charset=utf-8",
+      body: "<svg xmlns=\"http://www.w3.org/2000/svg\" data-export-kind=\"single\"></svg>",
+    });
+  });
+  await page.route("**/api/layout-analyze", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify(buildMockAnalysisResponse()),
+    });
+  });
+
+  await setDesignText(page, "Alpha");
+  await completeDesign(page, "Design 1");
+  await openEditorTools(page);
+  await page.evaluate(() => {
+    const button = document.querySelector("#copyButton");
+    if (!(button instanceof HTMLButtonElement)) {
+      throw new Error("Copy button not found");
+    }
+    window.__copyActivationOpen = true;
+    button.click();
+    window.__copyActivationOpen = false;
+  });
+
+  await expect(page.locator(".editor-tools-menu")).toHaveAttribute("open", "");
+  await expect(copyDesignButton(page)).toBeVisible();
+  await expect(copyDesignButton(page)).toContainText("Copying...");
+  await expect(copyDesignButton(page)).toHaveAttribute("data-copy-state", "copying");
+  await expect(copyDesignButton(page)).toContainText("Copied");
+  await expect(copyDesignButton(page)).toHaveAttribute("data-copy-state", "success");
+  await expect.poll(async () => {
+    return page.evaluate(() => window.__copiedSvgPayloads);
+  }, { timeout: 20000 }).toEqual([
+    "<svg xmlns=\"http://www.w3.org/2000/svg\" data-export-kind=\"single\"></svg>",
+  ]);
+  await expect.poll(async () => {
+    return page.evaluate(() => window.__clipboardWriteOutsideActivation);
+  }).toBe(false);
 
   await page.unrouteAll({ behavior: "ignoreErrors" });
 });
@@ -3997,6 +4087,9 @@ test("exports completed designs without re-running analysis", async ({ page }) =
   await page.route("**/api/export-svg", async (route) => {
     exportRequested = true;
     exportAnalyzeCounts = Object.fromEntries(analyzeCounts);
+    await new Promise((resolve) => {
+      setTimeout(resolve, 50);
+    });
     await route.fulfill({
       status: 200,
       contentType: "image/svg+xml; charset=utf-8",
@@ -4010,6 +4103,13 @@ test("exports completed designs without re-running analysis", async ({ page }) =
   await page.locator("#textInput").fill("Beta");
   await completeDesign(page, "Design 2");
   await clickBatchAction(page, "Export All Designs");
+
+  await expect(page.locator(".batch-header .batch-tools-menu")).toHaveAttribute("open", "");
+  await expect(page.locator("#exportCompletedButton")).toBeVisible();
+  await expect(page.locator("#exportCompletedButton")).toContainText("Exporting...");
+  await expect(page.locator("#exportCompletedButton")).toHaveAttribute("data-export-state", "exporting");
+  await expect(page.locator("#exportCompletedButton")).toContainText("Exported");
+  await expect(page.locator("#exportCompletedButton")).toHaveAttribute("data-export-state", "success");
 
   await expect.poll(() => exportRequested, { timeout: 20000 }).toBe(true);
   expect(exportAnalyzeCounts).toEqual({

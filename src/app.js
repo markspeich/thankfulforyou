@@ -293,6 +293,8 @@ const batchActionLabelByButton = new Map(
     .filter(Boolean)
     .map((button) => [button, button.querySelector(".batch-tool-label")]),
 );
+const transientActionLabelTimerByButton = new WeakMap();
+const COPY_SUCCESS_LABEL_DURATION_MS = 1200;
 const colorCountsDialog = document.querySelector("#colorCountsDialog");
 const closeColorCountsButton = document.querySelector("#closeColorCountsButton");
 const pasteSummaryDialog = document.querySelector("#pasteSummaryDialog");
@@ -6296,7 +6298,15 @@ function renderSelectedDatabaseOrderItems() {
       const label = document.createElement("span");
       label.className = "batch-tool-label";
       label.textContent = button.textContent;
-      button.replaceChildren(label);
+      if (button === copyDesignButton) {
+        const icon = document.createElement("span");
+        icon.className = "batch-tool-icon";
+        icon.setAttribute("aria-hidden", "true");
+        icon.innerHTML = `<svg viewBox="0 0 24 24" focusable="false"><rect x="9" y="9" width="10" height="10" rx="2" /><path d="M7 15H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v1" /></svg>`;
+        button.replaceChildren(icon, label);
+      } else {
+        button.replaceChildren(label);
+      }
     });
 
     menuGroup.append(menuHeading, copyDesignButton, addToBatchButton, statusActionButton);
@@ -6863,15 +6873,17 @@ async function copyDatabaseOrderItemDesign(item, button = null) {
   }
 
   if (button) {
+    setCopyButtonWorking(button, "Copying...");
     button.disabled = true;
-    button.textContent = "Copying...";
   }
+  let copied = false;
 
   try {
-    const svgSource = await requestSvgSource({
+    const svgSourcePromise = requestSvgSource({
       layout: buildExportPayload(savedBuild.layout, savedBuild.analysis, item?.source),
     });
-    await copySvgToClipboard(svgSource);
+    await copySvgSourceToClipboard(svgSourcePromise);
+    copied = true;
     updateWorkflowAlert("Copied design SVG to the clipboard.", "success");
   } catch (error) {
     updateWorkflowAlert(
@@ -6881,7 +6893,12 @@ async function copyDatabaseOrderItemDesign(item, button = null) {
   } finally {
     if (button) {
       button.disabled = false;
-      button.textContent = "Copy Design";
+      button.removeAttribute("aria-busy");
+      if (copied) {
+        showCopyButtonSuccess(button, "Copy Design");
+      } else {
+        resetCopyButtonState(button, "Copy Design");
+      }
     }
   }
 }
@@ -7404,6 +7421,86 @@ function setEditorActionLabel(button, label) {
   }
 
   button.textContent = label;
+}
+function setActionButtonLabel(button, label) {
+  if (!button) {
+    return;
+  }
+
+  const batchLabel = button.querySelector(".batch-tool-label");
+  if (batchLabel) {
+    batchLabel.textContent = label;
+    return;
+  }
+
+  if (batchActionLabelByButton.has(button)) {
+    setBatchActionLabel(button, label);
+    return;
+  }
+
+  setEditorActionLabel(button, label);
+}
+
+function clearTransientActionLabel(button) {
+  const timerId = transientActionLabelTimerByButton.get(button);
+  if (timerId) {
+    window.clearTimeout(timerId);
+    transientActionLabelTimerByButton.delete(button);
+  }
+}
+
+function setCopyButtonWorking(button, label) {
+  clearTransientActionLabel(button);
+  button.dataset.copyState = "copying";
+  button.setAttribute("aria-busy", "true");
+  setActionButtonLabel(button, label);
+}
+
+function resetCopyButtonState(button, defaultLabel) {
+  clearTransientActionLabel(button);
+  button.removeAttribute("data-copy-state");
+  button.removeAttribute("aria-busy");
+  setActionButtonLabel(button, defaultLabel);
+}
+
+function showCopyButtonSuccess(button, defaultLabel) {
+  clearTransientActionLabel(button);
+  button.removeAttribute("aria-busy");
+  button.dataset.copyState = "success";
+  setActionButtonLabel(button, "Copied");
+  const timerId = window.setTimeout(() => {
+    button.removeAttribute("data-copy-state");
+    setActionButtonLabel(button, defaultLabel);
+    transientActionLabelTimerByButton.delete(button);
+  }, COPY_SUCCESS_LABEL_DURATION_MS);
+  transientActionLabelTimerByButton.set(button, timerId);
+}
+
+function setExportButtonWorking(button, label) {
+  clearTransientActionLabel(button);
+  button.dataset.exportState = "exporting";
+  button.setAttribute("aria-busy", "true");
+  setActionButtonLabel(button, label);
+}
+
+function resetExportButtonState(button, defaultLabel) {
+  clearTransientActionLabel(button);
+  button.removeAttribute("data-export-state");
+  button.removeAttribute("aria-busy");
+  setActionButtonLabel(button, defaultLabel);
+}
+
+function showExportButtonSuccess(button, defaultLabel) {
+  clearTransientActionLabel(button);
+  button.removeAttribute("aria-busy");
+  button.dataset.exportState = "success";
+  setActionButtonLabel(button, "Exported");
+  const timerId = window.setTimeout(() => {
+    button.removeAttribute("data-export-state");
+    setActionButtonLabel(button, defaultLabel);
+    transientActionLabelTimerByButton.delete(button);
+  }, COPY_SUCCESS_LABEL_DURATION_MS);
+  transientActionLabelTimerByButton.set(button, timerId);
 }
 
 function renderLineControls(settings = getCurrentSettings()) {
@@ -11026,9 +11123,9 @@ async function downloadSvg() {
     return;
   }
 
+  setExportButtonWorking(downloadButton, "Exporting...");
   downloadButton.disabled = true;
-  setEditorActionLabel(downloadButton, "Exporting...");
-  downloadButton.setAttribute("aria-busy", "true");
+  let exported = false;
 
   try {
     order.text = textInput.value;
@@ -11054,11 +11151,15 @@ async function downloadSvg() {
     });
     persistBatchState();
     renderOrderList();
+    exported = true;
   } catch {
   } finally {
     downloadButton.disabled = false;
-    setEditorActionLabel(downloadButton, "Export This Design");
-    downloadButton.removeAttribute("aria-busy");
+    if (exported) {
+      showExportButtonSuccess(downloadButton, "Export This Design");
+    } else {
+      resetExportButtonState(downloadButton, "Export This Design");
+    }
     renderOrderList();
   }
 }
@@ -11069,9 +11170,9 @@ async function copyCurrentSvg() {
     return;
   }
 
+  setCopyButtonWorking(copyButton, "Copying...");
   copyButton.disabled = true;
-  setEditorActionLabel(copyButton, "Copying...");
-  copyButton.setAttribute("aria-busy", "true");
+  let copied = false;
 
   try {
     order.text = textInput.value;
@@ -11086,15 +11187,21 @@ async function copyCurrentSvg() {
       return;
     }
 
-    const svgSource = await requestSvgSource({
+    const svgSourcePromise = requestSvgSource({
       layout: buildExportPayload(cachedBuild.layout, cachedBuild.analysis, order.source),
     });
-    await copySvgToClipboard(svgSource);
+    await copySvgSourceToClipboard(svgSourcePromise);
+    copied = true;
   } catch {
   } finally {
-    copyButton.disabled = !orderHasRenderableDesign(order) || !canCopySvgToClipboard();
-    setEditorActionLabel(copyButton, "Copy This Design");
+    const copyDisabled = !orderHasRenderableDesign(order) || !canCopySvgToClipboard();
+    copyButton.disabled = copyDisabled;
     copyButton.removeAttribute("aria-busy");
+    if (copied) {
+      showCopyButtonSuccess(copyButton, "Copy This Design");
+    } else {
+      resetCopyButtonState(copyButton, "Copy This Design");
+    }
     renderOrderList();
   }
 }
@@ -11136,21 +11243,29 @@ function canCopySvgToClipboard() {
   return Boolean(navigator.clipboard.write || navigator.clipboard.writeText);
 }
 
-async function copySvgToClipboard(svgSource) {
+async function copySvgSourceToClipboard(svgSourceOrPromise) {
   if (!canCopySvgToClipboard()) {
     throw new Error("Clipboard copy is not available in this browser context.");
   }
 
+  const svgSourcePromise = Promise.resolve(svgSourceOrPromise);
   if (navigator.clipboard.write && typeof ClipboardItem !== "undefined") {
+    const svgBlobPromise = svgSourcePromise.then((svgSource) => new Blob([svgSource], { type: "image/svg+xml" }));
+    const textBlobPromise = svgSourcePromise.then((svgSource) => new Blob([svgSource], { type: "text/plain" }));
     const clipboardItem = new ClipboardItem({
-      "image/svg+xml": new Blob([svgSource], { type: "image/svg+xml" }),
-      "text/plain": new Blob([svgSource], { type: "text/plain" }),
+      "image/svg+xml": svgBlobPromise,
+      "text/plain": textBlobPromise,
     });
     await navigator.clipboard.write([clipboardItem]);
+    await svgSourcePromise;
     return;
   }
 
-  await navigator.clipboard.writeText(svgSource);
+  await navigator.clipboard.writeText(await svgSourcePromise);
+}
+
+async function copySvgToClipboard(svgSource) {
+  await copySvgSourceToClipboard(svgSource);
 }
 
 async function exportAllOrders() {
@@ -11172,9 +11287,9 @@ async function exportAllOrders() {
     return;
   }
 
+  setExportButtonWorking(exportCompletedButton, "Exporting...");
   exportCompletedButton.disabled = true;
-  setBatchActionLabel(exportCompletedButton, "Exporting...");
-  exportCompletedButton.setAttribute("aria-busy", "true");
+  let exported = false;
 
   try {
     const builtLayouts = exportableOrders.map((order) => {
@@ -11196,11 +11311,15 @@ async function exportAllOrders() {
       order.capturedLayout = structuredClone(analysis ? { ...layout, analysis } : layout);
     });
     persistBatchState();
+    exported = true;
   } catch {
   } finally {
     exportCompletedButton.disabled = false;
-    setBatchActionLabel(exportCompletedButton, "Export All Designs");
-    exportCompletedButton.removeAttribute("aria-busy");
+    if (exported) {
+      showExportButtonSuccess(exportCompletedButton, "Export All Designs");
+    } else {
+      resetExportButtonState(exportCompletedButton, "Export All Designs");
+    }
     renderOrderList();
   }
 }
@@ -11224,9 +11343,9 @@ async function copyAllOrders() {
     return;
   }
 
+  setCopyButtonWorking(copyCompletedButton, "Copying...");
   copyCompletedButton.disabled = true;
-  setBatchActionLabel(copyCompletedButton, "Copying...");
-  copyCompletedButton.setAttribute("aria-busy", "true");
+  let copied = false;
 
   try {
     const builtLayouts = exportableOrders.map((order) => {
@@ -11238,15 +11357,20 @@ async function copyAllOrders() {
       };
     });
 
-    const svgSource = await requestSvgSource({
+    const svgSourcePromise = requestSvgSource({
       layouts: builtLayouts.map(({ order, layout, analysis }) => buildExportPayload(layout, analysis, order.source)),
     });
-    await copySvgToClipboard(svgSource);
+    await copySvgSourceToClipboard(svgSourcePromise);
+    copied = true;
   } catch {
   } finally {
     copyCompletedButton.disabled = exportableOrders.length === 0 || !canCopySvgToClipboard();
-    setBatchActionLabel(copyCompletedButton, "Copy All Designs");
     copyCompletedButton.removeAttribute("aria-busy");
+    if (copied) {
+      showCopyButtonSuccess(copyCompletedButton, "Copy All Designs");
+    } else {
+      resetCopyButtonState(copyCompletedButton, "Copy All Designs");
+    }
     renderOrderList();
   }
 }
@@ -11777,7 +11901,7 @@ insertFixedDesignDialog?.addEventListener("click", (event) => {
     closeInsertFixedDesignDialog();
   }
 });
-[addOrderButton, importClipboardButton, clearBatchButton, showColorCountsButton, exportCompletedButton, copyCompletedButton]
+[addOrderButton, importClipboardButton, clearBatchButton, showColorCountsButton]
   .filter(Boolean)
   .forEach((button) => {
     button.addEventListener("click", () => {
@@ -11805,7 +11929,7 @@ insertFixedDesignDialog?.addEventListener("click", (event) => {
       fixedDesignActionsMenu?.removeAttribute("open");
     });
   });
-[copyButton, downloadButton]
+[]
   .filter(Boolean)
   .forEach((button) => {
     button.addEventListener("click", () => {

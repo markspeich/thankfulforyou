@@ -543,6 +543,7 @@ The website should be a practical production tool rather than a marketing site. 
 - Command buttons should use one shared enabled color, one shared disabled color, and one shared enabled-hover color across batch tools, editor actions, export/copy/save/complete actions, and destructive actions. Non-command row-selection buttons may remain visually neutral.
 - Command buttons should share the same pill-shaped radius as the batch header `Paste` button so the action language stays visually consistent.
 - Command buttons should also provide a visible pressed state when clicked or tapped so operators get immediate tactile confirmation that the action was engaged.
+- Copy and export buttons should show an in-button working state while copy/export data is prepared and show a brief in-button success state after the clipboard write or file export succeeds. Copy buttons should start clipboard writes immediately from the click action.
 - The pressed state should follow the same shared interaction language across batch tools, editor actions, export/copy/save/complete actions, and destructive actions rather than being tuned separately per button family.
 - The pressed-state feedback should stay practical and restrained for the production-workspace tone: a darker pressed color, slightly stronger border or inset feel, and a subtle downward movement are preferred over flashy animation.
 - Keyboard focus-visible styling should remain distinct from the pressed state so accessibility feedback is not weakened while adding pointer/touch feedback.
