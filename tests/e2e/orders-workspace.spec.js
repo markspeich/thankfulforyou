@@ -45,7 +45,7 @@ function installClipboardText(page, text) {
 }
 
 async function installProductionBatchRoutes(page, options = {}) {
-  const { orderItems = [], onGet = null } = options;
+  const { orderItems = [], onGet = null, onPut = null } = options;
   let productionBatchSnapshot = {
     batch: { id: "batch-1", workspaceId: "workspace-1" },
     activeOrderItemId: orderItems[0]?.id || null,
@@ -80,6 +80,7 @@ async function installProductionBatchRoutes(page, options = {}) {
     }
 
     productionBatchSnapshot = route.request().postDataJSON()?.snapshot || productionBatchSnapshot;
+    await onPut?.(productionBatchSnapshot);
     await route.fulfill({
       status: 200,
       contentType: "application/json; charset=utf-8",
@@ -503,6 +504,70 @@ test("renders grouped database orders and selected order item cards", async ({ p
   await expect(inBatchItemCard.getByRole("button", { name: "Add to Production Batch" })).toBeDisabled();
 });
 
+test("refreshes Orders after saving a new manual production batch design", async ({ page }) => {
+  await installSupabaseSession(page);
+  const ordersPayload = buildOrdersPayload();
+  await installProductionBatchRoutes(page, {
+    onPut: async (snapshot) => {
+      const manualItem = snapshot.orderItems.find((item) => item.text === "Manual Bob");
+      if (!manualItem || ordersPayload.orders.some((order) => order.id === `item:${manualItem.id}`)) {
+        return;
+      }
+
+      ordersPayload.orders.push({
+        id: `item:${manualItem.id}`,
+        orderNumber: null,
+        buyerName: null,
+        status: "open",
+        isInActiveBatch: true,
+        items: [{
+          id: manualItem.id,
+          orderNumber: null,
+          buyerName: null,
+          isInActiveBatch: true,
+          quantity: 1,
+          design: {
+            text: manualItem.text,
+            lines: [{ lineIndex: 0, text: manualItem.text, fontId: "candlepin" }],
+          },
+          source: {},
+        }],
+      });
+    },
+  });
+  await installOrdersWorkspaceRoutes(page, { ordersPayload });
+  await page.route("**/api/layout-analyze", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify({
+        isConnected: true,
+        connectedComponentCount: 1,
+        facePath: "M0 0 L10 0 L10 10 L0 10 Z",
+        exportFacePath: "M0 0 L10 0 L10 10 L0 10 Z",
+        backingPath: "M-1 -1 L11 -1 L11 11 L-1 11 Z",
+        faceBoundsMm: { x: 0, y: 0, width: 10, height: 10 },
+      }),
+    });
+  });
+
+  await page.goto("/orders");
+  const ordersWorkspace = page.getByRole("region", { name: "Orders workspace" });
+  await expect(ordersWorkspace.getByRole("button", { name: /Order 1001/ })).toBeVisible();
+  await expect(ordersWorkspace.getByText("Manual Bob")).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Production Batch", exact: true }).click();
+  await page.getByLabel("Batch tools").click();
+  await page.getByRole("button", { name: "Add Design" }).click();
+  await page.locator("#textInput").fill("Manual Bob");
+  await expect(page.locator("#captureButton")).toBeEnabled();
+  await page.locator("#captureButton").click();
+  await expect.poll(() => ordersPayload.orders.some((order) => order.id.startsWith("item:"))).toBe(true);
+
+  await page.getByRole("button", { name: "Orders", exact: true }).click();
+
+  await expect(ordersWorkspace.getByText("Manual Order: Manual Bob")).toBeVisible();
+});
 test("filters database orders by search text, batch membership, and status", async ({ page }) => {
   await installSupabaseSession(page);
   await installProductionBatchRoutes(page);
