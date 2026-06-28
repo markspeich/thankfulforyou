@@ -988,6 +988,61 @@ test("refines auto-fit against the rendered face ink bounds", async ({ page }) =
   expect(bounds.textHeightMm).toBeLessThanOrEqual(bounds.guideHeightMm);
 });
 
+test("shows fitted text height as the primary text height value", async ({ page }) => {
+  await page.locator("#textInput").fill("PT\nCyndie");
+  await page.locator("#presetInput").selectOption("preset-d9b4f2a6c731");
+
+  const firstLineHeight = page.locator('.line-control-card[data-line-index="0"] [data-setting="fontSizeMm"]');
+  const firstLineHeightOutput = page.locator('.line-control-card[data-line-index="0"] [data-setting="fontSizeMm"] + output');
+
+  await expect(firstLineHeight).toHaveValue("34");
+  await expect(page.locator('.line-control-card[data-line-index="0"] [data-fitted-setting="fontSizeMm"]')).toHaveCount(0);
+  await expect(firstLineHeightOutput).toContainText(/^\d+ mm$/);
+
+  const displayedHeightMm = await firstLineHeightOutput.evaluate((element) => {
+    const match = element.textContent?.match(/^(\d+)\s+mm$/);
+    return match ? Number(match[1]) : NaN;
+  });
+
+  expect(displayedHeightMm).toBeGreaterThan(0);
+  expect(displayedHeightMm).toBeLessThan(34);
+  await expect(firstLineHeight).toHaveValue("34");
+});
+
+test("updates displayed text height on release unless text height is locked", async ({ page }) => {
+  await page.locator("#textInput").fill("PT\nCyndie");
+  await page.locator("#presetInput").selectOption("preset-d9b4f2a6c731");
+
+  const firstLineCard = page.locator('.line-control-card[data-line-index="0"]');
+  const firstLineHeight = firstLineCard.locator('[data-setting="fontSizeMm"]');
+  const firstLineHeightOutput = firstLineCard.locator('[data-setting="fontSizeMm"] + output');
+  const firstLineLock = firstLineCard.locator('[data-setting="lockTextHeight"]');
+
+  await expect(firstLineHeightOutput).toContainText(/^\d+ mm$/);
+  const initialDisplay = await firstLineHeightOutput.textContent();
+
+  await firstLineHeight.evaluate((input) => {
+    input.value = "40";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await page.waitForTimeout(150);
+
+  await expect(firstLineHeight).toHaveValue("40");
+  await expect(firstLineHeightOutput).toHaveText(initialDisplay || "");
+
+  await firstLineHeight.evaluate((input) => {
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  await expect(firstLineHeightOutput).toContainText(/^\d+ mm$/);
+
+  await firstLineLock.check();
+  await firstLineHeight.evaluate((input) => {
+    input.value = "29";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+
+  await expect(firstLineHeightOutput).toHaveText("29 mm");
+});
 test("does not render a queue sync status card in the queue tools menu", async ({ page }) => {
   await expect(page.locator("#queueSyncStatus")).toHaveCount(0);
   await expect(page.locator(".order-batch-card")).toHaveCount(0);

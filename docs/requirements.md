@@ -145,6 +145,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Each per-line control group must include a Font dropdown, Letter Bridge slider, Horizontal Offset slider, Text Height slider, Horizontal Stretch slider, and Vertical Stretch slider.
 - The Production Batch editor Text Height control should allow values down to 5 mm.
 - Each per-line control group must also include a `Lock Text Height` control that prevents automatic boundary-fit resizing from changing that line's configured text height.
+- Each per-line `Text Height` slider must keep the authored text height as its internal control value while showing the current fitted text height produced by automatic size-guide resizing as the primary displayed millimeter value; for unlocked lines, that displayed fitted value updates when the slider is released, while locked text-height lines update the displayed value during slider movement.
 - The `Lock Text Height` control should appear inline with the rest of the line controls and should not render inside its own bordered subsection.
 - Each per-line control group after the first must also include a Line Bridge slider for controlling the connection to the line above it.
 - Add or remove per-line control groups automatically as the user adds or removes text lines.

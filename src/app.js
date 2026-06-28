@@ -458,6 +458,7 @@ const orders = [];
 let batchPersistenceTimeoutId = null;
 let orderListRenderFrameId = null;
 let deferredPreviewRenderToken = 0;
+const frozenTextHeightOutputLineIndexes = new Set();
 let suppressBatchSyncLocalNotice = false;
 let copiedLayoutControlsSnapshot = null;
 const fixedSvgBackingPreviewCache = new Map();
@@ -7339,7 +7340,9 @@ function updateRangeOutputForInput(input) {
 
   output.textContent = input.id === "presetBackingInput"
     ? `${Number(input.value).toFixed(1)} mm`
-    : lineValueText(input.dataset.setting || "", input.value);
+    : input.dataset.setting === "fontSizeMm"
+      ? "--"
+      : lineValueText(input.dataset.setting || "", input.value);
 }
 
 function summarizeHorizontalScale(lines = []) {
@@ -7505,6 +7508,7 @@ function showExportButtonSuccess(button, defaultLabel) {
 }
 
 function renderLineControls(settings = getCurrentSettings()) {
+  frozenTextHeightOutputLineIndexes.clear();
   const normalized = normalizeSettings(settings);
   lineControlCards.replaceChildren();
 
@@ -7677,7 +7681,7 @@ function createRangeField(lineIndex, setting, labelText, min, max, step, value) 
   input.dataset.setting = setting;
 
   const output = document.createElement("output");
-  output.textContent = lineValueText(setting, value);
+  output.textContent = setting === "fontSizeMm" ? "--" : lineValueText(setting, value);
 
   row.append(input, output);
   label.append(span, row);
@@ -10989,6 +10993,47 @@ function createFixedSvgPreviewElements(fixedSvgs = [], frame) {
   });
 }
 
+function readLineIndexFromControl(control) {
+  const lineIndex = Number(control?.dataset?.lineIndex);
+  return Number.isFinite(lineIndex) ? lineIndex : null;
+}
+
+function isTextHeightInputLocked(input) {
+  const card = input.closest('.line-control-card[data-line-kind="text"]');
+  const lockInput = card?.querySelector('[data-setting="lockTextHeight"]');
+  return lockInput instanceof HTMLInputElement && lockInput.checked;
+}
+
+function updateFittedTextHeightOutputs(layout = null) {
+  const outputs = lineControlCards.querySelectorAll('[data-setting="fontSizeMm"] + output');
+  if (!outputs.length) {
+    return;
+  }
+
+  const settings = normalizeSettings(getCurrentSettings());
+  const textLines = settings.lines.filter((line) => !isFixedSvgLineSettings(line));
+  const lineScaleFactors = Array.isArray(layout?.fit?.lineScaleFactors) ? layout.fit.lineScaleFactors : [];
+
+  outputs.forEach((output) => {
+    const input = output.previousElementSibling;
+    const lineIndex = input instanceof HTMLInputElement ? Number(input.dataset.lineIndex) : NaN;
+    if (frozenTextHeightOutputLineIndexes.has(lineIndex)) {
+      return;
+    }
+
+    const line = textLines[lineIndex];
+    const scaleFactor = lineScaleFactors[lineIndex];
+    const fittedHeightMm = Number(line?.fontSizeMm) * Number(scaleFactor);
+
+    if (!Number.isFinite(fittedHeightMm) || fittedHeightMm <= 0) {
+      output.textContent = "--";
+      return;
+    }
+
+    output.textContent = `${fittedHeightMm.toFixed(0)} mm`;
+  });
+}
+
 function renderPreviewFromLayout(layout) {
   const analysis = layout.analysis || null;
   const useRasterTextPreview = shouldUseRasterTextPreview(layout);
@@ -11046,6 +11091,7 @@ function renderPreviewFromLayout(layout) {
     ...createFixedSvgPreviewElements(layout.fixedSvgs || [], frame),
   );
   appendPreviewGuide(frame.previewBoxX, frame.previewBoxY, layout.guide);
+  updateFittedTextHeightOutputs(layout);
 }
 
 function updateConnectionStatusFromAnalysis(analysis) {
@@ -11078,6 +11124,7 @@ function render() {
   if (!settings.text.trim() && !settingsIncludeFixedSvg(settings)) {
     lastLayout = null;
     renderPreviewGuideOnly();
+    updateFittedTextHeightOutputs(null);
     return;
   }
 
@@ -11510,9 +11557,31 @@ function handleLineControlsChange(event) {
     }
   }
 
+  if (target instanceof HTMLInputElement && target.dataset.setting === "lockTextHeight") {
+    const lineIndex = readLineIndexFromControl(target);
+    if (lineIndex != null) {
+      frozenTextHeightOutputLineIndexes.delete(lineIndex);
+    }
+  }
+
   if (target instanceof HTMLInputElement && target.type === "range") {
     const output = target.parentElement?.querySelector("output");
-    if (output) {
+    if (target.dataset.setting === "fontSizeMm") {
+      const lineIndex = readLineIndexFromControl(target);
+      const locked = isTextHeightInputLocked(target);
+
+      if (lineIndex != null && event.type === "input" && !locked) {
+        frozenTextHeightOutputLineIndexes.add(lineIndex);
+      } else if (lineIndex != null) {
+        frozenTextHeightOutputLineIndexes.delete(lineIndex);
+      }
+
+      if (output && locked) {
+        output.textContent = lineValueText(target.dataset.setting, target.value);
+      } else if (output && event.type !== "input") {
+        output.textContent = "--";
+      }
+    } else if (output) {
       output.textContent = lineValueText(target.dataset.setting, target.value);
     }
   }
