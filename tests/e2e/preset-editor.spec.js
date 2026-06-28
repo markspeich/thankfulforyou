@@ -249,8 +249,7 @@ async function expectDefaultSizeGuideLoaded(page) {
 }
 
 async function openSizeGuidesWorkspace(page) {
-  await page.goto("/");
-  await page.getByRole("button", { name: "Size Guides", exact: true }).click();
+  await page.goto("/size-guides");
   await expect(page.getByRole("region", { name: "Size guides workspace" })).toBeVisible();
 }
 
@@ -1269,8 +1268,7 @@ test("cancels edits to the selected preset", async ({ page }) => {
 });
 
 test("shows a live preview while editing a size guide", async ({ page }) => {
-  await page.goto("/");
-  await page.getByRole("button", { name: "Size Guides", exact: true }).click();
+  await page.goto("/size-guides");
   await expect(page.getByRole("region", { name: "Size guides workspace" })).toBeVisible();
   await page.getByRole("button", { name: "New Guide" }).click();
   await expect(page.getByLabel("Size Guides").locator(".size-preset-row.is-selected")).toContainText("New guide draft");
