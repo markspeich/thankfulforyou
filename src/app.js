@@ -150,6 +150,7 @@ const PREVIEW_INNER_GUIDE_INSET_X_MM = (PREVIEW_BOX_WIDTH_MM - PREVIEW_INNER_GUI
 const PREVIEW_INNER_GUIDE_INSET_Y_MM = (PREVIEW_BOX_HEIGHT_MM - PREVIEW_INNER_GUIDE_HEIGHT_MM) / 2;
 const DEFAULT_ZOOM = 3;
 const DEFAULT_WELD_EXPORTED_DESIGN = true;
+const TEXT_HEIGHT_MIN_MM = 5;
 const WORKFLOW_ALERT_AUTOHIDE_MS = Object.freeze({
   pending: 3200,
   success: 6000,
@@ -1848,7 +1849,7 @@ function createPresetEditorLineCard({ ruleKey, title, summary, settings, include
     createPresetEditorFontField(ruleKey, settings.fontId),
     createPresetEditorRangeField(ruleKey, "bridgeMm", "Letter Bridge", 0, 4, 0.1, settings.bridgeMm),
     createPresetEditorRangeField(ruleKey, "offsetXMm", "Horizontal Offset", -20, 20, 0.1, settings.offsetXMm),
-    createPresetEditorRangeField(ruleKey, "fontSizeMm", "Text Height", 18, 55, 1, settings.fontSizeMm),
+    createPresetEditorRangeField(ruleKey, "fontSizeMm", "Text Height", TEXT_HEIGHT_MIN_MM, 55, 1, settings.fontSizeMm),
     createPresetEditorRangeField(ruleKey, "horizontalScale", "Horizontal Stretch", 0.75, 2, 0.01, settings.horizontalScale),
     createPresetEditorRangeField(ruleKey, "verticalScale", "Vertical Stretch", 0.75, 1.5, 0.01, settings.verticalScale),
     createPresetEditorCheckboxField(ruleKey, "lockTextHeight", "Lock Text Height", settings.lockTextHeight),
@@ -7565,7 +7566,7 @@ function renderLineControls(settings = getCurrentSettings()) {
       createFontField(textLineIndex, line.fontId),
       createRangeField(textLineIndex, "bridgeMm", "Letter Bridge", 0, 4, 0.1, line.bridgeMm),
       createRangeField(textLineIndex, "offsetXMm", "Horizontal Offset", -20, 20, 0.1, line.offsetXMm),
-      createRangeField(textLineIndex, "fontSizeMm", "Text Height", 18, 55, 1, line.fontSizeMm),
+      createRangeField(textLineIndex, "fontSizeMm", "Text Height", TEXT_HEIGHT_MIN_MM, 55, 1, line.fontSizeMm),
       createRangeField(textLineIndex, "horizontalScale", "Horizontal Stretch", 0.75, 2, 0.01, line.horizontalScale),
       createRangeField(textLineIndex, "verticalScale", "Vertical Stretch", 0.75, 1.5, 0.01, line.verticalScale),
       createCheckboxField(textLineIndex, "lockTextHeight", "Lock Text Height", line.lockTextHeight),

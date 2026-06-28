@@ -143,6 +143,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Allow vertical-only stretching per line of text so operators can make a line taller without making it wider.
 - Provide one control group per text line.
 - Each per-line control group must include a Font dropdown, Letter Bridge slider, Horizontal Offset slider, Text Height slider, Horizontal Stretch slider, and Vertical Stretch slider.
+- The Production Batch editor Text Height control should allow values down to 5 mm.
 - Each per-line control group must also include a `Lock Text Height` control that prevents automatic boundary-fit resizing from changing that line's configured text height.
 - The `Lock Text Height` control should appear inline with the rest of the line controls and should not render inside its own bordered subsection.
 - Each per-line control group after the first must also include a Line Bridge slider for controlling the connection to the line above it.

@@ -730,6 +730,9 @@ test("shows the production defaults", async ({ page }) => {
   expect(guideMetrics.guideCenterY).toBeCloseTo(guideMetrics.circleCenterY, 6);
   expect(guideMetrics.circleDiameter).toBeCloseTo(1.25 * 25.4, 6);
   expect(guideMetrics.labelFills).toEqual(["rgb(12, 150, 217)", "rgb(12, 150, 217)"]);
+
+  await page.locator("#textInput").fill("Ada");
+  await expect(page.locator('.line-control-card[data-line-index="0"] [data-setting="fontSizeMm"]')).toHaveAttribute("min", "5");
 });
 
 test("shows a size guide control in global settings", async ({ page }) => {
