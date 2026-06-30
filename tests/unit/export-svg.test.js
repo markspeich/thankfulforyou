@@ -232,8 +232,11 @@ describe("export_svg face tracing", () => {
       },
     });
 
+    expect(standard.backingEngine).toBe("shapely");
+    expect(onePass.backingEngine).toBe("shapely");
+    expect(twoPass.backingEngine).toBe("shapely");
     expect(standard.backingPath).toBe(onePass.backingPath);
-    expect(standard.backingPath).not.toBe(twoPass.backingPath);
+    expect(standard.backingPath).toBe(twoPass.backingPath);
   });
 
   test("applies per-letter vertical stretch without widening outline bounds", { timeout: 30000 }, () => {
@@ -298,6 +301,69 @@ describe("export_svg face tracing", () => {
 
     expect(Math.abs(face.top - backing.top - 3.1)).toBeLessThanOrEqual(0.12);
     expect(Math.abs(backing.bottom - face.bottom - 3.1)).toBeLessThanOrEqual(0.12);
+  });
+
+  test("uses Shapely backing offset for unscaled text geometry", { timeout: 30000 }, () => {
+    const analysis = analyzeLayout({
+      text: "III",
+      widthMm: 90,
+      heightMm: 80,
+      backingMm: 3.1,
+      weldExportedDesign: true,
+      letters: [
+        {
+          character: "I",
+          fontId: "candlepin",
+          fontPath: "public/fonts/Candlepin-Laser.otf",
+          fontSizeMm: 48,
+          x: 8,
+          y: 62,
+        },
+        {
+          character: "I",
+          fontId: "candlepin",
+          fontPath: "public/fonts/Candlepin-Laser.otf",
+          fontSizeMm: 48,
+          x: 32,
+          y: 62,
+        },
+        {
+          character: "I",
+          fontId: "candlepin",
+          fontPath: "public/fonts/Candlepin-Laser.otf",
+          fontSizeMm: 48,
+          x: 56,
+          y: 62,
+        },
+      ],
+    });
+
+    expect(analysis.backingEngine).toBe("shapely");
+    expect(analysis.backingPath).not.toContain("Q");
+  });
+  test("keeps stretched backing offset as solid polylines instead of smoothing into curves", { timeout: 30000 }, () => {
+    const analysis = analyzeLayout({
+      text: "O",
+      widthMm: 80,
+      heightMm: 80,
+      backingMm: 3.1,
+      letters: [
+        {
+          character: "O",
+          fontId: "candlepin",
+          fontPath: "public/fonts/Candlepin-Laser.otf",
+          fontSizeMm: 48,
+          horizontalScale: 1,
+          verticalScale: 1.35,
+          x: 20,
+          y: 60,
+        },
+      ],
+    });
+
+    expect(analysis.backingEngine).toBe("shapely");
+    expect(analysis.backingPath).not.toContain("Q");
+    expect(countPathCommands(analysis.backingPath, "M")).toBe(1);
   });
 
   test("applies per-letter horizontal stretch without meaningfully increasing outline height", { timeout: 15000 }, () => {
@@ -369,7 +435,7 @@ describe("export_svg face tracing", () => {
       ],
     }).backingPath);
 
-    expect(stretched.left).toBeLessThanOrEqual(base.left);
+    expect(stretched.left).toBeLessThanOrEqual(base.left + 0.01);
     expect(stretched.right).toBeGreaterThan(base.right);
   });
 

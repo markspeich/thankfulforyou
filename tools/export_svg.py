@@ -19,6 +19,10 @@ from fontTools.pens.transformPen import TransformPen
 from fontTools.ttLib import TTFont
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 import pyclipper
+from shapely import BufferJoinStyle
+from shapely.geometry import MultiPolygon, Polygon
+from shapely.ops import unary_union
+from shapely.validation import make_valid
 
 MM_PER_INCH = 25.4
 BATCH_EXPORT_START_STEP_MM = 2.03 * MM_PER_INCH
@@ -372,6 +376,212 @@ def polyline_closed_path(points, scale):
     return " ".join(commands)
 
 
+SVG_PATH_TOKEN_RE = re.compile(r"[AaCcHhLlMmQqVvZz]|[-+]?(?:\d+\.\d*|\.\d+|\d+)(?:[eE][-+]?\d+)?")
+
+
+def distance_between_points(a, b):
+    return math.hypot(float(a[0]) - float(b[0]), float(a[1]) - float(b[1]))
+
+
+def flatten_quadratic_curve(start, control, end, tolerance_mm):
+    length = distance_between_points(start, control) + distance_between_points(control, end)
+    steps = max(2, int(math.ceil(length / max(tolerance_mm, 0.01))))
+    points = []
+    for index in range(1, steps + 1):
+        t = index / steps
+        mt = 1 - t
+        x = mt * mt * start[0] + 2 * mt * t * control[0] + t * t * end[0]
+        y = mt * mt * start[1] + 2 * mt * t * control[1] + t * t * end[1]
+        points.append((x, y))
+    return points
+
+
+def flatten_cubic_curve(start, control1, control2, end, tolerance_mm):
+    length = (
+        distance_between_points(start, control1)
+        + distance_between_points(control1, control2)
+        + distance_between_points(control2, end)
+    )
+    steps = max(2, int(math.ceil(length / max(tolerance_mm, 0.01))))
+    points = []
+    for index in range(1, steps + 1):
+        t = index / steps
+        mt = 1 - t
+        x = (
+            mt * mt * mt * start[0]
+            + 3 * mt * mt * t * control1[0]
+            + 3 * mt * t * t * control2[0]
+            + t * t * t * end[0]
+        )
+        y = (
+            mt * mt * mt * start[1]
+            + 3 * mt * mt * t * control1[1]
+            + 3 * mt * t * t * control2[1]
+            + t * t * t * end[1]
+        )
+        points.append((x, y))
+    return points
+
+
+def parse_svg_path_to_subpaths(path_data, tolerance_mm=0.05):
+    tokens = SVG_PATH_TOKEN_RE.findall(path_data or "")
+    subpaths = []
+    current_subpath = []
+    command = None
+    index = 0
+    current = (0.0, 0.0)
+    start = (0.0, 0.0)
+
+    def is_command_token(token):
+        return len(token) == 1 and token.isalpha()
+
+    def has_number(count):
+        return index + count <= len(tokens) and not any(is_command_token(tokens[index + offset]) for offset in range(count))
+
+    def read_point(relative=False):
+        nonlocal index, current
+        x = float(tokens[index])
+        y = float(tokens[index + 1])
+        index += 2
+        if relative:
+            return (current[0] + x, current[1] + y)
+        return (x, y)
+
+    while index < len(tokens):
+        token = tokens[index]
+        if is_command_token(token):
+            command = token
+            index += 1
+        if not command:
+            break
+
+        relative = command.islower()
+        op = command.upper()
+
+        if op == "M":
+            if not has_number(2):
+                break
+            if current_subpath:
+                subpaths.append(current_subpath)
+            current = read_point(relative)
+            start = current
+            current_subpath = [current]
+            command = "l" if relative else "L"
+            while has_number(2):
+                current = read_point(relative)
+                current_subpath.append(current)
+            continue
+
+        if op == "L":
+            while has_number(2):
+                current = read_point(relative)
+                current_subpath.append(current)
+            continue
+
+        if op == "H":
+            while has_number(1):
+                value = float(tokens[index])
+                index += 1
+                current = (current[0] + value, current[1]) if relative else (value, current[1])
+                current_subpath.append(current)
+            continue
+
+        if op == "V":
+            while has_number(1):
+                value = float(tokens[index])
+                index += 1
+                current = (current[0], current[1] + value) if relative else (current[0], value)
+                current_subpath.append(current)
+            continue
+
+        if op == "Q":
+            while has_number(4):
+                control = read_point(relative)
+                end = read_point(relative)
+                current_subpath.extend(flatten_quadratic_curve(current, control, end, tolerance_mm))
+                current = end
+            continue
+
+        if op == "C":
+            while has_number(6):
+                control1 = read_point(relative)
+                control2 = read_point(relative)
+                end = read_point(relative)
+                current_subpath.extend(flatten_cubic_curve(current, control1, control2, end, tolerance_mm))
+                current = end
+            continue
+
+        if op == "Z":
+            if current_subpath and current_subpath[-1] != start:
+                current_subpath.append(start)
+            if current_subpath:
+                subpaths.append(current_subpath)
+            current_subpath = []
+            current = start
+            continue
+
+        break
+
+    if current_subpath:
+        subpaths.append(current_subpath)
+
+    return subpaths
+
+
+def shapely_solid_geometry_from_path(path_data, tolerance_mm=0.05):
+    polygons = []
+    for subpath in parse_svg_path_to_subpaths(path_data, tolerance_mm=tolerance_mm):
+        cleaned = []
+        for point in subpath:
+            if not cleaned or distance_between_points(cleaned[-1], point) > 0.0001:
+                cleaned.append(point)
+        if len(cleaned) >= 2 and distance_between_points(cleaned[0], cleaned[-1]) <= 0.0001:
+            cleaned = cleaned[:-1]
+        if len(cleaned) < 3:
+            continue
+        polygon = Polygon(cleaned)
+        if not polygon.is_valid:
+            polygon = make_valid(polygon)
+        if polygon.is_empty:
+            continue
+        if isinstance(polygon, Polygon):
+            polygons.append(Polygon(polygon.exterior))
+        elif isinstance(polygon, MultiPolygon):
+            polygons.extend(Polygon(part.exterior) for part in polygon.geoms if not part.is_empty)
+
+    if not polygons:
+        return None
+
+    return unary_union(polygons)
+
+
+def solid_exterior_geometry(geometry):
+    if geometry is None or geometry.is_empty:
+        return None
+    if isinstance(geometry, Polygon):
+        return Polygon(geometry.exterior)
+    if isinstance(geometry, MultiPolygon):
+        return unary_union([Polygon(part.exterior) for part in geometry.geoms if not part.is_empty])
+    return geometry
+
+
+def shapely_offset_backing_path(face_path, backing_mm, tolerance_mm=0.05):
+    source = shapely_solid_geometry_from_path(face_path, tolerance_mm=tolerance_mm)
+    if source is None or source.is_empty:
+        return ""
+    buffered = source.buffer(
+        backing_mm,
+        join_style=BufferJoinStyle.round,
+        resolution=12,
+        mitre_limit=3,
+    )
+    solid = solid_exterior_geometry(buffered)
+    if solid is None or solid.is_empty:
+        return ""
+
+    polygons = [solid] if isinstance(solid, Polygon) else [part for part in solid.geoms if isinstance(part, Polygon)]
+    return " ".join(polyline_closed_path(list(polygon.exterior.coords), 1) for polygon in polygons)
+
 def trace_mask_outline(mask, scale, tolerance_mm, smooth_iterations, curve_mode="quadratic"):
     bounds = mask.getbbox()
     if not bounds:
@@ -494,7 +704,8 @@ def offset_mask_backing_path(mask, scale, backing_mm, tolerance_mm):
     if not expanded:
         return ""
 
-    return svg_path_from_mm_polygons([[(x / scale, y / scale) for x, y in polygon] for polygon in expanded])
+    solid_contours = [polygon for polygon in expanded if len(polygon) >= 3 and pyclipper.Area(polygon) > 0]
+    return " ".join(polyline_closed_path(polygon, scale) for polygon in solid_contours)
 
 def resolve_font_candidates(root, font_ref):
     fallback_ref = "public/fonts/Candlepin-Laser.otf"
@@ -1084,14 +1295,21 @@ def analyze_single_layout(root, payload):
         curve_mode=profile["face_curve_mode"],
     )
 
-    if has_scaled_letters:
+    backing_path = shapely_offset_backing_path(
+        face_outline["path"],
+        backing,
+        tolerance_mm=profile["backing_tolerance_mm"],
+    )
+    backing_engine = "shapely"
+    if not backing_path and has_scaled_letters:
         backing_path = offset_mask_backing_path(
             face_mask,
             scale,
             backing,
             tolerance_mm=profile["backing_tolerance_mm"],
         )
-    else:
+        backing_engine = "pyclipper-mask"
+    if not backing_path:
         backing_mask = render_text_mask(root, payload, scale=scale, stroke_mm=backing)
         backing_mask_for_path = backing_mask.copy()
         fill_mask_holes(backing_mask_for_path)
@@ -1102,6 +1320,7 @@ def analyze_single_layout(root, payload):
             smooth_iterations=profile["backing_smooth_iterations"],
             curve_mode=profile["backing_curve_mode"],
         )
+        backing_engine = "mask-stroke"
     component_count = count_connected_components(face_mask)
     width_mm = float(payload["widthMm"])
     height_mm = float(payload["heightMm"])
@@ -1115,6 +1334,7 @@ def analyze_single_layout(root, payload):
         "faceBoundsMm": face_outline["bounds"],
         "exportFacePath": welded_face_path if weld_exported_design else face_outline["path"],
         "backingPath": backing_path,
+        "backingEngine": backing_engine,
         "fixedSvgBackingPaths": build_fixed_svg_backing_analysis_paths(payload, width_mm, height_mm),
         "connectedComponentCount": component_count,
         "isConnected": component_count <= 1,
