@@ -300,6 +300,31 @@ describe("export_svg face tracing", () => {
     expect(Math.abs(backing.bottom - face.bottom - 3.1)).toBeLessThanOrEqual(0.12);
   });
 
+  test("keeps stretched backing offset as solid polylines instead of smoothing into curves", { timeout: 30000 }, () => {
+    const analysis = analyzeLayout({
+      text: "O",
+      widthMm: 80,
+      heightMm: 80,
+      backingMm: 3.1,
+      letters: [
+        {
+          character: "O",
+          fontId: "candlepin",
+          fontPath: "public/fonts/Candlepin-Laser.otf",
+          fontSizeMm: 48,
+          horizontalScale: 1,
+          verticalScale: 1.35,
+          x: 20,
+          y: 60,
+        },
+      ],
+    });
+
+    expect(analysis.backingEngine).toBe("shapely");
+    expect(analysis.backingPath).not.toContain("Q");
+    expect(countPathCommands(analysis.backingPath, "M")).toBe(1);
+  });
+
   test("applies per-letter horizontal stretch without meaningfully increasing outline height", { timeout: 15000 }, () => {
     const baseLayout = {
       text: "T",
