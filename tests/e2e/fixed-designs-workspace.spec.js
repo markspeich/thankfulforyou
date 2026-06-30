@@ -65,6 +65,80 @@ async function installProductionBatchRoutes(page) {
       }),
     });
   });
+
+  await page.route("**/api/orders**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify({ orders: [] }),
+    });
+  });
+}
+
+async function installFixedDesignPresetUsageRoute(page) {
+  await page.route("**/api/preset-snapshot**", async (route) => {
+    if (route.request().method() !== "GET") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json; charset=utf-8",
+        body: JSON.stringify({ ok: true }),
+      });
+      return;
+    }
+
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify({
+        snapshot: {
+          version: 1,
+          defaultPresetId: "preset-a1f4c8e2b601",
+          presets: [
+            {
+              schemaVersion: 1,
+              id: "preset-a1f4c8e2b601",
+              name: "All Candlepin",
+              globalDefaults: {
+                boundingSizePresetId: "size-2-2x1-5",
+                backingMm: 3.1,
+                weldExportedDesign: true,
+              },
+              lineDefaults: {
+                fontId: "candlepin",
+                bridgeMm: 0.5,
+                lineBridgeMm: 0.5,
+                offsetXMm: 0,
+                fontSizeMm: 34,
+                horizontalScale: 1,
+                verticalScale: 1,
+                lockTextHeight: false,
+              },
+              lineRules: [
+                {
+                  match: { kind: "all" },
+                  settings: { fontId: "candlepin" },
+                },
+              ],
+              listingAssignments: [],
+              fixedItems: [
+                {
+                  kind: "fixedSvg",
+                  fixedDesignId: "fixed-design-1",
+                  fixedDesignName: "Cardiology Heart",
+                  fixedDesignVersion: 1,
+                  svgSizeMm: 28,
+                  offsetXMm: 0,
+                  offsetYMm: 0,
+                  backingBorder: false,
+                },
+              ],
+            },
+          ],
+        },
+      }),
+    });
+  });
+
 }
 
 async function installFixedDesignRoutes(page, options = {}) {
@@ -221,6 +295,7 @@ async function gotoAfterBatchLoads(page) {
 test("manages fixed SVG designs from the Fixed Designs workspace", async ({ page }) => {
   await installSupabaseSession(page);
   await installProductionBatchRoutes(page);
+  await installFixedDesignPresetUsageRoute(page);
   const fixedDesignApi = await installFixedDesignRoutes(page);
 
   await gotoAfterBatchLoads(page);
@@ -257,6 +332,14 @@ test("manages fixed SVG designs from the Fixed Designs workspace", async ({ page
   await expect(workspace.getByRole("heading", { name: "Cardiology Heart" })).toBeVisible();
   await expect(workspace.getByLabel("Selected fixed design preview")).toBeVisible();
   await expect(workspace.getByRole("button", { name: "Save Design" })).toBeHidden();
+  const fixedDesignPresetList = workspace.locator("#fixedDesignUsedByPresetsList");
+  await expect(workspace.getByRole("heading", { level: 3, name: "Used by Presets" })).toBeVisible();
+  await expect(fixedDesignPresetList).toContainText("All Candlepin");
+  const fixedDesignPresetLink = workspace.getByRole("link", { name: "All Candlepin" });
+  await expect(fixedDesignPresetLink).toHaveAttribute("href", "/presets/preset-a1f4c8e2b601");
+  await expect(workspace.locator("#fixedDesignUsedByPresetsEmptyState")).toBeHidden();
+  const fixedDesignPresetRowHeight = await fixedDesignPresetLink.evaluate((link) => Math.round(link.getBoundingClientRect().height));
+  expect(fixedDesignPresetRowHeight).toBeLessThanOrEqual(34);
 
   await workspace.getByPlaceholder("Search fixed designs").fill("heart");
   await expect(workspace.getByRole("button", { name: "Cardiology Heart" })).toBeVisible();

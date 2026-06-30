@@ -625,6 +625,19 @@ test("shows original production fonts as versionable but not deletable", async (
   await expect(page.getByRole("button", { name: "Upload New Version" })).toBeEnabled();
   await expect(page.getByRole("button", { name: "Delete font" })).toBeDisabled();
   await expect(page.locator("#fontEditorStatus")).toHaveText("Original production fonts can be replaced with a new version while keeping their stable design and preset references.");
+  const fontPresetCard = page.locator("#fontUsedByPresetsList");
+  await expect(page.locator("#fontsWorkspace").getByRole("heading", { level: 3, name: "Used by Presets" })).toBeVisible();
+  await expect(fontPresetCard).toContainText("All Candlepin");
+  await expect(fontPresetCard).toContainText("Candlepin, Skywalk");
+  await expect(fontPresetCard).toContainText("Skywalk, Somekind");
+  const fontPresetLink = page.locator("#fontsWorkspace").getByRole("link", { name: "All Candlepin" });
+  await expect(fontPresetLink).toHaveAttribute("href", "/presets/preset-a1f4c8e2b601");
+  await expect(page.locator("#fontUsedByPresetsEmptyState")).toBeHidden();
+  const fontPresetRowHeight = await fontPresetLink.evaluate((link) => Math.round(link.getBoundingClientRect().height));
+  expect(fontPresetRowHeight).toBeLessThanOrEqual(34);
+  await fontPresetLink.click();
+  await expect(page).toHaveURL(/\/presets\/preset-a1f4c8e2b601$/);
+  await expect(page.locator("#presetDraftName")).toHaveValue("All Candlepin");
 });
 
 test("does not offer deleted fonts as new production batch font choices", async ({ page }) => {
@@ -865,6 +878,18 @@ test("shows size guides in the Size Guides workspace", async ({ page }) => {
   await expect(sizeGuide.getByText("2.2 x 1.5 in", { exact: true })).toBeVisible();
   await expect(sizeGuide.getByText("Max 2.2 x 1.5 in")).toBeVisible();
   await expect(sizeGuide.getByText("Min 1.6 x 1.1 in")).toBeVisible();
+  await expect(sizeGuide.getByRole("heading", { level: 3, name: "Used by Presets" })).toBeVisible();
+  await expect(sizeGuide.getByText("Preset Usage", { exact: true })).toHaveCount(0);
+  await expect(sizeGuide.getByText("Assigned Presets", { exact: true })).toHaveCount(0);
+  await expect(sizeGuide.locator("#sizeGuideAssignedPresetsList")).toContainText("All Candlepin");
+  await expect(sizeGuide.locator("#sizeGuideAssignedPresetsList")).toContainText("Candlepin, Skywalk");
+  await expect(sizeGuide.locator("#sizeGuideAssignedPresetsList")).toContainText("Skywalk, Somekind");
+  const assignedPresetLink = sizeGuide.getByRole("link", { name: "Skywalk, Somekind" });
+  await expect(assignedPresetLink).toHaveAttribute("href", "/presets/preset-c3e8a1d7f520");
+  await expect(sizeGuide.locator("#sizeGuideAssignedPresetsEmptyState")).toBeHidden();
+  const assignedPresetRowHeight = await assignedPresetLink.evaluate((link) => Math.round(link.getBoundingClientRect().height));
+  expect(assignedPresetRowHeight).toBeLessThanOrEqual(34);
+
   await expect(sizeGuide.locator(".size-preset-row.is-selected").first()).toContainText("2.2 x 1.5 in");
   await expect(page.locator("#sizePresetNameInput")).toHaveValue("2.2 x 1.5");
   await expect(sizeGuide.locator(".size-preset-select-button")).toHaveCount(0);
@@ -986,6 +1011,10 @@ test("shows size guides in the Size Guides workspace", async ({ page }) => {
 
   await sizeGuide.locator(".size-preset-row", { hasText: "2.2 x 1.5 in" }).click();
   await expect(page.locator("#sizePresetNameInput")).toHaveValue("2.2 x 1.5");
+  await assignedPresetLink.click();
+  await expect(page).toHaveURL(/\/presets\/preset-c3e8a1d7f520$/);
+  await expect(page.locator("#presetsWorkspace").getByRole("heading", { level: 2, name: "Preset Editor" })).toBeVisible();
+  await expect(page.locator("#presetDraftName")).toHaveValue("Skywalk, Somekind");
 });
 
 test("uses a master-detail layout for preset selection and editing", async ({ page }) => {

@@ -229,6 +229,8 @@ const selectedFontPreview = document.querySelector("#selectedFontPreview");
 const replaceFontButton = document.querySelector("#replaceFontButton");
 const deleteFontButton = document.querySelector("#deleteFontButton");
 const fontEditorStatus = document.querySelector("#fontEditorStatus");
+const fontUsedByPresetsList = document.querySelector("#fontUsedByPresetsList");
+const fontUsedByPresetsEmptyState = document.querySelector("#fontUsedByPresetsEmptyState");
 const fixedDesignUploadButton = document.querySelector("#fixedDesignUploadButton");
 const fixedDesignUploadInput = document.querySelector("#fixedDesignUploadInput");
 const fixedDesignSearchInput = document.querySelector("#fixedDesignSearchInput");
@@ -246,6 +248,8 @@ const selectedFixedDesignFileName = document.querySelector("#selectedFixedDesign
 const selectedFixedDesignVersion = document.querySelector("#selectedFixedDesignVersion");
 const selectedFixedDesignState = document.querySelector("#selectedFixedDesignState");
 const fixedDesignEditorStatus = document.querySelector("#fixedDesignEditorStatus");
+const fixedDesignUsedByPresetsList = document.querySelector("#fixedDesignUsedByPresetsList");
+const fixedDesignUsedByPresetsEmptyState = document.querySelector("#fixedDesignUsedByPresetsEmptyState");
 const fixedDesignVersionDialog = document.querySelector("#fixedDesignVersionDialog");
 const fixedDesignVersionDialogTitle = document.querySelector("#fixedDesignVersionDialogTitle");
 const closeFixedDesignVersionDialogButton = document.querySelector("#closeFixedDesignVersionDialogButton");
@@ -423,6 +427,8 @@ const sizePresetMinHeightInput = document.querySelector("#sizePresetMinHeightInp
 const sizePresetCircleDiameterInput = document.querySelector("#sizePresetCircleDiameterInput");
 const sizePresetPreview = document.querySelector("#sizePresetPreview");
 const sizePresetPreviewEmptyState = document.querySelector("#sizePresetPreviewEmptyState");
+const sizeGuideAssignedPresetsList = document.querySelector("#sizeGuideAssignedPresetsList");
+const sizeGuideAssignedPresetsEmptyState = document.querySelector("#sizeGuideAssignedPresetsEmptyState");
 const newSizePresetButton = document.querySelector("#newSizePresetButton");
 const saveSizePresetButton = document.querySelector("#saveSizePresetButton");
 const cancelSizePresetButton = document.querySelector("#cancelSizePresetButton");
@@ -4185,6 +4191,34 @@ function renderSizePresetList() {
   }));
 }
 
+function renderSizeGuideAssignedPresets() {
+  if (!sizeGuideAssignedPresetsList || !sizeGuideAssignedPresetsEmptyState) {
+    return;
+  }
+
+  const assignedPresets = selectedSizePresetId
+    ? getPresetOptions()
+      .filter((preset) => {
+        const sizePresetId = getPresetGlobalDefaults(preset.id).boundingSizePresetId || DEFAULT_BOUNDING_SIZE_PRESET_ID;
+        return sizePresetId === selectedSizePresetId;
+      })
+    : [];
+
+  sizeGuideAssignedPresetsEmptyState.hidden = assignedPresets.length > 0;
+  sizeGuideAssignedPresetsList.replaceChildren(...assignedPresets.map((preset) => {
+    const link = document.createElement("a");
+    link.className = "compact-preset-usage-link";
+    link.href = buildAppPath("presets", preset.id);
+    link.textContent = preset.label;
+    link.addEventListener("click", (event) => {
+      event.preventDefault();
+      setActiveWorkspace("presets", { routeItemId: preset.id });
+      selectPresetEditorRow(preset.id);
+    });
+    return link;
+  }));
+}
+
 function setSizePresetEditorStatus(message, state = "pending") {
   if (!sizePresetEditorStatus) {
     return;
@@ -4375,6 +4409,7 @@ function clearSizePresetEditor() {
   setSizePresetEditorStatus("Create a size guide or select one below.", "pending");
   renderSizePresetEditorPreview();
   renderSizePresetList();
+  renderSizeGuideAssignedPresets();
   setSizePresetEditorBaselineToCurrent();
 }
 
@@ -4424,6 +4459,7 @@ function selectSizePresetForEditing(presetId, options = {}) {
   setSizePresetEditorStatus(`Editing ${definition.label}.`, "pending");
   renderSizePresetEditorPreview();
   renderSizePresetList();
+  renderSizeGuideAssignedPresets();
   setSizePresetEditorBaselineToCurrent();
   if (updateRoute) {
     writeAppRoute({
@@ -4570,6 +4606,7 @@ function refreshBoundingSizePresetUi(preferredSizePresetId = null) {
   }
 
   renderSizePresetList();
+  renderSizeGuideAssignedPresets();
   render();
 }
 
@@ -8989,6 +9026,49 @@ function removeFixedDesignLine(settingsIndex) {
   updateWorkflowAlert(`Removed fixed design ${removedFixedDesign.displayName}.`, "success");
 }
 
+function fixedDesignPresetItemUsesDesign(item, fixedDesignId) {
+  return item?.fixedDesignId === fixedDesignId;
+}
+
+function presetUsesFixedDesign(preset, fixedDesignId) {
+  if (!preset || !fixedDesignId) {
+    return false;
+  }
+
+  if ((preset.fixedItems || []).some((item) => fixedDesignPresetItemUsesDesign(item, fixedDesignId))) {
+    return true;
+  }
+
+  return (preset.fixedDesigns || []).some((fixedDesign) => (
+    (fixedDesign?.items || []).some((item) => fixedDesignPresetItemUsesDesign(item, fixedDesignId))
+  ));
+}
+
+function renderFixedDesignUsedByPresets() {
+  if (!fixedDesignUsedByPresetsList || !fixedDesignUsedByPresetsEmptyState) {
+    return;
+  }
+
+  const usedByPresets = selectedFixedDesignId
+    ? getPresetOptions()
+      .filter((preset) => presetUsesFixedDesign(getPresetDefinitionForEditor(preset.id), selectedFixedDesignId))
+    : [];
+
+  fixedDesignUsedByPresetsEmptyState.hidden = usedByPresets.length > 0;
+  fixedDesignUsedByPresetsList.replaceChildren(...usedByPresets.map((preset) => {
+    const link = document.createElement("a");
+    link.className = "compact-preset-usage-link";
+    link.href = buildAppPath("presets", preset.id);
+    link.textContent = preset.label;
+    link.addEventListener("click", (event) => {
+      event.preventDefault();
+      setActiveWorkspace("presets", { routeItemId: preset.id });
+      selectPresetEditorRow(preset.id);
+    });
+    return link;
+  }));
+}
+
 function renderFixedDesignWorkspace() {
   if (!fixedDesignList) {
     return;
@@ -9049,6 +9129,7 @@ function renderFixedDesignWorkspace() {
   selectedFixedDesignFileName.textContent = selectedFixedDesign?.fileName || "None";
   selectedFixedDesignVersion.textContent = selectedFixedDesign ? `v${selectedFixedDesign.version || 1}` : "None";
   selectedFixedDesignState.textContent = selectedFixedDesign?.stateLabel || "No selection";
+  renderFixedDesignUsedByPresets();
 
   const hasSelectedDesign = Boolean(selectedFixedDesign);
   [saveFixedDesignButton, loadFixedDesignVersionButton, downloadFixedDesignButton, deleteFixedDesignButton]
@@ -9072,6 +9153,51 @@ function renderFixedDesignWorkspace() {
       ? "This fixed design does not have a preview URL."
       : "Select or upload an SVG fixed design.";
   }
+}
+
+function presetLineSettingsUseFont(settings, fontId) {
+  return settings?.fontId === fontId;
+}
+
+function presetUsesFont(preset, fontId) {
+  if (!preset || !fontId) {
+    return false;
+  }
+
+  if (presetLineSettingsUseFont(preset.lineDefaults, fontId)) {
+    return true;
+  }
+
+  if ((preset.lineRules || []).some((rule) => presetLineSettingsUseFont(rule?.settings, fontId))) {
+    return true;
+  }
+
+  return (preset.listingAssignments || []).some((assignment) => (
+    (assignment?.lineOverrides || []).some((override) => presetLineSettingsUseFont(override?.settings, fontId))
+  ));
+}
+
+function renderFontUsedByPresets() {
+  if (!fontUsedByPresetsList || !fontUsedByPresetsEmptyState) {
+    return;
+  }
+
+  const usedByPresets = getPresetOptions()
+    .filter((preset) => presetUsesFont(getPresetDefinitionForEditor(preset.id), selectedFontId));
+
+  fontUsedByPresetsEmptyState.hidden = usedByPresets.length > 0;
+  fontUsedByPresetsList.replaceChildren(...usedByPresets.map((preset) => {
+    const link = document.createElement("a");
+    link.className = "compact-preset-usage-link";
+    link.href = buildAppPath("presets", preset.id);
+    link.textContent = preset.label;
+    link.addEventListener("click", (event) => {
+      event.preventDefault();
+      setActiveWorkspace("presets", { routeItemId: preset.id });
+      selectPresetEditorRow(preset.id);
+    });
+    return link;
+  }));
 }
 
 function renderFontWorkspace() {
@@ -9134,6 +9260,7 @@ function renderFontWorkspace() {
   fontEditorStatus.textContent = selectedFont.isBuiltin
     ? "Original production fonts can be replaced with a new version while keeping their stable design and preset references."
     : "Uploaded fonts can be replaced with a new version or deleted from future selections.";
+  renderFontUsedByPresets();
 }
 
 function formatFixedDesignDisplayName(fileName) {
