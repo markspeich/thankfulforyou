@@ -13,7 +13,7 @@
       "destination": "/api/layout_analyze"
     },
     {
-      "source": "/(orders|production-batch|presets|fonts|size-guides)(/.*)?",
+      "source": "/(orders|production-batch|presets|fonts|fixed-designs|size-guides)(/.*)?",
       "destination": "/index.html"
     }
   ],

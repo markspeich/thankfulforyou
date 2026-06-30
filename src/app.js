@@ -130,6 +130,12 @@ import {
   resolveFixedDesignReference,
   settingsNeedFixedDesignRecords,
 } from "./fixed-designs.js";
+import {
+  DEFAULT_WORKSPACE,
+  NOT_FOUND_WORKSPACE,
+  buildAppPath as buildRoutePath,
+  readAppRouteFromPathname,
+} from "./app-routes.js";
 
 const orderMetadataEditing = {
   colorName: false,
@@ -177,21 +183,12 @@ const PRESET_SYNC_LINE_SETTING_KEYS = Object.freeze([
   "lockTextHeight",
 ]);
 const WORKSPACE_NAV_COLLAPSED_STORAGE_KEY = "thankfulforyou.workspaceNavCollapsed";
-const DEFAULT_WORKSPACE = "databaseOrders";
-const WORKSPACE_ROUTE_SEGMENTS = Object.freeze({
-  databaseOrders: "orders",
-  orders: "production-batch",
-  presets: "presets",
-  fonts: "fonts",
-  fixedDesigns: "fixed-designs",
-  sizeGuides: "size-guides",
-});
-const WORKSPACE_BY_ROUTE_SEGMENT = Object.freeze(
-  Object.fromEntries(Object.entries(WORKSPACE_ROUTE_SEGMENTS).map(([workspace, segment]) => [segment, workspace])),
-);
 
 const appShell = document.querySelector(".app-shell");
 const workspaceStage = document.querySelector("#workspaceStage");
+const notFoundWorkspace = document.querySelector("#notFoundWorkspace");
+const notFoundPath = document.querySelector("#notFoundPath");
+const notFoundOrdersLink = document.querySelector("#notFoundOrdersLink");
 const initialBatchLoading = document.querySelector("#initialBatchLoading");
 const productionBatchAuthGate = document.querySelector("#productionBatchAuthGate");
 const productionBatchAuthTitle = document.querySelector("#productionBatchAuthTitle");
@@ -523,33 +520,12 @@ function readProductionBatchAccessTokenOverride() {
   return globalThis.__TFU_TEST_PRODUCTION_BATCH_ACCESS_TOKEN__ ?? null;
 }
 
-function safeDecodeRouteSegment(value = "") {
-  try {
-    return decodeURIComponent(value);
-  } catch {
-    return value;
-  }
-}
-
 function readAppRoute() {
-  const segments = window.location.pathname
-    .split("/")
-    .filter(Boolean)
-    .map(safeDecodeRouteSegment);
-  const workspace = WORKSPACE_BY_ROUTE_SEGMENT[segments[0]] || DEFAULT_WORKSPACE;
-
-  return {
-    workspace,
-    itemId: typeof segments[1] === "string" && segments[1] ? segments[1] : null,
-  };
+  return readAppRouteFromPathname(window.location.pathname);
 }
 
 function buildAppPath(workspace = activeWorkspace, itemId = null) {
-  const routeSegment = WORKSPACE_ROUTE_SEGMENTS[workspace] || WORKSPACE_ROUTE_SEGMENTS[DEFAULT_WORKSPACE];
-  const normalizedItemId = typeof itemId === "string" && itemId.trim() ? itemId.trim() : "";
-  return normalizedItemId
-    ? `/${routeSegment}/${encodeURIComponent(normalizedItemId)}`
-    : `/${routeSegment}`;
+  return buildRoutePath(workspace, itemId);
 }
 
 function getWorkspaceRouteItemId(workspace = activeWorkspace) {
@@ -593,12 +569,26 @@ function applyRouteWorkspace(route, options = {}) {
   });
 }
 
+function renderNotFoundRoute(route = {}) {
+  if (notFoundPath) {
+    notFoundPath.textContent = route.missingPath || window.location.pathname || "the requested page";
+  }
+  if (notFoundOrdersLink) {
+    notFoundOrdersLink.href = buildAppPath("databaseOrders");
+  }
+}
+
 function applyRouteSelection(route, options = {}) {
   const { replaceRoute = false } = options;
   const workspace = route?.workspace || DEFAULT_WORKSPACE;
   const itemId = route?.itemId || null;
 
   applyRouteWorkspace({ workspace }, { updateRoute: false });
+
+  if (workspace === NOT_FOUND_WORKSPACE) {
+    renderNotFoundRoute(route);
+    return;
+  }
 
   if (workspace === "databaseOrders") {
     if (itemId) {
@@ -9514,7 +9504,7 @@ async function deleteSelectedFixedDesign() {
 function setActiveWorkspace(workspace, options = {}) {
   const { updateRoute = true, replaceRoute = false } = options;
   const hasRouteItemId = Object.prototype.hasOwnProperty.call(options, "routeItemId");
-  activeWorkspace = ["orders", "databaseOrders", "presets", "fonts", "fixedDesigns", "sizeGuides"].includes(workspace) ? workspace : DEFAULT_WORKSPACE;
+  activeWorkspace = ["orders", "databaseOrders", "presets", "fonts", "fixedDesigns", "sizeGuides", NOT_FOUND_WORKSPACE].includes(workspace) ? workspace : DEFAULT_WORKSPACE;
   appShell.dataset.workspace = activeWorkspace;
   ordersWorkspace.hidden = activeWorkspace !== "orders";
   databaseOrdersWorkspace.hidden = activeWorkspace !== "databaseOrders";
@@ -9522,6 +9512,9 @@ function setActiveWorkspace(workspace, options = {}) {
   fontsWorkspace.hidden = activeWorkspace !== "fonts";
   fixedDesignsWorkspace.hidden = activeWorkspace !== "fixedDesigns";
   sizeGuideWorkspace.hidden = activeWorkspace !== "sizeGuides";
+  if (notFoundWorkspace) {
+    notFoundWorkspace.hidden = activeWorkspace !== NOT_FOUND_WORKSPACE;
+  }
   orderWorkspaceButton.classList.toggle("is-active", activeWorkspace === "orders");
   databaseOrdersWorkspaceButton.classList.toggle("is-active", activeWorkspace === "databaseOrders");
   presetWorkspaceButton.classList.toggle("is-active", activeWorkspace === "presets");
