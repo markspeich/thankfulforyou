@@ -273,6 +273,33 @@ describe("export_svg face tracing", () => {
     expect(stretched.facePath).not.toBe(base.facePath);
   });
 
+  test("keeps vertically stretched backing border at its physical size", { timeout: 30000 }, () => {
+    const analysis = analyzeLayout({
+      text: "T",
+      widthMm: 60,
+      heightMm: 60,
+      backingMm: 3.1,
+      letters: [
+        {
+          character: "T",
+          fontId: "candlepin",
+          fontPath: "public/fonts/Candlepin-Laser.otf",
+          fontSizeMm: 20,
+          horizontalScale: 1,
+          verticalScale: 1.35,
+          x: 20,
+          y: 35,
+        },
+      ],
+    });
+
+    const face = pathBounds(analysis.exportFacePath);
+    const backing = pathBounds(analysis.backingPath);
+
+    expect(Math.abs(face.top - backing.top - 3.1)).toBeLessThanOrEqual(0.12);
+    expect(Math.abs(backing.bottom - face.bottom - 3.1)).toBeLessThanOrEqual(0.12);
+  });
+
   test("applies per-letter horizontal stretch without meaningfully increasing outline height", { timeout: 15000 }, () => {
     const baseLayout = {
       text: "T",

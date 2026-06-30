@@ -421,6 +421,81 @@ def trace_mask_outline(mask, scale, tolerance_mm, smooth_iterations, curve_mode=
     return " ".join(paths)
 
 
+def trace_mask_polygons(mask, scale, tolerance_mm):
+    bounds = mask.getbbox()
+    if not bounds:
+        return []
+
+    left, top, right, bottom = bounds
+    pixels = mask.load()
+    edges = defaultdict(list)
+
+    for y in range(top, bottom):
+        for x in range(left, right):
+            if pixels[x, y] <= 0:
+                continue
+            if y == top or pixels[x, y - 1] <= 0:
+                edges[(x, y)].append((x + 1, y))
+            if x + 1 >= right or pixels[x + 1, y] <= 0:
+                edges[(x + 1, y)].append((x + 1, y + 1))
+            if y + 1 >= bottom or pixels[x, y + 1] <= 0:
+                edges[(x + 1, y + 1)].append((x, y + 1))
+            if x == left or pixels[x - 1, y] <= 0:
+                edges[(x, y + 1)].append((x, y))
+
+    polygons = []
+    while edges:
+        start = next(iter(edges))
+        current = start
+        points = [start]
+
+        while True:
+            next_points = edges[current]
+            next_point = next_points.pop()
+            if not next_points:
+                del edges[current]
+            current = next_point
+            points.append(current)
+            if current == start:
+                break
+
+        points = simplify_closed_polyline(points, tolerance_mm * scale)
+        if points and points[0] == points[-1]:
+            points = points[:-1]
+        if len(points) >= 3:
+            polygons.append(points)
+
+    return polygons
+
+
+def offset_mask_backing_path(mask, scale, backing_mm, tolerance_mm):
+    if backing_mm <= 0:
+        return text_outline_path(mask, scale, tolerance_mm=tolerance_mm, smooth_iterations=0, curve_mode="polyline")
+
+    subject_paths = []
+    for polygon in trace_mask_polygons(mask, scale, tolerance_mm):
+        scaled = [(int(round(x)), int(round(y))) for x, y in polygon]
+        if len(scaled) >= 3 and abs(pyclipper.Area(scaled)) > 0:
+            subject_paths.append(scaled)
+
+    if not subject_paths:
+        return ""
+
+    clipper = pyclipper.Pyclipper()
+    clipper.AddPaths(subject_paths, pyclipper.PT_SUBJECT, True)
+    unioned = clipper.Execute(pyclipper.CT_UNION, pyclipper.PFT_NONZERO, pyclipper.PFT_NONZERO)
+    if not unioned:
+        return ""
+
+    offset = pyclipper.PyclipperOffset(arc_tolerance=max(1, 0.05 * scale))
+    offset.AddPaths(unioned, pyclipper.JT_ROUND, pyclipper.ET_CLOSEDPOLYGON)
+    expanded = offset.Execute(backing_mm * scale)
+    expanded = pyclipper.CleanPolygons(expanded, max(1, 0.015 * scale))
+    if not expanded:
+        return ""
+
+    return svg_path_from_mm_polygons([[(x / scale, y / scale) for x, y in polygon] for polygon in expanded])
+
 def resolve_font_candidates(root, font_ref):
     fallback_ref = "public/fonts/Candlepin-Laser.otf"
     refs = []
@@ -996,10 +1071,11 @@ def analyze_single_layout(root, payload):
         curve_mode=profile["face_curve_mode"],
     )
     face_mask = render_text_mask(root, payload, scale=scale)
-    backing_mask = render_text_mask(root, payload, scale=scale, stroke_mm=backing)
-
-    backing_mask_for_path = backing_mask.copy()
-    fill_mask_holes(backing_mask_for_path)
+    has_scaled_letters = any(
+        abs(float(letter.get("horizontalScale", 1)) - 1.0) > 1e-6
+        or abs(float(letter.get("verticalScale", 1)) - 1.0) > 1e-6
+        for letter in payload.get("letters", [])
+    )
     welded_face_path = text_outline_path(
         face_mask,
         scale,
@@ -1008,13 +1084,24 @@ def analyze_single_layout(root, payload):
         curve_mode=profile["face_curve_mode"],
     )
 
-    backing_path = text_outline_path(
-        backing_mask_for_path,
-        scale,
-        tolerance_mm=profile["backing_tolerance_mm"],
-        smooth_iterations=profile["backing_smooth_iterations"],
-        curve_mode=profile["backing_curve_mode"],
-    )
+    if has_scaled_letters:
+        backing_path = offset_mask_backing_path(
+            face_mask,
+            scale,
+            backing,
+            tolerance_mm=profile["backing_tolerance_mm"],
+        )
+    else:
+        backing_mask = render_text_mask(root, payload, scale=scale, stroke_mm=backing)
+        backing_mask_for_path = backing_mask.copy()
+        fill_mask_holes(backing_mask_for_path)
+        backing_path = text_outline_path(
+            backing_mask_for_path,
+            scale,
+            tolerance_mm=profile["backing_tolerance_mm"],
+            smooth_iterations=profile["backing_smooth_iterations"],
+            curve_mode=profile["backing_curve_mode"],
+        )
     component_count = count_connected_components(face_mask)
     width_mm = float(payload["widthMm"])
     height_mm = float(payload["heightMm"])
