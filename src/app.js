@@ -39,7 +39,7 @@ import {
 } from "./presets.js";
 import { savePresetSnapshot } from "./preset-api.js";
 import { computeLineMaskMetrics } from "./text-metrics.js";
-import { shouldUseRasterTextPreview } from "./preview-rendering.js";
+import { shouldUsePostStretchBackingOffset, shouldUseRasterTextPreview } from "./preview-rendering.js";
 import { findPairOffsetPx } from "./bridge-geometry.js";
 import {
   buildSettingsSignature,
@@ -10795,20 +10795,37 @@ function createBackingImage(letters, widthMm, heightMm, backingMm) {
   backingContext.strokeStyle = "rgb(255, 0, 0)";
   backingContext.fillStyle = "rgb(255, 0, 0)";
 
-  letters.forEach((letter) => {
-    backingContext.lineWidth = backingMm * 2 * scale;
-    drawScaledText(
-      backingContext,
-      letter.character,
-      letter.x * scale,
-      letter.y * scale,
-      letter.fontSizeMm * scale,
-      letter.fontId,
-      letter.horizontalScale ?? 1,
-      letter.verticalScale ?? 1,
-      "both",
-    );
-  });
+  if (shouldUsePostStretchBackingOffset({ letters })) {
+    const faceCanvas = renderFaceCanvas(letters, widthMm, heightMm).canvas;
+    const backingPx = Math.max(0, Math.round(Number(backingMm || 0) * scale));
+
+    for (let dy = -backingPx; dy <= backingPx; dy += 1) {
+      const dxLimit = Math.floor(Math.sqrt(Math.max(0, backingPx * backingPx - dy * dy)));
+      for (let dx = -dxLimit; dx <= dxLimit; dx += 1) {
+        backingContext.drawImage(faceCanvas, dx, dy);
+      }
+    }
+
+    backingContext.globalCompositeOperation = "source-in";
+    backingContext.fillStyle = "rgb(255, 0, 0)";
+    backingContext.fillRect(0, 0, widthPx, heightPx);
+    backingContext.globalCompositeOperation = "source-over";
+  } else {
+    letters.forEach((letter) => {
+      backingContext.lineWidth = backingMm * 2 * scale;
+      drawScaledText(
+        backingContext,
+        letter.character,
+        letter.x * scale,
+        letter.y * scale,
+        letter.fontSizeMm * scale,
+        letter.fontId,
+        letter.horizontalScale ?? 1,
+        letter.verticalScale ?? 1,
+        "both",
+      );
+    });
+  }
 
   const imageData = backingContext.getImageData(0, 0, widthPx, heightPx);
   fillBackingHoles(imageData, widthPx, heightPx);
