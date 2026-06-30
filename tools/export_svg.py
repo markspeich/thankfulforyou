@@ -1295,23 +1295,21 @@ def analyze_single_layout(root, payload):
         curve_mode=profile["face_curve_mode"],
     )
 
-    backing_engine = "mask-stroke"
-    if has_scaled_letters:
-        backing_path = shapely_offset_backing_path(
-            face_outline["path"],
+    backing_path = shapely_offset_backing_path(
+        face_outline["path"],
+        backing,
+        tolerance_mm=profile["backing_tolerance_mm"],
+    )
+    backing_engine = "shapely"
+    if not backing_path and has_scaled_letters:
+        backing_path = offset_mask_backing_path(
+            face_mask,
+            scale,
             backing,
             tolerance_mm=profile["backing_tolerance_mm"],
         )
-        backing_engine = "shapely"
-        if not backing_path:
-            backing_path = offset_mask_backing_path(
-                face_mask,
-                scale,
-                backing,
-                tolerance_mm=profile["backing_tolerance_mm"],
-            )
-            backing_engine = "pyclipper-mask"
-    else:
+        backing_engine = "pyclipper-mask"
+    if not backing_path:
         backing_mask = render_text_mask(root, payload, scale=scale, stroke_mm=backing)
         backing_mask_for_path = backing_mask.copy()
         fill_mask_holes(backing_mask_for_path)
@@ -1322,6 +1320,7 @@ def analyze_single_layout(root, payload):
             smooth_iterations=profile["backing_smooth_iterations"],
             curve_mode=profile["backing_curve_mode"],
         )
+        backing_engine = "mask-stroke"
     component_count = count_connected_components(face_mask)
     width_mm = float(payload["widthMm"])
     height_mm = float(payload["heightMm"])
