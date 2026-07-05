@@ -606,6 +606,10 @@ test("filters database orders by search text, batch membership, and status", asy
 
   const ordersWorkspace = page.locator("#databaseOrdersWorkspace");
   await expect(ordersWorkspace.locator(".database-order-row")).toHaveCount(2);
+  const openStatus = ordersWorkspace.locator(".database-order-row .database-order-status").first();
+  await expect(openStatus).toHaveText("Open");
+  await expect(openStatus).toHaveCSS("color", "rgb(30, 64, 175)");
+  await expect(openStatus).toHaveCSS("background-color", "rgb(239, 246, 255)");
 
   await page.locator("#databaseOrdersSearchInput").fill("grace");
   await expect(ordersWorkspace.locator(".database-order-row")).toHaveCount(1);
@@ -619,6 +623,10 @@ test("filters database orders by search text, batch membership, and status", asy
   await page.locator("#databaseOrdersStatusFilter").selectOption("complete");
   await expect.poll(() => requestedOrderUrls.some((url) => url.includes("status=complete"))).toBe(true);
   await expect(ordersWorkspace.locator(".database-order-row")).toContainText("Order 1003");
+  const completeStatus = ordersWorkspace.locator(".database-order-row .database-order-status");
+  await expect(completeStatus).toHaveText("Complete");
+  await expect(completeStatus).toHaveCSS("color", "rgb(39, 103, 73)");
+  await expect(completeStatus).toHaveCSS("background-color", "rgb(237, 249, 242)");
 });
 
 test("skips and reopens an order item from the Orders screen", async ({ page }) => {

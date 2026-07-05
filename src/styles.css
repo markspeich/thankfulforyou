@@ -2831,9 +2831,9 @@ button:disabled {
 .database-order-status.is-open,
 .database-order-selected-status.is-open,
 .database-order-item-lifecycle-status.is-open {
-  color: #0f5e66;
-  border-color: #b9d8d5;
-  background: #eaf7f6;
+  color: #1e40af;
+  border-color: #bfdbfe;
+  background: #eff6ff;
 }
 
 .database-order-status.is-complete,
