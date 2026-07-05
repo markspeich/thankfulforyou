@@ -349,6 +349,7 @@ describe("orders api route", () => {
         action: "addOrderItemToProductionBatch",
         batchId: " batch-1 ",
         orderItemId: " item-1 ",
+        statusFilter: " complete ",
       },
     }, response);
 
@@ -357,6 +358,11 @@ describe("orders api route", () => {
       userId: "user-1",
       batchId: "batch-1",
       orderItemIds: ["item-1"],
+    });
+    expect(listWorkspaceOrdersMock).toHaveBeenCalledWith({
+      workspaceId: "workspace-1",
+      activeBatchId: "batch-1",
+      statusFilter: "complete",
     });
     expect(response.statusCode).toBe(200);
     expect(response.body).toEqual({
@@ -743,3 +749,4 @@ describe("orders api route", () => {
     });
   });
 });
+

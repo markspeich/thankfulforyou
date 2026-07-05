@@ -290,7 +290,7 @@ async function queryVerifiedOrderItemIds({ supabase, workspaceId, orderItemIds }
     .from("order_items")
     .select("id")
     .eq("workspace_id", workspaceId)
-    .eq("status", "open")
+    .in("status", ["open", "complete"])
     .in("id", ids);
 
   if (error) {
@@ -473,7 +473,7 @@ export async function addOrderGroupsToProductionBatch({
     return { addedOrderItemIds: [] };
   }
 
-  const { orders } = await listWorkspaceOrders({ workspaceId, activeBatchId: batchId });
+  const { orders } = await listWorkspaceOrders({ workspaceId, activeBatchId: batchId, statusFilter: "all" });
   const orderItemIds = orders
     .filter((order) => requestedIds.has(order.id) || requestedIds.has(order.orderNumber))
     .flatMap((order) => order.items.map((item) => item.id));
@@ -856,3 +856,4 @@ export async function importWorkspaceOrderItems({
     addedOrderItemIds,
   };
 }
+

@@ -572,10 +572,11 @@ For batch Etsy order sessions, the preferred workflow is:
 - Orders should use a single durable lifecycle status on `order_items`: `open` for active work and `complete` for work finished through production batching.
 - Orders may also use `skipped` as a durable `order_items` lifecycle status when an imported order should be intentionally excluded from production batching without being completed.
 - Skipped orders should not be eligible for adding to the active production batch through item actions, bulk checked-order actions, or API batch-add mutations.
+- Completed order items should be eligible to be added back to the current active production batch without changing their durable `complete` lifecycle status.
 - Skipping an order item should remove any active production batch membership for that order item so it is not included in a production batch, after the operator confirms removal from the batch.
 - The Orders workspace should provide a `Skip Order Item` action for individual open order items, ask for confirmation, and then move that item to skipped status.
 - The Orders workspace selected-order detail header should collapse order-level actions into a top-right ellipsis menu ordered as `Add to Production Batch`, `Skip Order`, then `Reopen Order`.
-- The selected-order-level `Add to Production Batch` action should add all eligible open items in the selected order to the active production batch without duplicating existing active batch memberships.
+- The selected-order-level `Add to Production Batch` action should add all eligible open or complete items in the selected order to the active production batch without duplicating existing active batch memberships.
 - The Orders workspace should provide a selected-order-level `Skip Order` action that skips every item in the selected order.
 - If any selected-order items are already in the active production batch, `Skip Order` must ask the operator to confirm removing those order items from the batch before skipping the full order.
 - Skipping an order item, selected order, or checked orders must preserve the current Orders status filter instead of automatically switching the filter to `Skipped`.
@@ -611,3 +612,4 @@ For batch Etsy order sessions, the preferred workflow is:
 - Servers started by automated agent testing, including Playwright through `npm run test:e2e`, use the same worktree's separate `test` dev-server port.
 - The two ports for a worktree must be adjacent and must not overlap with the paired ports assigned to another worktree slot.
 - Dev-server startup should fail clearly when the assigned role port is already occupied instead of silently moving to a different port. A one-off `PORT` override remains allowed when an explicit temporary port is needed.
+

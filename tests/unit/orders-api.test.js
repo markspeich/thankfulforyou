@@ -125,6 +125,7 @@ describe("orders api client", () => {
     await expect(addOrderItemToProductionBatch({
       batchId: "batch-1",
       orderItemId: "item-1",
+      statusFilter: "complete",
       accessToken: "token-1",
     })).resolves.toEqual(payload);
     expect(fetchMock).toHaveBeenCalledWith("/api/orders", expect.objectContaining({
@@ -138,6 +139,7 @@ describe("orders api client", () => {
         action: "addOrderItemToProductionBatch",
         batchId: "batch-1",
         orderItemId: "item-1",
+        statusFilter: "complete",
       }),
     }));
   });
@@ -212,3 +214,4 @@ describe("orders api client", () => {
     });
   });
 });
+

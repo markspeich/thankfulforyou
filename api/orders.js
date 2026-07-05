@@ -124,6 +124,7 @@ async function handleImportClipboardItems({ res, auth, body }) {
 async function handleAddOrderItemToProductionBatch({ res, auth, body }) {
   const batchId = normalizeString(body.batchId);
   const orderItemId = normalizeString(body.orderItemId);
+  const statusFilter = normalizeStatusFilter(body.statusFilter);
 
   if (!batchId) {
     sendBadRequest(res, "batchId is required.");
@@ -144,6 +145,7 @@ async function handleAddOrderItemToProductionBatch({ res, auth, body }) {
   const ordersPayload = await loadOrdersResponse({
     workspaceId: auth.workspaceId,
     batchId,
+    statusFilter,
   });
 
   res.status(200).json({
@@ -156,6 +158,7 @@ async function handleAddOrderItemToProductionBatch({ res, auth, body }) {
 async function handleAddOrdersToProductionBatch({ res, auth, body }) {
   const batchId = normalizeString(body.batchId);
   const orderIds = normalizeStringArray(body.orderIds);
+  const statusFilter = normalizeStatusFilter(body.statusFilter);
 
   if (!batchId) {
     sendBadRequest(res, "batchId is required.");
@@ -176,6 +179,7 @@ async function handleAddOrdersToProductionBatch({ res, auth, body }) {
   const ordersPayload = await loadOrdersResponse({
     workspaceId: auth.workspaceId,
     batchId,
+    statusFilter,
   });
 
   res.status(200).json({
@@ -397,3 +401,4 @@ export default async function handler(req, res) {
     });
   }
 }
+

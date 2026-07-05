@@ -6463,6 +6463,7 @@ async function addDatabaseOrderItemToBatch(item, button = null) {
     const payload = await addOrderItemToProductionBatch({
       batchId,
       orderItemId,
+      statusFilter: databaseOrdersStatusFilterValue,
       accessToken,
     });
 
@@ -6832,6 +6833,7 @@ async function addCheckedDatabaseOrdersToBatch() {
     const payload = await addOrdersToProductionBatch({
       batchId,
       orderIds,
+      statusFilter: databaseOrdersStatusFilterValue,
       accessToken,
     });
     const nextCheckedOrderIds = new Set(
@@ -6877,6 +6879,7 @@ async function addSelectedDatabaseOrderToBatch() {
     const payload = await addOrdersToProductionBatch({
       batchId,
       orderIds: [orderId],
+      statusFilter: databaseOrdersStatusFilterValue,
       accessToken,
     });
 
@@ -12355,3 +12358,4 @@ renderPreviewGuideOnly();
 render();
 renderOrderList();
 hideInitialBatchLoading();
+

@@ -78,6 +78,7 @@ export async function importWorkspaceOrders({
 export async function addOrderItemToProductionBatch({
   batchId,
   orderItemId,
+  statusFilter = null,
   accessToken = null,
 }) {
   const response = await fetch("/api/orders", {
@@ -90,6 +91,7 @@ export async function addOrderItemToProductionBatch({
       action: "addOrderItemToProductionBatch",
       batchId,
       orderItemId,
+      ...(normalizeString(statusFilter) ? { statusFilter: normalizeString(statusFilter) } : {}),
     }),
   });
 
@@ -99,6 +101,7 @@ export async function addOrderItemToProductionBatch({
 export async function addOrdersToProductionBatch({
   batchId,
   orderIds,
+  statusFilter = null,
   accessToken = null,
 }) {
   const response = await fetch("/api/orders", {
@@ -111,6 +114,7 @@ export async function addOrdersToProductionBatch({
       action: "addOrdersToProductionBatch",
       batchId,
       orderIds,
+      ...(normalizeString(statusFilter) ? { statusFilter: normalizeString(statusFilter) } : {}),
     }),
   });
 
@@ -143,3 +147,4 @@ export async function updateOrderItemLifecycleStatus({
 
   return readOrdersResponse(response, "Unable to update the order status.");
 }
+
