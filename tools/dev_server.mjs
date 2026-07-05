@@ -374,8 +374,18 @@ const server = createServer(async (request, response) => {
   const filePath = resolvePath(request.url || "/");
 
   if (!filePath || !existsSync(filePath)) {
+    const notFoundPath = join(root, "404.html");
+    if (existsSync(notFoundPath)) {
+      response.writeHead(404, {
+        "Content-Type": "text/html; charset=utf-8",
+        "Cache-Control": "no-store",
+      });
+      createReadStream(notFoundPath).pipe(response);
+      return;
+    }
+
     response.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
-    response.end("Not found");
+    response.end("Page not found");
     return;
   }
 

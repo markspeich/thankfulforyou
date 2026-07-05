@@ -10,7 +10,7 @@ loadEnvFile({ cwd: root });
 rmSync(dist, { recursive: true, force: true });
 mkdirSync(dist, { recursive: true });
 
-for (const entry of ["index.html", "src", "public"]) {
+for (const entry of ["index.html", "404.html", "src", "public"]) {
   cpSync(join(root, entry), join(dist, entry), { recursive: true });
 }
 
