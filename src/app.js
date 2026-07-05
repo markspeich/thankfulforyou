@@ -78,6 +78,8 @@ import {
   filterGroupedOrders,
   getCheckedOrderIdsForBulkAction,
   getCopyableSavedBuild,
+  getOrderItemStatusDescriptor,
+  getOrderLifecycleStatusDescriptor,
   getOrderItemListingText as getDatabaseOrderItemListingText,
   getSelectedGroupedOrder,
   getVisibleOrderSelectionState,
@@ -281,6 +283,7 @@ const databaseOrdersListShell = document.querySelector(".database-orders-list-sh
 const databaseOrderItemsShell = document.querySelector(".database-order-items-shell");
 const selectedDatabaseOrderTitle = document.querySelector(".database-order-items-panel .editor-header h2");
 const selectedDatabaseOrderMeta = document.querySelector(".database-order-items-panel .editor-meta");
+const selectedDatabaseOrderStatus = document.querySelector(".database-order-selected-status");
 const selectedOrderActionsMenu = document.querySelector("#selectedOrderActionsMenu");
 const addSelectedOrderToBatchButton = document.querySelector("#addSelectedOrderToBatchButton");
 const skipSelectedOrderButton = document.querySelector("#skipSelectedOrderButton");
@@ -6116,16 +6119,25 @@ function renderDatabaseOrdersWorkspace() {
     const copy = document.createElement("span");
     copy.className = "database-order-row-copy";
 
+    const titleRow = document.createElement("span");
+    titleRow.className = "database-order-row-title-line";
+
     const title = document.createElement("span");
     title.className = "database-order-row-title";
-    const orderTitle = getDatabaseOrderTitle(order);
-    title.textContent = order.status === "skipped" ? `${orderTitle} (Skipped)` : orderTitle;
+    title.textContent = getDatabaseOrderTitle(order);
+
+    const statusDescriptor = getOrderLifecycleStatusDescriptor(order);
+    const status = document.createElement("span");
+    status.className = `database-order-status ${statusDescriptor.className}`;
+    status.textContent = statusDescriptor.label;
+
+    titleRow.append(title, status);
 
     const meta = document.createElement("span");
     meta.className = "database-order-row-meta";
     meta.textContent = getDatabaseOrderMeta(order);
 
-    copy.append(title, meta);
+    copy.append(titleRow, meta);
     button.append(imageStack, copy);
     row.append(checkbox, button);
     databaseOrdersListShell.append(row);
@@ -6218,6 +6230,17 @@ function renderSelectedDatabaseOrderItems() {
       ? getDatabaseOrderMeta(selectedOrder)
       : "Select an order to review its items before adding designs to the production batch.";
   }
+  if (selectedDatabaseOrderStatus) {
+    selectedDatabaseOrderStatus.hidden = !selectedOrder;
+    if (selectedOrder) {
+      const statusDescriptor = getOrderLifecycleStatusDescriptor(selectedOrder);
+      selectedDatabaseOrderStatus.className = `database-order-selected-status ${statusDescriptor.className}`;
+      selectedDatabaseOrderStatus.textContent = statusDescriptor.label;
+    } else {
+      selectedDatabaseOrderStatus.className = "database-order-selected-status";
+      selectedDatabaseOrderStatus.textContent = "";
+    }
+  }
   if (addSelectedOrderToBatchButton) {
     addSelectedOrderToBatchButton.disabled = !selectedOrder || !isDatabaseOrderBatchEligible(selectedOrder) || ordersDatabaseMutationInFlight;
   }
@@ -6267,7 +6290,13 @@ function renderSelectedDatabaseOrderItems() {
     listing.className = "database-order-item-listing";
     listing.textContent = getDatabaseOrderItemListingText(item);
 
-    titleGroup.append(title, listing);
+    const itemStatusDescriptor = getOrderItemStatusDescriptor(item);
+    const lifecycleStatus = document.createElement("p");
+    lifecycleStatus.className = `database-order-item-lifecycle-status ${itemStatusDescriptor.className}`;
+    lifecycleStatus.textContent = itemStatusDescriptor.label;
+    lifecycleStatus.title = itemStatusDescriptor.detail;
+
+    titleGroup.append(title, listing, lifecycleStatus);
 
     const menu = document.createElement("details");
     menu.className = "workspace-tools-menu database-order-item-menu";
@@ -12368,4 +12397,3 @@ renderPreviewGuideOnly();
 render();
 renderOrderList();
 hideInitialBatchLoading();
-
