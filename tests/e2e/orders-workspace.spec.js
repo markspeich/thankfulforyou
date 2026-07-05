@@ -1054,6 +1054,7 @@ test("adds an individual order item to the active production batch from the item
     action: "addOrderItemToProductionBatch",
     batchId: "batch-1",
     orderItemId: "item-1",
+    statusFilter: "open",
   });
 });
 
@@ -1144,6 +1145,7 @@ test("adds checked orders to the active production batch", async ({ page }) => {
     action: "addOrdersToProductionBatch",
     batchId: "batch-1",
     orderIds: ["order:1001"],
+    statusFilter: "open",
   });
 
   await page.getByRole("button", { name: "Production Batch", exact: true }).click();
@@ -1210,3 +1212,4 @@ test("copying an incomplete order item design shows a completion-needed status",
 
   await expect(page.locator("#workflowAlertText")).toHaveText("Complete and save this design before copying.");
 });
+
