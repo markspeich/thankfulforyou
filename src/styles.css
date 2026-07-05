@@ -2746,6 +2746,12 @@ button:disabled {
   gap: 4px;
   min-width: 0;
 }
+.database-order-row-title-line {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 8px;
+}
 
 .database-order-row:hover,
 .database-order-row:focus-within {
@@ -2789,6 +2795,62 @@ button:disabled {
   line-height: 1.35;
 }
 
+.database-order-status,
+.database-order-selected-status,
+.database-order-item-lifecycle-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: max-content;
+  max-width: 100%;
+  min-height: 22px;
+  margin: 0;
+  padding: 2px 8px;
+  border: 1px solid #c9d8df;
+  border-radius: 999px;
+  color: #42525d;
+  background: #f6f9fb;
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1.1;
+  white-space: nowrap;
+}
+
+.database-order-status {
+  flex: 0 0 auto;
+}
+
+.database-order-selected-status {
+  margin-top: 8px;
+}
+
+.database-order-item-lifecycle-status {
+  margin-top: 2px;
+}
+
+.database-order-status.is-open,
+.database-order-selected-status.is-open,
+.database-order-item-lifecycle-status.is-open {
+  color: #0f5e66;
+  border-color: #b9d8d5;
+  background: #eaf7f6;
+}
+
+.database-order-status.is-complete,
+.database-order-selected-status.is-complete,
+.database-order-item-lifecycle-status.is-complete {
+  color: #276749;
+  border-color: #b9dfcc;
+  background: #edf9f2;
+}
+
+.database-order-status.is-skipped,
+.database-order-selected-status.is-skipped,
+.database-order-item-lifecycle-status.is-skipped {
+  color: #76512b;
+  border-color: #e2cfb6;
+  background: #fff7ed;
+}
 .database-order-items-panel .editor-body {
   grid-template-rows: auto;
   align-content: start;

@@ -434,6 +434,7 @@ test("renders grouped database orders and selected order item cards", async ({ p
   await expect(firstOrderRow.locator(".database-order-row-thumbnail").first()).toHaveCSS("width", "64px");
   await expect(firstOrderRow.locator(".database-order-row-thumbnail").first()).toHaveCSS("height", "64px");
   await expect(firstOrderRow.getByRole("img", { name: "Custom badge reel" })).toBeVisible();
+  await expect(firstOrderRow.locator(".database-order-status")).toHaveText("Open");
   await expect(firstOrderRow.locator(".database-order-row-thumbnail-placeholder")).toHaveCount(1);
   await expect(ordersWorkspace.locator(".database-orders-list-shell > .section-heading")).toHaveCount(0);
   await expect(ordersWorkspace.locator(".database-orders-list-shell")).toHaveCSS("gap", "10px");
@@ -454,6 +455,7 @@ test("renders grouped database orders and selected order item cards", async ({ p
   await expect(addCheckedButton).toBeEnabled();
 
   await expect(ordersWorkspace.getByRole("heading", { name: "Order 1001" })).toBeVisible();
+  await expect(ordersWorkspace.locator(".database-order-selected-status")).toHaveText("Open");
   await expect(ordersWorkspace.locator(".database-order-items-shell > .section-heading")).toHaveCount(0);
   await expect(ordersWorkspace.locator(".database-order-items-shell > .database-order-selected-meta")).toHaveCount(0);
   await expect(ordersWorkspace.getByText("Ada RN")).toBeVisible();
@@ -670,7 +672,8 @@ test("skips and reopens an order item from the Orders screen", async ({ page }) 
   await expect(ordersWorkspace.locator(".database-order-row")).toHaveCount(0);
 
   await page.locator("#databaseOrdersStatusFilter").selectOption("skipped");
-  await expect(ordersWorkspace.locator(".database-order-row")).toContainText("Order 1001 (Skipped)");
+  await expect(ordersWorkspace.locator(".database-order-row")).toContainText("Order 1001");
+  await expect(ordersWorkspace.locator(".database-order-row .database-order-status")).toHaveText("Skipped");
   await expect(firstItemCard.locator(".database-order-item-status")).toHaveText("Skipped");
   await firstItemCard.getByRole("button", { name: "Item actions" }).click();
   await expect(firstItemCard.getByRole("button", { name: "Add to Production Batch" })).toBeDisabled();
@@ -744,7 +747,8 @@ test("skips and reopens an entire selected order from the Orders screen", async 
 
   await page.locator("#databaseOrdersStatusFilter").selectOption("skipped");
   await expect(page.locator("#databaseOrdersStatusFilter")).toHaveValue("skipped");
-  await expect(ordersWorkspace.locator(".database-order-row")).toContainText("Order 1001 (Skipped)");
+  await expect(ordersWorkspace.locator(".database-order-row")).toContainText("Order 1001");
+  await expect(ordersWorkspace.locator(".database-order-row .database-order-status")).toHaveText("Skipped");
   await expect(ordersWorkspace.locator(".database-order-item-status")).toHaveText(["Skipped", "Skipped"]);
 
   await ordersWorkspace.getByLabel("Order actions", { exact: true }).click();
@@ -1212,4 +1216,3 @@ test("copying an incomplete order item design shows a completion-needed status",
 
   await expect(page.locator("#workflowAlertText")).toHaveText("Complete and save this design before copying.");
 });
-

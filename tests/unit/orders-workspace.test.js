@@ -3,10 +3,12 @@ import { describe, expect, it } from "vitest";
 import {
   filterGroupedOrders,
   getCheckedOrderIdsForBulkAction,
-  getVisibleOrderSelectionState,
   getCopyableSavedBuild,
+  getOrderLifecycleStatusDescriptor,
+  getOrderItemStatusDescriptor,
   getOrderItemListingText,
   getSelectedGroupedOrder,
+  getVisibleOrderSelectionState,
   normalizeOrdersWorkspaceState,
 } from "../../src/orders-workspace.js";
 
@@ -136,6 +138,53 @@ describe("orders workspace helpers", () => {
     })).toBe("Custom RN Badge Reel");
   });
 
+  it("describes grouped order lifecycle status for UI indicators", () => {
+    expect(getOrderLifecycleStatusDescriptor({ status: "open", items: [] })).toEqual({
+      status: "open",
+      label: "Open",
+      className: "is-open",
+    });
+
+    expect(getOrderLifecycleStatusDescriptor({
+      status: "open",
+      items: [{ status: "complete" }, { status: "complete" }],
+    })).toEqual({
+      status: "complete",
+      label: "Complete",
+      className: "is-complete",
+    });
+
+    expect(getOrderLifecycleStatusDescriptor({
+      items: [{ status: "skipped" }],
+    })).toEqual({
+      status: "skipped",
+      label: "Skipped",
+      className: "is-skipped",
+    });
+  });
+
+  it("describes order item status for detail cards", () => {
+    expect(getOrderItemStatusDescriptor({ status: "complete", isInActiveBatch: false })).toEqual({
+      status: "complete",
+      label: "Complete",
+      detail: "Can be added back to the active batch",
+      className: "is-complete",
+    });
+
+    expect(getOrderItemStatusDescriptor({ status: "skipped", isInActiveBatch: false })).toEqual({
+      status: "skipped",
+      label: "Skipped",
+      detail: "Excluded from production batching",
+      className: "is-skipped",
+    });
+
+    expect(getOrderItemStatusDescriptor({ status: "open", isInActiveBatch: true })).toEqual({
+      status: "open",
+      label: "Open",
+      detail: "Already in active batch",
+      className: "is-open",
+    });
+  });
   it("describes visible order selection for select-all controls", () => {
     expect(getVisibleOrderSelectionState([
       { id: "order:5001" },

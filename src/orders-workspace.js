@@ -119,6 +119,36 @@ function getOrderLifecycleStatus(order) {
   return "open";
 }
 
+const ORDER_STATUS_DESCRIPTOR_BY_STATUS = {
+  open: { status: "open", label: "Open", className: "is-open" },
+  complete: { status: "complete", label: "Complete", className: "is-complete" },
+  skipped: { status: "skipped", label: "Skipped", className: "is-skipped" },
+};
+
+export function getOrderLifecycleStatusDescriptor(order) {
+  const status = getOrderLifecycleStatus(order);
+  return ORDER_STATUS_DESCRIPTOR_BY_STATUS[status] || ORDER_STATUS_DESCRIPTOR_BY_STATUS.open;
+}
+
+export function getOrderItemStatusDescriptor(item) {
+  if (item?.status === "complete") {
+    return {
+      ...ORDER_STATUS_DESCRIPTOR_BY_STATUS.complete,
+      detail: "Can be added back to the active batch",
+    };
+  }
+  if (item?.status === "skipped") {
+    return {
+      ...ORDER_STATUS_DESCRIPTOR_BY_STATUS.skipped,
+      detail: "Excluded from production batching",
+    };
+  }
+  return {
+    ...ORDER_STATUS_DESCRIPTOR_BY_STATUS.open,
+    detail: item?.isInActiveBatch ? "Already in active batch" : "Not in active batch",
+  };
+}
+
 export function filterGroupedOrders(orders, {
   searchTerm = "",
   statusFilter = "open",
