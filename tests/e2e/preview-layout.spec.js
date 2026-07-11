@@ -698,7 +698,7 @@ test("shows the production defaults", async ({ page }) => {
   await expect(page.locator("#globalHorizontalScaleInput")).toHaveAttribute("max", "2");
   await expect(page.locator("#globalHorizontalScaleOutput")).toHaveText("100%");
   await expect(page.locator("#globalVerticalScaleInput")).toHaveValue("1");
-  await expect(page.locator("#globalVerticalScaleInput")).toHaveAttribute("max", "1.5");
+  await expect(page.locator("#globalVerticalScaleInput")).toHaveAttribute("max", "2");
   await expect(page.locator("#globalVerticalScaleOutput")).toHaveText("100%");
   await expect(page.locator("#backingInput")).toHaveValue("3.1");
   await expect(page.locator("#backingInput")).toHaveAttribute("min", "0");
@@ -853,23 +853,23 @@ test("applies the global vertical stretch slider to every line and persists the 
   await firstLineVerticalStretch.fill("1.12");
   await expect(globalVerticalStretchOutput).toHaveText("Mixed");
 
-  await globalVerticalStretch.fill("1.4");
+  await globalVerticalStretch.fill("2");
 
-  await expect(globalVerticalStretchOutput).toHaveText("140%");
-  await expect(firstLineVerticalStretch).toHaveValue("1.4");
-  await expect(secondLineVerticalStretch).toHaveValue("1.4");
+  await expect(globalVerticalStretchOutput).toHaveText("200%");
+  await expect(firstLineVerticalStretch).toHaveValue("2");
+  await expect(secondLineVerticalStretch).toHaveValue("2");
 
   await completeDesign(page, "Design 1");
   await expectSavedProductionBatchSnapshot(page, (snapshot) => (
     snapshot?.orderItems?.[0]?.text === "Savannah\nRN"
-    && snapshot.orderItems[0].settings?.lines?.every((line) => line.verticalScale === 1.4)
+    && snapshot.orderItems[0].settings?.lines?.every((line) => line.verticalScale === 2)
   ));
   await page.reload();
 
   await expect(page.locator("#textInput")).toHaveValue("Savannah\nRN");
-  await expect(globalVerticalStretchOutput).toHaveText("140%");
-  await expect(firstLineVerticalStretch).toHaveValue("1.4");
-  await expect(secondLineVerticalStretch).toHaveValue("1.4");
+  await expect(globalVerticalStretchOutput).toHaveText("200%");
+  await expect(firstLineVerticalStretch).toHaveValue("2");
+  await expect(secondLineVerticalStretch).toHaveValue("2");
 });
 
 test("coalesces rapid slider input into a single deferred preview rebuild", async ({ page }) => {

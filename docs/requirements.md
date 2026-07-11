@@ -144,6 +144,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Allow horizontal-only stretching per line of text so operators can make a line wider without making it taller.
 - Per-line `Horizontal Stretch` controls should allow values up to `200%`.
 - Allow vertical-only stretching per line of text so operators can make a line taller without making it wider.
+- Per-line `Vertical Stretch` controls should allow values up to `200%`.
 - Provide one control group per text line.
 - Each per-line control group must include a Font dropdown, Letter Bridge slider, Horizontal Offset slider, Text Height slider, Horizontal Stretch slider, and Vertical Stretch slider.
 - The Production Batch editor Text Height control should allow values down to 5 mm.
@@ -200,6 +201,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - The global `Horizontal Stretch` slider must overwrite every current text line's per-line `Horizontal Stretch` value when adjusted.
 - When all text lines share the same horizontal stretch value, the global `Horizontal Stretch` slider should display that shared value; when lines differ, its readout should indicate a mixed state until the operator adjusts it.
 - Add a global `Vertical Stretch` slider in the Global controls box.
+- The global `Vertical Stretch` slider should allow values up to `200%`.
 - The global `Vertical Stretch` slider must overwrite every current text line's per-line `Vertical Stretch` value when adjusted.
 - When all text lines share the same vertical stretch value, the global `Vertical Stretch` slider should display that shared value; when lines differ, its readout should indicate a mixed state until the operator adjusts it.
 - The preview area should include non-exported guide geometry for the active size guide, and the rendered design should be centered within the active maximum rectangle on screen.

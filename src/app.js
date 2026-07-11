@@ -1851,7 +1851,7 @@ function createPresetEditorLineCard({ ruleKey, title, summary, settings, include
     createPresetEditorRangeField(ruleKey, "offsetXMm", "Horizontal Offset", -20, 20, 0.1, settings.offsetXMm),
     createPresetEditorRangeField(ruleKey, "fontSizeMm", "Text Height", TEXT_HEIGHT_MIN_MM, 55, 1, settings.fontSizeMm),
     createPresetEditorRangeField(ruleKey, "horizontalScale", "Horizontal Stretch", 0.75, 2, 0.01, settings.horizontalScale),
-    createPresetEditorRangeField(ruleKey, "verticalScale", "Vertical Stretch", 0.75, 1.5, 0.01, settings.verticalScale),
+    createPresetEditorRangeField(ruleKey, "verticalScale", "Vertical Stretch", 0.75, 2, 0.01, settings.verticalScale),
     createPresetEditorCheckboxField(ruleKey, "lockTextHeight", "Lock Text Height", settings.lockTextHeight),
   ];
 
@@ -7631,7 +7631,7 @@ function renderLineControls(settings = getCurrentSettings()) {
       createRangeField(textLineIndex, "offsetXMm", "Horizontal Offset", -20, 20, 0.1, line.offsetXMm),
       createRangeField(textLineIndex, "fontSizeMm", "Text Height", TEXT_HEIGHT_MIN_MM, 55, 1, line.fontSizeMm),
       createRangeField(textLineIndex, "horizontalScale", "Horizontal Stretch", 0.75, 2, 0.01, line.horizontalScale),
-      createRangeField(textLineIndex, "verticalScale", "Vertical Stretch", 0.75, 1.5, 0.01, line.verticalScale),
+      createRangeField(textLineIndex, "verticalScale", "Vertical Stretch", 0.75, 2, 0.01, line.verticalScale),
       createCheckboxField(textLineIndex, "lockTextHeight", "Lock Text Height", line.lockTextHeight),
     ];
 
