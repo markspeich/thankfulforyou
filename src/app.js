@@ -47,6 +47,7 @@ import {
 } from "./order-signatures.js";
 import {
   isBatchSnapshotEmpty,
+  isRevisionOnlyProductionBatchConflict,
 } from "./production-batch-sync.js";
 import { buildBatchSyncStatus } from "./production-batch-sync-status.js";
 import {
@@ -4981,6 +4982,51 @@ function scheduleDeferredPreviewRender() {
   });
 }
 
+async function retryRevisionOnlyProductionBatchConflict({
+  accessToken,
+  conflictDetails = null,
+  conflictingOrder,
+  options,
+} = {}) {
+  if (!conflictingOrder?.publishedSnapshot || !productionBatchContext?.id || !accessToken) {
+    return false;
+  }
+
+  let latestSnapshot = null;
+  try {
+    latestSnapshot = await fetchProductionBatchSnapshot(productionBatchContext.id, accessToken);
+  } catch {
+    return false;
+  }
+
+  const latestOrder = Array.isArray(latestSnapshot?.orderItems)
+    ? latestSnapshot.orderItems.find((order) => order?.id === conflictingOrder.id)
+    : null;
+  const latestPublishedOrder = normalizeStoredPublishedSnapshot(latestOrder);
+  const expectedRevision = normalizeStoredRevision(conflictDetails?.revision);
+  if (expectedRevision != null && latestPublishedOrder?.revision !== expectedRevision) {
+    return false;
+  }
+
+  if (!isRevisionOnlyProductionBatchConflict({
+    localPublishedOrder: conflictingOrder.publishedSnapshot,
+    remoteOrder: latestPublishedOrder,
+  })) {
+    return false;
+  }
+
+  conflictingOrder.publishedSnapshot = latestPublishedOrder;
+  applyProductionBatchAuditToOrder(conflictingOrder, latestOrder);
+  if (latestSnapshot?.batch) {
+    enableProductionBatchSync(latestSnapshot.batch);
+  }
+  mergeProductionBatchAuditFromSnapshot(latestSnapshot);
+
+  return saveBatchSnapshotToRemote({
+    ...options,
+    recoverRevisionOnlyConflict: false,
+  });
+}
 async function saveBatchSnapshotToRemote(options = {}) {
   const {
     persistActiveDraft = true,
@@ -4989,8 +5035,10 @@ async function saveBatchSnapshotToRemote(options = {}) {
     successAlertAutoHideMs = undefined,
     keepalive = false,
     degradeOnFailure = true,
+    recoverRevisionOnlyConflict = true,
   } = options;
   let snapshot = null;
+  let accessToken = null;
 
   if (persistActiveDraft) {
     saveActiveOrderDraft();
@@ -5014,7 +5062,7 @@ async function saveBatchSnapshotToRemote(options = {}) {
       return true;
     }
 
-    const accessToken = productionBatchAccessToken || readProductionBatchAccessTokenOverride() || await getAccessToken();
+    accessToken = productionBatchAccessToken || readProductionBatchAccessTokenOverride() || await getAccessToken();
     if (!accessToken) {
       throw new Error("Authentication required.");
     }
@@ -5064,11 +5112,23 @@ async function saveBatchSnapshotToRemote(options = {}) {
         : typeof error.details?.orderId === "string" && error.details.orderId
           ? error.details.orderId
           : "";
-      const fallbackConflictOrderId = resolveProductionBatchSaveOrderIds(publishOrderIds)[0] || "";
+      const fallbackConflictOrderIds = resolveProductionBatchSaveOrderIds(publishOrderIds) || [];
+      const fallbackConflictOrderId = fallbackConflictOrderIds[0] || "";
       const conflictingOrder = orders.find((order) => order.id === conflictDetailOrderId)
         || orders.find((order) => order.id === fallbackConflictOrderId)
         || getActiveOrder();
       const conflictingOrderId = conflictDetailOrderId || conflictingOrder?.id || "";
+      if (recoverRevisionOnlyConflict && conflictingOrder) {
+        const recovered = await retryRevisionOnlyProductionBatchConflict({
+          accessToken,
+          conflictDetails: error.details,
+          conflictingOrder,
+          options,
+        });
+        if (recovered) {
+          return true;
+        }
+      }
       if (conflictingOrder) {
         applyProductionBatchAuditToOrder(conflictingOrder, error.details);
       }

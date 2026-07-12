@@ -357,6 +357,125 @@ test("discarding a conflicted local draft reloads the production batch without a
   await expect(page.locator("#productionBatchBanner")).toHaveCount(0);
 });
 
+test("retries save when a conflict only changes revision metadata", async ({ page }) => {
+  await installSupabaseSession(page);
+  await page.route("**/api/layout-analyze", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify(buildMockAnalysisResponse()),
+    });
+  });
+
+  const initialOrder = buildCompletedRemoteOrder({
+    revision: 3,
+    text: "Remote Shared",
+    settings: {
+      text: "Remote Shared",
+      presetId: "preset-a1f4c8e2b601",
+      boundingSizePresetId: "size-2-2x1-5",
+      backingMm: 3.1,
+      weldExportedDesign: true,
+      lines: [
+        {
+          fontId: "candlepin",
+          bridgeMm: 0.5,
+          lineBridgeMm: 0.5,
+          offsetXMm: 0,
+          fontSizeMm: 34,
+          horizontalScale: 1,
+          verticalScale: 1,
+          lockTextHeight: false,
+        },
+      ],
+    },
+  });
+  const revisionOnlyOrder = {
+    ...initialOrder,
+    revision: 4,
+    updatedAt: "2026-07-12T10:05:00.000Z",
+    updatedBy: { email: "mark@example.com" },
+  };
+  const savedOrder = buildCompletedRemoteOrder({
+    revision: 5,
+    text: "Remote Shared Updated",
+    settings: {
+      ...initialOrder.settings,
+      text: "Remote Shared Updated",
+      lines: [
+        {
+          ...initialOrder.settings.lines[0],
+          text: "Remote Shared Updated",
+        },
+      ],
+    },
+  });
+  const productionBatchSavePayloads = [];
+  let latestGetRequested = false;
+
+  await page.route("**/api/batch-session", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify({
+        operator: { id: "user-1", email: "mark@example.com" },
+        workspace: { id: "workspace-1", name: "Thankful For You" },
+        batch: { id: "batch-1", workspaceId: "workspace-1" },
+      }),
+    });
+  });
+  await page.route("**/api/production-batch?batchId=batch-1", async (route) => {
+    latestGetRequested = latestGetRequested || productionBatchSavePayloads.length > 0;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify({
+        batch: { id: "batch-1", workspaceId: "workspace-1" },
+        activeOrderItemId: "remote-order-1",
+        orderItems: [latestGetRequested ? revisionOnlyOrder : initialOrder],
+      }),
+    });
+  });
+  await page.route("**/api/production-batch", async (route) => {
+    if (route.request().method() !== "PUT") {
+      await route.fallback();
+      return;
+    }
+
+    productionBatchSavePayloads.push(route.request().postDataJSON()?.snapshot);
+    if (productionBatchSavePayloads.length === 1) {
+      await route.fulfill({
+        status: 409,
+        contentType: "application/json; charset=utf-8",
+        body: JSON.stringify({
+          error: "Revision conflict",
+          details: { orderItemId: "remote-order-1", revision: 4 },
+        }),
+      });
+      return;
+    }
+
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify({
+        batch: { id: "batch-1", workspaceId: "workspace-1" },
+        activeOrderItemId: "remote-order-1",
+        orderItems: [savedOrder],
+      }),
+    });
+  });
+
+  await page.goto("/production-batch");
+  await expect(page.locator("#textInput")).toHaveValue("Remote Shared");
+
+  await page.locator("#textInput").fill("Remote Shared Updated");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+
+  await expect.poll(() => productionBatchSavePayloads.length, { timeout: 15000 }).toBe(2);
+  expect(productionBatchSavePayloads[1]?.orderItems?.[0]?.revision).toBe(4);
+  await expect(page.locator("#importStatus")).not.toContainText("A newer version of this design has been saved.");
+});
 test("shows stale design alerts only on the affected design", async ({ page }) => {
   await installSupabaseSession(page);
   await page.route("**/api/layout-analyze", async (route) => {
