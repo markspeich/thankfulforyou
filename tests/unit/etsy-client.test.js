@@ -10,7 +10,7 @@ describe("Etsy client", () => {
       .mockResolvedValueOnce(response({ count: 101, results: Array.from({ length: 100 }, (_, i) => ({ receipt_id: i })) }))
       .mockResolvedValueOnce(response({ count: 101, results: [{ receipt_id: 100 }] }));
     const signal = {};
-    const client = createEtsyClient({ fetchImpl, getAccessToken: async () => "secret-token", env, createTimeoutSignal: () => signal });
+    const client = createEtsyClient({ fetchImpl, getAccessToken: async () => "secret-token", env, createTimeoutSignal: (milliseconds) => { expect(milliseconds).toBe(15000); return signal; } });
     expect(await client.listReceipts({ shopId: 12, min_created: 123 })).toHaveLength(101);
     const [url, options] = fetchImpl.mock.calls[0];
     expect(url).toContain("min_created=123"); expect(url).toContain("limit=100");
@@ -21,18 +21,18 @@ describe("Etsy client", () => {
 
   it("retrieves transactions and listing enrichment", async () => {
     const fetchImpl = vi.fn()
-      .mockResolvedValueOnce(response({ results: [{ transaction_id: 1 }] }))
-      .mockResolvedValueOnce(response({ listing_id: 2 }))
-      .mockResolvedValueOnce(response({ results: [{ url_75x75: "image" }] }));
+      .mockResolvedValueOnce(response({ results: [{ transaction_id: 1, listing_id: 2, quantity: 1, variations: [] }] }))
+      .mockResolvedValueOnce(response({ listing_id: 2, title: "Badge" }))
+      .mockResolvedValueOnce(response({ results: [{ url_75x75: "https://image.test/75" }] }));
     const client = createEtsyClient({ fetchImpl, getAccessToken: async () => "token", env });
     expect(await client.listReceiptTransactions({ shopId: 3, receiptId: 4 })).toHaveLength(1);
-    expect(await client.getListing({ listingId: 2 })).toMatchObject({ listing_id: 2 });
+    expect(await client.getListing({ listingId: 2 })).toMatchObject({ listing_id: 2, title: "Badge" });
     expect(await client.getListingImages({ listingId: 2 })).toHaveLength(1);
   });
 
   it("retries a 429 once and never retries authorization failures", async () => {
     const sleep = vi.fn();
-    const fetchImpl = vi.fn().mockResolvedValueOnce(response({}, 429, new Headers({ "Retry-After": "2" }))).mockResolvedValueOnce(response({ listing_id: 2 }));
+    const fetchImpl = vi.fn().mockResolvedValueOnce(response({}, 429, new Headers({ "Retry-After": "2" }))).mockResolvedValueOnce(response({ listing_id: 2, title: "Badge" }));
     await createEtsyClient({ fetchImpl, getAccessToken: async () => "token", sleep, env }).getListing({ listingId: 2 });
     expect(sleep).toHaveBeenCalledWith(2000); expect(fetchImpl).toHaveBeenCalledTimes(2);
     fetchImpl.mockReset().mockResolvedValue(response({}, 401));
@@ -48,5 +48,49 @@ describe("Etsy client", () => {
     const network = vi.fn().mockRejectedValue(new Error("token"));
     await expect(createEtsyClient({ fetchImpl: network, getAccessToken: async () => "token", env }).getListing({ listingId: 1 })).rejects.toMatchObject({ code: "temporary" });
     expect(network).toHaveBeenCalledTimes(2);
+  });
+
+  it("uses fresh 15-second timeout signals on retries and bounds Retry-After", async () => {
+    const signals = [{ id: 1 }, { id: 2 }];
+    const createTimeoutSignal = vi.fn((milliseconds) => { expect(milliseconds).toBe(15000); return signals.shift(); });
+    const sleep = vi.fn();
+    const fetchImpl = vi.fn().mockResolvedValueOnce(response({}, 429, new Headers({ "Retry-After": "999" }))).mockResolvedValueOnce(response({ listing_id: 2, title: "Badge" }));
+    await createEtsyClient({ fetchImpl, getAccessToken: async () => "token", createTimeoutSignal, sleep, env }).getListing({ listingId: 2 });
+    expect(createTimeoutSignal).toHaveBeenCalledTimes(2);
+    expect(fetchImpl.mock.calls[0][1].signal).not.toBe(fetchImpl.mock.calls[1][1].signal);
+    expect(sleep).toHaveBeenCalledWith(30000);
+
+    const dateSleep = vi.fn();
+    const dateFetch = vi.fn().mockResolvedValueOnce(response({}, 429, new Headers({ "Retry-After": "Thu, 16 Jul 2026 20:00:10 GMT" }))).mockResolvedValueOnce(response({ listing_id: 2, title: "Badge" }));
+    await createEtsyClient({ fetchImpl: dateFetch, getAccessToken: async () => "token", sleep: dateSleep, now: () => Date.parse("2026-07-16T20:00:00Z"), env }).getListing({ listingId: 2 });
+    expect(dateSleep).toHaveBeenCalledWith(10000);
+  });
+
+  it("reports exhausted rate limits, does not retry 403, and rejects malformed elements", async () => {
+    const limited = vi.fn().mockResolvedValue(response({}, 429, new Headers({ "Retry-After": "1" })));
+    await expect(createEtsyClient({ fetchImpl: limited, getAccessToken: async () => "token", sleep: vi.fn(), env }).getListing({ listingId: 2 })).rejects.toMatchObject({ code: "rate_limited" });
+    expect(limited).toHaveBeenCalledTimes(2);
+    const forbidden = vi.fn().mockResolvedValue(response({}, 403));
+    await expect(createEtsyClient({ fetchImpl: forbidden, getAccessToken: async () => "token", env }).getListing({ listingId: 2 })).rejects.toMatchObject({ code: "reauthorize" });
+    expect(forbidden).toHaveBeenCalledOnce();
+    for (const [method, args, payload] of [
+      ["listReceipts", { shopId: 1 }, { results: [{}] }],
+      ["listReceiptTransactions", { shopId: 1, receiptId: 2 }, { results: [{ transaction_id: 1 }] }],
+      ["getListing", { listingId: 2 }, { listing_id: 2 }],
+      ["getListingImages", { listingId: 2 }, { results: [{}] }],
+    ]) {
+      const client = createEtsyClient({ fetchImpl: vi.fn().mockResolvedValue(response(payload)), getAccessToken: async () => "token", env });
+      await expect(client[method](args)).rejects.toMatchObject({ code: "invalid_response" });
+    }
+  });
+
+  it("does not retain raw failures as causes or enumerable secrets", async () => {
+    const fetchImpl = vi.fn().mockRejectedValue(new Error("secret-token key:secret"));
+    let caught;
+    try { await createEtsyClient({ fetchImpl, getAccessToken: async () => "secret-token", env }).getListing({ listingId: 1 }); } catch (error) { caught = error; }
+    expect(caught).toBeDefined();
+    expect(caught.cause).toBeUndefined();
+    expect(JSON.stringify(caught)).not.toMatch(/secret-token|key:secret/);
+    expect(Object.values(caught).join(" ")).not.toMatch(/secret-token|key:secret/);
   });
 });

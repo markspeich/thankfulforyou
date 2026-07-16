@@ -14,8 +14,8 @@ describe("Etsy transaction normalizer", () => {
       image: { url_75x75: "https://image.test/75" }, getPresetIdForListingId: (id) => `preset-${id}`,
     });
     expect(result).toMatchObject({ id: "transaction:987", text: "Jamie\nRN", presetId: "preset-456", source: { orderNumber: "1234567890", transactionId: "987", listingId: "456", colorName: "Teal", quantity: "2", listingImageUrl75x75: "https://image.test/75", customizationNeeded: false } });
-    expect(result.source.personalizationResponses.map(({ kind, label, value }) => ({ kind, label, value }))).toEqual([
-      { kind: "text", label: "Name", value: "Jamie" }, { kind: "text", label: "Credentials", value: "RN" }, { kind: "file", label: "Upload", value: "https://files.test/a" },
+    expect(result.source.personalizationResponses).toEqual([
+      { kind: "text", name: "Name", value: "Jamie" }, { kind: "text", name: "Credentials", value: "RN" }, { kind: "file", name: "Upload", value: "https://files.test/a" },
     ]);
   });
 

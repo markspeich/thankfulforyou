@@ -21,7 +21,7 @@ export function normalizeEtsyTransaction({ receipt = {}, transaction = {}, listi
     .map((variation) => {
       const label = text(variation.formatted_name);
       const value = text(variation.formatted_value);
-      return { kind: URL_PATTERN.test(value) ? "file" : "text", label, value };
+      return { kind: URL_PATTERN.test(value) ? "file" : "text", name: label, value };
     })
     .filter((response) => response.value);
   const designLines = personalizationResponses.filter((response) => response.kind === "text").map((response) => response.value);
