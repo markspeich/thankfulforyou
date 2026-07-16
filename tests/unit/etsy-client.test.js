@@ -93,4 +93,50 @@ describe("Etsy client", () => {
     expect(JSON.stringify(caught)).not.toMatch(/secret-token|key:secret/);
     expect(Object.values(caught).join(" ")).not.toMatch(/secret-token|key:secret/);
   });
+
+  it("terminates repeated and capped receipt pagination without unbounded accumulation", async () => {
+    const repeated = Array.from({ length: 100 }, (_, index) => ({ receipt_id: index + 1 }));
+    const repeatedFetch = vi.fn().mockResolvedValue(response({ count: "invalid", results: repeated }));
+    await expect(createEtsyClient({ fetchImpl: repeatedFetch, getAccessToken: async () => "token", env }).listReceipts({ shopId: 1 })).rejects.toMatchObject({ code: "invalid_response" });
+    expect(repeatedFetch).toHaveBeenCalledTimes(2);
+
+    let page = 0;
+    const distinctFetch = vi.fn().mockImplementation(() => {
+      const start = page++ * 100;
+      return Promise.resolve(response({ results: Array.from({ length: 100 }, (_, index) => ({ receipt_id: start + index + 1 })) }));
+    });
+    await expect(createEtsyClient({ fetchImpl: distinctFetch, getAccessToken: async () => "token", maxReceiptPages: 2, env }).listReceipts({ shopId: 1 })).rejects.toMatchObject({ code: "invalid_response" });
+    expect(distinctFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("honors caller abort during fetch without retry and removes combined-signal listeners", async () => {
+    const controller = new AbortController();
+    const add = vi.spyOn(controller.signal, "addEventListener");
+    const remove = vi.spyOn(controller.signal, "removeEventListener");
+    const fetchImpl = vi.fn((url, options) => new Promise((resolve, reject) => {
+      options.signal.addEventListener("abort", () => reject(new DOMException("secret", "AbortError")), { once: true });
+    }));
+    const pending = createEtsyClient({ fetchImpl, getAccessToken: async () => "token", env }).getListing({ listingId: 1, signal: controller.signal });
+    await vi.waitFor(() => expect(fetchImpl).toHaveBeenCalledOnce());
+    controller.abort();
+    const error = await pending.catch((caught) => caught);
+    expect(error).toMatchObject({ code: "temporary" });
+    expect(error.cause).toBeUndefined();
+    expect(fetchImpl).toHaveBeenCalledOnce();
+    expect(add).toHaveBeenCalled();
+    expect(remove).toHaveBeenCalled();
+  });
+
+  it("aborts Retry-After waiting, removes its listener, and never retries", async () => {
+    const controller = new AbortController();
+    const remove = vi.spyOn(controller.signal, "removeEventListener");
+    const sleep = vi.fn(() => new Promise(() => {}));
+    const fetchImpl = vi.fn().mockResolvedValue(response({}, 429, new Headers({ "Retry-After": "30" })));
+    const pending = createEtsyClient({ fetchImpl, getAccessToken: async () => "token", sleep, env }).getListing({ listingId: 1, signal: controller.signal });
+    await vi.waitFor(() => expect(sleep).toHaveBeenCalledOnce());
+    controller.abort();
+    await expect(pending).rejects.toMatchObject({ code: "temporary" });
+    expect(fetchImpl).toHaveBeenCalledOnce();
+    expect(remove).toHaveBeenCalled();
+  });
 });
