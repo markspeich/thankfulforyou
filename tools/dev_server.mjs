@@ -162,6 +162,8 @@ const server = createServer(async (request, response) => {
     || requestUrl.pathname === "/api/production-batch"
     || requestUrl.pathname === "/api/fonts"
     || requestUrl.pathname === "/api/fixed-designs"
+    || requestUrl.pathname === "/api/etsy-connection"
+    || requestUrl.pathname === "/api/etsy-callback"
   ) {
     const requestId = randomUUID();
     const startedAt = Date.now();
@@ -186,6 +188,8 @@ const server = createServer(async (request, response) => {
         "/api/production-batch": "../api/production-batch.js",
         "/api/fonts": "../api/fonts.js",
         "/api/fixed-designs": "../api/fixed-designs.js",
+        "/api/etsy-connection": "../api/etsy-connection.js",
+        "/api/etsy-callback": "../api/etsy-callback.js",
       };
       const modulePath = modulePathByPathname[requestUrl.pathname];
       const { default: handler } = await import(modulePath);
@@ -229,6 +233,8 @@ const server = createServer(async (request, response) => {
           }
           sendJson(response, statusCode, jsonPayload);
         },
+        redirect(location) { response.writeHead(this.statusCode || 302, { Location: location }); response.end(); },
+        end() { response.end(); },
       };
 
       await handler(req, res);

@@ -1,0 +1,12 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+const mocks = vi.hoisted(() => ({ open: vi.fn(), key: vi.fn(), validate: vi.fn(), exchange: vi.fn(), save: vi.fn() }));
+vi.mock("../../api/_lib/etsy-token-crypto.js", () => ({ openEtsyOAuthState: mocks.open, readEtsyTokenEncryptionKey: mocks.key }));
+vi.mock("../../api/_lib/etsy-oauth.js", () => ({ openEtsyAuthorizationContext: mocks.validate, exchangeEtsyCallback: mocks.exchange }));
+vi.mock("../../api/_lib/etsy-connection-store.js", () => ({ saveEtsyConnection: mocks.save }));
+import handler from "../../api/etsy-callback.js";
+function response() { return { headers: {}, status(v) { this.statusCode = v; return this; }, setHeader(k, v) { this.headers[k] = v; }, redirect(v) { this.location = v; }, json(v) { this.body = v; } }; }
+beforeEach(() => { mocks.key.mockReturnValue(Buffer.alloc(32)); mocks.open.mockReturnValue({ workspaceId: "w", userId: "u" }); mocks.validate.mockReturnValue({ workspaceId: "w", userId: "u", verifier: "v" }); mocks.exchange.mockResolvedValue({ accessToken: "123.access", refreshToken: "refresh", accessTokenExpiresAt: "a", refreshTokenExpiresAt: "r" }); mocks.save.mockResolvedValue({}); vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ results: [{ shop_id: 44, shop_name: "Shop" }] }) })); });
+describe("Etsy callback API", () => {
+  it("validates binding, saves shop and redirects", async () => { const res = response(); await handler({ method: "GET", headers: { cookie: "etsy_oauth=sealed" }, query: { code: "code", state: "state" } }, res); expect(mocks.validate).toHaveBeenCalledWith(expect.objectContaining({ workspaceId: "w", userId: "u", returnedState: "state" })); expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({ etsyUserId: "123", etsyShopId: "44" })); expect(res.location).toBe("/orders?etsy=connected"); expect(res.headers["Set-Cookie"]).toContain("Max-Age=0"); });
+  it("uses generic error redirect and clears cookie", async () => { mocks.validate.mockImplementation(() => { throw new Error("secret-token"); }); vi.spyOn(console, "error").mockImplementation(() => {}); const res = response(); await handler({ method: "GET", headers: { cookie: "etsy_oauth=sealed" }, query: { code: "secret-code", state: "bad" } }, res); expect(res.location).toBe("/orders?etsy=connection-error"); expect(JSON.stringify(res)).not.toContain("secret"); });
+});

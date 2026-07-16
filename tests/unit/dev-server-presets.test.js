@@ -205,6 +205,15 @@ describe("dev server orders api wrapper", () => {
   }, 15000);
 });
 
+describe("dev server Etsy api wrapper", () => {
+  it("routes Etsy connection requests through the API handler", async () => {
+    const port = await reserveAvailableDevServerTestPort();
+    await startDevServer(port);
+    const response = await putMalformedJson(port, "/api/etsy-connection");
+    expect(response.statusCode).toBe(400);
+    expect(JSON.parse(response.body)).toEqual({ error: "API payload must be valid JSON." });
+  }, 15000);
+});
 describe("dev server fonts api wrapper", () => {
   it("parses PATCH JSON bodies before routing to the fonts API handler", async () => {
     const port = await reserveAvailableDevServerTestPort();
