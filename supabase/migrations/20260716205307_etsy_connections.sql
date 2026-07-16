@@ -11,6 +11,7 @@ create table public.etsy_connections (
   refresh_token_expires_at timestamptz not null,
   last_synced_at timestamptz,
   import_lock_until timestamptz,
+  import_lock_token text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );

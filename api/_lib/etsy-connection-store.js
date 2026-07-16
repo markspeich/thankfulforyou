@@ -14,6 +14,13 @@ async function update(workspaceId, payload, columns = STATUS_COLUMNS) {
   check(error); return data;
 }
 
+function requireLockToken(lockToken) {
+  if (typeof lockToken !== "string" || !lockToken.trim()) {
+    throw new Error("lockToken is required.");
+  }
+  return lockToken;
+}
+
 export async function saveEtsyConnection({ workspaceId, etsyUserId, etsyShopId, etsyShopName = null, scopes = [], accessToken, refreshToken, accessTokenExpiresAt, refreshTokenExpiresAt }) {
   const key = readEtsyTokenEncryptionKey();
   const { data, error } = await createSupabaseAdminClient().from("etsy_connections").upsert({ workspace_id: workspaceId, etsy_user_id: etsyUserId, etsy_shop_id: etsyShopId, etsy_shop_name: etsyShopName, scopes, status: "connected", access_token_envelope: encryptEtsySecret(accessToken, key), refresh_token_envelope: encryptEtsySecret(refreshToken, key), access_token_expires_at: accessTokenExpiresAt, refresh_token_expires_at: refreshTokenExpiresAt, updated_at: new Date().toISOString() }, { onConflict: "workspace_id" }).select(STATUS_COLUMNS).maybeSingle();
@@ -39,12 +46,18 @@ export async function updateEtsyTokens({ workspaceId, accessToken, refreshToken,
 export async function markEtsyConnectionReconnectRequired({ workspaceId }) { return status(await update(workspaceId, { status: "reconnect_required" })); }
 export async function updateEtsySyncCursor({ workspaceId, lastSyncedAt }) { return status(await update(workspaceId, { last_synced_at: lastSyncedAt })); }
 
-export async function acquireEtsyImportLock({ workspaceId, now = new Date() }) {
+export async function acquireEtsyImportLock({ workspaceId, now = new Date(), lockToken }) {
+  const token = requireLockToken(lockToken);
   const current = now instanceof Date ? now : new Date(now);
   const currentIso = current.toISOString();
   const lockUntil = new Date(current.getTime() + 600_000).toISOString();
-  const { data, error } = await createSupabaseAdminClient().from("etsy_connections").update({ import_lock_until: lockUntil, updated_at: currentIso }).eq("workspace_id", workspaceId).or(`import_lock_until.is.null,import_lock_until.lte.${currentIso}`).select("workspace_id").maybeSingle();
+  const { data, error } = await createSupabaseAdminClient().from("etsy_connections").update({ import_lock_until: lockUntil, import_lock_token: token, updated_at: currentIso }).eq("workspace_id", workspaceId).or(`import_lock_until.is.null,import_lock_until.lte.${currentIso}`).select("workspace_id").maybeSingle();
   check(error); return Boolean(data);
 }
 
-export async function releaseEtsyImportLock({ workspaceId }) { return Boolean(await update(workspaceId, { import_lock_until: null }, "workspace_id")); }
+export async function releaseEtsyImportLock({ workspaceId, lockToken }) {
+  const token = requireLockToken(lockToken);
+  const { data, error } = await createSupabaseAdminClient().from("etsy_connections").update({ import_lock_until: null, import_lock_token: null, updated_at: new Date().toISOString() }).eq("workspace_id", workspaceId).eq("import_lock_token", token).select("workspace_id").maybeSingle();
+  check(error);
+  return Boolean(data);
+}

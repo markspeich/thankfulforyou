@@ -71,17 +71,34 @@ describe("Etsy connection store", () => {
   it("acquires a lock with one conditional update and reports conflicts", async () => {
     database.responses.push({ data: { workspace_id: "workspace-1" }, error: null }, { data: null, error: null });
     const { acquireEtsyImportLock } = await import("../../api/_lib/etsy-connection-store.js");
-    expect(await acquireEtsyImportLock({ workspaceId: "workspace-1", now: new Date("2026-07-16T20:00:00.000Z") })).toBe(true);
-    expect(await acquireEtsyImportLock({ workspaceId: "workspace-1", now: new Date("2026-07-16T20:00:00.000Z") })).toBe(false);
+    expect(await acquireEtsyImportLock({ workspaceId: "workspace-1", now: new Date("2026-07-16T20:00:00.000Z"), lockToken: "token-a" })).toBe(true);
+    expect(await acquireEtsyImportLock({ workspaceId: "workspace-1", now: new Date("2026-07-16T20:00:00.000Z"), lockToken: "token-b" })).toBe(false);
     expect(database.calls[0].payload.import_lock_until).toBe("2026-07-16T20:10:00.000Z");
+    expect(database.calls[0].payload.import_lock_token).toBe("token-a");
     expect(database.calls[0].filters).toContainEqual(["or", "import_lock_until.is.null,import_lock_until.lte.2026-07-16T20:00:00.000Z"]);
   });
 
-  it("releases a workspace-scoped lock", async () => {
-    database.responses.push({ data: { workspace_id: "workspace-1" }, error: null });
-    const { releaseEtsyImportLock } = await import("../../api/_lib/etsy-connection-store.js");
-    await releaseEtsyImportLock({ workspaceId: "workspace-1" });
-    expect(database.calls[0]).toMatchObject({ operation: "update", payload: { import_lock_until: null } });
-    expect(database.calls[0].filters).toContainEqual(["eq", "workspace_id", "workspace-1"]);
+  it("does not let stale owner A release a lock reacquired by B", async () => {
+    database.responses.push(
+      { data: { workspace_id: "workspace-1" }, error: null },
+      { data: { workspace_id: "workspace-1" }, error: null },
+      { data: null, error: null },
+      { data: { workspace_id: "workspace-1" }, error: null },
+    );
+    const { acquireEtsyImportLock, releaseEtsyImportLock } = await import("../../api/_lib/etsy-connection-store.js");
+    expect(await acquireEtsyImportLock({ workspaceId: "workspace-1", now: new Date("2026-07-16T20:00:00.000Z"), lockToken: "token-a" })).toBe(true);
+    expect(await acquireEtsyImportLock({ workspaceId: "workspace-1", now: new Date("2026-07-16T20:11:00.000Z"), lockToken: "token-b" })).toBe(true);
+    expect(await releaseEtsyImportLock({ workspaceId: "workspace-1", lockToken: "token-a" })).toBe(false);
+    expect(database.calls[2]).toMatchObject({ operation: "update", payload: { import_lock_until: null, import_lock_token: null } });
+    expect(database.calls[2].filters).toContainEqual(["eq", "workspace_id", "workspace-1"]);
+    expect(database.calls[2].filters).toContainEqual(["eq", "import_lock_token", "token-a"]);
+    expect(await releaseEtsyImportLock({ workspaceId: "workspace-1", lockToken: "token-b" })).toBe(true);
+    expect(database.calls[3].filters).toContainEqual(["eq", "import_lock_token", "token-b"]);
+  });
+
+  it("rejects empty lock tokens", async () => {
+    const { acquireEtsyImportLock, releaseEtsyImportLock } = await import("../../api/_lib/etsy-connection-store.js");
+    await expect(acquireEtsyImportLock({ workspaceId: "workspace-1", lockToken: "" })).rejects.toThrow("lockToken is required");
+    await expect(releaseEtsyImportLock({ workspaceId: "workspace-1", lockToken: "  " })).rejects.toThrow("lockToken is required");
   });
 });
