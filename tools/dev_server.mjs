@@ -159,6 +159,7 @@ const server = createServer(async (request, response) => {
 
   if (
     requestUrl.pathname === "/api/batch-session"
+    || requestUrl.pathname === "/api/etsy-import"
     || requestUrl.pathname === "/api/orders"
     || requestUrl.pathname === "/api/production-batch"
     || requestUrl.pathname === "/api/fonts"
@@ -184,6 +185,7 @@ const server = createServer(async (request, response) => {
 
     try {
       const modulePathByPathname = {
+        "/api/etsy-import": "../api/etsy-import.js",
         "/api/batch-session": "../api/batch-session.js",
         "/api/orders": "../api/orders.js",
         "/api/production-batch": "../api/production-batch.js",
@@ -195,7 +197,10 @@ const server = createServer(async (request, response) => {
       const modulePath = modulePathByPathname[requestUrl.pathname];
       const { default: handler } = await import(modulePath);
       const shouldLogProductionBatch = requestUrl.pathname === "/api/production-batch";
+      const requestAbortController = new AbortController();
+      request.once("aborted", () => requestAbortController.abort());
       const req = {
+        signal: requestAbortController.signal,
         method: request.method,
         headers: Object.fromEntries(
           Object.entries(request.headers).map(([key, value]) => [key, Array.isArray(value) ? value[0] : value]),
@@ -236,6 +241,8 @@ const server = createServer(async (request, response) => {
         },
         redirect(location) { response.writeHead(this.statusCode || 302, { Location: location }); response.end(); },
         end() { response.end(); },
+        write(chunk) { return response.write(chunk); },
+        flushHeaders() { response.flushHeaders(); },
       };
 
       await handler(req, res);
