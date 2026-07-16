@@ -7,6 +7,7 @@ import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
 import { buildPublicAppConfigScript } from "./app_config.mjs";
 import { allocateDevPort } from "./dev_port.mjs";
+import { buildApiQuery } from "./dev_server_request.mjs";
 import { clearDevServerPid, mergeDevServerState, readDevServerState } from "./dev_server_state.mjs";
 import { buildLocalServerInfo, formatLocalServerInfo } from "./local_server_info.mjs";
 
@@ -199,7 +200,7 @@ const server = createServer(async (request, response) => {
         headers: Object.fromEntries(
           Object.entries(request.headers).map(([key, value]) => [key, Array.isArray(value) ? value[0] : value]),
         ),
-        query: Object.fromEntries(requestUrl.searchParams.entries()),
+        query: buildApiQuery(requestUrl),
         body: payload,
       };
       const res = {

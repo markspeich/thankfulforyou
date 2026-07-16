@@ -2,6 +2,8 @@ import { spawn } from "node:child_process";
 import { request } from "node:http";
 import { afterEach, describe, expect, it } from "vitest";
 
+import { buildApiQuery } from "../../tools/dev_server_request.mjs";
+
 import {
   WORKTREE_PORT_BASE,
   WORKTREE_PORT_SPAN,
@@ -215,6 +217,10 @@ describe("dev server Etsy api wrapper", () => {
   }, 15000);
 });
 describe("dev server Etsy callback wrapper", () => {
+  it("maps callback query parameters exactly into API request context", () => {
+    const requestUrl = new URL("/api/etsy-callback?code=query-code&state=query-state", "http://localhost");
+    expect(buildApiQuery(requestUrl)).toEqual({ code: "query-code", state: "query-state" });
+  });
   it("passes callback query parameters to handler redirect behavior", async () => {
     const port = await reserveAvailableDevServerTestPort();
     await startDevServer(port);
