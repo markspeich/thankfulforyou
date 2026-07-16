@@ -214,6 +214,22 @@ describe("dev server Etsy api wrapper", () => {
     expect(JSON.parse(response.body)).toEqual({ error: "API payload must be valid JSON." });
   }, 15000);
 });
+describe("dev server Etsy callback wrapper", () => {
+  it("passes callback query parameters to handler redirect behavior", async () => {
+    const port = await reserveAvailableDevServerTestPort();
+    await startDevServer(port);
+    const response = await new Promise((resolve, reject) => {
+      const req = request({ method: "GET", host: "127.0.0.1", port, path: "/api/etsy-callback?code=query-code&state=query-state" }, (res) => {
+        res.resume();
+        res.on("end", () => resolve({ statusCode: res.statusCode, location: res.headers.location, cookie: res.headers["set-cookie"] }));
+      });
+      req.on("error", reject);
+      req.end();
+    });
+    expect(response).toMatchObject({ statusCode: 302, location: "/orders?etsy=connection-error" });
+    expect(response.cookie?.[0]).toContain("Max-Age=0");
+  }, 15000);
+});
 describe("dev server fonts api wrapper", () => {
   it("parses PATCH JSON bodies before routing to the fonts API handler", async () => {
     const port = await reserveAvailableDevServerTestPort();
