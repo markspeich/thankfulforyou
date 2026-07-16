@@ -139,4 +139,35 @@ describe("Etsy client", () => {
     expect(fetchImpl).toHaveBeenCalledOnce();
     expect(remove).toHaveBeenCalled();
   });
+
+  it("keeps caller cancellation active while the response body is pending", async () => {
+    const caller = new AbortController();
+    const remove = vi.spyOn(caller.signal, "removeEventListener");
+    let requestSignal;
+    const fetchImpl = vi.fn((url, options) => {
+      requestSignal = options.signal;
+      return Promise.resolve({ ok: true, status: 200, json: () => new Promise((resolve, reject) => {
+        options.signal.addEventListener("abort", () => reject(new DOMException("body cancelled", "AbortError")), { once: true });
+      }) });
+    });
+    const pending = createEtsyClient({ fetchImpl, getAccessToken: async () => "token", env }).getListing({ listingId: 1, signal: caller.signal });
+    await vi.waitFor(() => expect(requestSignal).toBeDefined());
+    caller.abort();
+    await expect(pending).rejects.toMatchObject({ code: "temporary" });
+    expect(requestSignal.aborted).toBe(true);
+    expect(fetchImpl).toHaveBeenCalledOnce();
+    expect(remove).toHaveBeenCalled();
+  });
+
+  it("keeps the per-attempt timeout active while the response body is pending", async () => {
+    const timeout = new AbortController();
+    const fetchImpl = vi.fn((url, options) => Promise.resolve({ ok: true, status: 200, json: () => new Promise((resolve, reject) => {
+      options.signal.addEventListener("abort", () => reject(new DOMException("timeout", "AbortError")), { once: true });
+    }) }));
+    const pending = createEtsyClient({ fetchImpl, getAccessToken: async () => "token", createTimeoutSignal: () => timeout.signal, env }).getListing({ listingId: 1 });
+    await vi.waitFor(() => expect(fetchImpl).toHaveBeenCalledOnce());
+    timeout.abort();
+    await expect(pending).rejects.toMatchObject({ code: "temporary" });
+    expect(fetchImpl).toHaveBeenCalledOnce();
+  });
 });

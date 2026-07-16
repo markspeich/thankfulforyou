@@ -37,24 +37,33 @@ export function createEtsyClient({ fetchImpl = fetch, getAccessToken, sleep = de
   }
   async function request(path, validate, callerSignal, attempt = 0) {
     if (callerSignal?.aborted) throw new EtsyApiError("temporary");
-    let response;
     const combined = combinedSignal(callerSignal, createTimeoutSignal(TIMEOUT_MS));
     try {
-      const token = await getAccessToken();
-      if (callerSignal?.aborted) throw new EtsyApiError("temporary");
-      response = await fetchImpl(`${baseUrl}${path}`, { headers: { Authorization: `Bearer ${token}`, "x-api-key": apiKey(env), Accept: "application/json" }, signal: combined.signal });
-    } catch {
-      if (!callerSignal?.aborted && attempt === 0) return request(path, validate, callerSignal, 1);
-      throw new EtsyApiError("temporary");
-    } finally { combined.cleanup(); }
-    if (!response.ok) {
-      if (response.status === 401 || response.status === 403) throw new EtsyApiError("reauthorize");
-      if (response.status === 429) { if (attempt === 0) { await wait(retryDelay(response.headers?.get?.("retry-after"), now), callerSignal); return request(path, validate, callerSignal, 1); } throw new EtsyApiError("rate_limited"); }
-      if (response.status >= 500 && attempt === 0) { await wait(0, callerSignal); return request(path, validate, callerSignal, 1); }
-      throw new EtsyApiError(response.status >= 500 ? "temporary" : "invalid_response");
+      let response;
+      try {
+        const token = await getAccessToken();
+        if (callerSignal?.aborted) throw new EtsyApiError("temporary");
+        response = await fetchImpl(`${baseUrl}${path}`, { headers: { Authorization: `Bearer ${token}`, "x-api-key": apiKey(env), Accept: "application/json" }, signal: combined.signal });
+      } catch {
+        if (!callerSignal?.aborted && !combined.signal.aborted && attempt === 0) {
+          combined.cleanup();
+          return request(path, validate, callerSignal, 1);
+        }
+        throw new EtsyApiError("temporary");
+      }
+      if (!response.ok) {
+        if (response.status === 401 || response.status === 403) throw new EtsyApiError("reauthorize");
+        if (response.status === 429) { if (attempt === 0) { combined.cleanup(); await wait(retryDelay(response.headers?.get?.("retry-after"), now), callerSignal); return request(path, validate, callerSignal, 1); } throw new EtsyApiError("rate_limited"); }
+        if (response.status >= 500 && attempt === 0) { combined.cleanup(); await wait(0, callerSignal); return request(path, validate, callerSignal, 1); }
+        throw new EtsyApiError(response.status >= 500 ? "temporary" : "invalid_response");
+      }
+      let payload;
+      try { payload = await response.json(); } catch { throw new EtsyApiError(combined.signal.aborted ? "temporary" : "invalid_response"); }
+      if (combined.signal.aborted) throw new EtsyApiError("temporary");
+      try { return validate(payload); } catch (error) { if (error instanceof EtsyApiError) throw error; throw new EtsyApiError("invalid_response"); }
+    } finally {
+      combined.cleanup();
     }
-    let payload; try { payload = await response.json(); } catch { throw new EtsyApiError("invalid_response"); }
-    try { return validate(payload); } catch (error) { if (error instanceof EtsyApiError) throw error; throw new EtsyApiError("invalid_response"); }
   }
   async function listReceipts({ shopId, signal, ...filters }) {
     const results = [], pageSignatures = new Set(); let offset = 0;
