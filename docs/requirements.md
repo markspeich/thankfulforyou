@@ -287,6 +287,22 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - The import flow should support a browser-side helper path, such as a User JavaScript and CSS script, that can copy structured order payloads directly from the live Etsy orders page.
 - The first import implementation should use a clipboard workflow driven by a User JavaScript and CSS helper on the live Etsy orders page.
 - The repository docs folder includes a sample clipboard payload at `docs/sample-clipboard.txt` for clipboard-import development and testing.
+- The `Orders` workspace should provide an operator-initiated `Import from Etsy` action backed directly by Etsy Open API v3; ShipStation should not be a required intermediary for Etsy imports.
+- The first Etsy API import release should use on-demand synchronization rather than scheduled or webhook-driven background synchronization.
+- The Etsy API import should retrieve only paid, non-cancelled, unshipped receipts and should create one order item per Etsy transaction.
+- The Etsy API import should use Etsy `transaction_id` as the permanent order-item identity, skip transactions already stored in the workspace, and never overwrite an operator-edited or protected design.
+- The first Etsy API import after connection should use a 90-day lookback; later imports should use a saved high-water timestamp with an overlap window while retaining transaction identity as the final deduplication authority.
+- Etsy API access must use server-side OAuth 2.0 Authorization Code with PKCE and request only the `transactions_r` and `shops_r` scopes.
+- Etsy Keystring, Shared Secret, token-encryption key, and decrypted OAuth tokens must remain server-side and must never be exposed to browser code, logs, or version control.
+- Workspace Etsy OAuth tokens should be encrypted before database storage, and the Etsy connection table should be inaccessible to ordinary browser database clients.
+- The Etsy API importer must support multiple transaction variation values with `property_id: 54`, must not require the question name to be `Personalization`, and must preserve question labels and values in source metadata.
+- Usable Etsy text personalization responses should initialize design text in Etsy's returned order with one response per line; file-upload URLs should be preserved as references without becoming design text.
+- An Etsy transaction with missing or unusable customization should still import as an editable order item and should display a `Customization needed` warning.
+- Listing-image or other enrichment failures should not block an otherwise valid Etsy transaction, and isolated receipt or transaction failures should not roll back unrelated successful imports.
+- Etsy API imports from the `Orders` workspace should persist through the existing Orders import path and should not automatically add imported items to the active production batch.
+- While an Etsy import is running, the Orders workspace must show a visible progress indicator and accessible text status; it should show determinate item progress when totals are known and staged or indeterminate progress while discovering receipts.
+- Etsy import completion feedback should separately report newly imported, already present, customization-needed, and failed item counts.
+- Amazon order and customization import should be designed and implemented separately from the Etsy API import.
 - Imported listing IDs should be usable to auto-select the app preset for each imported order.
 - Imported Etsy listing metadata should include the listing title and the 75 by 75 listing image URL when those fields are present in the Etsy order data.
 - The app should maintain a configurable mapping from Etsy listing ID to production preset name.
