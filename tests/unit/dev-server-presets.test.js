@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { readFile } from "node:fs/promises";
 import { request } from "node:http";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -247,4 +248,11 @@ describe("dev server fonts api wrapper", () => {
     expect(response.contentType).toContain("application/json");
     expect(JSON.parse(response.body)).toEqual({ error: "API payload must be valid JSON." });
   }, 15000);
+});
+
+describe("dev server Etsy import wrapper", () => {
+  it("maps /api/etsy-import to its API handler", async () => {
+    const source = await readFile("tools/dev_server.mjs", "utf8");
+    expect(source).toContain('"/api/etsy-import": "../api/etsy-import.js"');
+  });
 });

@@ -37,7 +37,8 @@ export function createEtsyImportHandler({ resolveAuth = resolveProductionBatchAu
       res.end();
     } catch (error) {
       if (!streaming) {
-        if (error?.statusCode && (error?.expose || error instanceof EtsyImportError)) res.status(error.statusCode).json({ error: error.message, ...(error.code ? { code: error.code } : {}) });
+        try { await prepared?.release(); } catch {}
+        if (error?.statusCode && (error?.expose || error instanceof EtsyImportError || error?.code)) res.status(error.statusCode).json({ error: error.message, ...(error.code ? { code: error.code } : {}) });
         else res.status(500).json({ error: "Unable to import Etsy orders." });
         return;
       }

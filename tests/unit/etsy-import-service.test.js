@@ -22,7 +22,7 @@ describe("Etsy import service", () => {
     const f = fixture(); const prepared = await f.service.prepare({ workspaceId: "w", userId: "u", onProgress: (e) => f.events.push(e) }); await prepared.run();
     expect(f.client.listReceipts).toHaveBeenCalledWith(expect.objectContaining({ min_created: Math.floor((f.now.getTime() - 90 * 86400000) / 1000) }));
     expect(f.store.importWorkspaceOrderItems).toHaveBeenCalledWith(expect.objectContaining({ target: "orders", batchId: null }));
-    expect(f.events).toEqual([{ type: "progress", stage: "fetching_receipts", processed: 0, total: null }, { type: "progress", stage: "importing", processed: 0, total: 1 }, { type: "progress", stage: "importing", processed: 1, total: 1 }, { type: "complete", imported: 1, existing: 0, customizationNeeded: 1, failed: 0 }]);
+    expect(f.events).toEqual([{ type: "progress", stage: "fetching_receipts", processed: 0, total: null }, { type: "progress", stage: "importing_items", processed: 0, total: 1 }, { type: "progress", stage: "importing_items", processed: 1, total: 1 }, { type: "complete", imported: 1, existing: 0, customizationNeeded: 1, failed: 0 }]);
     expect(f.store.updateEtsySyncCursor).toHaveBeenCalledWith({ workspaceId: "w", lastSyncedAt: f.now.toISOString() });
     expect(f.store.releaseEtsyImportLock).toHaveBeenCalledWith({ workspaceId: "w", lockToken: "owner" });
   });
@@ -44,5 +44,43 @@ describe("Etsy import service", () => {
     const f = fixture(); const signal = new AbortController().signal; f.client.getListing.mockRejectedValue(new Error("listing")); f.store.importWorkspaceOrderItems.mockRejectedValue(new Error("item"));
     const result = await (await f.service.prepare({ workspaceId: "w", signal })).run();
     expect(result.failed).toBe(1); expect(f.client.listReceipts.mock.calls[0][0].signal).toBe(signal); expect(f.store.updateEtsySyncCursor).toHaveBeenCalled();
+  });
+  it("stops an active abort without cursor advancement and releases the matching owner", async () => {
+    const f = fixture(); const controller = new AbortController();
+    f.client.listReceiptTransactions.mockImplementation(async () => { controller.abort(); throw new DOMException("Aborted", "AbortError"); });
+    const prepared = await f.service.prepare({ workspaceId: "w", signal: controller.signal });
+    await expect(prepared.run()).rejects.toMatchObject({ name: "AbortError" });
+    expect(f.store.updateEtsySyncCursor).not.toHaveBeenCalled();
+    expect(f.store.releaseEtsyImportLock).toHaveBeenCalledWith({ workspaceId: "w", lockToken: "owner" });
+  });
+  it("releases the owner when client construction fails", async () => {
+    const f = fixture({ createClient: () => { throw new Error("client"); } });
+    await expect(f.service.prepare({ workspaceId: "w" })).rejects.toThrow("client");
+    expect(f.store.releaseEtsyImportLock).toHaveBeenCalledWith({ workspaceId: "w", lockToken: "owner" });
+  });
+  it("emits exact empty progress and completion", async () => {
+    const f = fixture(); f.client.listReceipts.mockResolvedValue([]);
+    await (await f.service.prepare({ workspaceId: "w", onProgress: (e) => f.events.push(e) })).run();
+    expect(f.events).toEqual([{ type: "progress", stage: "fetching_receipts", processed: 0, total: null }, { type: "progress", stage: "importing_items", processed: 0, total: 0 }, { type: "complete", imported: 0, existing: 0, customizationNeeded: 0, failed: 0 }]);
+  });
+  it("refreshes near-expired access and marks reconnect required on reauthorization", async () => {
+    const refreshAccess = vi.fn().mockResolvedValue({ accessToken: "new-token" });
+    let f = fixture({ refreshAccess });
+    f.store.getEtsyConnectionCredentials.mockResolvedValue({ status: "connected", etsyShopId: "shop", accessToken: "old", refreshToken: "refresh", accessTokenExpiresAt: "2026-07-16T12:04:59.000Z" });
+    await (await f.service.prepare({ workspaceId: "w" })).release();
+    expect(refreshAccess).toHaveBeenCalledWith(expect.objectContaining({ workspaceId: "w", refreshToken: "refresh", now: f.now }));
+    const failure = Object.assign(new Error("reauthorize"), { category: "reauthorize" });
+    f = fixture({ refreshAccess: vi.fn().mockRejectedValue(failure) });
+    f.store.getEtsyConnectionCredentials.mockResolvedValue({ status: "connected", accessToken: "old", refreshToken: "refresh", accessTokenExpiresAt: "2026-07-16T12:00:00.000Z" });
+    await expect(f.service.prepare({ workspaceId: "w" })).rejects.toBe(failure);
+    expect(f.store.markEtsyConnectionReconnectRequired).toHaveBeenCalledWith({ workspaceId: "w" });
+  });
+  it("counts idempotent existing items and passes customization metadata to persistence", async () => {
+    const f = fixture(); f.store.importWorkspaceOrderItems.mockResolvedValue({ importedCount: 0 });
+    const result = await (await f.service.prepare({ workspaceId: "w", userId: "u" })).run();
+    expect(result).toMatchObject({ imported: 0, existing: 1, customizationNeeded: 1 });
+    expect(f.store.importWorkspaceOrderItems).toHaveBeenCalledWith(expect.objectContaining({
+      items: [expect.objectContaining({ source: expect.objectContaining({ customizationNeeded: true }) })],
+    }));
   });
 });

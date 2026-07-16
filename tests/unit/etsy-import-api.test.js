@@ -14,12 +14,19 @@ describe("Etsy import API", () => {
     expect(res.statusCode).toBe(401); expect(res.flushHeaders).not.toHaveBeenCalled();
     res = response(); const conflict = Object.assign(new Error("busy"), { statusCode: 409, code: "import_in_progress" });
     await createEtsyImportHandler({ resolveAuth: vi.fn().mockResolvedValue({ workspaceId: "w" }), serviceFactory: () => ({ prepare: vi.fn().mockRejectedValue(conflict) }), dependencies: { loadPresetSnapshot: vi.fn().mockResolvedValue({}) } })({ method: "POST" }, res);
-    expect(res.statusCode).toBe(500);
+    expect(res.statusCode).toBe(409);
+    expect(res.body.code).toBe("import_in_progress");
   });
   it("returns a safe streamed error and supports POST only", async () => {
     const secret = "token-secret"; const res = response();
     await createEtsyImportHandler({ resolveAuth: vi.fn().mockResolvedValue({ workspaceId: "w" }), serviceFactory: () => ({ prepare: async () => ({ run: async () => { throw Object.assign(new Error(secret), { code: "temporary" }); }, release: vi.fn() }) }), dependencies: { loadPresetSnapshot: vi.fn().mockResolvedValue({}) } })({ method: "POST" }, res);
     expect(res.chunks.join("")).not.toContain(secret); expect(JSON.parse(res.chunks[0])).toEqual({ type: "error", code: "temporary", message: "Unable to import Etsy orders." });
     const method = response(); await createEtsyImportHandler()({ method: "GET" }, method); expect(method.statusCode).toBe(405); expect(method.headers.Allow).toBe("POST");
+  });
+  it("releases a prepared lock when header setup fails", async () => {
+    const release = vi.fn(); const res = response();
+    res.setHeader = vi.fn(() => { throw new Error("header"); });
+    await createEtsyImportHandler({ resolveAuth: vi.fn().mockResolvedValue({ workspaceId: "w" }), serviceFactory: () => ({ prepare: async () => ({ run: vi.fn(), release }) }), dependencies: { loadPresetSnapshot: vi.fn().mockResolvedValue({}) } })({ method: "POST" }, res);
+    expect(release).toHaveBeenCalledTimes(1);
   });
 });
