@@ -55,6 +55,16 @@ export async function acquireEtsyImportLock({ workspaceId, now = new Date(), loc
   check(error); return Boolean(data);
 }
 
+export async function renewEtsyImportLock({ workspaceId, lockToken, now = new Date() }) {
+  const token = requireLockToken(lockToken);
+  const current = now instanceof Date ? now : new Date(now);
+  const currentIso = current.toISOString();
+  const lockUntil = new Date(current.getTime() + 600_000).toISOString();
+  const { data, error } = await createSupabaseAdminClient().from("etsy_connections").update({ import_lock_until: lockUntil, updated_at: currentIso }).eq("workspace_id", workspaceId).eq("import_lock_token", token).select("workspace_id").maybeSingle();
+  check(error);
+  return Boolean(data);
+}
+
 export async function releaseEtsyImportLock({ workspaceId, lockToken }) {
   const token = requireLockToken(lockToken);
   const { data, error } = await createSupabaseAdminClient().from("etsy_connections").update({ import_lock_until: null, import_lock_token: null, updated_at: new Date().toISOString() }).eq("workspace_id", workspaceId).eq("import_lock_token", token).select("workspace_id").maybeSingle();

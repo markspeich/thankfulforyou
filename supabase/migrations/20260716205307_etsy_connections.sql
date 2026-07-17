@@ -12,6 +12,7 @@ create table public.etsy_connections (
   last_synced_at timestamptz,
   import_lock_until timestamptz,
   import_lock_token text,
+  constraint etsy_connections_import_lock_pair check ((import_lock_until is null) = (import_lock_token is null)),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );

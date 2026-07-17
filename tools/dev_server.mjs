@@ -9,6 +9,7 @@ import { buildPublicAppConfigScript } from "./app_config.mjs";
 import { allocateDevPort } from "./dev_port.mjs";
 import { buildApiQuery } from "./dev_server_request.mjs";
 import { clearDevServerPid, mergeDevServerState, readDevServerState } from "./dev_server_state.mjs";
+import { attachRequestAbort } from "./dev_server_abort.mjs";
 import { buildLocalServerInfo, formatLocalServerInfo } from "./local_server_info.mjs";
 
 const serverRole = process.env.DEV_SERVER_PORT_ROLE === "test" ? "test" : "user";
@@ -198,7 +199,7 @@ const server = createServer(async (request, response) => {
       const { default: handler } = await import(modulePath);
       const shouldLogProductionBatch = requestUrl.pathname === "/api/production-batch";
       const requestAbortController = new AbortController();
-      request.once("aborted", () => requestAbortController.abort());
+      const cleanupRequestAbort = attachRequestAbort({ request, response, controller: requestAbortController });
       const req = {
         signal: requestAbortController.signal,
         method: request.method,
@@ -245,7 +246,8 @@ const server = createServer(async (request, response) => {
         flushHeaders() { response.flushHeaders(); },
       };
 
-      await handler(req, res);
+      try { await handler(req, res); }
+      finally { cleanupRequestAbort(); }
     } catch (error) {
       if (requestUrl.pathname === "/api/production-batch") {
         void appendProductionBatchLog({

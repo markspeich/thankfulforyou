@@ -6,6 +6,7 @@ import { normalizeEtsyTransaction } from "./_lib/etsy-import-normalizer.js";
 import { importWorkspaceOrderItems } from "./_lib/orders-store.js";
 import { loadPresetSnapshot } from "./_lib/preset-store.js";
 import { createEtsyImportService, EtsyImportError } from "./_lib/etsy-import-service.js";
+import { isResponseWritable, writeNdjson } from "./_lib/ndjson-writer.js";
 function lookup(snapshot) {
   const map = new Map((snapshot?.presets || []).flatMap((p) => (p.listingAssignments || []).map((a) => [String(a.listingId), p.id])));
   return (id) => map.get(String(id)) || snapshot?.defaultPresetId || null;
@@ -26,7 +27,7 @@ export function createEtsyImportHandler({ resolveAuth = resolveProductionBatchAu
       });
       prepared = await service.prepare({
         ...auth, signal: req.signal,
-        onProgress(event) { if (streaming) res.write(JSON.stringify(event) + "\n"); },
+        async onProgress(event) { if (streaming) await writeNdjson(res, event, { signal: req.signal }); },
       });
       res.status(200);
       res.setHeader("Content-Type", "application/x-ndjson; charset=utf-8");
@@ -43,8 +44,12 @@ export function createEtsyImportHandler({ resolveAuth = resolveProductionBatchAu
         return;
       }
       try { await prepared?.release(); } catch {}
-      res.write(JSON.stringify({ type: "error", code: error?.code || "import_failed", message: "Unable to import Etsy orders." }) + "\n");
-      res.end();
+      if (isResponseWritable(res)) {
+        try {
+          await writeNdjson(res, { type: "error", code: error?.code || "import_failed", message: "Unable to import Etsy orders." }, { signal: req.signal });
+          if (isResponseWritable(res)) res.end();
+        } catch {}
+      }
     }
   };
 }

@@ -292,6 +292,12 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - The Etsy API import should retrieve only paid, non-cancelled, unshipped receipts and should create one order item per Etsy transaction.
 - The Etsy API import should use Etsy `transaction_id` as the permanent order-item identity, skip transactions already stored in the workspace, and never overwrite an operator-edited or protected design.
 - The first Etsy API import after connection should use a 90-day lookback; later imports should use a saved high-water timestamp with an overlap window while retaining transaction identity as the final deduplication authority.
+- An Etsy API import must not advance its high-water timestamp when any eligible receipt's transaction discovery fails; successfully discovered transactions may still import, and the failed receipt must remain eligible for retry.
+- Failed receipt discovery should count expected failed items from a valid nonnegative `transaction_sold_count`, falling back to one item when that count is absent or invalid, and progress totals must include those failures.
+- An active Etsy import must renew its owner-scoped ten-minute lease at least every five minutes during receipt discovery and item processing; losing ownership must terminate the run without advancing the cursor.
+- Etsy import streaming must respect response backpressure and stop/release the import lease when the client disconnects or the response transport fails.
+- One on-demand Etsy API import is capped at 5,000 eligible receipts or expected transaction items; an oversized run must fail safely without advancing its cursor.
+- Individual listing/image enrichment, normalization, or persistence failures after successful transaction discovery may be reported as partial item failures while allowing cursor advancement, but abort, authorization, global, lease, discovery, transport, and size-limit failures must not advance it.
 - Etsy API access must use server-side OAuth 2.0 Authorization Code with PKCE and request only the `transactions_r` and `shops_r` scopes.
 - Etsy Keystring, Shared Secret, token-encryption key, and decrypted OAuth tokens must remain server-side and must never be exposed to browser code, logs, or version control.
 - Workspace Etsy OAuth tokens should be encrypted before database storage, and the Etsy connection table should be inaccessible to ordinary browser database clients.

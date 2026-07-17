@@ -29,4 +29,23 @@ describe("Etsy import API", () => {
     await createEtsyImportHandler({ resolveAuth: vi.fn().mockResolvedValue({ workspaceId: "w" }), serviceFactory: () => ({ prepare: async () => ({ run: vi.fn(), release }) }), dependencies: { loadPresetSnapshot: vi.fn().mockResolvedValue({}) } })({ method: "POST" }, res);
     expect(release).toHaveBeenCalledTimes(1);
   });
+  it("releases the lock and swallows transport failure when progress and error-frame writes fail", async () => {
+    const release = vi.fn();
+    const res = response();
+    res.write = vi.fn(() => { throw new Error("socket closed"); });
+    const serviceFactory = () => ({
+      prepare: async ({ onProgress }) => ({
+        run: async () => { await onProgress({ type: "progress", processed: 1, total: 2 }); },
+        release,
+      }),
+    });
+
+    await createEtsyImportHandler({
+      resolveAuth: vi.fn().mockResolvedValue({ workspaceId: "w" }),
+      serviceFactory,
+      dependencies: { loadPresetSnapshot: vi.fn().mockResolvedValue({}) },
+    })({ method: "POST" }, res);
+    expect(release).toHaveBeenCalledTimes(1);
+    expect(res.write).toHaveBeenCalledTimes(2);
+  });
 });

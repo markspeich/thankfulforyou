@@ -95,10 +95,27 @@ describe("Etsy connection store", () => {
     expect(await releaseEtsyImportLock({ workspaceId: "workspace-1", lockToken: "token-b" })).toBe(true);
     expect(database.calls[3].filters).toContainEqual(["eq", "import_lock_token", "token-b"]);
   });
+  it("renews a lease only for its matching owner", async () => {
+    database.responses.push(
+      { data: { workspace_id: "workspace-1" }, error: null },
+      { data: null, error: null },
+    );
+    const { renewEtsyImportLock } = await import("../../api/_lib/etsy-connection-store.js");
+    const now = new Date("2026-07-16T20:05:00.000Z");
+    expect(await renewEtsyImportLock({ workspaceId: "workspace-1", lockToken: "token-a", now })).toBe(true);
+    expect(database.calls[0].payload).toMatchObject({
+      import_lock_until: "2026-07-16T20:15:00.000Z",
+      updated_at: "2026-07-16T20:05:00.000Z",
+    });
+    expect(database.calls[0].filters).toContainEqual(["eq", "import_lock_token", "token-a"]);
+    expect(await renewEtsyImportLock({ workspaceId: "workspace-1", lockToken: "stale", now })).toBe(false);
+  });
+
 
   it("rejects empty lock tokens", async () => {
-    const { acquireEtsyImportLock, releaseEtsyImportLock } = await import("../../api/_lib/etsy-connection-store.js");
+    const { acquireEtsyImportLock, renewEtsyImportLock, releaseEtsyImportLock } = await import("../../api/_lib/etsy-connection-store.js");
     await expect(acquireEtsyImportLock({ workspaceId: "workspace-1", lockToken: "" })).rejects.toThrow("lockToken is required");
     await expect(releaseEtsyImportLock({ workspaceId: "workspace-1", lockToken: "  " })).rejects.toThrow("lockToken is required");
+    await expect(renewEtsyImportLock({ workspaceId: "workspace-1", lockToken: "" })).rejects.toThrow("lockToken is required");
   });
 });

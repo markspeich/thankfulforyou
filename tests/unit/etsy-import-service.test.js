@@ -6,6 +6,7 @@ function fixture(overrides = {}) {
     getEtsyConnectionCredentials: vi.fn().mockResolvedValue({ status: "connected", etsyShopId: "shop", accessToken: "token", refreshToken: "refresh", accessTokenExpiresAt: "2026-07-16T13:00:00.000Z", lastSyncedAt: null }),
     acquireEtsyImportLock: vi.fn().mockResolvedValue(true), releaseEtsyImportLock: vi.fn(),
     updateEtsySyncCursor: vi.fn(), importWorkspaceOrderItems: vi.fn().mockResolvedValue({ importedCount: 1 }),
+    renewEtsyImportLock: vi.fn().mockResolvedValue(true),
     markEtsyConnectionReconnectRequired: vi.fn(),
   };
   const client = {
@@ -91,6 +92,77 @@ describe("Etsy import service", () => {
     f.store.getEtsyConnectionCredentials.mockResolvedValue({ status: "connected", accessToken: "old", refreshToken: "refresh", accessTokenExpiresAt: "2026-07-16T12:00:00.000Z" });
     await expect(f.service.prepare({ workspaceId: "w" })).rejects.toBe(failure);
     expect(f.store.markEtsyConnectionReconnectRequired).toHaveBeenCalledWith({ workspaceId: "w" });
+  });
+  it("imports discovered items but withholds the cursor and counts failed receipt items", async () => {
+    const f = fixture();
+    f.client.listReceipts.mockResolvedValue([
+      { receipt_id: 1, is_paid: true, is_shipped: false, transaction_sold_count: 3 },
+      { receipt_id: 2, is_paid: true, is_shipped: false, transaction_sold_count: 1 },
+    ]);
+    f.client.listReceiptTransactions
+      .mockRejectedValueOnce(new Error("old receipt failed"))
+      .mockResolvedValueOnce([{ transaction_id: 20, listing_id: 30 }]);
+    const events = [];
+
+    const result = await (await f.service.prepare({ workspaceId: "w", onProgress: (event) => events.push(event) })).run();
+
+    expect(result).toMatchObject({ imported: 1, failed: 3 });
+    expect(f.store.updateEtsySyncCursor).not.toHaveBeenCalled();
+    expect(f.store.importWorkspaceOrderItems).toHaveBeenCalledTimes(1);
+    expect(events).toContainEqual({ type: "progress", stage: "importing_items", processed: 3, total: 4 });
+    expect(events).toContainEqual({ type: "progress", stage: "importing_items", processed: 4, total: 4 });
+    await (await f.service.prepare({ workspaceId: "w" })).run();
+    const retriedReceiptCalls = f.client.listReceiptTransactions.mock.calls.filter(([request]) => request.receiptId === 1);
+    expect(retriedReceiptCalls).toHaveLength(2);
+
+  });
+
+  it.each([
+    [{ transaction_sold_count: -1 }, 1],
+    [{ transaction_sold_count: 2.5 }, 1],
+    [{ transaction_sold_count: 0 }, 0],
+  ])("validates failed receipt transaction counts %#", async (receiptFields, expected) => {
+    const f = fixture();
+    f.client.listReceipts.mockResolvedValue([{ receipt_id: 1, is_paid: true, is_shipped: false, ...receiptFields }]);
+    f.client.listReceiptTransactions.mockRejectedValue(new Error("receipt"));
+    const result = await (await f.service.prepare({ workspaceId: "w" })).run();
+    expect(result.failed).toBe(expected);
+    expect(f.store.updateEtsySyncCursor).not.toHaveBeenCalled();
+  });
+
+  it("renews the owner lease before work after five minutes", async () => {
+    let now = new Date("2026-07-16T12:00:00.000Z");
+    const f = fixture({ clock: () => now });
+    f.client.listReceiptTransactions.mockImplementation(async () => {
+      now = new Date("2026-07-16T12:11:00.000Z");
+      return [{ transaction_id: 2, listing_id: 3 }];
+    });
+    await (await f.service.prepare({ workspaceId: "w" })).run();
+    expect(f.store.renewEtsyImportLock).toHaveBeenCalledWith({ workspaceId: "w", lockToken: "owner", now });
+  });
+
+  it("stops without cursor advancement when lease ownership is lost", async () => {
+    let now = new Date("2026-07-16T12:00:00.000Z");
+    const f = fixture({ clock: () => now });
+    f.store.renewEtsyImportLock.mockResolvedValue(false);
+    f.client.listReceiptTransactions.mockImplementation(async () => {
+      now = new Date("2026-07-16T12:06:00.000Z");
+      return [{ transaction_id: 2, listing_id: 3 }];
+    });
+    await expect((await f.service.prepare({ workspaceId: "w" })).run()).rejects.toMatchObject({ code: "import_lock_lost" });
+    expect(f.store.updateEtsySyncCursor).not.toHaveBeenCalled();
+    expect(f.store.releaseEtsyImportLock).toHaveBeenCalledWith({ workspaceId: "w", lockToken: "owner" });
+  });
+
+  it("rejects excessive receipt accumulation before transaction discovery", async () => {
+    const f = fixture({ maxImportItems: 1 });
+    f.client.listReceipts.mockResolvedValue([
+      { receipt_id: 1, is_paid: true, is_shipped: false },
+      { receipt_id: 2, is_paid: true, is_shipped: false },
+    ]);
+    await expect((await f.service.prepare({ workspaceId: "w" })).run()).rejects.toMatchObject({ code: "import_too_large", statusCode: 413 });
+    expect(f.client.listReceiptTransactions).not.toHaveBeenCalled();
+    expect(f.store.updateEtsySyncCursor).not.toHaveBeenCalled();
   });
   it("counts idempotent existing items and passes customization metadata to persistence", async () => {
     const f = fixture(); f.store.importWorkspaceOrderItems.mockResolvedValue({ importedCount: 0 });
