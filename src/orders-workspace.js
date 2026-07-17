@@ -263,7 +263,8 @@ export function getEtsyImportSummary(summary = {}) {
   const customization = normalizeEtsyCount(summary.customizationNeeded);
   const failed = normalizeEtsyCount(summary.failed);
   const noun = (number, singular, plural = `${singular}s`) => `${number} ${number === 1 ? singular : plural}`;
-  return `${noun(imported, "order imported")}, ${noun(existing, "existing order")}, ${noun(customization, "item needing customization")}, ${noun(failed, "failure", "failures")}.`;
+  const importedLabel = imported === 1 ? "1 order imported" : `${imported} orders imported`;
+  return `${importedLabel}, ${noun(existing, "existing order")}, ${noun(customization, "item needing customization")}, ${noun(failed, "failure", "failures")}.`;
 }
 
 export function getOrderItemCustomizationWarning(item) {

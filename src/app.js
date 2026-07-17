@@ -5991,12 +5991,9 @@ function renderEtsyImportUi() {
     ...etsyConnection,
     importing: etsyImporting,
   });
-  etsyImportButton.textContent = etsyImporting
-    ? "Importing"
-    : etsyConnection?.status === "connected" ? "Import"
-      : etsyConnection?.status === "reconnect_required" ? "Reconnect" : "Connect";
+  etsyImportButton.textContent = descriptor.label;
   if (etsyImportError) {
-    etsyImportButton.textContent = isEtsyReauthorizationError(etsyImportError) ? "Reconnect" : "Retry";
+    etsyImportButton.textContent = isEtsyReauthorizationError(etsyImportError) ? "Reconnect Etsy Shop" : "Retry";
   }
   etsyImportButton.disabled = descriptor.disabled || etsyImporting || etsyConnectionLoading || !productionBatchAccessToken;
   etsyImportButton.setAttribute("aria-busy", String(etsyConnectionLoading || etsyImporting));
