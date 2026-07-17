@@ -233,6 +233,7 @@ export function getCopyableSavedBuild(item) {
 }
 export function getEtsyConnectionActionDescriptor(connection) {
   const importing = Boolean(connection?.importing || connection?.isImporting);
+  if (connection?.status === "connected" && importing) return { label: "Importing…", disabled: true };
   if (connection?.status === "connected") return { label: "Import from Etsy", disabled: importing };
   if (connection?.status === "reconnect_required" || connection?.reconnectRequired) {
     return { label: "Reconnect Etsy Shop", disabled: importing };
@@ -246,12 +247,12 @@ function normalizeEtsyCount(value) {
 
 export function getEtsyImportProgressDescriptor(event) {
   if (event?.stage === "fetching_receipts") {
-    return { label: "Fetching Etsy receipts\u2026", determinate: false, value: null, max: null };
+    return { label: "Fetching Etsy receipts…", determinate: false, value: null, max: null };
   }
   if (event?.stage === "importing_items") {
     const max = normalizeEtsyCount(event.total);
     const value = Math.min(normalizeEtsyCount(event.processed), max);
-    return { label: `Importing Etsy items\u2026 ${value} of ${max}`, determinate: true, value, max };
+    return { label: `Importing ${value} of ${max} order items…`, determinate: true, value, max };
   }
   return null;
 }

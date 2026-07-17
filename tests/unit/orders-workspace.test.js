@@ -384,16 +384,16 @@ describe("Etsy workspace descriptors", () => {
       label: "Reconnect Etsy Shop", disabled: false,
     });
     expect(getEtsyConnectionActionDescriptor({ status: "connected", importing: true })).toEqual({
-      label: "Import from Etsy", disabled: true,
+      label: "Importing…", disabled: true,
     });
   });
 
   it("normalizes progress and summarizes all outcomes", () => {
     expect(getEtsyImportProgressDescriptor({ stage: "fetching_receipts" })).toEqual({
-      label: "Fetching Etsy receipts\u2026", determinate: false, value: null, max: null,
+      label: "Fetching Etsy receipts…", determinate: false, value: null, max: null,
     });
     expect(getEtsyImportProgressDescriptor({ stage: "importing_items", processed: 6, total: 14 })).toEqual({
-      label: "Importing Etsy items\u2026 6 of 14", determinate: true, value: 6, max: 14,
+      label: "Importing 6 of 14 order items…", determinate: true, value: 6, max: 14,
     });
     expect(getEtsyImportProgressDescriptor({ stage: "importing_items", processed: 99, total: -3 })).toMatchObject({
       value: 0, max: 0,

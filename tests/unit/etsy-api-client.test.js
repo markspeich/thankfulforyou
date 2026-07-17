@@ -38,14 +38,15 @@ describe("Etsy API browser client", () => {
   });
 
   it("parses chunked CRLF NDJSON, unicode splits, blank and final lines", async () => {
-    const bytes = new TextEncoder().encode('{"type":"progress","message":"Jos?"}\r\n\r\n{"type":"complete","imported":1}');
+    const bytes = new TextEncoder().encode('{"type":"progress","message":"José"}\r\n\r\n{"type":"complete","imported":1}');
+    const accentedByte = bytes.indexOf(0xc3);
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(stream([
-      bytes.slice(0, 37), bytes.slice(37, 39), bytes.slice(39),
+      bytes.slice(0, accentedByte + 1), bytes.slice(accentedByte + 1),
     ]))));
     const events = [];
     await importEtsyOrders({ accessToken: "token", onEvent: async (event) => events.push(event) });
     expect(events).toEqual([
-      { type: "progress", message: "Jos?" },
+      { type: "progress", message: "José" },
       { type: "complete", imported: 1 },
     ]);
   });
@@ -71,5 +72,59 @@ describe("Etsy API browser client", () => {
     await expect(importEtsyOrders()).rejects.toThrow("Unable to import Etsy orders.");
     fetch.mockResolvedValue(new Response(stream(['{"type":"error","code":"etsy_expired","message":"Reconnect Etsy"}\n'])));
     await expect(importEtsyOrders()).rejects.toMatchObject({ message: "Reconnect Etsy", code: "etsy_expired" });
+  });
+  it("aborts a pending stream, cancels it, releases its lock, and emits no events", async () => {
+    const controller = new AbortController();
+    const cancel = vi.fn().mockResolvedValue(undefined);
+    const releaseLock = vi.fn();
+    const read = vi.fn(() => {
+      if (controller.signal.aborted) return Promise.reject(controller.signal.reason);
+      return new Promise((resolve, reject) => {
+        controller.signal.addEventListener("abort", () => reject(controller.signal.reason), { once: true });
+      });
+    });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      body: { getReader: () => ({ read, cancel, releaseLock }) },
+    }));
+    const onEvent = vi.fn();
+    const importing = importEtsyOrders({ signal: controller.signal, onEvent });
+    controller.abort(new DOMException("Stopped", "AbortError"));
+    await expect(importing).rejects.toMatchObject({ name: "AbortError" });
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(releaseLock).toHaveBeenCalledOnce();
+    expect(onEvent).not.toHaveBeenCalled();
+  });
+
+  it("releases the reader lock after normal completion and parse errors", async () => {
+    const makeResponse = (values) => {
+      const releaseLock = vi.fn();
+      const cancel = vi.fn().mockResolvedValue(undefined);
+      const read = vi.fn();
+      for (const value of values) read.mockResolvedValueOnce(value);
+      return {
+        response: { ok: true, body: { getReader: () => ({ read, cancel, releaseLock }) } },
+        releaseLock,
+        cancel,
+      };
+    };
+
+    const normal = makeResponse([
+      { value: new TextEncoder().encode('{"type":"complete"}\n'), done: false },
+      { value: undefined, done: true },
+    ]);
+    const fetch = vi.fn().mockResolvedValue(normal.response);
+    vi.stubGlobal("fetch", fetch);
+    await importEtsyOrders({});
+    expect(normal.releaseLock).toHaveBeenCalledOnce();
+    expect(normal.cancel).not.toHaveBeenCalled();
+
+    const malformed = makeResponse([
+      { value: new TextEncoder().encode("bad\n"), done: false },
+    ]);
+    fetch.mockResolvedValue(malformed.response);
+    await expect(importEtsyOrders()).rejects.toThrow("Unable to import Etsy orders.");
+    expect(malformed.cancel).toHaveBeenCalledOnce();
+    expect(malformed.releaseLock).toHaveBeenCalledOnce();
   });
 });
