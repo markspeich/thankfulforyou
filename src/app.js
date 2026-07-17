@@ -6003,8 +6003,12 @@ function renderEtsyImportUi() {
   if (progress?.determinate) {
     etsyImportProgress.max = progress.max || 1;
     etsyImportProgress.value = progress.value;
+    etsyImportProgress.setAttribute("aria-valuenow", String(progress.value));
+    etsyImportProgress.setAttribute("aria-valuemax", String(progress.max || 1));
   } else {
     etsyImportProgress.removeAttribute("value");
+    etsyImportProgress.removeAttribute("aria-valuenow");
+    etsyImportProgress.removeAttribute("aria-valuemax");
   }
 
   let message = "";
@@ -6069,13 +6073,19 @@ async function loadEtsyConnection() {
   if (!request || etsyConnectionLoading || etsyConnection) return;
   etsyConnectionLoading = true;
   renderEtsyImportUi();
-  etsyImportError = null;
+  if (!etsyOAuthStatus.includes("failed")) {
+    etsyImportError = null;
+  }
   try {
     const connection = await fetchEtsyConnection({
       accessToken: request.accessToken,
       signal: request.controller.signal,
     });
-    if (etsySessionRequest === request) etsyConnection = connection;
+    if (etsySessionRequest === request) {
+      etsyConnection = etsyOAuthStatus.includes("failed")
+        ? { status: "reconnect_required", reconnectRequired: true }
+        : connection;
+    }
   } catch (error) {
     if (etsySessionRequest === request && error?.name !== "AbortError") etsyImportError = error;
   } finally {
