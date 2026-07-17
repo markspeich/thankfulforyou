@@ -74,6 +74,20 @@ describe("Etsy API browser client", () => {
     await expect(importEtsyOrders()).rejects.toMatchObject({ message: "Reconnect Etsy", code: "etsy_expired" });
   });
 
+  it("requires exactly one terminal complete record", async () => {
+    const fetch = vi.fn(); vi.stubGlobal("fetch", fetch);
+    for (const body of [
+      "",
+      '{"type":"progress","stage":"fetching_receipts","processed":0,"total":null}\n',
+      '{"type":"complete","imported":1,"existing":0,"customizationNeeded":0,"failed":0}\n{"type":"progress","stage":"importing_items","processed":1,"total":1}\n',
+      '{"type":"complete","imported":1,"existing":0,"customizationNeeded":0,"failed":0}\n{"type":"complete","imported":1,"existing":0,"customizationNeeded":0,"failed":0}\n',
+    ]) {
+      fetch.mockResolvedValueOnce(new Response(stream([body]))); const onEvent = vi.fn();
+      await expect(importEtsyOrders({ onEvent })).rejects.toThrow("Unable to import Etsy orders.");
+      expect(onEvent.mock.calls.filter(([event]) => event.type === "complete")).toHaveLength(body.includes('"type":"complete"') ? 1 : 0);
+    }
+  });
+
   it("rejects authorization URLs outside the exact Etsy OAuth endpoint", async () => {
     const fetch = vi.fn();
     vi.stubGlobal("fetch", fetch);

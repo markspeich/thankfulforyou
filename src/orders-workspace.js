@@ -252,6 +252,9 @@ export function getEtsyImportProgressDescriptor(event) {
   if (event?.stage === "importing_items") {
     const max = normalizeEtsyCount(event.total);
     const value = Math.min(normalizeEtsyCount(event.processed), max);
+    if (max === 0) {
+      return { label: "Importing 0 of 0 order items\u2026", determinate: false, value: null, max: null };
+    }
     return { label: `Importing ${value} of ${max} order items…`, determinate: true, value, max };
   }
   return null;

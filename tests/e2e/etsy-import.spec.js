@@ -29,15 +29,37 @@ test("disconnected Orders connects Etsy once", async ({ page }) => {
 });
 
 test("connected import reports stages and completion while preserving selection", async ({ page }) => {
-  await session(page); const gets = await routes(page); await stream(page); await open(page); await page.getByRole("button", { name: /Order 1001/ }).click();
+  await session(page); const gets = await routes(page); await stream(page); await open(page, "/orders?etsy=connected&keep=yes"); await expect(page.locator(".etsy-import-status")).toHaveText("Connected to Etsy.");
+  await page.getByRole("button", { name: /Order 1001/ }).click();
   const button = page.locator(".etsy-import-button"); await expect(button).toHaveText("Import from Etsy"); await button.click(); await expect(button).toHaveText("Importing\u2026"); await expect(button).toBeDisabled();
   await button.evaluate(element => element.click()); await expect.poll(() => page.evaluate(() => calls)).toBe(1);
   await page.evaluate(() => pushEvent({ type: "progress", stage: "fetching_receipts", processed: 0, total: null })); await expect(page.locator("#etsyImportFeedback")).toHaveAttribute("aria-live", "polite"); await expect(page.locator(".etsy-import-status")).toHaveText("Fetching Etsy receipts\u2026");
   const progress = page.getByRole("progressbar", { name: "Etsy import progress" }); await expect(progress).toBeVisible(); await expect(progress).not.toHaveAttribute("aria-valuenow", /.+/);
+  await page.evaluate(() => pushEvent({ type: "progress", stage: "importing_items", processed: 0, total: 0 })); await expect(page.locator(".etsy-import-status")).toHaveText("Importing 0 of 0 order items\u2026");
+  await expect(progress).not.toHaveAttribute("aria-valuenow", /.+/); await expect(progress).not.toHaveAttribute("aria-valuemax", /.+/);
   await page.evaluate(() => pushEvent({ type: "progress", stage: "importing_items", processed: 6, total: 14 })); await expect(page.locator(".etsy-import-status")).toHaveText("Importing 6 of 14 order items\u2026");
   await expect(progress).toHaveAttribute("value", "6"); await expect(progress).toHaveAttribute("max", "14"); await expect(progress).toHaveAttribute("aria-valuenow", "6"); await expect(progress).toHaveAttribute("aria-valuemax", "14");
   await page.evaluate(() => { pushEvent({ type: "complete", imported: 3, existing: 2, customizationNeeded: 1, failed: 4 }); closeStream(); });
   await expect(page.locator(".etsy-import-status")).toHaveText("3 orders imported, 2 existing orders, 1 item needing customization, 4 failures."); await expect(progress).toHaveAttribute("hidden", ""); await expect.poll(gets).toBeGreaterThan(1); await expect(page.locator(".database-order-row.is-selected")).toContainText("Order 1001");
+});
+
+test("import queues a forced refresh behind an in-flight Orders request", async ({ page }) => {
+  await session(page); await routes(page); await stream(page); await page.unroute("**/api/orders**");
+  let releaseInitial; const initialReady = new Promise(resolve => { releaseInitial = resolve; }); let gets = 0;
+  await page.route("**/api/orders**", async route => {
+    gets += 1;
+    if (gets === 2) await initialReady;
+    const fresh = order(false); fresh.buyerName = gets < 3 ? "Stale Buyer" : "Fresh Buyer";
+    await route.fulfill({ json: { orders: [fresh] } });
+  });
+  await open(page, "/orders/order%3A1001"); await expect(page.getByRole("button", { name: "Import from Etsy" })).toBeVisible();
+  await page.locator("#databaseOrdersStatusFilter").selectOption("all"); await expect.poll(() => gets).toBe(2);
+  await page.getByRole("button", { name: "Import from Etsy" }).click();
+  await page.evaluate(() => { pushEvent({ type: "complete", imported: 1, existing: 0, customizationNeeded: 0, failed: 0 }); closeStream(); });
+  releaseInitial();
+  await expect.poll(() => gets).toBe(3);
+  await expect(page.locator(".database-order-row.is-selected")).toContainText("Fresh Buyer");
+  await expect(page.locator(".database-order-row.is-selected")).toContainText("Order 1001");
 });
 
 test("stream errors retry and reauthorization reconnects", async ({ page }) => {

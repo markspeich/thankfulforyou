@@ -492,6 +492,8 @@ let selectedDatabaseOrderId = initialAppRoute.workspace === "databaseOrders" ? i
 let checkedDatabaseOrderIds = new Set();
 let databaseOrdersLoading = false;
 let etsyConnection = null;
+let databaseOrdersForceReloadRequested = false;
+let databaseOrdersLoadPromise = null;
 let etsyConnectionLoading = false;
 let etsyImporting = false;
 let etsyImportResult = null;
@@ -6119,6 +6121,7 @@ async function beginEtsyConnection() {
 }
 
 async function startEtsyImport() {
+  etsyOAuthStatus = "";
   const request = resetEtsySessionRequest(productionBatchAccessToken);
   if (!request || etsyImporting) return;
   etsyImporting = true;
@@ -6175,14 +6178,30 @@ async function handleEtsyImportAction() {
   }
   await beginEtsyConnection();
 }
-async function loadDatabaseOrders({ force = false } = {}) {
+function loadDatabaseOrders({ force = false } = {}) {
+  if (databaseOrdersLoading) {
+    if (force) databaseOrdersForceReloadRequested = true;
+    return databaseOrdersLoadPromise || Promise.resolve();
+  }
+  const loadPromise = performDatabaseOrdersLoad({ force });
+  databaseOrdersLoadPromise = loadPromise.finally(async () => {
+    databaseOrdersLoadPromise = null;
+    if (databaseOrdersForceReloadRequested && productionBatchAccessToken && activeWorkspace === "databaseOrders") {
+      databaseOrdersForceReloadRequested = false;
+      await loadDatabaseOrders({ force: true });
+    }
+  });
+  return databaseOrdersLoadPromise;
+}
+
+async function performDatabaseOrdersLoad({ force = false } = {}) {
   if (!productionBatchAccessToken) {
     return;
   }
 
   const batchId = productionBatchContext?.id || null;
   const loadKey = `${batchId || ""}|${databaseOrdersStatusFilterValue}`;
-  if (databaseOrdersLoading || (!force && loadedDatabaseOrdersKey === loadKey)) {
+  if (!force && loadedDatabaseOrdersKey === loadKey) {
     return;
   }
 

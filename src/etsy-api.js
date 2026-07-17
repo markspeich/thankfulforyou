@@ -88,6 +88,13 @@ export async function importEtsyOrders({ accessToken = null, signal, onEvent = (
   const decoder = new TextDecoder();
   let pending = "";
   let completed = false;
+  let terminalSeen = false;
+  const notify = async (line) => {
+    if (terminalSeen) throw new Error(IMPORT_ERROR);
+    const event = parseEvent(line);
+    if (event.type === "complete") terminalSeen = true;
+    await onEvent(event);
+  };
   try {
     while (true) {
       const { value, done } = await reader.read();
@@ -99,7 +106,7 @@ export async function importEtsyOrders({ accessToken = null, signal, onEvent = (
         pending = pending.slice(newlineIndex + 1);
         if (rawLine.length > MAX_NDJSON_RECORD_LENGTH) throw new Error(IMPORT_ERROR);
         const line = rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine;
-        if (line.trim()) await onEvent(parseEvent(line));
+        if (line.trim()) await notify(line);
       }
       if (pending.length > MAX_NDJSON_RECORD_LENGTH) throw new Error(IMPORT_ERROR);
     }
@@ -107,8 +114,9 @@ export async function importEtsyOrders({ accessToken = null, signal, onEvent = (
     if (pending.length > MAX_NDJSON_RECORD_LENGTH) throw new Error(IMPORT_ERROR);
     if (pending.trim()) {
       const line = pending.endsWith("\r") ? pending.slice(0, -1) : pending;
-      await onEvent(parseEvent(line));
+      await notify(line);
     }
+    if (!terminalSeen) throw new Error(IMPORT_ERROR);
     completed = true;
   } finally {
     if (!completed) {

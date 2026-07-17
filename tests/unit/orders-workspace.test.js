@@ -396,7 +396,10 @@ describe("Etsy workspace descriptors", () => {
       label: "Importing 6 of 14 order items…", determinate: true, value: 6, max: 14,
     });
     expect(getEtsyImportProgressDescriptor({ stage: "importing_items", processed: 99, total: -3 })).toMatchObject({
-      value: 0, max: 0,
+      determinate: false, value: null, max: null,
+    });
+    expect(getEtsyImportProgressDescriptor({ stage: "importing_items", processed: 0, total: 0 })).toEqual({
+      label: "Importing 0 of 0 order items\u2026", determinate: false, value: null, max: null,
     });
     expect(getEtsyImportSummary({ imported: 1, existing: 2, customizationNeeded: 1, failed: 0 }))
       .toBe("1 order imported, 2 existing orders, 1 item needing customization, 0 failures.");
