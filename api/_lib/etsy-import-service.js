@@ -46,6 +46,8 @@ export function createEtsyImportService({ store, refreshAccess, createClient, no
           if (typeof client.iterateReceiptPages === "function") {
             for await (const page of client.iterateReceiptPages({ shopId: connection.etsyShopId, signal, ...filters })) {
               for (const receipt of page.results) {
+              if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+              await renewIfDue();
                 if (!eligible(receipt)) continue;
                 if (eligibleReceipts.length >= maxImportItems) throw new EtsyImportError("import_too_large", "This Etsy import is too large. Please retry with a smaller window.", 413);
                 eligibleReceipts.push(compactReceipt(receipt));

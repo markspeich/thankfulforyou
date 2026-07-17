@@ -195,6 +195,43 @@ describe("Etsy import service", () => {
     expect(f.store.releaseEtsyImportLock).toHaveBeenCalledWith({ workspaceId: "w", lockToken: "owner" });
   });
 
+  it("renews the owner lease while consuming multi-page receipt discovery", async () => {
+    let now = new Date("2026-07-16T12:00:00.000Z");
+    const f = fixture({ clock: () => now });
+    f.client.iterateReceiptPages = vi.fn(async function* () {
+      yield { results: [{ receipt_id: 1, is_paid: false, is_shipped: false }] };
+      now = new Date("2026-07-16T12:06:00.000Z");
+      yield { results: [{ receipt_id: 2, is_paid: false, is_shipped: false }] };
+    });
+
+    await (await f.service.prepare({ workspaceId: "w" })).run();
+
+    expect(f.store.renewEtsyImportLock).toHaveBeenCalledWith({ workspaceId: "w", lockToken: "owner", now });
+    expect(f.client.listReceiptTransactions).not.toHaveBeenCalled();
+  });
+
+  it("stops pagination immediately when lease renewal loses ownership", async () => {
+    let now = new Date("2026-07-16T12:00:00.000Z");
+    let yieldedPages = 0;
+    const f = fixture({ clock: () => now });
+    f.store.renewEtsyImportLock.mockResolvedValue(false);
+    f.client.iterateReceiptPages = vi.fn(async function* () {
+      yieldedPages += 1;
+      yield { results: [{ receipt_id: 1, is_paid: false, is_shipped: false }] };
+      now = new Date("2026-07-16T12:06:00.000Z");
+      yieldedPages += 1;
+      yield { results: [{ receipt_id: 2, is_paid: true, is_shipped: false }] };
+      yieldedPages += 1;
+      yield { results: [{ receipt_id: 3, is_paid: true, is_shipped: false }] };
+    });
+
+    await expect((await f.service.prepare({ workspaceId: "w" })).run()).rejects.toMatchObject({ code: "import_lock_lost" });
+    expect(yieldedPages).toBe(2);
+    expect(f.client.listReceiptTransactions).not.toHaveBeenCalled();
+    expect(f.store.updateEtsySyncCursor).not.toHaveBeenCalled();
+    expect(f.store.releaseEtsyImportLock).toHaveBeenCalledWith({ workspaceId: "w", lockToken: "owner" });
+  });
+
   it("counts idempotent existing items and passes customization metadata to persistence", async () => {
     const f = fixture(); f.store.importWorkspaceOrderItems.mockResolvedValue({ importedCount: 0 });
     const result = await (await f.service.prepare({ workspaceId: "w", userId: "u" })).run();
