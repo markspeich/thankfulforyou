@@ -510,6 +510,44 @@ describe("orders store", () => {
       addedToBatchCount: 1,
     });
   });
+  it("preserves Etsy customization metadata through persistence and response mapping", async () => {
+    resetDb();
+    const { importWorkspaceOrderItems, listWorkspaceOrders } = await import("../../api/_lib/orders-store.js");
+    const source = {
+      orderNumber: "2050",
+      transactionId: "txn-customization",
+      buyerName: "Ada",
+      customizationNeeded: true,
+      personalizationResponses: [
+        { kind: "text", label: "Name", value: "Ada" },
+        { kind: "selection", label: "Color", value: "Teal" },
+      ],
+    };
+
+    await importWorkspaceOrderItems({
+      workspaceId: "workspace-1",
+      userId: "user-1",
+      target: "orders",
+      batchId: null,
+      items: [{ text: "Ada", source }],
+    });
+
+    const orderItemsUpsert = supabaseMock.calls.find(
+      (call) => call.table === "order_items" && call.operation === "upsert",
+    );
+    expect(orderItemsUpsert.payload[0].source_json).toEqual(source);
+
+    const result = await listWorkspaceOrders({
+      workspaceId: "workspace-1",
+      activeBatchId: null,
+      statusFilter: "all",
+    });
+    const mappedSource = result.orders[0].items[0].source;
+    expect(mappedSource).toEqual(source);
+    expect(mappedSource.customizationNeeded).toBe(true);
+    expect(mappedSource.personalizationResponses).toEqual(source.personalizationResponses);
+  });
+
 
   it("persists fixed SVG line items from imported order settings", async () => {
     resetDb();

@@ -45,6 +45,23 @@ describe("Etsy import service", () => {
     const result = await (await f.service.prepare({ workspaceId: "w", signal })).run();
     expect(result.failed).toBe(1); expect(f.client.listReceipts.mock.calls[0][0].signal).toBe(signal); expect(f.store.updateEtsySyncCursor).toHaveBeenCalled();
   });
+  it.each([
+    ["listing", "getListing"],
+    ["image", "getListingImages"],
+  ])("stops on %s reauthorization, marks reconnect, preserves cursor, and releases", async (_label, method) => {
+    const f = fixture();
+    const failure = Object.assign(new Error("reauthorize"), { code: "reauthorize" });
+    f.client[method].mockRejectedValue(failure);
+
+    await expect((await f.service.prepare({ workspaceId: "w" })).run()).rejects.toBe(failure);
+
+    expect(f.store.markEtsyConnectionReconnectRequired).toHaveBeenCalledTimes(1);
+    expect(f.store.markEtsyConnectionReconnectRequired).toHaveBeenCalledWith({ workspaceId: "w" });
+    expect(f.store.importWorkspaceOrderItems).not.toHaveBeenCalled();
+    expect(f.store.updateEtsySyncCursor).not.toHaveBeenCalled();
+    expect(f.store.releaseEtsyImportLock).toHaveBeenCalledWith({ workspaceId: "w", lockToken: "owner" });
+  });
+
   it("stops an active abort without cursor advancement and releases the matching owner", async () => {
     const f = fixture(); const controller = new AbortController();
     f.client.listReceiptTransactions.mockImplementation(async () => { controller.abort(); throw new DOMException("Aborted", "AbortError"); });

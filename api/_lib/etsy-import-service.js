@@ -48,8 +48,14 @@ export function createEtsyImportService({ store, refreshAccess, createClient, no
         for (const { receipt, transaction } of work) {
           try {
             let listing = {}, image = {};
-            try { listing = await client.getListing({ listingId: transaction.listing_id, signal }); } catch (error) { if (aborted(error, signal)) throw error; }
-            try { image = (await client.getListingImages({ listingId: transaction.listing_id, signal }))[0] || {}; } catch (error) { if (aborted(error, signal)) throw error; }
+            try { listing = await client.getListing({ listingId: transaction.listing_id, signal }); } catch (error) {
+              if (aborted(error, signal)) throw error;
+              if (reauth(error)) throw error;
+            }
+            try { image = (await client.getListingImages({ listingId: transaction.listing_id, signal }))[0] || {}; } catch (error) {
+              if (aborted(error, signal)) throw error;
+              if (reauth(error)) throw error;
+            }
             const item = normalizeTransaction({ receipt, transaction, listing, image, getPresetIdForListingId });
             const result = await store.importWorkspaceOrderItems({ workspaceId, userId, items: [item], target: "orders", batchId: null });
             const count = Number(result?.importedCount ?? result?.importedOrderItemIds?.length ?? 0);
