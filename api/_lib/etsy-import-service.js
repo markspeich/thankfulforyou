@@ -41,7 +41,7 @@ export function createEtsyImportService({ store, refreshAccess, createClient, no
         await onProgress({ type: "progress", stage: "fetching_receipts", processed: 0, total: null });
         const filters = connection.lastSyncedAt ? { min_last_modified: Math.floor((Date.parse(connection.lastSyncedAt) - OVERLAP) / 1000) } : { min_created: Math.floor((started.getTime() - INITIAL) / 1000) };
         let receipts;
-        try { receipts = await client.listReceipts({ shopId: connection.etsyShopId, signal, ...filters }); }
+        try { receipts = await client.listReceipts({ shopId: connection.etsyShopId, signal, maxReceipts: maxImportItems, ...filters }); }
         catch (error) { if (reauth(error)) await store.markEtsyConnectionReconnectRequired({ workspaceId }); throw error; }
         const eligibleReceipts = receipts.filter(eligible);
         if (eligibleReceipts.length > maxImportItems) throw new EtsyImportError("import_too_large", "This Etsy import is too large. Please retry with a smaller window.", 413);

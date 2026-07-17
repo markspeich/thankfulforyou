@@ -18,6 +18,25 @@ describe("Etsy client", () => {
     expect(options.headers).toMatchObject({ Authorization: "Bearer secret-token", "x-api-key": "key:secret" });
     expect(options.signal).toBe(signal);
   });
+  it("stops receipt pagination at the configured result cap", async () => {
+    let page = 0;
+    const fetchImpl = vi.fn().mockImplementation(() => {
+      const start = page++ * 100;
+      return Promise.resolve(response({
+        count: 100_000,
+        results: Array.from({ length: 100 }, (_, index) => ({ receipt_id: start + index + 1 })),
+      }));
+    });
+    const client = createEtsyClient({ fetchImpl, getAccessToken: async () => "token", env });
+
+    await expect(client.listReceipts({ shopId: 1, maxReceipts: 150 })).rejects.toMatchObject({
+      code: "import_too_large",
+      message: "Unable to retrieve Etsy orders.",
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(fetchImpl.mock.calls.some(([url]) => url.includes("offset=200"))).toBe(false);
+  });
+
 
   it("retrieves transactions and listing enrichment", async () => {
     const fetchImpl = vi.fn()

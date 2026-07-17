@@ -22,6 +22,7 @@ describe("Etsy import service", () => {
   it("uses the exact initial window, delegates persistence, streams progress, and releases", async () => {
     const f = fixture(); const prepared = await f.service.prepare({ workspaceId: "w", userId: "u", onProgress: (e) => f.events.push(e) }); await prepared.run();
     expect(f.client.listReceipts).toHaveBeenCalledWith(expect.objectContaining({ min_created: Math.floor((f.now.getTime() - 90 * 86400000) / 1000) }));
+    expect(f.client.listReceipts.mock.calls[0][0].maxReceipts).toBe(5_000);
     expect(f.store.importWorkspaceOrderItems).toHaveBeenCalledWith(expect.objectContaining({ target: "orders", batchId: null }));
     expect(f.events).toEqual([{ type: "progress", stage: "fetching_receipts", processed: 0, total: null }, { type: "progress", stage: "importing_items", processed: 0, total: 1 }, { type: "progress", stage: "importing_items", processed: 1, total: 1 }, { type: "complete", imported: 1, existing: 0, customizationNeeded: 1, failed: 0 }]);
     expect(f.store.updateEtsySyncCursor).toHaveBeenCalledWith({ workspaceId: "w", lastSyncedAt: f.now.toISOString() });
