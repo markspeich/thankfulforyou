@@ -3,6 +3,10 @@ import { describe, expect, it } from "vitest";
 import {
   filterGroupedOrders,
   getCheckedOrderIdsForBulkAction,
+  getEtsyConnectionActionDescriptor,
+  getEtsyImportProgressDescriptor,
+  getEtsyImportSummary,
+  getOrderItemCustomizationWarning,
   getCopyableSavedBuild,
   getOrderLifecycleStatusDescriptor,
   getOrderItemStatusDescriptor,
@@ -366,5 +370,41 @@ describe("orders workspace helpers", () => {
       },
       previousCompletedBuild,
     })).toMatchObject({ signature: "cached-signature" });
+  });
+});
+describe("Etsy workspace descriptors", () => {
+  it("describes connection actions and importing state", () => {
+    expect(getEtsyConnectionActionDescriptor({ status: "disconnected" })).toEqual({
+      label: "Connect Etsy Shop", disabled: false,
+    });
+    expect(getEtsyConnectionActionDescriptor({ status: "connected" })).toEqual({
+      label: "Import from Etsy", disabled: false,
+    });
+    expect(getEtsyConnectionActionDescriptor({ status: "reconnect_required" })).toEqual({
+      label: "Reconnect Etsy Shop", disabled: false,
+    });
+    expect(getEtsyConnectionActionDescriptor({ status: "connected", importing: true })).toEqual({
+      label: "Import from Etsy", disabled: true,
+    });
+  });
+
+  it("normalizes progress and summarizes all outcomes", () => {
+    expect(getEtsyImportProgressDescriptor({ stage: "fetching_receipts" })).toEqual({
+      label: "Fetching Etsy receipts\u2026", determinate: false, value: null, max: null,
+    });
+    expect(getEtsyImportProgressDescriptor({ stage: "importing_items", processed: 6, total: 14 })).toEqual({
+      label: "Importing Etsy items\u2026 6 of 14", determinate: true, value: 6, max: 14,
+    });
+    expect(getEtsyImportProgressDescriptor({ stage: "importing_items", processed: 99, total: -3 })).toMatchObject({
+      value: 0, max: 0,
+    });
+    expect(getEtsyImportSummary({ imported: 1, existing: 2, customizationNeeded: 1, failed: 0 }))
+      .toBe("1 order imported, 2 existing orders, 1 item needing customization, 0 failures.");
+  });
+
+  it("warns for direct and mapped Etsy source metadata", () => {
+    expect(getOrderItemCustomizationWarning({ source: { customizationNeeded: true } })).not.toBeNull();
+    expect(getOrderItemCustomizationWarning({ source: { source: { customizationNeeded: true } } })).not.toBeNull();
+    expect(getOrderItemCustomizationWarning({ source: { customizationNeeded: false } })).toBeNull();
   });
 });
