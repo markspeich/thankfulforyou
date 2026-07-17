@@ -1,6 +1,7 @@
 const CONNECTION_ERROR = "Unable to load Etsy connection.";
 const AUTHORIZATION_ERROR = "Unable to connect Etsy shop.";
 const IMPORT_ERROR = "Unable to import Etsy orders.";
+const MAX_NDJSON_RECORD_LENGTH = 256 * 1024;
 function authHeaders(accessToken, headers = {}) {
   return { ...headers, ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}) };
 }
@@ -31,19 +32,51 @@ export async function beginEtsyAuthorization({ accessToken = null, signal } = {}
   if (!response.ok) throw safeError(payload, AUTHORIZATION_ERROR);
   let url;
   try { url = new URL(payload?.authorizeUrl); } catch { throw new Error(AUTHORIZATION_ERROR); }
-  if (url.protocol !== "https:" || !(url.hostname === "etsy.com" || url.hostname.endsWith(".etsy.com"))) throw new Error(AUTHORIZATION_ERROR);
-  return payload.authorizeUrl;
+  if (url.origin !== "https://www.etsy.com"
+    || url.pathname !== "/oauth/connect"
+    || url.username
+    || url.password
+    || url.port) {
+    throw new Error(AUTHORIZATION_ERROR);
+  }
+  return url.href;
+}
+function isCount(value) {
+  return Number.isInteger(value) && value >= 0 && Number.isFinite(value);
 }
 function parseEvent(line) {
   let event;
   try { event = JSON.parse(line); } catch { throw new Error(IMPORT_ERROR); }
-  if (!event || typeof event !== "object" || Array.isArray(event) || typeof event.type !== "string") throw new Error(IMPORT_ERROR);
+  if (!event || typeof event !== "object" || Array.isArray(event)) throw new Error(IMPORT_ERROR);
+  if (event.type === "progress") {
+    if (event.stage === "fetching_receipts") {
+      if (!isCount(event.processed) || event.total !== null) throw new Error(IMPORT_ERROR);
+      return event;
+    }
+    if (event.stage === "importing_items") {
+      if (!isCount(event.processed) || !isCount(event.total) || event.processed > event.total) {
+        throw new Error(IMPORT_ERROR);
+      }
+      return event;
+    }
+    throw new Error(IMPORT_ERROR);
+  }
+  if (event.type === "complete") {
+    if (!["imported", "existing", "customizationNeeded", "failed"].every((key) => isCount(event[key]))) {
+      throw new Error(IMPORT_ERROR);
+    }
+    return event;
+  }
   if (event.type === "error") {
-    const error = new Error(typeof event.message === "string" && event.message.trim() ? event.message.trim() : IMPORT_ERROR);
-    if (typeof event.code === "string" && event.code.trim()) error.code = event.code.trim();
+    if (typeof event.code !== "string" || !event.code.trim()
+      || typeof event.message !== "string" || !event.message.trim()) {
+      throw new Error(IMPORT_ERROR);
+    }
+    const error = new Error(event.message.trim());
+    error.code = event.code.trim();
     throw error;
   }
-  return event;
+  throw new Error(IMPORT_ERROR);
 }
 export async function importEtsyOrders({ accessToken = null, signal, onEvent = () => {} } = {}) {
   const response = await fetch("/api/etsy-import", {
@@ -60,14 +93,18 @@ export async function importEtsyOrders({ accessToken = null, signal, onEvent = (
       const { value, done } = await reader.read();
       if (done) break;
       pending += decoder.decode(value, { stream: true });
-      const lines = pending.split("\n");
-      pending = lines.pop() || "";
-      for (const rawLine of lines) {
+      let newlineIndex;
+      while ((newlineIndex = pending.indexOf("\n")) !== -1) {
+        const rawLine = pending.slice(0, newlineIndex);
+        pending = pending.slice(newlineIndex + 1);
+        if (rawLine.length > MAX_NDJSON_RECORD_LENGTH) throw new Error(IMPORT_ERROR);
         const line = rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine;
         if (line.trim()) await onEvent(parseEvent(line));
       }
+      if (pending.length > MAX_NDJSON_RECORD_LENGTH) throw new Error(IMPORT_ERROR);
     }
     pending += decoder.decode();
+    if (pending.length > MAX_NDJSON_RECORD_LENGTH) throw new Error(IMPORT_ERROR);
     if (pending.trim()) {
       const line = pending.endsWith("\r") ? pending.slice(0, -1) : pending;
       await onEvent(parseEvent(line));
