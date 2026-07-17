@@ -65,30 +65,37 @@ export function createEtsyClient({ fetchImpl = fetch, getAccessToken, sleep = de
       combined.cleanup();
     }
   }
-  async function listReceipts({ shopId, signal, maxResults, maxReceipts, ...filters }) {
-    const configuredLimit = maxResults ?? maxReceipts;
-    const resultLimit = configuredLimit == null ? Number.POSITIVE_INFINITY : Number(configuredLimit);
-    if (!(resultLimit === Number.POSITIVE_INFINITY || (Number.isInteger(resultLimit) && resultLimit >= 0))) throw new EtsyApiError("invalid_response");
-    const results = [], pageSignatures = new Set(); let offset = 0;
+  async function* iterateReceiptPages({ shopId, signal, ...filters }) {
+    const pageSignatures = new Set(); let offset = 0;
     for (let pageNumber = 0; pageNumber < maxReceiptPages; pageNumber += 1) {
       const query = new URLSearchParams({ ...Object.fromEntries(Object.entries(filters).filter(([, value]) => value != null)), limit: "100", offset: String(offset) });
       const page = await request(`/shops/${encodeURIComponent(shopId)}/receipts?${query}`, (payload) => { assertObject(payload); if (!Array.isArray(payload.results)) throw new EtsyApiError("invalid_response"); payload.results.forEach(assertReceipt); return payload; }, signal);
       const signature = page.results.map((receipt) => String(receipt.receipt_id)).join("|");
       if (page.results.length === 100 && pageSignatures.has(signature)) throw new EtsyApiError("invalid_response");
       pageSignatures.add(signature);
-      if (page.results.length > resultLimit - results.length) throw new EtsyApiError("import_too_large");
-      results.push(...page.results); offset += page.results.length;
-      if (results.length >= resultLimit) {
-        const count = Number(page.count);
-        if (page.results.length < 100 || (Number.isFinite(count) && offset >= count)) return results;
-        throw new EtsyApiError("import_too_large");
-      }
-      if (page.results.length < 100 || (Number.isFinite(Number(page.count)) && offset >= Number(page.count))) return results;
+      yield page; offset += page.results.length;
+      if (page.results.length < 100 || (Number.isFinite(Number(page.count)) && offset >= Number(page.count))) return;
     }
     throw new EtsyApiError("invalid_response");
   }
   const listReceiptTransactions = ({ shopId, receiptId, signal }) => request(`/shops/${encodeURIComponent(shopId)}/receipts/${encodeURIComponent(receiptId)}/transactions`, (payload) => { assertObject(payload); if (!Array.isArray(payload.results)) throw new EtsyApiError("invalid_response"); payload.results.forEach(assertTransaction); return payload.results; }, signal);
+  async function listReceipts({ maxResults, maxReceipts, ...params }) {
+    const configuredLimit = maxResults ?? maxReceipts;
+    const resultLimit = configuredLimit == null ? Number.POSITIVE_INFINITY : Number(configuredLimit);
+    if (!(resultLimit === Number.POSITIVE_INFINITY || (Number.isInteger(resultLimit) && resultLimit >= 0))) throw new EtsyApiError("invalid_response");
+    const results = [];
+    for await (const page of iterateReceiptPages(params)) {
+      if (page.results.length > resultLimit - results.length) throw new EtsyApiError("import_too_large");
+      results.push(...page.results);
+      if (results.length >= resultLimit) {
+        const count = Number(page.count);
+        if (page.results.length < 100 || (Number.isFinite(count) && results.length >= count)) return results;
+        throw new EtsyApiError("import_too_large");
+      }
+    }
+    return results;
+  }
   const getListing = ({ listingId, signal }) => request(`/listings/${encodeURIComponent(listingId)}`, assertListing, signal);
   const getListingImages = ({ listingId, signal }) => request(`/listings/${encodeURIComponent(listingId)}/images`, (payload) => { assertObject(payload); if (!Array.isArray(payload.results)) throw new EtsyApiError("invalid_response"); payload.results.forEach(assertImage); return payload.results; }, signal);
-  return Object.freeze({ listReceipts, listReceiptTransactions, getListing, getListingImages });
+  return Object.freeze({ iterateReceiptPages, listReceipts, listReceiptTransactions, getListing, getListingImages });
 }

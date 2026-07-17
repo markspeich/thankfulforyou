@@ -18,6 +18,35 @@ describe("Etsy client", () => {
     expect(options.headers).toMatchObject({ Authorization: "Bearer secret-token", "x-api-key": "key:secret" });
     expect(options.signal).toBe(signal);
   });
+  it("allows page consumers to stop pagination without fetching another page", async () => {
+    const receipts = Array.from({ length: 100 }, (_, index) => ({ receipt_id: index + 1 }));
+    const fetchImpl = vi.fn().mockResolvedValue(response({ count: 100_000, results: receipts }));
+    const client = createEtsyClient({ fetchImpl, getAccessToken: async () => "token", env });
+    const pages = [];
+
+    for await (const page of client.iterateReceiptPages({ shopId: 1 })) {
+      pages.push(page);
+      break;
+    }
+
+    expect(pages).toHaveLength(1);
+    expect(pages[0].results).toHaveLength(100);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("aborts an active receipt page iterator without retry", async () => {
+    const controller = new AbortController();
+    const fetchImpl = vi.fn((_url, options) => new Promise((_resolve, reject) => {
+      options.signal.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), { once: true });
+    }));
+    const client = createEtsyClient({ fetchImpl, getAccessToken: async () => "token", env });
+    const nextPage = client.iterateReceiptPages({ shopId: 1, signal: controller.signal }).next();
+    await vi.waitFor(() => expect(fetchImpl).toHaveBeenCalledOnce());
+    controller.abort();
+    await expect(nextPage).rejects.toMatchObject({ code: "temporary" });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
   it("stops receipt pagination at the configured result cap", async () => {
     let page = 0;
     const fetchImpl = vi.fn().mockImplementation(() => {

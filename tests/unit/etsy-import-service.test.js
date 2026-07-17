@@ -22,7 +22,6 @@ describe("Etsy import service", () => {
   it("uses the exact initial window, delegates persistence, streams progress, and releases", async () => {
     const f = fixture(); const prepared = await f.service.prepare({ workspaceId: "w", userId: "u", onProgress: (e) => f.events.push(e) }); await prepared.run();
     expect(f.client.listReceipts).toHaveBeenCalledWith(expect.objectContaining({ min_created: Math.floor((f.now.getTime() - 90 * 86400000) / 1000) }));
-    expect(f.client.listReceipts.mock.calls[0][0].maxReceipts).toBe(5_000);
     expect(f.store.importWorkspaceOrderItems).toHaveBeenCalledWith(expect.objectContaining({ target: "orders", batchId: null }));
     expect(f.events).toEqual([{ type: "progress", stage: "fetching_receipts", processed: 0, total: null }, { type: "progress", stage: "importing_items", processed: 0, total: 1 }, { type: "progress", stage: "importing_items", processed: 1, total: 1 }, { type: "complete", imported: 1, existing: 0, customizationNeeded: 1, failed: 0 }]);
     expect(f.store.updateEtsySyncCursor).toHaveBeenCalledWith({ workspaceId: "w", lastSyncedAt: f.now.toISOString() });
@@ -165,6 +164,37 @@ describe("Etsy import service", () => {
     expect(f.client.listReceiptTransactions).not.toHaveBeenCalled();
     expect(f.store.updateEtsySyncCursor).not.toHaveBeenCalled();
   });
+  it("discards more than 5,000 ineligible paged receipts before retaining one eligible receipt", async () => {
+    const f = fixture();
+    f.client.iterateReceiptPages = vi.fn(async function* () {
+      for (let page = 0; page < 51; page += 1) {
+        yield { results: Array.from({ length: 100 }, (_, index) => ({ receipt_id: page * 100 + index, is_paid: false, is_shipped: false })) };
+      }
+      yield { results: [{ receipt_id: 6_000, is_paid: true, is_shipped: false }] };
+    });
+
+    const result = await (await f.service.prepare({ workspaceId: "w" })).run();
+    expect(result.imported).toBe(1);
+    expect(f.client.listReceipts).not.toHaveBeenCalled();
+    expect(f.client.listReceiptTransactions).toHaveBeenCalledTimes(1);
+    expect(f.client.listReceiptTransactions).toHaveBeenCalledWith(expect.objectContaining({ receiptId: 6_000 }));
+  });
+
+  it("fails after the 5,001st eligible paged receipt without transaction discovery", async () => {
+    const f = fixture();
+    f.client.iterateReceiptPages = vi.fn(async function* () {
+      for (let page = 0; page < 51; page += 1) {
+        yield { results: Array.from({ length: 100 }, (_, index) => ({ receipt_id: page * 100 + index, is_paid: true, is_shipped: false })) };
+      }
+    });
+
+    await expect((await f.service.prepare({ workspaceId: "w" })).run()).rejects.toMatchObject({ code: "import_too_large", statusCode: 413 });
+    expect(f.client.listReceipts).not.toHaveBeenCalled();
+    expect(f.client.listReceiptTransactions).not.toHaveBeenCalled();
+    expect(f.store.updateEtsySyncCursor).not.toHaveBeenCalled();
+    expect(f.store.releaseEtsyImportLock).toHaveBeenCalledWith({ workspaceId: "w", lockToken: "owner" });
+  });
+
   it("counts idempotent existing items and passes customization metadata to persistence", async () => {
     const f = fixture(); f.store.importWorkspaceOrderItems.mockResolvedValue({ importedCount: 0 });
     const result = await (await f.service.prepare({ workspaceId: "w", userId: "u" })).run();

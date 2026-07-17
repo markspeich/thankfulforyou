@@ -9,6 +9,7 @@ const HEARTBEAT_INTERVAL = 300_000;
 const reauth = (error) => error?.category === "reauthorize" || error?.code === "reauthorize";
 const aborted = (error, signal) => Boolean(signal?.aborted || error?.name === "AbortError" || error?.code === "ABORT_ERR");
 const eligible = (r) => { const s = String(r?.status || "").toLowerCase(); return r?.is_paid === true && r?.is_shipped === false && r?.was_canceled !== true && r?.was_cancelled !== true && !["canceled", "cancelled"].includes(s); };
+const compactReceipt = (r) => ({ receipt_id: r.receipt_id, name: r.name, buyer_name: r.buyer_name, create_timestamp: r.create_timestamp, update_timestamp: r.update_timestamp, paid_timestamp: r.paid_timestamp, transaction_sold_count: r.transaction_sold_count });
 export function createEtsyImportService({ store, refreshAccess, createClient, normalizeTransaction, getPresetIdForListingId = () => null, clock = () => new Date(), randomUUID = uuid, maxImportItems = DEFAULT_MAX_IMPORT_ITEMS }) {
   async function prepare({ workspaceId, userId, signal, onProgress = () => {} }) {
     const started = clock();
@@ -40,11 +41,22 @@ export function createEtsyImportService({ store, refreshAccess, createClient, no
         if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
         await onProgress({ type: "progress", stage: "fetching_receipts", processed: 0, total: null });
         const filters = connection.lastSyncedAt ? { min_last_modified: Math.floor((Date.parse(connection.lastSyncedAt) - OVERLAP) / 1000) } : { min_created: Math.floor((started.getTime() - INITIAL) / 1000) };
-        let receipts;
-        try { receipts = await client.listReceipts({ shopId: connection.etsyShopId, signal, maxReceipts: maxImportItems, ...filters }); }
-        catch (error) { if (reauth(error)) await store.markEtsyConnectionReconnectRequired({ workspaceId }); throw error; }
-        const eligibleReceipts = receipts.filter(eligible);
-        if (eligibleReceipts.length > maxImportItems) throw new EtsyImportError("import_too_large", "This Etsy import is too large. Please retry with a smaller window.", 413);
+        const eligibleReceipts = [];
+        try {
+          if (typeof client.iterateReceiptPages === "function") {
+            for await (const page of client.iterateReceiptPages({ shopId: connection.etsyShopId, signal, ...filters })) {
+              for (const receipt of page.results) {
+                if (!eligible(receipt)) continue;
+                if (eligibleReceipts.length >= maxImportItems) throw new EtsyImportError("import_too_large", "This Etsy import is too large. Please retry with a smaller window.", 413);
+                eligibleReceipts.push(compactReceipt(receipt));
+              }
+            }
+          } else {
+            const receipts = await client.listReceipts({ shopId: connection.etsyShopId, signal, ...filters });
+            for (const receipt of receipts) if (eligible(receipt)) eligibleReceipts.push(compactReceipt(receipt));
+            if (eligibleReceipts.length > maxImportItems) throw new EtsyImportError("import_too_large", "This Etsy import is too large. Please retry with a smaller window.", 413);
+          }
+        } catch (error) { if (reauth(error)) await store.markEtsyConnectionReconnectRequired({ workspaceId }); throw error; }
         const work = []; let failed = 0, discoveryFailed = false, expectedItems = 0;
         for (let receiptIndex = 0; receiptIndex < eligibleReceipts.length; receiptIndex += 1) {
           const receipt = eligibleReceipts[receiptIndex]; await renewIfDue();
