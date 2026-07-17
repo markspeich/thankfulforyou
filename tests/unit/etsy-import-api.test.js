@@ -11,7 +11,7 @@ describe("Etsy import API", () => {
   it("returns auth and lock conflicts as JSON before headers", async () => {
     const authError = Object.assign(new Error("Authentication required."), { statusCode: 401, expose: true });
     let res = response(); await createEtsyImportHandler({ resolveAuth: vi.fn().mockRejectedValue(authError) })({ method: "POST" }, res);
-    expect(res.statusCode).toBe(401); expect(res.flushHeaders).not.toHaveBeenCalled();
+    expect(res.statusCode).toBe(401); expect(res.flushHeaders).not.toHaveBeenCalled(); expect(res.headers["Cache-Control"]).toBe("no-store");
     res = response(); const conflict = Object.assign(new Error("busy"), { statusCode: 409, code: "import_in_progress" });
     await createEtsyImportHandler({ resolveAuth: vi.fn().mockResolvedValue({ workspaceId: "w" }), serviceFactory: () => ({ prepare: vi.fn().mockRejectedValue(conflict) }), dependencies: { loadPresetSnapshot: vi.fn().mockResolvedValue({}) } })({ method: "POST" }, res);
     expect(res.statusCode).toBe(409);
@@ -23,11 +23,12 @@ describe("Etsy import API", () => {
     expect(res.chunks.join("")).not.toContain(secret); expect(JSON.parse(res.chunks[0])).toEqual({ type: "error", code: "temporary", message: "Unable to import Etsy orders." });
     const method = response(); await createEtsyImportHandler()({ method: "GET" }, method); expect(method.statusCode).toBe(405); expect(method.headers.Allow).toBe("POST");
   });
-  it("releases a prepared lock when header setup fails", async () => {
+  it("fails safely before preparing an import when no-store header setup fails", async () => {
     const release = vi.fn(); const res = response();
     res.setHeader = vi.fn(() => { throw new Error("header"); });
     await createEtsyImportHandler({ resolveAuth: vi.fn().mockResolvedValue({ workspaceId: "w" }), serviceFactory: () => ({ prepare: async () => ({ run: vi.fn(), release }) }), dependencies: { loadPresetSnapshot: vi.fn().mockResolvedValue({}) } })({ method: "POST" }, res);
-    expect(release).toHaveBeenCalledTimes(1);
+    expect(release).not.toHaveBeenCalled();
+    expect(res.statusCode).toBe(500);
   });
   it("releases the lock and swallows transport failure when progress and error-frame writes fail", async () => {
     const release = vi.fn();

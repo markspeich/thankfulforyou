@@ -13,9 +13,10 @@ function lookup(snapshot) {
 }
 export function createEtsyImportHandler({ resolveAuth = resolveProductionBatchAuth, serviceFactory = createEtsyImportService, dependencies = {} } = {}) {
   return async (req, res) => {
-    if (req.method !== "POST") { res.setHeader("Allow", "POST"); res.status(405).json({ error: "Method not allowed." }); return; }
     let prepared, streaming = false;
     try {
+      res.setHeader("Cache-Control", "no-store");
+      if (req.method !== "POST") { res.setHeader("Allow", "POST"); res.status(405).json({ error: "Method not allowed." }); return; }
       const auth = await resolveAuth(req);
       const snapshot = await (dependencies.loadPresetSnapshot || loadPresetSnapshot)(auth.workspaceId);
       const service = serviceFactory({
@@ -31,7 +32,6 @@ export function createEtsyImportHandler({ resolveAuth = resolveProductionBatchAu
       });
       res.status(200);
       res.setHeader("Content-Type", "application/x-ndjson; charset=utf-8");
-      res.setHeader("Cache-Control", "no-store");
       res.flushHeaders?.();
       streaming = true;
       await prepared.run();
