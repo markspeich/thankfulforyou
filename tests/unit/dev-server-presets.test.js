@@ -1,6 +1,9 @@
 import { spawn } from "node:child_process";
+import { readFile } from "node:fs/promises";
 import { request } from "node:http";
 import { afterEach, describe, expect, it } from "vitest";
+
+import { buildApiQuery } from "../../tools/dev_server_request.mjs";
 
 import {
   WORKTREE_PORT_BASE,
@@ -205,6 +208,35 @@ describe("dev server orders api wrapper", () => {
   }, 15000);
 });
 
+describe("dev server Etsy api wrapper", () => {
+  it("routes Etsy connection requests through the API handler", async () => {
+    const port = await reserveAvailableDevServerTestPort();
+    await startDevServer(port);
+    const response = await putMalformedJson(port, "/api/etsy-connection");
+    expect(response.statusCode).toBe(400);
+    expect(JSON.parse(response.body)).toEqual({ error: "API payload must be valid JSON." });
+  }, 15000);
+});
+describe("dev server Etsy callback wrapper", () => {
+  it("maps callback query parameters exactly into API request context", () => {
+    const requestUrl = new URL("/api/etsy-callback?code=query-code&state=query-state", "http://localhost");
+    expect(buildApiQuery(requestUrl)).toEqual({ code: "query-code", state: "query-state" });
+  });
+  it("passes callback query parameters to handler redirect behavior", async () => {
+    const port = await reserveAvailableDevServerTestPort();
+    await startDevServer(port);
+    const response = await new Promise((resolve, reject) => {
+      const req = request({ method: "GET", host: "127.0.0.1", port, path: "/api/etsy-callback?code=query-code&state=query-state" }, (res) => {
+        res.resume();
+        res.on("end", () => resolve({ statusCode: res.statusCode, location: res.headers.location, cookie: res.headers["set-cookie"] }));
+      });
+      req.on("error", reject);
+      req.end();
+    });
+    expect(response).toMatchObject({ statusCode: 302, location: "/orders?etsy=connection-error" });
+    expect(response.cookie?.[0]).toContain("Max-Age=0");
+  }, 15000);
+});
 describe("dev server fonts api wrapper", () => {
   it("parses PATCH JSON bodies before routing to the fonts API handler", async () => {
     const port = await reserveAvailableDevServerTestPort();
@@ -216,4 +248,11 @@ describe("dev server fonts api wrapper", () => {
     expect(response.contentType).toContain("application/json");
     expect(JSON.parse(response.body)).toEqual({ error: "API payload must be valid JSON." });
   }, 15000);
+});
+
+describe("dev server Etsy import wrapper", () => {
+  it("maps /api/etsy-import to its API handler", async () => {
+    const source = await readFile("tools/dev_server.mjs", "utf8");
+    expect(source).toContain('"/api/etsy-import": "../api/etsy-import.js"');
+  });
 });

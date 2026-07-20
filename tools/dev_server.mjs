@@ -7,7 +7,9 @@ import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
 import { buildPublicAppConfigScript } from "./app_config.mjs";
 import { allocateDevPort } from "./dev_port.mjs";
+import { buildApiQuery } from "./dev_server_request.mjs";
 import { clearDevServerPid, mergeDevServerState, readDevServerState } from "./dev_server_state.mjs";
+import { attachRequestAbort } from "./dev_server_abort.mjs";
 import { buildLocalServerInfo, formatLocalServerInfo } from "./local_server_info.mjs";
 
 const serverRole = process.env.DEV_SERVER_PORT_ROLE === "test" ? "test" : "user";
@@ -158,10 +160,13 @@ const server = createServer(async (request, response) => {
 
   if (
     requestUrl.pathname === "/api/batch-session"
+    || requestUrl.pathname === "/api/etsy-import"
     || requestUrl.pathname === "/api/orders"
     || requestUrl.pathname === "/api/production-batch"
     || requestUrl.pathname === "/api/fonts"
     || requestUrl.pathname === "/api/fixed-designs"
+    || requestUrl.pathname === "/api/etsy-connection"
+    || requestUrl.pathname === "/api/etsy-callback"
   ) {
     const requestId = randomUUID();
     const startedAt = Date.now();
@@ -181,21 +186,27 @@ const server = createServer(async (request, response) => {
 
     try {
       const modulePathByPathname = {
+        "/api/etsy-import": "../api/etsy-import.js",
         "/api/batch-session": "../api/batch-session.js",
         "/api/orders": "../api/orders.js",
         "/api/production-batch": "../api/production-batch.js",
         "/api/fonts": "../api/fonts.js",
         "/api/fixed-designs": "../api/fixed-designs.js",
+        "/api/etsy-connection": "../api/etsy-connection.js",
+        "/api/etsy-callback": "../api/etsy-callback.js",
       };
       const modulePath = modulePathByPathname[requestUrl.pathname];
       const { default: handler } = await import(modulePath);
       const shouldLogProductionBatch = requestUrl.pathname === "/api/production-batch";
+      const requestAbortController = new AbortController();
+      const cleanupRequestAbort = attachRequestAbort({ request, response, controller: requestAbortController });
       const req = {
+        signal: requestAbortController.signal,
         method: request.method,
         headers: Object.fromEntries(
           Object.entries(request.headers).map(([key, value]) => [key, Array.isArray(value) ? value[0] : value]),
         ),
-        query: Object.fromEntries(requestUrl.searchParams.entries()),
+        query: buildApiQuery(requestUrl),
         body: payload,
       };
       const res = {
@@ -229,9 +240,14 @@ const server = createServer(async (request, response) => {
           }
           sendJson(response, statusCode, jsonPayload);
         },
+        redirect(location) { response.writeHead(this.statusCode || 302, { Location: location }); response.end(); },
+        end() { response.end(); },
+        write(chunk) { return response.write(chunk); },
+        flushHeaders() { response.flushHeaders(); },
       };
 
-      await handler(req, res);
+      try { await handler(req, res); }
+      finally { cleanupRequestAbort(); }
     } catch (error) {
       if (requestUrl.pathname === "/api/production-batch") {
         void appendProductionBatchLog({

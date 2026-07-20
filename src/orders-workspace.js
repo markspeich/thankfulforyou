@@ -231,3 +231,48 @@ export function getCopyableSavedBuild(item) {
   const validBuild = candidates.find(isValidSavedBuild);
   return validBuild ? cloneBuild(validBuild) : null;
 }
+export function getEtsyConnectionActionDescriptor(connection) {
+  const importing = Boolean(connection?.importing || connection?.isImporting);
+  if (connection?.status === "connected" && importing) return { label: "Importing…", disabled: true };
+  if (connection?.status === "connected") return { label: "Import from Etsy", disabled: importing };
+  if (connection?.status === "reconnect_required" || connection?.reconnectRequired) {
+    return { label: "Reconnect Etsy Shop", disabled: importing };
+  }
+  return { label: "Connect Etsy Shop", disabled: importing };
+}
+
+function normalizeEtsyCount(value) {
+  return Number.isFinite(Number(value)) ? Math.max(0, Math.trunc(Number(value))) : 0;
+}
+
+export function getEtsyImportProgressDescriptor(event) {
+  if (event?.stage === "fetching_receipts") {
+    return { label: "Fetching Etsy receipts…", determinate: false, value: null, max: null };
+  }
+  if (event?.stage === "importing_items") {
+    const max = normalizeEtsyCount(event.total);
+    const value = Math.min(normalizeEtsyCount(event.processed), max);
+    if (max === 0) {
+      return { label: "Importing 0 of 0 order items\u2026", determinate: false, value: null, max: null };
+    }
+    return { label: `Importing ${value} of ${max} order items…`, determinate: true, value, max };
+  }
+  return null;
+}
+
+export function getEtsyImportSummary(summary = {}) {
+  const imported = normalizeEtsyCount(summary.imported);
+  const existing = normalizeEtsyCount(summary.existing);
+  const customization = normalizeEtsyCount(summary.customizationNeeded);
+  const failed = normalizeEtsyCount(summary.failed);
+  const noun = (number, singular, plural = `${singular}s`) => `${number} ${number === 1 ? singular : plural}`;
+  const importedLabel = imported === 1 ? "1 order imported" : `${imported} orders imported`;
+  return `${importedLabel}, ${noun(existing, "existing order")}, ${noun(customization, "item needing customization")}, ${noun(failed, "failure", "failures")}.`;
+}
+
+export function getOrderItemCustomizationWarning(item) {
+  const source = item?.source?.source && typeof item.source.source === "object" ? item.source.source : item?.source;
+  return source?.customizationNeeded
+    ? { label: "Customization needed", detail: "Review this Etsy item before production." }
+    : null;
+}

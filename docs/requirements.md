@@ -59,6 +59,9 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 
 ## Current Production Requirements
 
+- The canonical production app URL is `https://app.thankfulforyou.net`.
+- Production OAuth callbacks and other absolute application URLs must use the canonical production hostname rather than a Vercel deployment hostname.
+
 - Accept text input for a badge reel design.
 - The selected-order editor must allow operators to enter or edit `Color` and numeric-only `Quantity` for both manually added designs and imported Etsy designs by using small square per-field pencil actions placed after each existing read-only metadata field; each field must show its own compact save and cancel actions while editing, hide cancel outside edit mode, and keep save disabled until that field has changes.
 - Edited design `Color` and `Quantity` values must persist with the order item and feed batch color counts, design export labels, and saved production-batch data.
@@ -287,6 +290,28 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - The import flow should support a browser-side helper path, such as a User JavaScript and CSS script, that can copy structured order payloads directly from the live Etsy orders page.
 - The first import implementation should use a clipboard workflow driven by a User JavaScript and CSS helper on the live Etsy orders page.
 - The repository docs folder includes a sample clipboard payload at `docs/sample-clipboard.txt` for clipboard-import development and testing.
+- The `Orders` workspace should provide an operator-initiated `Import from Etsy` action backed directly by Etsy Open API v3; ShipStation should not be a required intermediary for Etsy imports.
+- The first Etsy API import release should use on-demand synchronization rather than scheduled or webhook-driven background synchronization.
+- The Etsy API import should retrieve only paid, non-cancelled, unshipped receipts and should create one order item per Etsy transaction.
+- The Etsy API import should use Etsy `transaction_id` as the permanent order-item identity, skip transactions already stored in the workspace, and never overwrite an operator-edited or protected design.
+- The first Etsy API import after connection should use a 90-day lookback; later imports should use a saved high-water timestamp with an overlap window while retaining transaction identity as the final deduplication authority.
+- An Etsy API import must not advance its high-water timestamp when any eligible receipt's transaction discovery fails; successfully discovered transactions may still import, and the failed receipt must remain eligible for retry.
+- Failed receipt discovery should count expected failed items from a valid nonnegative `transaction_sold_count`, falling back to one item when that count is absent or invalid, and progress totals must include those failures.
+- An active Etsy import must renew its owner-scoped ten-minute lease at least every five minutes during receipt discovery and item processing; losing ownership must terminate the run without advancing the cursor.
+- Etsy import streaming must respect response backpressure and stop/release the import lease when the client disconnects or the response transport fails.
+- One on-demand Etsy API import is capped at 5,000 eligible receipts or expected transaction items; an oversized run must fail safely without advancing its cursor.
+- Individual listing/image enrichment, normalization, or persistence failures after successful transaction discovery may be reported as partial item failures while allowing cursor advancement, but abort, authorization, global, lease, discovery, transport, and size-limit failures must not advance it.
+- Etsy API access must use server-side OAuth 2.0 Authorization Code with PKCE and request only the `transactions_r` and `shops_r` scopes.
+- Etsy Keystring, Shared Secret, token-encryption key, and decrypted OAuth tokens must remain server-side and must never be exposed to browser code, logs, or version control.
+- Workspace Etsy OAuth tokens should be encrypted before database storage, and the Etsy connection table should be inaccessible to ordinary browser database clients.
+- The Etsy API importer must support multiple transaction variation values with `property_id: 54`, must not require the question name to be `Personalization`, and must preserve question labels and values in source metadata.
+- Usable Etsy text personalization responses should initialize design text in Etsy's returned order with one response per line; file-upload URLs should be preserved as references without becoming design text.
+- An Etsy transaction with missing or unusable customization should still import as an editable order item and should display a `Customization needed` warning.
+- Listing-image or other enrichment failures should not block an otherwise valid Etsy transaction, and isolated receipt or transaction failures should not roll back unrelated successful imports.
+- Etsy API imports from the `Orders` workspace should persist through the existing Orders import path and should not automatically add imported items to the active production batch.
+- While an Etsy import is running, the Orders workspace must show a visible progress indicator and accessible text status; it should show determinate item progress when totals are known and staged or indeterminate progress while discovering receipts.
+- Etsy import completion feedback should separately report newly imported, already present, customization-needed, and failed item counts.
+- Amazon order and customization import should be designed and implemented separately from the Etsy API import.
 - Imported listing IDs should be usable to auto-select the app preset for each imported order.
 - Imported Etsy listing metadata should include the listing title and the 75 by 75 listing image URL when those fields are present in the Etsy order data.
 - The app should maintain a configurable mapping from Etsy listing ID to production preset name.
