@@ -59,6 +59,9 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 
 ## Current Production Requirements
 
+- The canonical production app URL is `https://app.thankfulforyou.net`.
+- Production OAuth callbacks and other absolute application URLs must use the canonical production hostname rather than a Vercel deployment hostname.
+
 - Accept text input for a badge reel design.
 - The selected-order editor must allow operators to enter or edit `Color` and numeric-only `Quantity` for both manually added designs and imported Etsy designs by using small square per-field pencil actions placed after each existing read-only metadata field; each field must show its own compact save and cancel actions while editing, hide cancel outside edit mode, and keep save disabled until that field has changes.
 - Edited design `Color` and `Quantity` values must persist with the order item and feed batch color counts, design export labels, and saved production-batch data.

@@ -491,7 +491,7 @@ Use a secure 32-byte random value and place its base64 representation directly i
 
 - [ ] **Step 2: Register the exact callback in Etsy**
 
-Register `https://thankfulforyou.vercel.app/api/etsy-callback` in the approved Seller App. Configure `ETSY_REDIRECT_URI` to that exact value.
+Register `https://app.thankfulforyou.net/api/etsy-callback` in the approved Seller App. Configure `ETSY_REDIRECT_URI` to that exact value. The canonical production app URL is `https://app.thankfulforyou.net`; do not use a Vercel deployment hostname for the production OAuth callback.
 
 - [ ] **Step 3: Stop and request database approval**
 
