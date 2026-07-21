@@ -5850,7 +5850,13 @@ function completeOperationDialog({ title, description, metrics = [] }) {
   if (!(pasteSummaryDialog instanceof HTMLDialogElement)) return;
   pasteSummaryTitle.textContent = title; pasteSummaryDescription.textContent = description;
   const counts = [pasteSummaryImportedCount, pasteSummarySkippedCount, pasteSummaryAddedCount];
-  counts.forEach((node, index) => { pasteSummaryLabels[index].textContent = metrics[index]?.label || "Total"; node.textContent = String(Math.max(0, Number(metrics[index]?.value) || 0)); });
+  counts.forEach((node, index) => {
+    const metric = metrics[index];
+    node.closest("div").hidden = !metric;
+    if (!metric) return;
+    pasteSummaryLabels[index].textContent = metric.label || "Total";
+    node.textContent = String(Math.max(0, Number(metric.value) || 0));
+  });
   operationProgress.hidden = true; pasteSummaryCounts.hidden = false; pasteSummaryActions.hidden = false; closePasteSummaryButton.hidden = false;
   pasteSummaryDialog.querySelector(".batch-summary-card").dataset.operationState = "complete";
   if (!pasteSummaryDialog.open) pasteSummaryDialog.showModal();
@@ -12746,7 +12752,7 @@ if (initialAppRoute.workspace === "fixedDesigns") {
 const restoredBatch = productionBatchAccessToken
   ? await restoreInitialBatchState(productionBatchAccessToken)
   : { source: null, count: 0 };
-completeOperationDialog({ title: "Workspace Ready", description: "The production workspace finished loading.", metrics: [{ label: "Batch designs", value: orders.length }, { label: "Orders loaded", value: databaseOrders.length }, { label: "Presets", value: presetInput?.options.length || 0 }] });
+completeOperationDialog({ title: "Workspace Ready", description: "The production workspace finished loading.", metrics: [{ label: "Batch designs", value: orders.length }, { label: "Orders loaded", value: databaseOrders.length }] });
 setTimeout(closePasteSummaryDialog, 1200);
 if (productionBatchAccessToken && !fixedDesignsLoaded && restoredOrdersIncludeFixedSvgs()) {
   await refreshWorkspaceFixedDesigns(productionBatchAccessToken);
