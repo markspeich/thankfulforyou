@@ -40,6 +40,19 @@ test("connected import reports stages and completion while preserving selection"
   await expect.poll(gets).toBeGreaterThan(1); await expect(page.locator(".database-order-row.is-selected")).toContainText("Order 1001");
   await summary.getByRole("button", { name: "Dismiss Etsy import summary" }).click(); await expect(summary).toBeHidden(); await expect(button).toBeFocused();
 });
+test("summary card keeps selection controls clear of the first order at a compact viewport", async ({ page }) => {
+  await page.setViewportSize({ width: 667, height: 445 });
+  await session(page); await routes(page); await stream(page); await open(page);
+  await page.getByRole("button", { name: "Import from Etsy" }).click();
+  await page.evaluate(() => { pushEvent({ type: "complete", imported: 0, existing: 0, customizationNeeded: 0, failed: 0 }); closeStream(); });
+  await expect(page.locator("#etsyImportFeedback")).toBeVisible();
+  const selectAll = page.locator(".database-orders-select-all");
+  const firstOrder = page.locator(".database-order-row").first();
+  await expect(selectAll).toBeVisible(); await expect(firstOrder).toBeVisible();
+  const [selectBox, orderBox] = await Promise.all([selectAll.boundingBox(), firstOrder.boundingBox()]);
+  expect(selectBox.y + selectBox.height).toBeLessThanOrEqual(orderBox.y);
+});
+
 
 test("import queues a forced refresh behind an in-flight Orders request", async ({ page }) => {
   await session(page); await routes(page); await stream(page); await page.unroute("**/api/orders**");

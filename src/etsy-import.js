@@ -98,6 +98,8 @@ export function normalizeImportedEntry(entry, options = {}) {
   const buyerName = normalizeImportedText(entry.buyerName);
   const colorName = normalizeImportedText(entry.colorName);
   const quantity = entry.quantity == null ? "" : String(entry.quantity).trim();
+  const rawShipByDate = entry.shipByDate == null ? "" : String(entry.shipByDate).trim();
+  const shipByDate = /^\d{4}-\d{2}-\d{2}$/.test(rawShipByDate) ? rawShipByDate : "";
   const listingTitle = normalizeImportedText(entry.listingTitle);
   const listingImageUrl75x75 = typeof entry.listingImageUrl75x75 === "string"
     ? entry.listingImageUrl75x75.trim()
@@ -122,6 +124,7 @@ export function normalizeImportedEntry(entry, options = {}) {
       listingTitle,
       listingImageUrl75x75,
       transactionId,
+      ...(shipByDate ? { shipByDate } : {}),
     },
   };
 }

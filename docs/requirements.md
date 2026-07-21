@@ -312,9 +312,15 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - While an Etsy import is running, the Orders workspace must show an animated spinner inside the disabled import button and expose the button's busy state accessibly; it must not show a separate progress card or progress bar.
 - Etsy import completion feedback should appear in a summary card that separately reports newly imported, already present, customization-needed, and failed item counts.
 - The Etsy import summary card must provide a small right-aligned X button that dismisses the card after review.
+- Showing the Etsy import summary card must not overlap or obscure the Orders filters, the `Select all visible` control, or the first order row at supported viewport sizes.
 - Amazon order and customization import should be designed and implemented separately from the Etsy API import.
 - Imported listing IDs should be usable to auto-select the app preset for each imported order.
 - Imported Etsy listing metadata should include the listing title and the 75 by 75 listing image URL when those fields are present in the Etsy order data.
+- Imported order items must persist a nullable `Ship By Date` as a calendar date without timezone-driven day shifts.
+- The Etsy `Copy Orders` browser helper must retrieve Ship By Date from Etsy order fulfillment data.
+- The Amazon `Copy Orders` browser helper must retrieve Ship By Date from the Seller Central order summary.
+- Etsy API imports must retrieve Ship By Date from the receipt `expected_ship_date` field.
+- The Orders workspace must show Ship By Date in grouped order rows and selected order-item details, using the earliest available date for grouped multi-item orders.
 - The app should maintain a configurable mapping from Etsy listing ID to production preset name.
 - The current preset mapping must include Etsy listing ID `1884223710` to `Skywalk, Somekind`.
 - Etsy listing ID `1884223710` must also apply a listing-specific per-line default of `21 mm` text height on line 2 while keeping the rest of the `Skywalk, Somekind` preset defaults unchanged.
@@ -630,6 +636,7 @@ For batch Etsy order sessions, the preferred workflow is:
 - When a save receives a production-batch revision conflict but the latest saved design content is unchanged and only revision/audit metadata moved forward for the same row, the app should refresh its revision metadata and retry the save once instead of forcing the operator to reload and redo the design.
 - In the Orders workspace selected-order item cards, each card title should be `Order Item`, with imported listing text in the header, imported Etsy listing image in the left body column, and saved design preview in the right body column. The bottom metadata should show `Personalization: <design text>` above imported color, with quantity stacked below color.
 - In the Orders workspace order list, each grouped order row should show the imported listing image from the first order item at the beginning of the row; grouped orders with multiple order items should show a compact stacked thumbnail treatment.
+- In the Orders workspace order list, buyer name, ship-by date when available, item count, and active-batch membership should each appear on its own clearly labeled metadata line rather than being concatenated into one line; each line's label and value should be vertically centered with one another.
 - In the Production Batch row list, each row should show the imported listing/product image when available and should not show the imported listing title; row text should prioritize the order number, buyer, personalization, status, and connectedness indicators.
 
 - Clicking `Save` should immediately mark the current design as finished for editing, even if connectedness analysis is still running in the background.

@@ -85,7 +85,7 @@ describe("etsy copy badge clipboard", () => {
     const { context, warnings, clipboardWrites } = loadClipboardScript([
       {
         order_id: 1,
-        fulfillment: { to_address: { name: "Taylor" } },
+        fulfillment: { to_address: { name: "Taylor" }, expected_ship_date: 1783400340 },
         transactions: [
           {
             transaction_id: 11,
@@ -125,6 +125,7 @@ describe("etsy copy badge clipboard", () => {
         orderNumber: "1",
         transactionId: "11",
         listingId: "111",
+        shipByDate: "2026-07-06",
         buyerName: "Taylor",
         personalization: "Taylor RN",
       }),

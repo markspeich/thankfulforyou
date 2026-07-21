@@ -5614,16 +5614,44 @@ function getDatabaseOrderTitle(order) {
 
   return `Order ${String(order?.id || "").replace(/^order:/, "") || "Unknown"}`;
 }
+function formatShipByDate(value) {
+  const match = typeof value === "string" ? value.match(/^(\d{4})-(\d{2})-(\d{2})$/) : null;
+  if (!match) return "";
+  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })
+    .format(new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]))));
+}
+
 function getDatabaseOrderMeta(order) {
   const parts = [];
   if (typeof order?.buyerName === "string" && order.buyerName.trim()) {
     parts.push(order.buyerName.trim());
   }
 
+  const shipByDate = formatShipByDate(order?.shipByDate);
+  if (shipByDate) {
+    parts.push(`Ship By: ${shipByDate}`);
+  }
   const itemCount = Array.isArray(order?.items) ? order.items.length : 0;
   parts.push(`${itemCount} item${itemCount === 1 ? "" : "s"}`);
   parts.push(order?.isInActiveBatch ? "In batch" : "Not in batch");
   return parts.join(" - ");
+}
+
+function getDatabaseOrderMetaLines(order) {
+  const lines = [];
+  if (typeof order?.buyerName === "string" && order.buyerName.trim()) {
+    lines.push({ label: "Buyer", value: order.buyerName.trim() });
+  }
+
+  const shipByDate = formatShipByDate(order?.shipByDate);
+  if (shipByDate) {
+    lines.push({ label: "Ship by", value: shipByDate });
+  }
+
+  const itemCount = Array.isArray(order?.items) ? order.items.length : 0;
+  lines.push({ label: "Items", value: String(itemCount) });
+  lines.push({ label: "Batch", value: order?.isInActiveBatch ? "In batch" : "Not in batch" });
+  return lines;
 }
 
 function getDatabaseOrderItemListingImageUrl(item) {
@@ -6435,7 +6463,21 @@ function renderDatabaseOrdersWorkspace() {
 
     const meta = document.createElement("span");
     meta.className = "database-order-row-meta";
-    meta.textContent = getDatabaseOrderMeta(order);
+    getDatabaseOrderMetaLines(order).forEach(({ label, value }) => {
+      const line = document.createElement("span");
+      line.className = "database-order-row-meta-line";
+
+      const labelElement = document.createElement("span");
+      labelElement.className = "database-order-row-meta-label";
+      labelElement.textContent = label;
+
+      const valueElement = document.createElement("span");
+      valueElement.className = "database-order-row-meta-value";
+      valueElement.textContent = value;
+
+      line.append(labelElement, valueElement);
+      meta.append(line);
+    });
 
     copy.append(titleRow, meta);
     button.append(imageStack, copy);
@@ -6764,7 +6806,12 @@ function renderSelectedDatabaseOrderItems() {
     const quantityValue = document.createElement("dd");
     quantityValue.textContent = getDatabaseOrderItemQuantityText(item);
 
-    meta.append(personalizationTerm, personalizationValue, colorTerm, colorValue, quantityTerm, quantityValue);
+    const shipByTerm = document.createElement("dt");
+    shipByTerm.textContent = "Ship By Date";
+    const shipByValue = document.createElement("dd");
+    shipByValue.textContent = formatShipByDate(item?.shipByDate) || "Not available";
+
+    meta.append(personalizationTerm, personalizationValue, colorTerm, colorValue, quantityTerm, quantityValue, shipByTerm, shipByValue);
 
     cardBody.append(listingColumn, previewColumn);
     card.append(cardHeader, cardBody, status, savedDesign, meta);

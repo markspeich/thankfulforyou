@@ -88,6 +88,7 @@ function getOrderSearchText(order) {
       item?.listingId,
       item?.transactionId,
       item?.importedColor,
+      item?.shipByDate,
       item?.source?.listingTitle,
       item?.source?.title,
       item?.design?.text,

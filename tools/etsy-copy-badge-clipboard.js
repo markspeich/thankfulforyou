@@ -48,6 +48,16 @@ function getTransactionQuantity(transaction) {
 
   return "1";
 }
+function getShipByDate(order) {
+  const timestamp = Number(order?.fulfillment?.expected_ship_date);
+  if (!Number.isFinite(timestamp) || timestamp <= 0) return "";
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Chicago", year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(new Date(timestamp * 1000));
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
 
 function buildOrderItemLabel(orderId, buyerName, itemNumber) {
   let label = `#${orderId}`;
@@ -83,6 +93,7 @@ function analyzeOrdersForClipboard() {
           colorName: getVariationValue(transaction, "Color"),
           quantity: getTransactionQuantity(transaction),
           listingTitle: transaction?.product?.title || "",
+          shipByDate: getShipByDate(order),
           listingImageUrl75x75: transaction?.product?.image_url_75x75 || "",
           label: buildOrderItemLabel(order.order_id, buyerName, itemNumber),
           personalization,

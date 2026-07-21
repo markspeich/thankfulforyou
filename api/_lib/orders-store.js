@@ -75,6 +75,7 @@ function buildOrderItemRow(item, { workspaceId, userId }) {
     listing_id: nullableString(source.listingId),
     transaction_id: nullableString(source.transactionId),
     imported_color: nullableString(source.colorName),
+    ship_by_date: nullableString(source.shipByDate),
     quantity: toPositiveInteger(source.quantity, 1),
     source_json: { ...source },
     revision: 1,
@@ -221,6 +222,7 @@ function normalizeOrderItem(row, { design, lines, activeBatchItemIds }) {
     listingId: row.listing_id ?? null,
     transactionId: row.transaction_id ?? null,
     importedColor: row.imported_color ?? null,
+    shipByDate: row.ship_by_date ?? null,
     quantity: toPositiveInteger(row.quantity, 1),
     source,
     revision: Number.isInteger(row.revision) ? row.revision : null,
@@ -246,6 +248,7 @@ function appendOrderItemToGroups(groups, orderItem) {
       buyerName: orderItem.buyerName,
       status: "open",
       isInActiveBatch: false,
+      shipByDate: orderItem.shipByDate,
       items: [],
     };
     groups.set(groupId, group);
@@ -253,6 +256,9 @@ function appendOrderItemToGroups(groups, orderItem) {
 
   group.items.push(orderItem);
   group.isInActiveBatch = group.isInActiveBatch || orderItem.isInActiveBatch;
+  if (orderItem.shipByDate && (!group.shipByDate || orderItem.shipByDate < group.shipByDate)) {
+    group.shipByDate = orderItem.shipByDate;
+  }
   if (group.items.length > 0 && group.items.every((item) => item.status === "complete")) {
     group.status = "complete";
   } else if (group.items.length > 0 && group.items.every((item) => item.status === "skipped")) {
@@ -324,7 +330,7 @@ export async function listWorkspaceOrders({ workspaceId, activeBatchId = null, s
   const supabase = createSupabaseAdminClient();
   let orderItemsQuery = supabase
     .from("order_items")
-    .select("id, workspace_id, status, order_number, buyer_name, listing_id, transaction_id, imported_color, quantity, source_json, revision, updated_at, updated_by")
+    .select("id, workspace_id, status, order_number, buyer_name, listing_id, transaction_id, imported_color, ship_by_date, quantity, source_json, revision, updated_at, updated_by")
     .eq("workspace_id", workspaceId);
   if (statusFilter === "complete") {
     orderItemsQuery = orderItemsQuery.eq("status", "complete");
@@ -752,6 +758,21 @@ export async function importWorkspaceOrderItems({
     workspaceId,
     orderItemIds: requestedOrderItemIds,
   });
+  const existingShipDateUpdates = orderRows.filter((row) => (
+    existingOrderItemIds.has(row.id) && row.ship_by_date
+  ));
+  const shipDateUpdateResults = await Promise.all(existingShipDateUpdates.map((row) => (
+    supabase
+      .from("order_items")
+      .update({ ship_by_date: row.ship_by_date })
+      .eq("workspace_id", workspaceId)
+      .eq("id", row.id)
+  )));
+  const shipDateUpdateError = shipDateUpdateResults.find((result) => result?.error)?.error;
+  if (shipDateUpdateError) {
+    throw shipDateUpdateError;
+  }
+
   const newOrderRows = orderRows.filter((row) => !existingOrderItemIds.has(row.id));
 
   if (newOrderRows.length) {
