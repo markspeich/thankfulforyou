@@ -83,7 +83,6 @@ import {
 import {
   filterGroupedOrders,
   getEtsyConnectionActionDescriptor,
-  getEtsyImportProgressDescriptor,
   getEtsyImportSummary,
   getOrderItemCustomizationWarning,
   getCheckedOrderIdsForBulkAction,
@@ -277,9 +276,11 @@ const workflowAlert = document.querySelector("#importStatus");
 const workflowAlertText = document.querySelector("#workflowAlertText");
 const databaseOrdersHeaderActions = databaseOrdersWorkspace?.querySelector(".batch-header-actions");
 const etsyImportButton = document.createElement("button");
+const etsyImportButtonSpinner = document.createElement("span");
+const etsyImportButtonLabel = document.createElement("span");
 const etsyImportFeedback = document.createElement("section");
 const etsyImportStatus = document.createElement("p");
-const etsyImportProgress = document.createElement("progress");
+const etsyImportDismissButton = document.createElement("button");
 const workflowAlertActionButton = document.querySelector("#workflowAlertActionButton");
 const batchSyncStatus = document.querySelector("#batchSyncStatus");
 const batchSyncStatusLabel = document.querySelector("#batchSyncStatusLabel");
@@ -498,7 +499,6 @@ let etsyConnectionLoading = false;
 let etsyImporting = false;
 let etsyImportResult = null;
 let etsyImportError = null;
-let etsyImportProgressEvent = null;
 let etsySessionRequest = null;
 let etsyOAuthStatus = "";
 let databaseOrdersImporting = false;
@@ -5972,14 +5972,21 @@ function initializeEtsyImportUi() {
   etsyImportButton.className = "batch-primary-action etsy-import-button";
   etsyImportButton.setAttribute("aria-controls", "etsyImportFeedback");
   etsyImportFeedback.id = "etsyImportFeedback";
+  etsyImportButtonSpinner.className = "etsy-import-button-spinner";
+  etsyImportButtonSpinner.setAttribute("aria-hidden", "true");
+  etsyImportButtonSpinner.hidden = true;
+  etsyImportButtonLabel.className = "etsy-import-button-label";
+  etsyImportButton.append(etsyImportButtonSpinner, etsyImportButtonLabel);
   etsyImportFeedback.className = "etsy-import-feedback";
   etsyImportFeedback.setAttribute("aria-live", "polite");
   etsyImportFeedback.hidden = true;
   etsyImportStatus.className = "etsy-import-status";
-  etsyImportProgress.className = "etsy-import-progress";
-  etsyImportProgress.setAttribute("aria-label", "Etsy import progress");
-  etsyImportProgress.hidden = true;
-  etsyImportFeedback.append(etsyImportStatus, etsyImportProgress);
+  etsyImportDismissButton.type = "button";
+  etsyImportDismissButton.className = "etsy-import-summary-dismiss";
+  etsyImportDismissButton.setAttribute("aria-label", "Dismiss Etsy import summary");
+  etsyImportDismissButton.textContent = "\u00d7";
+  etsyImportDismissButton.hidden = true;
+  etsyImportFeedback.append(etsyImportStatus, etsyImportDismissButton);
   databaseOrdersHeaderActions.prepend(etsyImportButton);
   databaseOrdersWorkspace?.querySelector(".database-orders-filters")?.before(etsyImportFeedback);
 }
@@ -5993,39 +6000,23 @@ function renderEtsyImportUi() {
     ...etsyConnection,
     importing: etsyImporting,
   });
-  etsyImportButton.textContent = descriptor.label;
+  etsyImportButtonLabel.textContent = descriptor.label;
   if (etsyImportError) {
-    etsyImportButton.textContent = isEtsyReauthorizationError(etsyImportError) ? "Reconnect Etsy Shop" : "Retry";
+    etsyImportButtonLabel.textContent = isEtsyReauthorizationError(etsyImportError) ? "Reconnect Etsy Shop" : "Retry";
   }
+  etsyImportButtonSpinner.hidden = !etsyImporting;
   etsyImportButton.disabled = descriptor.disabled || etsyImporting || etsyConnectionLoading || !productionBatchAccessToken;
   etsyImportButton.setAttribute("aria-busy", String(etsyConnectionLoading || etsyImporting));
-
-  const progress = getEtsyImportProgressDescriptor(etsyImportProgressEvent);
-  etsyImportProgress.hidden = !etsyImporting || !progress;
-  if (progress?.determinate) {
-    etsyImportProgress.max = progress.max || 1;
-    etsyImportProgress.value = progress.value;
-    etsyImportProgress.setAttribute("aria-valuenow", String(progress.value));
-    etsyImportProgress.setAttribute("aria-valuemax", String(progress.max || 1));
-  } else {
-    etsyImportProgress.removeAttribute("value");
-    etsyImportProgress.removeAttribute("aria-valuenow");
-    etsyImportProgress.removeAttribute("aria-valuemax");
-  }
 
   let message = "";
   let state = "pending";
   if (etsyConnectionLoading) message = "Checking Etsy connection...";
-  if (etsyConnection?.status === "connected" && !etsyImporting) {
-    message = `Connected${etsyConnection.shopName ? ` to ${etsyConnection.shopName}` : ""}.`;
-    state = "success";
-  }
-  if (progress) message = progress.label;
+  if (etsyImporting) message = "";
   if (etsyOAuthStatus) {
     message = etsyOAuthStatus;
     state = etsyOAuthStatus.startsWith("Connected") ? "success" : "error";
   }
-  if (etsyImportResult) {
+  if (etsyImportResult && !etsyImporting) {
     message = getEtsyImportSummary(etsyImportResult);
     state = "success";
   }
@@ -6033,6 +6024,7 @@ function renderEtsyImportUi() {
     message = etsyImportError.message || "Unable to import Etsy orders.";
     state = "error";
   }
+  etsyImportDismissButton.hidden = !etsyImportResult || etsyImporting || Boolean(etsyImportError);
   etsyImportStatus.textContent = message;
   etsyImportFeedback.dataset.state = state;
   etsyImportFeedback.hidden = !message;
@@ -6064,7 +6056,6 @@ function resetEtsySessionRequest(accessToken) {
   etsyImportError = etsyOAuthStatus.includes("failed")
     ? Object.assign(new Error(etsyOAuthStatus), { code: "oauth_connection_error" })
     : null;
-  etsyImportProgressEvent = null;
   renderEtsyImportUi();
   return etsySessionRequest;
 }
@@ -6127,7 +6118,6 @@ async function startEtsyImport() {
   etsyImporting = true;
   etsyImportError = null;
   etsyImportResult = null;
-  etsyImportProgressEvent = null;
   renderEtsyImportUi();
   try {
     await importEtsyOrders({
@@ -6135,7 +6125,6 @@ async function startEtsyImport() {
       signal: request.controller.signal,
       onEvent: async (event) => {
         if (etsySessionRequest !== request) return;
-        if (event.type === "progress") etsyImportProgressEvent = event;
         if (event.type === "complete") etsyImportResult = event;
         renderEtsyImportUi();
         await Promise.resolve();
@@ -6160,7 +6149,6 @@ async function startEtsyImport() {
   } finally {
     if (etsySessionRequest === request) {
       etsyImporting = false;
-      etsyImportProgressEvent = null;
       renderEtsyImportUi();
     }
   }
@@ -12211,6 +12199,11 @@ etsyImportButton.addEventListener("click", () => {
 });
 addCheckedOrdersToBatchButton?.addEventListener("click", () => {
   void addCheckedDatabaseOrdersToBatch();
+});
+etsyImportDismissButton.addEventListener("click", () => {
+  etsyImportResult = null;
+  renderEtsyImportUi();
+  etsyImportButton.focus();
 });
 presetWorkspaceButton.addEventListener("click", () => {
   setActiveWorkspace("presets", { routeItemId: null });

@@ -309,8 +309,9 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - An Etsy transaction with missing or unusable customization should still import as an editable order item and should display a `Customization needed` warning.
 - Listing-image or other enrichment failures should not block an otherwise valid Etsy transaction, and isolated receipt or transaction failures should not roll back unrelated successful imports.
 - Etsy API imports from the `Orders` workspace should persist through the existing Orders import path and should not automatically add imported items to the active production batch.
-- While an Etsy import is running, the Orders workspace must show a visible progress indicator and accessible text status; it should show determinate item progress when totals are known and staged or indeterminate progress while discovering receipts.
-- Etsy import completion feedback should separately report newly imported, already present, customization-needed, and failed item counts.
+- While an Etsy import is running, the Orders workspace must show an animated spinner inside the disabled import button and expose the button's busy state accessibly; it must not show a separate progress card or progress bar.
+- Etsy import completion feedback should appear in a summary card that separately reports newly imported, already present, customization-needed, and failed item counts.
+- The Etsy import summary card must provide a small right-aligned X button that dismisses the card after review.
 - Amazon order and customization import should be designed and implemented separately from the Etsy API import.
 - Imported listing IDs should be usable to auto-select the app preset for each imported order.
 - Imported Etsy listing metadata should include the listing title and the 75 by 75 listing image URL when those fields are present in the Etsy order data.
