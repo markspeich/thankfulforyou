@@ -1085,8 +1085,8 @@
       </div>
     </dialog>
 
-    <dialog id="pasteSummaryDialog" class="batch-summary-dialog paste-summary-dialog" aria-labelledby="pasteSummaryTitle">
-      <div class="batch-summary-card">
+    <dialog id="pasteSummaryDialog" class="batch-summary-dialog paste-summary-dialog" aria-labelledby="pasteSummaryTitle" aria-describedby="pasteSummaryDescription">
+      <div class="batch-summary-card" data-operation-state="complete">
         <header class="batch-summary-header">
           <div>
             <h2 id="pasteSummaryTitle">Paste Summary</h2>
@@ -1100,21 +1100,28 @@
             </svg>
           </button>
         </header>
-        <dl class="paste-summary-counts">
+        <div id="operationProgress" class="operation-progress" hidden>
+          <span class="operation-progress-spinner" aria-hidden="true"></span>
           <div>
-            <dt>Imported</dt>
+            <p id="operationProgressLabel" class="operation-progress-label">Working...</p>
+            <p class="operation-progress-note">Keep this window open while the operation finishes.</p>
+          </div>
+        </div>
+        <dl id="pasteSummaryCounts" class="paste-summary-counts">
+          <div>
+            <dt id="pasteSummaryImportedLabel">Imported</dt>
             <dd id="pasteSummaryImportedCount">0</dd>
           </div>
           <div>
-            <dt>Skipped duplicates</dt>
+            <dt id="pasteSummarySkippedLabel">Skipped duplicates</dt>
             <dd id="pasteSummarySkippedCount">0</dd>
           </div>
           <div>
-            <dt>Added to batch</dt>
+            <dt id="pasteSummaryAddedLabel">Added to batch</dt>
             <dd id="pasteSummaryAddedCount">0</dd>
           </div>
         </dl>
-        <div class="confirmation-dialog-actions">
+        <div id="pasteSummaryActions" class="confirmation-dialog-actions">
           <button id="pasteSummaryDoneButton" class="confirmation-dialog-button confirmation-dialog-confirm" type="button">
             Done
           </button>

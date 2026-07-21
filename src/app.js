@@ -325,6 +325,13 @@ const pasteSummarySkippedCount = document.querySelector("#pasteSummarySkippedCou
 const pasteSummaryAddedCount = document.querySelector("#pasteSummaryAddedCount");
 const closePasteSummaryButton = document.querySelector("#closePasteSummaryButton");
 const pasteSummaryDoneButton = document.querySelector("#pasteSummaryDoneButton");
+const pasteSummaryTitle = document.querySelector("#pasteSummaryTitle");
+const pasteSummaryDescription = document.querySelector("#pasteSummaryDescription");
+const pasteSummaryCounts = document.querySelector("#pasteSummaryCounts");
+const pasteSummaryActions = document.querySelector("#pasteSummaryActions");
+const pasteSummaryLabels = [document.querySelector("#pasteSummaryImportedLabel"), document.querySelector("#pasteSummarySkippedLabel"), document.querySelector("#pasteSummaryAddedLabel")];
+const operationProgress = document.querySelector("#operationProgress");
+const operationProgressLabel = document.querySelector("#operationProgressLabel");
 const presetAssignmentDialog = document.querySelector("#presetAssignmentDialog");
 const presetAssignmentDescription = document.querySelector("#presetAssignmentDescription");
 const closePresetAssignmentDialogButton = document.querySelector("#closePresetAssignmentDialogButton");
@@ -5828,36 +5835,34 @@ function buildSkippedBatchImportMessage(skippedCount) {
   return `Skipped ${skippedCount} Etsy ${designNoun(skippedCount)} already in the batch. No new designs were added.`;
 }
 
-function showPasteSummaryDialog({
-  targetLabel = "Orders",
-  importedCount = 0,
-  skippedDuplicateCount = 0,
-  addedToBatchCount = 0,
-} = {}) {
-  if (!(pasteSummaryDialog instanceof HTMLDialogElement)) {
-    return;
+function startOperationDialog({ title, description, progressLabel = "Working...", modal = true }) {
+  if (!(pasteSummaryDialog instanceof HTMLDialogElement)) return;
+  pasteSummaryTitle.textContent = title; pasteSummaryDescription.textContent = description; operationProgressLabel.textContent = progressLabel;
+  operationProgress.hidden = false; pasteSummaryCounts.hidden = true; pasteSummaryActions.hidden = true; closePasteSummaryButton.hidden = true;
+  pasteSummaryDialog.querySelector(".batch-summary-card").dataset.operationState = "progress";
+  if (!pasteSummaryDialog.open) {
+    if (modal) pasteSummaryDialog.showModal();
+    else pasteSummaryDialog.show();
   }
-
-  if (pasteSummaryTarget) {
-    pasteSummaryTarget.textContent = targetLabel;
-  }
-  if (pasteSummaryImportedCount) {
-    pasteSummaryImportedCount.textContent = String(Math.max(0, importedCount));
-  }
-  if (pasteSummarySkippedCount) {
-    pasteSummarySkippedCount.textContent = String(Math.max(0, skippedDuplicateCount));
-  }
-  if (pasteSummaryAddedCount) {
-    pasteSummaryAddedCount.textContent = String(Math.max(0, addedToBatchCount));
-  }
-
-  pasteSummaryDialog.showModal();
 }
-
+function updateOperationProgress(label) { if (label) operationProgressLabel.textContent = label; }
+function completeOperationDialog({ title, description, metrics = [] }) {
+  if (!(pasteSummaryDialog instanceof HTMLDialogElement)) return;
+  pasteSummaryTitle.textContent = title; pasteSummaryDescription.textContent = description;
+  const counts = [pasteSummaryImportedCount, pasteSummarySkippedCount, pasteSummaryAddedCount];
+  counts.forEach((node, index) => { pasteSummaryLabels[index].textContent = metrics[index]?.label || "Total"; node.textContent = String(Math.max(0, Number(metrics[index]?.value) || 0)); });
+  operationProgress.hidden = true; pasteSummaryCounts.hidden = false; pasteSummaryActions.hidden = false; closePasteSummaryButton.hidden = false;
+  pasteSummaryDialog.querySelector(".batch-summary-card").dataset.operationState = "complete";
+  if (!pasteSummaryDialog.open) pasteSummaryDialog.showModal();
+}
+function showPasteSummaryDialog({ targetLabel = "Orders", importedCount = 0, skippedDuplicateCount = 0, addedToBatchCount = 0 } = {}) {
+  completeOperationDialog({ title: "Paste Summary", description: `Clipboard import results for ${targetLabel}.`, metrics: [{ label: "Imported", value: importedCount }, { label: "Skipped duplicates", value: skippedDuplicateCount }, { label: "Added to batch", value: addedToBatchCount }] });
+  pasteSummaryDescription.innerHTML = `Clipboard import results for <span id="pasteSummaryTarget"></span>.`;
+  pasteSummaryDescription.querySelector("#pasteSummaryTarget").textContent = targetLabel;
+}
 function closePasteSummaryDialog() {
-  if (pasteSummaryDialog instanceof HTMLDialogElement && pasteSummaryDialog.open) {
-    pasteSummaryDialog.close();
-  }
+  if (pasteSummaryDialog?.querySelector(".batch-summary-card")?.dataset.operationState === "progress") return;
+  if (pasteSummaryDialog instanceof HTMLDialogElement && pasteSummaryDialog.open) pasteSummaryDialog.close();
 }
 
 function assertImportableItems(importedItems) {
@@ -6143,6 +6148,7 @@ async function startEtsyImport() {
   etsyOAuthStatus = "";
   const request = resetEtsySessionRequest(productionBatchAccessToken);
   if (!request || etsyImporting) return;
+  startOperationDialog({ title: "Importing from Etsy", description: "Importing new Etsy orders into the Orders workspace.", progressLabel: "Fetching Etsy receipts..." });
   etsyImporting = true;
   etsyImportError = null;
   etsyImportResult = null;
@@ -6153,6 +6159,7 @@ async function startEtsyImport() {
       signal: request.controller.signal,
       onEvent: async (event) => {
         if (etsySessionRequest !== request) return;
+        if (event.type === "progress") updateOperationProgress(event.message || (event.total == null ? "Fetching Etsy receipts..." : `Importing ${event.processed} of ${event.total} orders...`));
         if (event.type === "complete") etsyImportResult = event;
         renderEtsyImportUi();
         await Promise.resolve();
@@ -6178,6 +6185,7 @@ async function startEtsyImport() {
     if (etsySessionRequest === request) {
       etsyImporting = false;
       renderEtsyImportUi();
+      if (etsyImportResult) completeOperationDialog({ title: "Etsy Import Complete", description: getEtsyImportSummary(etsyImportResult), metrics: [{ label: "Imported", value: etsyImportResult.imported }, { label: "Existing", value: etsyImportResult.existing }, { label: "Needs review", value: etsyImportResult.customizationNeeded }] });
     }
   }
 }
@@ -6826,6 +6834,8 @@ async function addDatabaseOrderItemToBatch(item, button = null) {
     return;
   }
 
+  startOperationDialog({ title: "Adding Order Item", description: "Adding the selected order item to the production batch.", progressLabel: "Saving production batch item..." });
+
   if (button) {
     button.disabled = true;
     button.textContent = "Adding...";
@@ -6844,6 +6854,7 @@ async function addDatabaseOrderItemToBatch(item, button = null) {
 
     await refreshOrdersAndProductionBatch({ payload, accessToken, refreshBatch: true });
     updateWorkflowAlert(buildAddedToBatchMessage(payload), "success");
+    completeOperationDialog({ title: "Order Item Added", description: buildAddedToBatchMessage(payload), metrics: [{ label: "Selected", value: 1 }, { label: "Added", value: countFromPayload(payload, "addedOrderItemCount") }, { label: "Already in batch", value: Math.max(0, 1 - countFromPayload(payload, "addedOrderItemCount")) }] });
   } catch (error) {
     handleOrdersMutationError(
       error,
@@ -7198,6 +7209,7 @@ async function addCheckedDatabaseOrdersToBatch() {
     return;
   }
 
+  startOperationDialog({ title: "Adding Orders", description: `Adding ${orderIds.length} selected order${orderIds.length === 1 ? "" : "s"} to the production batch.`, progressLabel: "Saving production batch items..." });
   addCheckedOrdersToBatchButton.disabled = true;
   setBatchActionLabel(addCheckedOrdersToBatchButton, "Adding...");
   ordersDatabaseMutationInFlight = true;
@@ -7220,6 +7232,7 @@ async function addCheckedDatabaseOrdersToBatch() {
     checkedDatabaseOrderIds = nextCheckedOrderIds;
     renderDatabaseOrdersWorkspace();
     updateWorkflowAlert(buildAddedToBatchMessage(payload), "success");
+    completeOperationDialog({ title: "Orders Added", description: buildAddedToBatchMessage(payload), metrics: [{ label: "Selected", value: orderIds.length }, { label: "Added", value: countFromPayload(payload, "addedOrderItemCount") }, { label: "Already in batch", value: Math.max(0, orderIds.length - countFromPayload(payload, "addedOrderItemCount")) }] });
   } catch (error) {
     handleOrdersMutationError(
       error,
@@ -7242,6 +7255,8 @@ async function addSelectedDatabaseOrderToBatch() {
     return;
   }
 
+  startOperationDialog({ title: "Adding Order", description: "Adding the selected order to the production batch.", progressLabel: "Saving production batch items..." });
+
   if (addSelectedOrderToBatchButton) {
     addSelectedOrderToBatchButton.disabled = true;
     setBatchActionLabel(addSelectedOrderToBatchButton, "Adding...");
@@ -7261,6 +7276,7 @@ async function addSelectedDatabaseOrderToBatch() {
     await refreshOrdersAndProductionBatch({ payload, accessToken, refreshBatch: true });
     selectedOrderActionsMenu?.removeAttribute("open");
     updateWorkflowAlert(buildAddedToBatchMessage(payload), "success");
+    completeOperationDialog({ title: "Order Added", description: buildAddedToBatchMessage(payload), metrics: [{ label: "Selected", value: 1 }, { label: "Added", value: countFromPayload(payload, "addedOrderItemCount") }, { label: "Already in batch", value: Math.max(0, 1 - countFromPayload(payload, "addedOrderItemCount")) }] });
   } catch (error) {
     handleOrdersMutationError(
       error,
@@ -10262,6 +10278,9 @@ async function completeCurrentProductionBatch() {
     return;
   }
 
+  const completedOrderCount = orders.length;
+  startOperationDialog({ title: "Completing Production Batch", description: `Completing ${completedOrderCount} design${completedOrderCount === 1 ? "" : "s"}.`, progressLabel: "Updating orders and closing the batch..." });
+
   const previousOrders = orders.map((order) => structuredClone(order));
   const previousActiveOrderItemId = activeOrderItemId;
   const previousOrderSequence = orderSequence;
@@ -10313,6 +10332,7 @@ async function completeCurrentProductionBatch() {
     "pending",
   );
   renderOrderList();
+  completeOperationDialog({ title: "Production Batch Complete", description: "The production batch was completed successfully.", metrics: [{ label: "Designs completed", value: completedOrderCount }, { label: "Incomplete overrides", value: incompleteOrders.length }, { label: "Remaining", value: 0 }] });
 }
 
 async function importFromClipboard() {
@@ -10326,6 +10346,7 @@ async function importFromClipboard() {
     return;
   }
 
+  startOperationDialog({ title: "Pasting Orders", description: "Adding clipboard orders to the production batch.", progressLabel: "Reading and saving orders..." });
   importClipboardButton.disabled = true;
   setBatchActionLabel(importClipboardButton, "Pasting...");
   ordersDatabaseMutationInFlight = true;
@@ -10392,6 +10413,7 @@ async function importOrdersFromClipboard() {
     return;
   }
 
+  startOperationDialog({ title: "Pasting Orders", description: "Importing clipboard orders into the Orders workspace.", progressLabel: "Reading and saving orders..." });
   databaseOrdersImporting = true;
   pasteOrdersButton.disabled = true;
   setBatchActionLabel(pasteOrdersButton, "Pasting...");
@@ -12565,6 +12587,7 @@ colorCountsDialog?.addEventListener("click", (event) => {
 });
 closePasteSummaryButton?.addEventListener("click", closePasteSummaryDialog);
 pasteSummaryDoneButton?.addEventListener("click", closePasteSummaryDialog);
+pasteSummaryDialog?.addEventListener("cancel", (event) => { if (pasteSummaryDialog.querySelector(".batch-summary-card")?.dataset.operationState === "progress") event.preventDefault(); });
 pasteSummaryDialog?.addEventListener("click", (event) => {
   if (event.target === pasteSummaryDialog) {
     closePasteSummaryDialog();
@@ -12700,6 +12723,7 @@ window.addEventListener("pagehide", () => {
   flushPersistBatchState({ keepalive: true });
 });
 
+startOperationDialog({ title: "Loading Workspace", description: "Loading fonts, presets, orders, and the active production batch.", progressLabel: "Preparing your production workspace...", modal: false });
 initializeEtsyImportUi();
 consumeEtsyOAuthReturnStatus();
 setActiveWorkspace(activeWorkspace, { updateRoute: false });
@@ -12722,6 +12746,8 @@ if (initialAppRoute.workspace === "fixedDesigns") {
 const restoredBatch = productionBatchAccessToken
   ? await restoreInitialBatchState(productionBatchAccessToken)
   : { source: null, count: 0 };
+completeOperationDialog({ title: "Workspace Ready", description: "The production workspace finished loading.", metrics: [{ label: "Batch designs", value: orders.length }, { label: "Orders loaded", value: databaseOrders.length }, { label: "Presets", value: presetInput?.options.length || 0 }] });
+setTimeout(closePasteSummaryDialog, 1200);
 if (productionBatchAccessToken && !fixedDesignsLoaded && restoredOrdersIncludeFixedSvgs()) {
   await refreshWorkspaceFixedDesigns(productionBatchAccessToken);
 }
