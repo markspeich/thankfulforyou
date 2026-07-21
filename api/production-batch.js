@@ -1,3 +1,4 @@
+import { createServerTiming } from "./_lib/server-timing.js";
 import { resolveProductionBatchAuth } from "./_lib/production-batch-auth.js";
 import {
   completeProductionBatch,
@@ -156,8 +157,10 @@ function findRevisionConflict(incomingSnapshot, currentSnapshot, changedOrderIte
 }
 
 export default async function handler(req, res) {
+  const timing = createServerTiming(res, "production-batch");
   try {
     req.auth = await resolveProductionBatchAuth(req);
+    timing.mark("auth");
 
     if (req.method === "GET") {
       const batchId = typeof req.query?.batchId === "string" ? req.query.batchId.trim() : "";
@@ -309,5 +312,7 @@ export default async function handler(req, res) {
       ...(normalizedError.details ? { details: normalizedError.details } : {}),
       ...(normalizedError.hint ? { hint: normalizedError.hint } : {}),
     });
+  } finally {
+    timing.finish();
   }
 }

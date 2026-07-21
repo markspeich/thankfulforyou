@@ -36,20 +36,21 @@ export async function resolveProductionBatchAuth(req) {
   }
 
   const supabase = createSupabaseAdminClient();
-  const { data: userData, error: userError } = await supabase.auth.getUser(accessToken);
+  const { data: claimsData, error: claimsError } = await supabase.auth.getClaims(accessToken);
 
-  if (isSupabaseAuthNetworkError(userError)) {
+  if (isSupabaseAuthNetworkError(claimsError)) {
     throw createAuthError(503, "Unable to reach Supabase auth from this dev server process.");
   }
 
-  if (userError || !userData?.user?.id) {
+  const userId = typeof claimsData?.claims?.sub === "string" ? claimsData.claims.sub : null;
+  if (claimsError || !userId) {
     throw createAuthError(401, "Authentication required.");
   }
 
   const { data: memberships, error: membershipsError } = await supabase
     .from("workspace_memberships")
     .select("workspace_id")
-    .eq("user_id", userData.user.id)
+    .eq("user_id", userId)
     .order("workspace_id", { ascending: true })
     .limit(1);
 
@@ -64,7 +65,7 @@ export async function resolveProductionBatchAuth(req) {
   }
 
   return {
-    userId: userData.user.id,
+    userId,
     workspaceId,
   };
 }

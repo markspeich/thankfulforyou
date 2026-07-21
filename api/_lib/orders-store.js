@@ -286,27 +286,6 @@ async function queryBatchItems({ supabase, workspaceId, batchId }) {
   return data || [];
 }
 
-async function queryVerifiedOrderItemIds({ supabase, workspaceId, orderItemIds }) {
-  const ids = [...new Set((orderItemIds || []).filter((id) => typeof id === "string" && id))];
-  if (!ids.length) {
-    return [];
-  }
-
-  const { data, error } = await supabase
-    .from("order_items")
-    .select("id")
-    .eq("workspace_id", workspaceId)
-    .in("status", ["open", "complete"])
-    .in("id", ids);
-
-  if (error) {
-    throw error;
-  }
-
-  const verifiedIds = new Set((data || []).map((item) => item.id));
-  return ids.filter((id) => verifiedIds.has(id));
-}
-
 async function queryExistingOrderItemIds({ supabase, workspaceId, orderItemIds }) {
   const ids = [...new Set((orderItemIds || []).filter((id) => typeof id === "string" && id))];
   if (!ids.length) {
@@ -423,49 +402,64 @@ export async function addOrderItemsToProductionBatch({
   }
 
   const supabase = createSupabaseAdminClient();
-  const existingItems = await queryBatchItems({ supabase, workspaceId, batchId });
-  const activeIds = new Set(
-    existingItems
-      .filter((item) => item.status !== "archived")
-      .map((item) => item.order_item_id),
-  );
-  const missingIds = ids.filter((id) => !activeIds.has(id));
-
-  if (!missingIds.length) {
-    return { addedOrderItemIds: [] };
-  }
-
-  const verifiedMissingIds = await queryVerifiedOrderItemIds({
-    supabase,
-    workspaceId,
-    orderItemIds: missingIds,
+  const { data, error } = await supabase.rpc("add_order_items_to_production_batch", {
+    p_workspace_id: workspaceId,
+    p_user_id: userId || null,
+    p_batch_id: batchId,
+    p_order_item_ids: ids,
   });
-
-  if (!verifiedMissingIds.length) {
-    return { addedOrderItemIds: [] };
-  }
-
-  const maxPosition = existingItems.reduce((max, item) => {
-    const position = Number.parseInt(item.batch_position, 10);
-    return Number.isInteger(position) && position > max ? position : max;
-  }, -1);
-  const rows = verifiedMissingIds.map((orderItemId, index) => ({
-    workspace_id: workspaceId,
-    batch_id: batchId,
-    order_item_id: orderItemId,
-    batch_position: maxPosition + index + 1,
-    status: "active",
-    added_by: userId || null,
-  }));
-  const { error } = await supabase
-    .from("batch_items")
-    .upsert(rows, { onConflict: "batch_id,order_item_id" });
 
   if (error) {
     throw error;
   }
 
-  return { addedOrderItemIds: verifiedMissingIds };
+  return {
+    addedOrderItemIds: (data || [])
+      .map((row) => row?.added_order_item_id ?? row?.order_item_id)
+      .filter((id) => typeof id === "string" && id),
+  };
+}
+
+async function queryOrderItemIdsForGroups({ supabase, workspaceId, orderIds }) {
+  const normalizedIds = [...new Set((orderIds || []).filter((id) => typeof id === "string" && id))];
+  const orderNumbers = normalizedIds
+    .filter((id) => id.startsWith("order:"))
+    .map((id) => id.slice("order:".length))
+    .filter(Boolean);
+  const itemIds = normalizedIds
+    .filter((id) => id.startsWith("item:"))
+    .map((id) => id.slice("item:".length))
+    .filter(Boolean);
+  const queries = [];
+
+  if (orderNumbers.length) {
+    queries.push(
+      supabase
+        .from("order_items")
+        .select("id")
+        .eq("workspace_id", workspaceId)
+        .in("status", ["open", "complete"])
+        .in("order_number", orderNumbers),
+    );
+  }
+  if (itemIds.length) {
+    queries.push(
+      supabase
+        .from("order_items")
+        .select("id")
+        .eq("workspace_id", workspaceId)
+        .in("status", ["open", "complete"])
+        .in("id", itemIds),
+    );
+  }
+
+  const results = await Promise.all(queries);
+  const failed = results.find((result) => result.error);
+  if (failed?.error) {
+    throw failed.error;
+  }
+
+  return [...new Set(results.flatMap((result) => (result.data || []).map((row) => row.id)))];
 }
 
 export async function addOrderGroupsToProductionBatch({
@@ -474,15 +468,17 @@ export async function addOrderGroupsToProductionBatch({
   batchId,
   orderIds,
 }) {
-  const requestedIds = new Set((orderIds || []).filter((id) => typeof id === "string" && id));
-  if (!requestedIds.size) {
+  const normalizedIds = [...new Set((orderIds || []).filter((id) => typeof id === "string" && id))];
+  if (!normalizedIds.length) {
     return { addedOrderItemIds: [] };
   }
 
-  const { orders } = await listWorkspaceOrders({ workspaceId, activeBatchId: batchId, statusFilter: "all" });
-  const orderItemIds = orders
-    .filter((order) => requestedIds.has(order.id) || requestedIds.has(order.orderNumber))
-    .flatMap((order) => order.items.map((item) => item.id));
+  const supabase = createSupabaseAdminClient();
+  const orderItemIds = await queryOrderItemIdsForGroups({
+    supabase,
+    workspaceId,
+    orderIds: normalizedIds,
+  });
 
   return addOrderItemsToProductionBatch({ workspaceId, userId, batchId, orderItemIds });
 }

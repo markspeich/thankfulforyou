@@ -5968,6 +5968,88 @@ function updateDatabaseOrdersFromPayload(payload, options = {}) {
   return true;
 }
 
+
+function getDatabaseOrderItemsById(orderItemIds) {
+  const requestedIds = new Set((orderItemIds || []).filter((id) => typeof id === "string" && id));
+  return databaseOrders.flatMap((order) => order.items || []).filter((item) => requestedIds.has(item.id));
+}
+
+function mapDatabaseDesignStatusToBatchStatus(status) {
+  if (status === "exported") return "exported";
+  if (status === "saved" || status === "export_ready") return "captured";
+  if (status === "draft") return "not-started";
+  return "in-progress";
+}
+
+function createBatchItemFromDatabaseOrderItem(item) {
+  const design = item?.design || {};
+  const source = {
+    ...(item?.source && typeof item.source === "object" ? structuredClone(item.source) : {}),
+    orderNumber: item?.orderNumber ?? item?.source?.orderNumber ?? null,
+    buyerName: item?.buyerName ?? item?.source?.buyerName ?? null,
+    listingId: item?.listingId ?? item?.source?.listingId ?? null,
+    transactionId: item?.transactionId ?? item?.source?.transactionId ?? null,
+    colorName: item?.importedColor ?? item?.source?.colorName ?? null,
+    quantity: String(item?.quantity || item?.source?.quantity || 1),
+    shipByDate: item?.shipByDate ?? item?.source?.shipByDate ?? null,
+  };
+  return hydrateStoredOrder({
+    id: item.id,
+    revision: design.revision ?? item.revision,
+    updatedAt: design.updatedAt ?? item.updatedAt,
+    updatedBy: design.updatedBy ?? item.updatedBy,
+    text: design.text || "",
+    status: mapDatabaseDesignStatusToBatchStatus(design.productionStatus),
+    source,
+    settings: {
+      text: design.text || "",
+      presetId: design.presetId,
+      boundingSizePresetId: design.sizeGuideId,
+      backingMm: design.backingBorderMm,
+      weldExportedDesign: design.weldExportedDesign,
+      globalHorizontalScale: design.globalHorizontalScale,
+      globalVerticalScale: design.globalVerticalScale,
+      lines: design.lines || [],
+    },
+    cachedBuild: design.cachedBuild,
+    previousCompletedBuild: design.previousCompletedBuild,
+    savedSettingsSignature: design.savedSettingsSignature,
+    completedSettingsSignature: design.completedSettingsSignature,
+    analysisBadge: design.analysisBadge,
+  }, orders.length);
+}
+
+function applyAddedOrderItemsDelta(payload) {
+  const addedIds = Array.isArray(payload?.addedOrderItemIds) ? payload.addedOrderItemIds : [];
+  const addedIdSet = new Set(addedIds);
+  if (!addedIdSet.size) return 0;
+
+  saveActiveOrderDraft();
+  const existingIds = new Set(orders.map((order) => order.id));
+  const appended = getDatabaseOrderItemsById(addedIds)
+    .filter((item) => !existingIds.has(item.id))
+    .map(createBatchItemFromDatabaseOrderItem)
+    .filter(Boolean);
+  orders.push(...appended);
+
+  databaseOrders = databaseOrders.map((order) => {
+    const items = (order.items || []).map((item) => (
+      addedIdSet.has(item.id) ? { ...item, isInActiveBatch: true } : item
+    ));
+    return { ...order, items, isInActiveBatch: items.some((item) => item.isInActiveBatch) };
+  });
+
+  databaseOrdersMutationVersion += 1;
+  loadedDatabaseOrdersKey = (getActiveProductionBatchId() || "") + "|" + databaseOrdersStatusFilterValue;
+  lastProductionBatchSaveKey = buildProductionBatchSaveKey(buildProductionBatchSnapshot());
+  suppressBatchSyncLocalNotice = true;
+  persistBatchState({ skipRemoteSave: true });
+  suppressBatchSyncLocalNotice = false;
+  renderOrderList();
+  renderDatabaseOrdersWorkspace();
+  return appended.length;
+}
+
 async function refreshProductionBatchSnapshot(accessToken) {
   const batchId = getActiveProductionBatchId();
   if (!batchId) {
@@ -6858,7 +6940,7 @@ async function addDatabaseOrderItemToBatch(item, button = null) {
       accessToken,
     });
 
-    await refreshOrdersAndProductionBatch({ payload, accessToken, refreshBatch: true });
+    applyAddedOrderItemsDelta(payload);
     updateWorkflowAlert(buildAddedToBatchMessage(payload), "success");
     completeOperationDialog({ title: "Order Item Added", description: buildAddedToBatchMessage(payload), metrics: [{ label: "Selected", value: 1 }, { label: "Added", value: countFromPayload(payload, "addedOrderItemCount") }, { label: "Already in batch", value: Math.max(0, 1 - countFromPayload(payload, "addedOrderItemCount")) }] });
   } catch (error) {
@@ -7233,8 +7315,7 @@ async function addCheckedDatabaseOrdersToBatch() {
       [...checkedDatabaseOrderIds].filter((orderId) => !orderIds.includes(orderId)),
     );
 
-    updateDatabaseOrdersFromPayload(payload, { checkedOrderIds: nextCheckedOrderIds });
-    await refreshOrdersAndProductionBatch({ payload, accessToken, refreshBatch: true });
+    applyAddedOrderItemsDelta(payload);
     checkedDatabaseOrderIds = nextCheckedOrderIds;
     renderDatabaseOrdersWorkspace();
     updateWorkflowAlert(buildAddedToBatchMessage(payload), "success");
@@ -7279,7 +7360,7 @@ async function addSelectedDatabaseOrderToBatch() {
       accessToken,
     });
 
-    await refreshOrdersAndProductionBatch({ payload, accessToken, refreshBatch: true });
+    applyAddedOrderItemsDelta(payload);
     selectedOrderActionsMenu?.removeAttribute("open");
     updateWorkflowAlert(buildAddedToBatchMessage(payload), "success");
     completeOperationDialog({ title: "Order Added", description: buildAddedToBatchMessage(payload), metrics: [{ label: "Selected", value: 1 }, { label: "Added", value: countFromPayload(payload, "addedOrderItemCount") }, { label: "Already in batch", value: Math.max(0, 1 - countFromPayload(payload, "addedOrderItemCount")) }] });
@@ -10381,7 +10462,7 @@ async function importFromClipboard() {
       items: filteredItems,
       accessToken,
     });
-    await refreshOrdersAndProductionBatch({ payload, accessToken, refreshBatch: true });
+    updateDatabaseOrdersFromPayload(payload);
     appendImportedItemsToProductionBatch(filteredItems, {
       maxCount: countFromPayload(payload, "addedOrderItemCount"),
     });
@@ -12735,8 +12816,7 @@ consumeEtsyOAuthReturnStatus();
 setActiveWorkspace(activeWorkspace, { updateRoute: false });
 setNavCollapsed(navCollapsed);
 renderProductionBatchLogoutButton();
-await checkFonts();
-await loadPresetRegistry();
+await Promise.all([checkFonts(), loadPresetRegistry()]);
 renderPresetOptions();
 renderBoundingSizePresetOptions(boundingSizePresetInput);
 renderBoundingSizePresetOptions(presetBoundingSizePresetInput);
@@ -12745,15 +12825,16 @@ renderSizePresetEditorPreview();
 renderPresetEditorDraft();
 updateBackingOutput();
 productionBatchAccessToken = await bootstrapProductionBatchAccess();
-await refreshWorkspaceFonts(productionBatchAccessToken);
+const startupTasks = [
+  refreshWorkspaceFonts(productionBatchAccessToken),
+  productionBatchAccessToken
+    ? restoreInitialBatchState(productionBatchAccessToken)
+    : Promise.resolve({ source: null, count: 0 }),
+];
 if (initialAppRoute.workspace === "fixedDesigns") {
-  await refreshWorkspaceFixedDesigns(productionBatchAccessToken);
+  startupTasks.push(refreshWorkspaceFixedDesigns(productionBatchAccessToken));
 }
-const restoredBatch = productionBatchAccessToken
-  ? await restoreInitialBatchState(productionBatchAccessToken)
-  : { source: null, count: 0 };
-completeOperationDialog({ title: "Workspace Ready", description: "The production workspace finished loading.", metrics: [{ label: "Batch designs", value: orders.length }, { label: "Orders loaded", value: databaseOrders.length }] });
-setTimeout(closePasteSummaryDialog, 1200);
+const [, restoredBatch] = await Promise.all(startupTasks);
 if (productionBatchAccessToken && !fixedDesignsLoaded && restoredOrdersIncludeFixedSvgs()) {
   await refreshWorkspaceFixedDesigns(productionBatchAccessToken);
 }
@@ -12763,6 +12844,8 @@ if (appRouteWriteCount === 0) {
     route: initialAppRoute,
   });
 }
+completeOperationDialog({ title: "Workspace Ready", description: "The production workspace finished loading.", metrics: [{ label: "Batch designs", value: orders.length }, { label: "Orders loaded", value: databaseOrders.length }] });
+setTimeout(closePasteSummaryDialog, 1200);
 if ((!restoredBatch.source || restoredBatch.count === 0) && workflowAlert.dataset.state !== "error") {
   updateWorkflowAlert("", "pending");
 }

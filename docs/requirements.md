@@ -620,6 +620,10 @@ For batch Etsy order sessions, the preferred workflow is:
 - The Orders workspace should provide `Reopen Order` actions for skipped order items and fully skipped selected orders so accidental skips can be reversed and returned to open status.
 - The app should stop using `archived` as an order or batch-membership lifecycle status for new workflow behavior.
 - Completing a production batch should mark every order item currently in the batch as `complete` and remove those items from the active production batch view.
+- Adding order items to a production batch should return and apply compact mutation results instead of reloading the full Orders workspace and production-batch snapshot when the existing client state can be updated safely.
+- Adding items and completing a production batch should execute their related database writes transactionally and minimize serial database and network round trips.
+- Independent startup resources, including fonts, presets, the active production batch, and workspace fonts, should load concurrently where they do not depend on one another.
+- Orders and production-batch API responses should expose server timing information, and requests taking at least one second should emit structured slow-request diagnostics.
 - If any current production batch items are not visibly complete/exported or lack export-ready saved geometry where that can be checked, completing the production batch should show an explicit warning confirmation before proceeding.
 - The Orders workspace should default to showing only open orders.
 - The Orders workspace should provide a status filter with `Open`, `Skipped`, `Complete`, and `All` options.

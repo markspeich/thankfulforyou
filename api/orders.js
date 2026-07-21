@@ -1,3 +1,4 @@
+import { createServerTiming } from "./_lib/server-timing.js";
 import { resolveProductionBatchAuth } from "./_lib/production-batch-auth.js";
 import {
   addOrderGroupsToProductionBatch,
@@ -99,10 +100,12 @@ async function handleImportClipboardItems({ res, auth, body }) {
     target,
     batchId: batchId || null,
   });
-  const ordersPayload = await loadOrdersResponse({
-    workspaceId: auth.workspaceId,
-    batchId: batchId || null,
-  });
+  const ordersPayload = Array.isArray(mutationResult?.orders)
+    ? { orders: mutationResult.orders }
+    : await loadOrdersResponse({
+      workspaceId: auth.workspaceId,
+      batchId: batchId || null,
+    });
   const importedOrderItemCount = normalizeCount(
     mutationResult?.importedCount,
     countIds(mutationResult?.importedOrderItemIds, items.length),
@@ -142,16 +145,10 @@ async function handleAddOrderItemToProductionBatch({ res, auth, body }) {
     batchId,
     orderItemIds: [orderItemId],
   });
-  const ordersPayload = await loadOrdersResponse({
-    workspaceId: auth.workspaceId,
-    batchId,
-    statusFilter,
-  });
-
   res.status(200).json({
     importedOrderItemCount: 0,
     addedOrderItemCount: countIds(mutationResult?.addedOrderItemIds),
-    ...ordersPayload,
+    addedOrderItemIds: mutationResult?.addedOrderItemIds || [],
   });
 }
 
@@ -176,16 +173,10 @@ async function handleAddOrdersToProductionBatch({ res, auth, body }) {
     batchId,
     orderIds,
   });
-  const ordersPayload = await loadOrdersResponse({
-    workspaceId: auth.workspaceId,
-    batchId,
-    statusFilter,
-  });
-
   res.status(200).json({
     importedOrderItemCount: 0,
     addedOrderItemCount: countIds(mutationResult?.addedOrderItemIds),
-    ...ordersPayload,
+    addedOrderItemIds: mutationResult?.addedOrderItemIds || [],
   });
 }
 
@@ -274,8 +265,10 @@ async function handleUpdateOrderGroupsStatus({ res, auth, body, status, response
 }
 
 export default async function handler(req, res) {
+  const timing = createServerTiming(res, "orders");
   try {
     const auth = await resolveProductionBatchAuth(req);
+    timing.mark("auth");
     req.auth = auth;
 
     if (req.method === "GET") {
@@ -399,6 +392,8 @@ export default async function handler(req, res) {
     res.status(500).json({
       error: "Unable to process orders request.",
     });
+  } finally {
+    timing.finish();
   }
 }
 

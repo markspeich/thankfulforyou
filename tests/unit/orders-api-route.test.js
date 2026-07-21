@@ -154,11 +154,7 @@ describe("orders api route", () => {
       target: "orders",
       batchId: null,
     });
-    expect(listWorkspaceOrdersMock).toHaveBeenCalledWith({
-      workspaceId: "workspace-1",
-      activeBatchId: null,
-      statusFilter: "open",
-    });
+    expect(listWorkspaceOrdersMock).not.toHaveBeenCalled();
     expect(response.statusCode).toBe(200);
     expect(response.body).toEqual({
       importedOrderItemCount: 1,
@@ -287,6 +283,7 @@ describe("orders api route", () => {
     importWorkspaceOrderItemsMock.mockResolvedValue({
       importedCount: 3,
       addedToBatchCount: 1,
+      orders: [{ id: "order:1001", isInActiveBatch: true, items: [{ id: "item-1" }] }],
     });
     listWorkspaceOrdersMock.mockResolvedValue({
       orders: [{ id: "order:1001", isInActiveBatch: true, items: [{ id: "item-1" }] }],
@@ -327,7 +324,7 @@ describe("orders api route", () => {
     });
   });
 
-  it("adds one order item to a production batch and returns counts with refreshed orders", async () => {
+  it("adds one order item to a production batch and returns a compact delta", async () => {
     resolveProductionBatchAuthMock.mockResolvedValue({
       userId: "user-1",
       workspaceId: "workspace-1",
@@ -336,7 +333,7 @@ describe("orders api route", () => {
       addedOrderItemIds: ["item-1"],
     });
     listWorkspaceOrdersMock.mockResolvedValue({
-      orders: [{ id: "order:1001", isInActiveBatch: true, items: [{ id: "item-1" }] }],
+      addedOrderItemIds: ["item-1"],
     });
 
     const { default: handler } = await import("../../api/orders.js");
@@ -359,20 +356,16 @@ describe("orders api route", () => {
       batchId: "batch-1",
       orderItemIds: ["item-1"],
     });
-    expect(listWorkspaceOrdersMock).toHaveBeenCalledWith({
-      workspaceId: "workspace-1",
-      activeBatchId: "batch-1",
-      statusFilter: "complete",
-    });
+    expect(listWorkspaceOrdersMock).not.toHaveBeenCalled();
     expect(response.statusCode).toBe(200);
     expect(response.body).toEqual({
       importedOrderItemCount: 0,
       addedOrderItemCount: 1,
-      orders: [{ id: "order:1001", isInActiveBatch: true, items: [{ id: "item-1" }] }],
+      addedOrderItemIds: ["item-1"],
     });
   });
 
-  it("adds grouped orders to a production batch and returns counts with refreshed orders", async () => {
+  it("adds grouped orders to a production batch and returns a compact delta", async () => {
     resolveProductionBatchAuthMock.mockResolvedValue({
       userId: "user-1",
       workspaceId: "workspace-1",
@@ -381,7 +374,7 @@ describe("orders api route", () => {
       addedOrderItemIds: ["item-1", "item-2"],
     });
     listWorkspaceOrdersMock.mockResolvedValue({
-      orders: [{ id: "order:1001", isInActiveBatch: true, items: [{ id: "item-1" }, { id: "item-2" }] }],
+      addedOrderItemIds: ["item-1", "item-2"],
     });
 
     const { default: handler } = await import("../../api/orders.js");
@@ -403,16 +396,12 @@ describe("orders api route", () => {
       batchId: "batch-1",
       orderIds: ["order:1001", "order:1002"],
     });
-    expect(listWorkspaceOrdersMock).toHaveBeenCalledWith({
-      workspaceId: "workspace-1",
-      activeBatchId: "batch-1",
-      statusFilter: "open",
-    });
+    expect(listWorkspaceOrdersMock).not.toHaveBeenCalled();
     expect(response.statusCode).toBe(200);
     expect(response.body).toEqual({
       importedOrderItemCount: 0,
       addedOrderItemCount: 2,
-      orders: [{ id: "order:1001", isInActiveBatch: true, items: [{ id: "item-1" }, { id: "item-2" }] }],
+      addedOrderItemIds: ["item-1", "item-2"],
     });
   });
 
@@ -650,7 +639,7 @@ describe("orders api route", () => {
     }, response);
 
     expect(response.statusCode).toBe(405);
-    expect(response.headers).toEqual({ Allow: "GET, POST" });
+    expect(response.headers).toMatchObject({ Allow: "GET, POST" });
     expect(response.body).toEqual({
       error: "Method not allowed.",
     });

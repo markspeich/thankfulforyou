@@ -49,10 +49,8 @@ describe("production batch auth helper", () => {
     };
     createSupabaseAdminClientMock.mockReturnValue({
       auth: {
-        getUser: vi.fn().mockResolvedValue({
-          data: {
-            user: { id: "user-1", email: "mark@example.com" },
-          },
+        getClaims: vi.fn().mockResolvedValue({
+          data: { claims: { sub: "user-1", email: "mark@example.com" } },
           error: null,
         }),
       },
@@ -86,8 +84,8 @@ describe("production batch auth helper", () => {
   it("returns 401 when Supabase cannot verify the bearer token", async () => {
     createSupabaseAdminClientMock.mockReturnValue({
       auth: {
-        getUser: vi.fn().mockResolvedValue({
-          data: { user: null },
+        getClaims: vi.fn().mockResolvedValue({
+          data: { claims: null },
           error: new Error("Invalid JWT"),
         }),
       },
@@ -112,8 +110,8 @@ describe("production batch auth helper", () => {
     fetchError.name = "AuthRetryableFetchError";
     createSupabaseAdminClientMock.mockReturnValue({
       auth: {
-        getUser: vi.fn().mockResolvedValue({
-          data: { user: null },
+        getClaims: vi.fn().mockResolvedValue({
+          data: { claims: null },
           error: fetchError,
         }),
       },
@@ -136,10 +134,8 @@ describe("production batch auth helper", () => {
   it("returns 403 when the verified user has no shared workspace membership", async () => {
     createSupabaseAdminClientMock.mockReturnValue({
       auth: {
-        getUser: vi.fn().mockResolvedValue({
-          data: {
-            user: { id: "user-1", email: "mark@example.com" },
-          },
+        getClaims: vi.fn().mockResolvedValue({
+          data: { claims: { sub: "user-1", email: "mark@example.com" } },
           error: null,
         }),
       },
