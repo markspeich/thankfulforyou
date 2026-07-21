@@ -312,6 +312,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - While an Etsy import is running, the Orders workspace must show an animated spinner inside the disabled import button and expose the button's busy state accessibly; it must not show a separate progress card or progress bar.
 - Etsy import completion feedback should appear in a summary card that separately reports newly imported, already present, customization-needed, and failed item counts.
 - The Etsy import summary card must provide a small right-aligned X button that dismisses the card after review.
+- Showing the Etsy import summary card must not overlap or obscure the Orders filters, the `Select all visible` control, or the first order row at supported viewport sizes.
 - Amazon order and customization import should be designed and implemented separately from the Etsy API import.
 - Imported listing IDs should be usable to auto-select the app preset for each imported order.
 - Imported Etsy listing metadata should include the listing title and the 75 by 75 listing image URL when those fields are present in the Etsy order data.

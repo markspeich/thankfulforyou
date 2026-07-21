@@ -2617,7 +2617,27 @@ button:disabled {
 }
 
 .database-orders-list-panel {
-  grid-template-rows: auto auto auto minmax(0, 1fr);
+  grid-template-rows: auto auto auto auto minmax(0, 1fr);
+}
+
+.database-orders-list-panel > .batch-header {
+  grid-row: 1;
+}
+
+.database-orders-list-panel > .etsy-import-feedback {
+  grid-row: 2;
+}
+
+.database-orders-list-panel > .database-orders-filters {
+  grid-row: 3;
+}
+
+.database-orders-list-panel > .database-orders-select-all {
+  grid-row: 4;
+}
+
+.database-orders-list-panel > .database-orders-list-shell {
+  grid-row: 5;
 }
 
 .database-orders-filters {
