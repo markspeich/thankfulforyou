@@ -264,6 +264,7 @@ describe("orders store", () => {
           updated_by: "user-1",
         },
         {
+          ship_by_date: "2026-07-06",
           id: "item-2",
           workspace_id: "workspace-1",
           status: "active",
@@ -346,6 +347,7 @@ describe("orders store", () => {
 
     expect(result.orders).toHaveLength(1);
     expect(result.orders[0]).toMatchObject({
+      shipByDate: "2026-07-06",
       id: "order:1001",
       orderNumber: "1001",
       buyerName: "Ada Lovelace",
@@ -756,11 +758,11 @@ describe("orders store", () => {
       items: [
         {
           text: "Complete overwrite",
-          source: { orderNumber: "3201", transactionId: "txn-complete-duplicate", buyerName: "Ada" },
+          source: { orderNumber: "3201", transactionId: "txn-complete-duplicate", buyerName: "Ada", shipByDate: "2026-07-08" },
         },
         {
           text: "Open overwrite",
-          source: { orderNumber: "3202", transactionId: "txn-open-duplicate", buyerName: "Grace" },
+          source: { orderNumber: "3202", transactionId: "txn-open-duplicate", buyerName: "Grace", shipByDate: "2026-07-09" },
         },
         {
           text: "New",
@@ -779,6 +781,8 @@ describe("orders store", () => {
       expect.objectContaining({ order_item_id: "transaction:txn-new-import", design_text: "New" }),
     ]);
     expect(supabaseMock.db.order_items.find((item) => item.id === "transaction:txn-complete-duplicate").status).toBe("complete");
+    expect(supabaseMock.db.order_items.find((item) => item.id === "transaction:txn-complete-duplicate").ship_by_date).toBe("2026-07-08");
+    expect(supabaseMock.db.order_items.find((item) => item.id === "transaction:txn-open-duplicate").ship_by_date).toBe("2026-07-09");
     expect(supabaseMock.db.designs.find((design) => design.order_item_id === "transaction:txn-open-duplicate").design_text).toBe("Open");
     expect(result).toMatchObject({
       importedCount: 1,

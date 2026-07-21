@@ -5,6 +5,16 @@ const URL_PATTERN = /^https?:\/\/\S+$/i;
 
 function text(value) { return normalizeImportedText(value); }
 function id(value) { return value == null ? "" : String(value).trim(); }
+function dateFromTimestamp(value) {
+  const timestamp = Number(value);
+  if (!Number.isFinite(timestamp) || timestamp <= 0) return "";
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Chicago", year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(new Date(timestamp * 1000));
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
 function variationsOf(transaction) { return Array.isArray(transaction?.variations) ? transaction.variations.filter((v) => v && typeof v === "object") : []; }
 function imageUrl(image) {
   if (!image || typeof image !== "object") return "";
@@ -43,6 +53,7 @@ export function normalizeEtsyTransaction({ receipt = {}, transaction = {}, listi
       listingImageUrl75x75: imageUrl(image),
       customizationNeeded: !textValue,
       personalizationResponses,
+      shipByDate: dateFromTimestamp(receipt.expected_ship_date),
       variations: variations.map(({ property_id, value_id, formatted_name, formatted_value }) => ({ property_id, value_id, formatted_name, formatted_value })),
       createdTimestamp: receipt.create_timestamp ?? null,
       updatedTimestamp: receipt.update_timestamp ?? null,

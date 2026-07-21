@@ -231,6 +231,7 @@ describe("orders workspace helpers", () => {
           listingId: "listing-1",
           transactionId: "txn-1",
           importedColor: "Pink",
+          shipByDate: "2026-07-06",
           isInActiveBatch: true,
           design: { text: "Ada RN", lines: [{ text: "Ada" }, { text: "RN" }] },
           source: { listingTitle: "Badge Reel" },
@@ -288,6 +289,13 @@ describe("orders workspace helpers", () => {
       statusFilter: "complete",
       batchFilter: "notInBatch",
     }).map((order) => order.id)).toEqual(["order:1002"]);
+
+    expect(filterGroupedOrders(orders, {
+      searchTerm: "2026-07-06",
+      statusFilter: "all",
+      batchFilter: "all",
+    }).map((order) => order.id)).toEqual(["order:1001"]);
+
 
     expect(filterGroupedOrders(orders, {
       searchTerm: "",

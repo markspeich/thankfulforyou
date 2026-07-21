@@ -4,7 +4,7 @@ import { normalizeEtsyTransaction } from "../../api/_lib/etsy-import-normalizer.
 describe("Etsy transaction normalizer", () => {
   it("creates the imported item contract with text and file personalization", () => {
     const result = normalizeEtsyTransaction({
-      receipt: { receipt_id: 1234567890, name: "Buyer", create_timestamp: 10 },
+      receipt: { receipt_id: 1234567890, name: "Buyer", create_timestamp: 10, expected_ship_date: 1783400340 },
       transaction: { transaction_id: 987, listing_id: 456, quantity: 2, title: "Badge", variations: [
         { property_id: 200, formatted_name: "Color", formatted_value: "Teal" },
         { property_id: 54, formatted_name: "Name", formatted_value: "Jamie" },
@@ -13,7 +13,7 @@ describe("Etsy transaction normalizer", () => {
       ] },
       image: { url_75x75: "https://image.test/75" }, getPresetIdForListingId: (id) => `preset-${id}`,
     });
-    expect(result).toMatchObject({ id: "transaction:987", text: "Jamie\nRN", presetId: "preset-456", source: { orderNumber: "1234567890", transactionId: "987", listingId: "456", colorName: "Teal", quantity: "2", listingImageUrl75x75: "https://image.test/75", customizationNeeded: false } });
+    expect(result).toMatchObject({ id: "transaction:987", text: "Jamie\nRN", presetId: "preset-456", source: { orderNumber: "1234567890", transactionId: "987", listingId: "456", colorName: "Teal", quantity: "2", shipByDate: "2026-07-06", listingImageUrl75x75: "https://image.test/75", customizationNeeded: false } });
     expect(result.source.personalizationResponses).toEqual([
       { kind: "text", name: "Name", value: "Jamie" }, { kind: "text", name: "Credentials", value: "RN" }, { kind: "file", name: "Upload", value: "https://files.test/a" },
     ]);

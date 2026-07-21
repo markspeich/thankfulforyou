@@ -9,7 +9,7 @@ const HEARTBEAT_INTERVAL = 300_000;
 const reauth = (error) => error?.category === "reauthorize" || error?.code === "reauthorize";
 const aborted = (error, signal) => Boolean(signal?.aborted || error?.name === "AbortError" || error?.code === "ABORT_ERR");
 const eligible = (r) => { const s = String(r?.status || "").toLowerCase(); return r?.is_paid === true && r?.is_shipped === false && r?.was_canceled !== true && r?.was_cancelled !== true && !["canceled", "cancelled"].includes(s); };
-const compactReceipt = (r) => ({ receipt_id: r.receipt_id, name: r.name, buyer_name: r.buyer_name, create_timestamp: r.create_timestamp, update_timestamp: r.update_timestamp, paid_timestamp: r.paid_timestamp, transaction_sold_count: r.transaction_sold_count });
+const compactReceipt = (r) => ({ receipt_id: r.receipt_id, name: r.name, buyer_name: r.buyer_name, create_timestamp: r.create_timestamp, update_timestamp: r.update_timestamp, paid_timestamp: r.paid_timestamp, expected_ship_date: r.expected_ship_date, transaction_sold_count: r.transaction_sold_count });
 export function createEtsyImportService({ store, refreshAccess, createClient, normalizeTransaction, getPresetIdForListingId = () => null, clock = () => new Date(), randomUUID = uuid, maxImportItems = DEFAULT_MAX_IMPORT_ITEMS }) {
   async function prepare({ workspaceId, userId, signal, onProgress = () => {} }) {
     const started = clock();

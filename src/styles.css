@@ -2814,6 +2814,37 @@ button:disabled {
   font-size: 0.88rem;
   line-height: 1.35;
 }
+.database-order-row-meta {
+  display: grid;
+  gap: 2px;
+  padding-top: 2px;
+}
+
+.database-order-row-meta-line {
+  display: grid;
+  align-items: center;
+  grid-template-columns: 52px minmax(0, 1fr);
+  gap: 8px;
+  min-width: 0;
+}
+
+.database-order-row-meta-label {
+  color: #71828b;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.025em;
+  text-transform: uppercase;
+}
+
+.database-order-row-meta-value {
+  min-width: 0;
+  overflow: hidden;
+  color: #3e535d;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 
 .database-order-status,
 .database-order-selected-status,

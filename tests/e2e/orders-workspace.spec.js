@@ -94,6 +94,7 @@ function buildOrdersPayload() {
     orders: [
       {
         id: "order:1001",
+        shipByDate: "2026-07-24",
         orderNumber: "1001",
         buyerName: "Ada Lovelace",
         isInActiveBatch: false,
@@ -435,6 +436,13 @@ test("renders grouped database orders and selected order item cards", async ({ p
   await expect(firstOrderRow.locator(".database-order-row-thumbnail").first()).toHaveCSS("height", "64px");
   await expect(firstOrderRow.getByRole("img", { name: "Custom badge reel" })).toBeVisible();
   await expect(firstOrderRow.locator(".database-order-status")).toHaveText("Open");
+  await expect(firstOrderRow.locator(".database-order-row-meta-line")).toHaveCount(4);
+  await expect(firstOrderRow.locator(".database-order-row-meta-line").nth(0)).toHaveText("BuyerAda Lovelace");
+  await expect(firstOrderRow.locator(".database-order-row-meta-line").nth(1)).toHaveText("Ship byJul 24, 2026");
+  await expect(firstOrderRow.locator(".database-order-row-meta-line").nth(2)).toHaveText("Items2");
+  await expect(firstOrderRow.locator(".database-order-row-meta-line").nth(3)).toHaveText("BatchNot in batch");
+  await expect(firstOrderRow.locator(".database-order-row-meta-line").nth(0)).toHaveCSS("display", "grid");
+  await expect(firstOrderRow.locator(".database-order-row-meta-line").nth(0)).toHaveCSS("align-items", "center");
   await expect(firstOrderRow.locator(".database-order-row-thumbnail-placeholder")).toHaveCount(1);
   await expect(ordersWorkspace.locator(".database-orders-list-shell > .section-heading")).toHaveCount(0);
   await expect(ordersWorkspace.locator(".database-orders-list-shell")).toHaveCSS("gap", "10px");

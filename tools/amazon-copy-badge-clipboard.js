@@ -40,6 +40,16 @@ function extractMatch(text, pattern) {
   const match = text.match(pattern);
   return normalizeText(match?.[1] || "");
 }
+function getShipByDate() {
+  const value = getElementText(document.querySelector('[data-test-id="order-summary-shipby-value"]'));
+  const match = value.match(/(?:\w{3},\s*)?(\w{3})\s+(\d{1,2}),\s+(\d{4})/i);
+  if (!match) return "";
+  const month = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]
+    .indexOf(match[1].toLowerCase()) + 1;
+  if (!month) return "";
+  return `${match[3]}-${String(month).padStart(2, "0")}-${String(Number(match[2])).padStart(2, "0")}`;
+}
+
 
 function getProductTitle(row) {
   const productLink = row.querySelector('a[href*="/gp/product/"]');
@@ -297,6 +307,7 @@ async function analyzeAmazonOrderForClipboard() {
   const buyerName = getBuyerName();
   const rows = getOrderItemRows();
   const customizationText = await navigator.clipboard.readText();
+  const shipByDate = getShipByDate();
   const customizationBlocks = splitCustomizationBlocks(customizationText);
 
   return rows.map((row, index) => {
@@ -314,6 +325,7 @@ async function analyzeAmazonOrderForClipboard() {
       listingTitle: getProductTitle(row),
       listingImageUrl75x75: getListingImageUrl(row),
       label: buildOrderItemLabel(orderNumber, buyerName, index + 1),
+      shipByDate,
       personalization: buildPersonalization(fields),
     };
   });

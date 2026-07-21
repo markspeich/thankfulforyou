@@ -77,6 +77,10 @@ function loadClipboardScript({ rows = [], clipboardText = "", existingCopyButton
         if (selector === '[data-test-id="shipping-section-contact-buyer-value"]') {
           return makeTextNode("Sandi");
         }
+        if (selector === '[data-test-id="order-summary-shipby-value"]') {
+          return makeTextNode("Mon, Jul 6, 2026 PDT");
+        }
+
 
         return null;
       }),
@@ -187,6 +191,7 @@ describe("amazon copy badge clipboard", () => {
         transactionId: "164046088443801",
         buyerName: "Sandi",
         colorName: "Sky Blue",
+        shipByDate: "2026-07-06",
         quantity: "1",
         listingTitle: "Personalized Nurse Badge Reel",
         listingImageUrl75x75: "https://example.test/badge.jpg",
