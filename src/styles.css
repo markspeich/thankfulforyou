@@ -4025,3 +4025,26 @@ button:disabled {
     transition: none;
   }
 }
+
+.operation-progress {
+  align-items: center;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 14px;
+  min-height: 86px;
+  padding: 16px;
+  border: 1px solid #d7e4e9;
+  border-radius: 12px;
+  background: #f6fafb;
+}
+.operation-progress:not([hidden]) { display: grid; }
+.operation-progress-spinner {
+  width: 30px;
+  height: 30px;
+  border: 3px solid #cbdde3;
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: batch-spinner 700ms linear infinite;
+}
+.operation-progress-label, .operation-progress-note { margin: 0; }
+.operation-progress-label { color: var(--ink); font-weight: 800; }
+.operation-progress-note { margin-top: 4px; color: var(--muted); font-size: 0.82rem; }

@@ -59,6 +59,8 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 
 ## Current Production Requirements
 
+- Loading the app, importing or pasting orders, adding order items to a production batch, and completing a production batch must show a modal progress dialog immediately. The same dialog must transition to a completion summary with operation-relevant counts when the work finishes.
+
 - The canonical production app URL is `https://app.thankfulforyou.net`.
 - Production OAuth callbacks and other absolute application URLs must use the canonical production hostname rather than a Vercel deployment hostname.
 
