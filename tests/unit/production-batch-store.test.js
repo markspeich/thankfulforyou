@@ -16,6 +16,10 @@ function createSupabaseClientMock() {
     from(table) {
       return createTableMock(table);
     },
+    async rpc(name, args) {
+      supabaseMock.calls.push({ operation: "rpc", name, args });
+      return { data: [{ id: args.p_batch_id, workspace_id: args.p_workspace_id, name: "Primary Batch", status: "active", revision: 1, updated_at: "2026-07-21T00:00:00.000Z", updated_by: args.p_user_id, completed_count: 1 }], error: null };
+    },
   };
 }
 
@@ -272,7 +276,8 @@ describe("production batch store", () => {
     expect(designsUpsert.payload).toHaveLength(1);
     expect(designsUpsert.payload[0]).toMatchObject({ order_item_id: "order-2", revision: 4 });
     expect(batchItemsDelete).toBeUndefined();
-    expect(batchItemsUpsert).toBeUndefined();
+    expect(batchItemsUpsert.payload).toHaveLength(1);
+    expect(batchItemsUpsert.payload[0]).toMatchObject({ order_item_id: "order-2" });
     expect(batchItemsInsert).toBeUndefined();
   });
 
@@ -359,25 +364,16 @@ describe("production batch store", () => {
       userId: "user-1",
     });
 
-    const batchUpdate = supabaseMock.calls.find((call) => call.table === "production_batches" && call.operation === "update");
-    const orderItemsUpdate = supabaseMock.calls.find((call) => call.table === "order_items" && call.operation === "update");
-    const batchItemsDelete = supabaseMock.calls.find((call) => call.table === "batch_items" && call.operation === "delete");
-    const archivedWrite = supabaseMock.calls.find((call) => JSON.stringify(call.payload || {}).includes("archived"));
-    const orderItemsDelete = supabaseMock.calls.find((call) => call.table === "order_items" && call.operation === "delete");
-    const designsDelete = supabaseMock.calls.find((call) => call.table === "designs" && call.operation === "delete");
-
-    expect(batchUpdate.payload).toMatchObject({
-      active_order_item_id: null,
-      updated_by: "user-1",
+    expect(supabaseMock.calls).toContainEqual({
+      operation: "rpc",
+      name: "complete_production_batch_fast",
+      args: {
+        p_workspace_id: "workspace-1",
+        p_user_id: "user-1",
+        p_batch_id: "batch-1",
+      },
     });
-    expect(orderItemsUpdate.payload).toMatchObject({
-      status: "complete",
-      updated_by: "user-1",
-    });
-    expect(batchItemsDelete).toBeDefined();
-    expect(archivedWrite).toBeUndefined();
-    expect(orderItemsDelete).toBeUndefined();
-    expect(designsDelete).toBeUndefined();
+    expect(supabaseMock.calls.filter((call) => call.operation !== "rpc")).toEqual([]);
   });
 
   it("removes one batch membership without deleting saved order or design records", async () => {

@@ -36,6 +36,17 @@ function createSupabaseClientMock() {
     from(table) {
       return createTableMock(table);
     },
+    async rpc(name, args) {
+      supabaseMock.calls.push({ operation: "rpc", name, args: clone(args) });
+      if (name !== "add_order_items_to_production_batch") return { data: null, error: new Error("Unexpected RPC") };
+      const activeIds = new Set(supabaseMock.db.batch_items.filter((row) => row.batch_id === args.p_batch_id && row.status !== "archived").map((row) => row.order_item_id));
+      const eligible = [...new Set(args.p_order_item_ids || [])].filter((id) => supabaseMock.db.order_items.some((row) => row.id === id && row.workspace_id === args.p_workspace_id && ["open", "complete"].includes(row.status)) && !activeIds.has(id));
+      const nextPosition = supabaseMock.db.batch_items.reduce((max, row) => row.batch_id === args.p_batch_id ? Math.max(max, row.batch_position || 0) : max, -1) + 1;
+      const payload = eligible.map((id, index) => ({ workspace_id: args.p_workspace_id, batch_id: args.p_batch_id, order_item_id: id, batch_position: nextPosition + index, status: "active", added_by: args.p_user_id }));
+      supabaseMock.calls.push({ table: "batch_items", operation: "upsert", payload: clone(payload), options: { onConflict: "batch_id,order_item_id" } });
+      payload.forEach((row) => supabaseMock.db.batch_items.push(row));
+      return { data: eligible.map((id) => ({ order_item_id: id })), error: null };
+    },
   };
 }
 

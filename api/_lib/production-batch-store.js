@@ -283,6 +283,17 @@ export async function saveProductionBatch({ snapshot, userId, changedOrderItemId
         throw batchItemsError;
       }
     }
+  } else {
+    const changedBatchItems = rows.batchItems.filter((item) => changedOrderItemIdSet.has(item.order_item_id));
+    if (changedBatchItems.length) {
+      const { error: changedBatchItemsError } = await supabase
+        .from("batch_items")
+        .upsert(changedBatchItems, { onConflict: "batch_id,order_item_id" });
+
+      if (changedBatchItemsError) {
+        throw changedBatchItemsError;
+      }
+    }
   }
 
   let savedDesigns = [];
@@ -342,72 +353,28 @@ export async function saveProductionBatch({ snapshot, userId, changedOrderItemId
 
 export async function completeProductionBatch({ batchId, workspaceId, userId }) {
   const supabase = createSupabaseAdminClient();
-  const savedAt = new Date().toISOString();
+  const { data, error } = await supabase.rpc("complete_production_batch_fast", {
+    p_workspace_id: workspaceId,
+    p_user_id: userId || null,
+    p_batch_id: batchId,
+  });
 
-  const { data: batch, error: batchError } = await supabase
-    .from("production_batches")
-    .update({
-      active_order_item_id: null,
-      updated_at: savedAt,
-      updated_by: userId || null,
-    })
-    .eq("id", batchId)
-    .eq("workspace_id", workspaceId)
-    .select("id")
-    .maybeSingle();
-
-  if (batchError) {
-    throw batchError;
+  if (error) {
+    throw error;
   }
 
-  if (!batch) {
+  const completed = Array.isArray(data) ? data[0] : data;
+  if (!completed?.id) {
     return null;
   }
 
-  const { data: batchItems, error: batchItemsLoadError } = await supabase
-    .from("batch_items")
-    .select("order_item_id, batch_position, status")
-    .eq("batch_id", batchId)
-    .eq("workspace_id", workspaceId)
-    .order("batch_position", { ascending: true });
-
-  if (batchItemsLoadError) {
-    throw batchItemsLoadError;
-  }
-
-  const activeBatchItems = (batchItems || []).filter((item) => item?.status !== "archived");
-  const activeOrderItemIds = activeBatchItems
-    .map((item) => item?.order_item_id)
-    .filter((orderItemId) => typeof orderItemId === "string" && orderItemId.trim());
-
-  if (activeOrderItemIds.length) {
-    const { error: orderItemsError } = await supabase
-      .from("order_items")
-      .update({
-        status: "complete",
-        updated_at: savedAt,
-        updated_by: userId || null,
-      })
-      .eq("workspace_id", workspaceId)
-      .in("id", activeOrderItemIds);
-
-    if (orderItemsError) {
-      throw orderItemsError;
-    }
-
-    const { error: batchItemsError } = await supabase
-      .from("batch_items")
-      .delete()
-      .eq("batch_id", batchId)
-      .eq("workspace_id", workspaceId)
-      .in("order_item_id", activeOrderItemIds);
-
-    if (batchItemsError) {
-      throw batchItemsError;
-    }
-  }
-
-  return loadProductionBatch({ batchId, workspaceId });
+  return buildSnapshotFromProductionBatchRows({
+    batch: completed,
+    batchItems: [],
+    orderItems: [],
+    designs: [],
+    designLines: [],
+  });
 }
 
 export async function removeProductionBatchItem({
