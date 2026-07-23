@@ -39,12 +39,15 @@ function createSupabaseClientMock() {
     async rpc(name, args) {
       supabaseMock.calls.push({ operation: "rpc", name, args: clone(args) });
       if (name !== "add_order_items_to_production_batch") return { data: null, error: new Error("Unexpected RPC") };
-      const activeIds = new Set(supabaseMock.db.batch_items.filter((row) => row.batch_id === args.p_batch_id && row.status !== "archived").map((row) => row.order_item_id));
-      const eligible = [...new Set(args.p_order_item_ids || [])].filter((id) => supabaseMock.db.order_items.some((row) => row.id === id && row.workspace_id === args.p_workspace_id && ["open", "complete"].includes(row.status)) && !activeIds.has(id));
+      const activeIds = new Set(supabaseMock.db.batch_items.filter((row) => row.batch_id === args.p_batch_id && row.status === "active").map((row) => row.order_item_id));
+      const eligible = [...new Set(args.p_order_item_ids || [])].filter((id) => supabaseMock.db.order_items.some((row) => row.id === id && row.workspace_id === args.p_workspace_id && ["open", "complete", "skipped"].includes(row.status)) && !activeIds.has(id));
       const nextPosition = supabaseMock.db.batch_items.reduce((max, row) => row.batch_id === args.p_batch_id ? Math.max(max, row.batch_position || 0) : max, -1) + 1;
       const payload = eligible.map((id, index) => ({ workspace_id: args.p_workspace_id, batch_id: args.p_batch_id, order_item_id: id, batch_position: nextPosition + index, status: "active", added_by: args.p_user_id }));
       supabaseMock.calls.push({ table: "batch_items", operation: "upsert", payload: clone(payload), options: { onConflict: "batch_id,order_item_id" } });
-      payload.forEach((row) => supabaseMock.db.batch_items.push(row));
+      upsertRows("batch_items", payload, "batch_id,order_item_id");
+      supabaseMock.db.order_items
+        .filter((row) => eligible.includes(row.id) && row.status === "skipped")
+        .forEach((row) => Object.assign(row, { status: "open", updated_by: args.p_user_id }));
       return { data: eligible.map((id) => ({ order_item_id: id })), error: null };
     },
   };
@@ -344,7 +347,7 @@ describe("orders store", () => {
           batch_id: "batch-1",
           order_item_id: "item-1",
           batch_position: 1,
-          status: "archived",
+          status: "completed",
         },
       ],
     });
@@ -1033,7 +1036,7 @@ describe("orders store", () => {
     })]);
   });
 
-  it("allows direct batch item additions for open and complete order items in the workspace", async () => {
+  it("allows direct batch item additions for open, complete, and skipped order items in the workspace", async () => {
     resetDb({
       order_items: [
         {
@@ -1081,7 +1084,11 @@ describe("orders store", () => {
 
     const batchItemsUpsert = supabaseMock.calls.find((call) => call.table === "batch_items" && call.operation === "upsert");
 
-    expect(result).toEqual({ addedOrderItemIds: ["item-valid", "item-complete"] });
+    expect(result).toEqual({ addedOrderItemIds: ["item-valid", "item-complete", "item-skipped"] });
+    expect(supabaseMock.db.order_items.find((item) => item.id === "item-skipped")).toMatchObject({
+      status: "open",
+      updated_by: "user-1",
+    });
     expect(batchItemsUpsert.payload).toEqual([expect.objectContaining({
       workspace_id: "workspace-1",
       batch_id: "batch-1",
@@ -1096,7 +1103,43 @@ describe("orders store", () => {
       batch_position: 1,
       status: "active",
       added_by: "user-1",
+    }), expect.objectContaining({
+      workspace_id: "workspace-1",
+      batch_id: "batch-1",
+      order_item_id: "item-skipped",
+      batch_position: 2,
+      status: "active",
+      added_by: "user-1",
     })]);
+  });
+
+  it("adds skipped order groups to production and reopens their items", async () => {
+    resetDb({
+      order_items: [
+        {
+          id: "item-skipped",
+          workspace_id: "workspace-1",
+          status: "skipped",
+          order_number: "5005",
+          source_json: {},
+          quantity: 1,
+        },
+      ],
+    });
+    const { addOrderGroupsToProductionBatch } = await import("../../api/_lib/orders-store.js");
+
+    const result = await addOrderGroupsToProductionBatch({
+      workspaceId: "workspace-1",
+      userId: "user-1",
+      batchId: "batch-1",
+      orderIds: ["order:5005"],
+    });
+
+    expect(result).toEqual({ addedOrderItemIds: ["item-skipped"] });
+    expect(supabaseMock.db.order_items[0]).toMatchObject({
+      status: "open",
+      updated_by: "user-1",
+    });
   });
 
   it("marks an order item skipped and removes it from batch memberships", async () => {

@@ -369,7 +369,7 @@ export async function listWorkspaceOrders({ workspaceId, activeBatchId = null, s
 
   const activeBatchItemIds = new Set(
     batchItems
-      .filter((item) => item.status !== "archived")
+      .filter((item) => item.status === "active")
       .map((item) => item.order_item_id),
   );
   const designsByOrderItemId = new Map(designRows.map((design) => [design.order_item_id, design]));
@@ -438,7 +438,7 @@ async function queryOrderItemIdsForGroups({ supabase, workspaceId, orderIds }) {
         .from("order_items")
         .select("id")
         .eq("workspace_id", workspaceId)
-        .in("status", ["open", "complete"])
+        .in("status", ["open", "complete", "skipped"])
         .in("order_number", orderNumbers),
     );
   }
@@ -448,7 +448,7 @@ async function queryOrderItemIdsForGroups({ supabase, workspaceId, orderIds }) {
         .from("order_items")
         .select("id")
         .eq("workspace_id", workspaceId)
-        .in("status", ["open", "complete"])
+        .in("status", ["open", "complete", "skipped"])
         .in("id", itemIds),
     );
   }
