@@ -217,6 +217,7 @@ function buildScrollableOrdersPayload() {
 async function installOrdersWorkspaceRoutes(page, options = {}) {
   const {
     getDelayMs = 0,
+    onGet = null,
     onPost = null,
     ordersPayload = buildOrdersPayload(),
     posts = [],
@@ -250,6 +251,7 @@ async function installOrdersWorkspaceRoutes(page, options = {}) {
     if (getDelayMs > 0) {
       await new Promise((resolve) => setTimeout(resolve, getDelayMs));
     }
+    onGet?.(request);
     await route.fulfill({
       status: 200,
       contentType: "application/json; charset=utf-8",
@@ -779,8 +781,10 @@ test("skips and reopens an entire selected order from the Orders screen", async 
 
 test("skips and reopens checked orders from the Orders column menu", async ({ page }) => {
   await installSupabaseSession(page);
-  await installProductionBatchRoutes(page);
+  let productionBatchGetCount = 0;
+  await installProductionBatchRoutes(page, { onGet: () => { productionBatchGetCount += 1; } });
   const posts = [];
+  let ordersGetCount = 0;
   let ordersPayload = {
     orders: buildOrdersPayload().orders.map((order) => ({
       ...order,
@@ -803,14 +807,15 @@ test("skips and reopens checked orders from the Orders column menu", async ({ pa
   await installOrdersWorkspaceRoutes(page, {
     ordersPayload,
     posts,
+    onGet: () => { ordersGetCount += 1; },
     postBody: (post) => {
       if (post.action === "skipOrders") {
         Object.assign(ordersPayload, buildStatusPayload("skipped"));
-        return ordersPayload;
+        return { orderItemIds: ["item-1", "item-2", "item-3"], status: "skipped" };
       }
       if (post.action === "reopenOrders") {
         Object.assign(ordersPayload, buildStatusPayload("open"));
-        return ordersPayload;
+        return { orderItemIds: ["item-1", "item-2", "item-3"], status: "open" };
       }
       return ordersPayload;
     },
@@ -830,6 +835,8 @@ test("skips and reopens checked orders from the Orders column menu", async ({ pa
   await expect.poll(() => posts.some((post) => post.action === "skipOrders" && post.orderIds.includes("order:1001") && post.orderIds.includes("order:1002"))).toBe(true);
   await expect(page.locator("#databaseOrdersStatusFilter")).toHaveValue("open");
   await expect(ordersWorkspace.locator(".database-order-row")).toHaveCount(0);
+  expect(ordersGetCount).toBe(1);
+  expect(productionBatchGetCount).toBe(1);
 
   await page.locator("#databaseOrdersStatusFilter").selectOption("skipped");
   await expect(page.locator("#databaseOrdersStatusFilter")).toHaveValue("skipped");

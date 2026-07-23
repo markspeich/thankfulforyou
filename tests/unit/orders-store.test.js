@@ -101,6 +101,7 @@ function createMutationResult(table, payload) {
 }
 
 function createSelectChain(table) {
+  supabaseMock.calls.push({ table, operation: "select" });
   const filters = [];
   const state = { orderColumn: null, ascending: true };
   const chain = {
@@ -1307,6 +1308,7 @@ describe("orders store", () => {
     });
 
     expect(result).toEqual({ orderItemIds: ["item-a", "item-b"], status: "skipped" });
+    expect(supabaseMock.calls.filter((call) => call.operation === "select").map((call) => call.table)).toEqual(["order_items"]);
     expect(supabaseMock.db.order_items).toEqual([
       expect.objectContaining({ id: "item-a", status: "skipped" }),
       expect.objectContaining({ id: "item-b", status: "skipped" }),

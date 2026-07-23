@@ -6063,6 +6063,51 @@ function applyAddedOrderItemsDelta(payload) {
   return appended.length;
 }
 
+function applyOrderItemsStatusDelta(payload) {
+  const changedIds = new Set(Array.isArray(payload?.orderItemIds) ? payload.orderItemIds : []);
+  const status = payload?.status;
+  if (!changedIds.size || !["open", "skipped"].includes(status)) return 0;
+
+  databaseOrders = databaseOrders.map((order) => {
+    const items = (order.items || []).map((item) => (
+      changedIds.has(item.id)
+        ? { ...item, status, ...(status === "skipped" ? { isInActiveBatch: false } : {}) }
+        : item
+    ));
+    const orderStatus = items.length > 0 && items.every((item) => item.status === "complete")
+      ? "complete"
+      : items.length > 0 && items.every((item) => item.status === "skipped") ? "skipped" : "open";
+    return {
+      ...order,
+      items,
+      status: orderStatus,
+      isInActiveBatch: items.some((item) => item.isInActiveBatch),
+    };
+  });
+
+  if (status === "skipped") {
+    saveActiveOrderDraft();
+    orders = orders.filter((order) => !changedIds.has(order.id));
+    if (!orders.some((order) => order.id === activeOrderItemId)) {
+      activeOrderItemId = orders[0]?.id || null;
+    }
+    lastProductionBatchSaveKey = buildProductionBatchSaveKey(buildProductionBatchSnapshot());
+    suppressBatchSyncLocalNotice = true;
+    persistBatchState({ skipRemoteSave: true });
+    suppressBatchSyncLocalNotice = false;
+    renderOrderList();
+  }
+
+  databaseOrdersMutationVersion += 1;
+  loadedDatabaseOrdersKey = `${getActiveProductionBatchId() || ""}|${databaseOrdersStatusFilterValue}`;
+  updateDatabaseOrdersState(normalizeOrdersWorkspaceState({
+    orders: databaseOrders,
+    selectedOrderId: selectedDatabaseOrderId,
+    checkedOrderIds: checkedDatabaseOrderIds,
+  }));
+  renderDatabaseOrdersWorkspace();
+  return changedIds.size;
+}
 async function refreshProductionBatchSnapshot(accessToken) {
   const batchId = getActiveProductionBatchId();
   if (!batchId) {
@@ -7220,11 +7265,7 @@ async function updateCheckedDatabaseOrdersStatus({
       }
     }
     checkedDatabaseOrderIds.clear();
-    await refreshOrdersAndProductionBatch({
-      payload: nextFilter ? payload : null,
-      accessToken,
-      refreshBatch: action === "skipOrders",
-    });
+    applyOrderItemsStatusDelta(payload);
     updateWorkflowAlert(successMessage, "success");
   } catch (error) {
     handleOrdersMutationError(
