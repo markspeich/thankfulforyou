@@ -5838,6 +5838,8 @@ function buildSkippedBatchImportMessage(skippedCount) {
 function startOperationDialog({ title, description, progressLabel = "Working...", modal = true }) {
   if (!(pasteSummaryDialog instanceof HTMLDialogElement)) return;
   pasteSummaryTitle.textContent = title; pasteSummaryDescription.textContent = description; operationProgressLabel.textContent = progressLabel;
+  [pasteSummaryImportedCount, pasteSummarySkippedCount, pasteSummaryAddedCount].forEach((node) => { node.textContent = "0"; });
+  ["Imported", "Skipped duplicates", "Added to batch"].forEach((label, index) => { pasteSummaryLabels[index].textContent = label; });
   operationProgress.hidden = false; pasteSummaryCounts.hidden = true; pasteSummaryActions.hidden = true; closePasteSummaryButton.hidden = true;
   pasteSummaryDialog.querySelector(".batch-summary-card").dataset.operationState = "progress";
   if (!pasteSummaryDialog.open) {

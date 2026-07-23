@@ -871,6 +871,12 @@ select {
   box-shadow: 0 24px 60px rgba(16, 28, 37, 0.18);
 }
 
+.paste-summary-counts[hidden],
+#pasteSummaryActions[hidden],
+#closePasteSummaryButton[hidden] {
+  display: none;
+}
+
 .paste-summary-counts {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
