@@ -222,6 +222,7 @@ async function installOrdersWorkspaceRoutes(page, options = {}) {
     posts = [],
     postStatus = 200,
     postBody = null,
+    postDelayMs = 0,
   } = options;
 
   await page.route("**/api/orders**", async (route) => {
@@ -230,6 +231,8 @@ async function installOrdersWorkspaceRoutes(page, options = {}) {
       const post = JSON.parse(request.postData() || "{}");
       posts.push(post);
       onPost?.(post);
+      const delayMs = typeof postDelayMs === "function" ? postDelayMs(post) : postDelayMs;
+      if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs));
       await route.fulfill({
         status: postStatus,
         contentType: "application/json; charset=utf-8",
@@ -903,6 +906,40 @@ test("pastes imported Etsy items into the Orders workspace without adding them t
     target: "orders",
     batchId: "batch-1",
   });
+});
+
+test("clears and hides previous summary stats when a new operation starts", async ({ page }) => {
+  await installSupabaseSession(page);
+  await installProductionBatchRoutes(page);
+  await installOrdersWorkspaceRoutes(page, {
+    postDelayMs: 10000,
+    postBody: {
+      importedOrderItemCount: 0,
+      addedOrderItemCount: 1,
+      addedOrderItemIds: ["item-1"],
+    },
+  });
+
+  await gotoAfterBatchLoads(page);
+  await page.evaluate(() => {
+    document.querySelector("#pasteSummaryImportedCount").textContent = "9";
+    document.querySelector("#pasteSummarySkippedCount").textContent = "8";
+    document.querySelector("#pasteSummaryAddedCount").textContent = "7";
+  });
+
+  const ordersWorkspace = page.getByRole("region", { name: "Orders workspace" });
+  await page.getByRole("button", { name: "Orders", exact: true }).click();
+  const firstItemCard = ordersWorkspace.locator(".database-order-item-card").filter({ hasText: "Ada RN" });
+  await firstItemCard.getByRole("button", { name: "Item actions" }).click();
+  await firstItemCard.getByRole("button", { name: "Add to Production Batch" }).click();
+
+  const dialog = page.locator("#pasteSummaryDialog");
+  await expect(dialog).toBeVisible();
+  await expect(dialog.locator("#operationProgress")).toBeVisible();
+  await expect(dialog.locator("#pasteSummaryCounts")).toBeHidden();
+  await expect(dialog.locator("#pasteSummaryImportedCount")).toHaveText("0");
+  await expect(dialog.locator("#pasteSummarySkippedCount")).toHaveText("0");
+  await expect(dialog.locator("#pasteSummaryAddedCount")).toHaveText("0");
 });
 
 test("shows an Orders paste summary with imported and duplicate counts", async ({ page }) => {
