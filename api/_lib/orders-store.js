@@ -420,7 +420,7 @@ export async function addOrderItemsToProductionBatch({
   };
 }
 
-async function queryOrderItemIdsForGroups({ supabase, workspaceId, orderIds }) {
+async function queryOrderItemIdsForGroups({ supabase, workspaceId, orderIds, eligibleStatuses = ["open", "complete"] }) {
   const normalizedIds = [...new Set((orderIds || []).filter((id) => typeof id === "string" && id))];
   const orderNumbers = normalizedIds
     .filter((id) => id.startsWith("order:"))
@@ -438,7 +438,7 @@ async function queryOrderItemIdsForGroups({ supabase, workspaceId, orderIds }) {
         .from("order_items")
         .select("id")
         .eq("workspace_id", workspaceId)
-        .in("status", ["open", "complete"])
+        .in("status", eligibleStatuses)
         .in("order_number", orderNumbers),
     );
   }
@@ -448,7 +448,7 @@ async function queryOrderItemIdsForGroups({ supabase, workspaceId, orderIds }) {
         .from("order_items")
         .select("id")
         .eq("workspace_id", workspaceId)
-        .in("status", ["open", "complete"])
+        .in("status", eligibleStatuses)
         .in("id", itemIds),
     );
   }
@@ -668,20 +668,18 @@ export async function updateOrderGroupsStatus({
     return { orderItemIds: [], status: normalizedStatus || null };
   }
 
-  const { orders } = await listWorkspaceOrders({
+  const supabase = createSupabaseAdminClient();
+  const orderItemIds = await queryOrderItemIdsForGroups({
+    supabase,
     workspaceId,
-    activeBatchId: null,
-    statusFilter: "all",
+    orderIds: [...requestedIds],
+    eligibleStatuses: normalizedStatus === "skipped" ? ["open"] : ["skipped"],
   });
-  const orderItemIds = orders
-    .filter((order) => requestedIds.has(order.id) || requestedIds.has(order.orderNumber))
-    .flatMap((order) => getOrderItemsForStatusUpdate(order, normalizedStatus));
 
   if (!orderItemIds.length) {
     return { orderItemIds: [], status: normalizedStatus };
   }
 
-  const supabase = createSupabaseAdminClient();
   const savedAt = new Date().toISOString();
   const { data, error } = await supabase
     .from("order_items")

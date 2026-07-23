@@ -565,14 +565,12 @@ describe("orders api route", () => {
     expect(response.body.orders[0]).toMatchObject({ status: "open" });
   });
 
-  it("marks checked orders skipped and returns refreshed skipped orders", async () => {
+  it("marks checked orders skipped and returns a compact mutation result", async () => {
     resolveProductionBatchAuthMock.mockResolvedValue({
       userId: "user-1",
       workspaceId: "workspace-1",
     });
     updateOrderGroupsStatusMock.mockResolvedValue({ orderItemIds: ["item-1", "item-2"], status: "skipped" });
-    listWorkspaceOrdersMock.mockResolvedValue({ orders: [{ id: "order:1001", status: "skipped" }] });
-
     const { default: handler } = await import("../../api/orders.js");
     const response = createResponseRecorder();
 
@@ -592,12 +590,12 @@ describe("orders api route", () => {
       orderIds: ["order:1001", "order:1002"],
       status: "skipped",
     });
-    expect(listWorkspaceOrdersMock).toHaveBeenCalledWith({
-      workspaceId: "workspace-1",
-      activeBatchId: "batch-1",
-      statusFilter: "skipped",
-    });
+    expect(listWorkspaceOrdersMock).not.toHaveBeenCalled();
     expect(response.statusCode).toBe(200);
+    expect(response.body).toEqual({
+      orderItemIds: ["item-1", "item-2"],
+      status: "skipped",
+    });
   });
 
   it("rejects unsupported POST actions", async () => {

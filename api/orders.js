@@ -236,8 +236,7 @@ async function handleUpdateOrderGroupStatus({ res, auth, body, status, responseS
   });
 }
 
-async function handleUpdateOrderGroupsStatus({ res, auth, body, status, responseStatusFilter }) {
-  const batchId = normalizeString(body.batchId);
+async function handleUpdateOrderGroupsStatus({ res, auth, body, status }) {
   const orderIds = normalizeStringArray(body.orderIds);
 
   if (!orderIds.length) {
@@ -245,23 +244,14 @@ async function handleUpdateOrderGroupsStatus({ res, auth, body, status, response
     return;
   }
 
-  await updateOrderGroupsStatus({
+  const mutationResult = await updateOrderGroupsStatus({
     workspaceId: auth.workspaceId,
     userId: auth.userId,
     orderIds,
     status,
   });
-  const ordersPayload = await loadOrdersResponse({
-    workspaceId: auth.workspaceId,
-    batchId: batchId || null,
-    statusFilter: responseStatusFilter,
-  });
 
-  res.status(200).json({
-    importedOrderItemCount: 0,
-    addedOrderItemCount: 0,
-    ...ordersPayload,
-  });
+  res.status(200).json(mutationResult);
 }
 
 export default async function handler(req, res) {
