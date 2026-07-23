@@ -6033,12 +6033,23 @@ function applyAddedOrderItemsDelta(payload) {
     .map(createBatchItemFromDatabaseOrderItem)
     .filter(Boolean);
   orders.push(...appended);
+  if (!activeOrderItemId && appended.length > 0) {
+    activeOrderItemId = appended[0].id;
+    applySettings(appended[0].settings);
+  }
 
   databaseOrders = databaseOrders.map((order) => {
     const items = (order.items || []).map((item) => (
-      addedIdSet.has(item.id) ? { ...item, isInActiveBatch: true } : item
+      addedIdSet.has(item.id)
+        ? { ...item, status: item.status === "skipped" ? "open" : item.status, isInActiveBatch: true }
+        : item
     ));
-    return { ...order, items, isInActiveBatch: items.some((item) => item.isInActiveBatch) };
+    const status = items.length > 0 && items.every((item) => item.status === "complete")
+      ? "complete"
+      : items.length > 0 && items.every((item) => item.status === "skipped")
+        ? "skipped"
+        : "open";
+    return { ...order, status, items, isInActiveBatch: items.some((item) => item.isInActiveBatch) };
   });
 
   databaseOrdersMutationVersion += 1;
@@ -6450,7 +6461,7 @@ function isDatabaseOrderItemComplete(item) {
 }
 
 function isDatabaseOrderItemBatchEligible(item) {
-  return Boolean(item?.id) && !item?.isInActiveBatch && !isDatabaseOrderItemSkipped(item);
+  return Boolean(item?.id) && !item?.isInActiveBatch;
 }
 
 function isDatabaseOrderBatchEligible(order) {

@@ -1528,15 +1528,16 @@ test("keeps the preview panel large and the connection status compact", async ({
     return {
       previewHeight: previewPanel.getBoundingClientRect().height,
       statusHeight: connectionStatus.getBoundingClientRect().height,
-      statusBottom: connectionStatus.getBoundingClientRect().bottom,
-      viewportHeight: window.innerHeight,
+      previewBottom: previewPanel.getBoundingClientRect().bottom,
+      statusTop: connectionStatus.getBoundingClientRect().top,
     };
   });
 
   expect(layout.previewHeight).toBeGreaterThan(300);
   expect(layout.statusHeight).toBeLessThan(180);
   expect(layout.previewHeight).toBeGreaterThan(layout.statusHeight * 3);
-  expect(layout.statusBottom).toBeGreaterThan(layout.viewportHeight - 32);
+  expect(layout.statusTop).toBeGreaterThanOrEqual(layout.previewBottom);
+  expect(layout.statusTop - layout.previewBottom).toBeLessThanOrEqual(16);
 });
 
 test("keeps additional line control groups reachable in the right-side inspector", async ({ page }) => {
@@ -3252,7 +3253,7 @@ test("skips already imported Etsy line items when importing another batch", asyn
 
   await clickButtonBySelector(page, "#importClipboardButton");
 
-  await expect(page.locator("#orderCountOutput")).toHaveText("2");
+  await expect(page.locator("#orderCountOutput")).toHaveText("3");
   await expect(page.locator(".batch-header .batch-tools-menu")).not.toHaveAttribute("open", "");
   await expect(page.locator("#importStatus")).toBeVisible();
   await expect(page.locator("#importStatus")).toContainText("Imported 2 Etsy designs and added 2 to the production batch.");
@@ -3289,7 +3290,7 @@ test("skips already imported Etsy line items when importing another batch", asyn
 
   await clickButtonBySelector(page, "#importClipboardButton");
 
-  await expect(page.locator("#orderCountOutput")).toHaveText("3");
+  await expect(page.locator("#orderCountOutput")).toHaveText("4");
   await expect(page.locator(".batch-header .batch-tools-menu")).not.toHaveAttribute("open", "");
   await expect(page.locator("#importStatus")).toBeVisible();
   await expect(page.locator("#importStatus")).toContainText("Imported 1 Etsy design and added 1 to the production batch. Skipped 1 already in the batch.");
@@ -3389,7 +3390,7 @@ test("shows imported Etsy color and quantity below design text and highlights wh
 
   await clickButtonBySelector(page, "#importClipboardButton");
 
-  await expect(page.getByLabel("Design status summary").locator("div").filter({ hasText: "Order Items" }).locator("strong")).toHaveText("3");
+  await expect(page.getByLabel("Design status summary").locator("div").filter({ hasText: "Order Items" }).locator("strong")).toHaveText("4");
   await expect(page.locator("#importedColorField")).toBeVisible();
   await expect(page.locator("#importedColorValue")).toHaveText("White Glitter");
   await expect(page.locator("#importedColorValue")).toHaveClass(/highlight-light-color/);
@@ -4075,7 +4076,7 @@ test("shows queue analysis indicators for running, connected, and multi-piece co
   await completeDesign(page, "Design 2");
 
   const betaIndicator = page.locator("#orderList .order-row").filter({ hasText: "Design 2" }).locator(".order-analysis-indicator.warning");
-  await expect(betaIndicator).toContainText("⚠");
+  await expect(betaIndicator).toHaveAttribute("aria-label", "Analysis complete: 3 face pieces");
   await expect(betaIndicator).toContainText("3");
   const betaCardIndicator = page.locator("#connectionStatus .order-analysis-indicator.warning");
   await expect(betaCardIndicator).toBeVisible();

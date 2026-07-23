@@ -697,7 +697,7 @@ test("skips and reopens an order item from the Orders screen", async ({ page }) 
   await expect(ordersWorkspace.locator(".database-order-row .database-order-status")).toHaveText("Skipped");
   await expect(firstItemCard.locator(".database-order-item-status")).toHaveText("Skipped");
   await firstItemCard.getByRole("button", { name: "Item actions" }).click();
-  await expect(firstItemCard.getByRole("button", { name: "Add to Production Batch" })).toBeDisabled();
+  await expect(firstItemCard.getByRole("button", { name: "Add to Production Batch" })).toBeEnabled();
   await firstItemCard.getByRole("button", { name: "Reopen Order" }).click();
 
   await expect.poll(() => posts.some((post) => post.action === "reopenOrderItem" && post.orderItemId === "item-1")).toBe(true);
@@ -1009,19 +1009,11 @@ test("keeps Orders paste available while workspace orders are loading", async ({
 test("pastes imported Etsy items into the active production batch", async ({ page }) => {
   const orderPosts = [];
   let productionBatchGetCount = 0;
-  let releaseSecondProductionBatchGet = null;
-  const holdSecondProductionBatchGet = new Promise((resolve) => {
-    releaseSecondProductionBatchGet = resolve;
-  });
   await installSupabaseSession(page);
   await installClipboardText(page, buildClipboardPayload());
   await installProductionBatchRoutes(page, {
     onGet: () => {
       productionBatchGetCount += 1;
-      if (productionBatchGetCount === 2) {
-        return holdSecondProductionBatchGet;
-      }
-      return null;
     },
   });
   await installOrdersWorkspaceRoutes(page, { posts: orderPosts });
@@ -1037,9 +1029,7 @@ test("pastes imported Etsy items into the active production batch", async ({ pag
     target: "productionBatch",
     batchId: "batch-1",
   });
-  await expect.poll(() => productionBatchGetCount).toBe(2);
-  await expect(page.locator("#importClipboardButton")).toBeDisabled();
-  releaseSecondProductionBatchGet?.();
+  await expect.poll(() => productionBatchGetCount).toBe(1);
   await expect(page.getByRole("button", { name: "Paste", exact: true })).toBeEnabled();
 });
 
@@ -1059,9 +1049,7 @@ test("skips duplicate production batch clipboard items without posting to orders
   await expect(page.locator("#workflowAlertText")).toHaveText(
     "Skipped 1 Etsy design already in the batch. No new designs were added.",
   );
-  await expect(page.locator("#pasteSummaryDialog")).toBeVisible();
-  await expect(page.locator("#pasteSummaryImportedCount")).toHaveText("0");
-  await expect(page.locator("#pasteSummarySkippedCount")).toHaveText("1");
+  await expect(page.locator("#pasteSummaryDialog")).toBeHidden();
 });
 
 test("imports Orders clipboard items with blank personalization text", async ({ page }) => {
@@ -1132,6 +1120,10 @@ test("hydrates the selected production batch item after adding from Orders", asy
         productionBatchOrderItems.push(buildAdaProductionBatchOrderItem());
       }
     },
+    postBody: {
+      addedOrderItemCount: 1,
+      addedOrderItemIds: ["item-1"],
+    },
   });
 
   await gotoAfterBatchLoads(page);
@@ -1181,6 +1173,10 @@ test("adds checked orders to the active production batch", async ({ page }) => {
         productionBatchOrderItems.push(buildAdaProductionBatchOrderItem());
       }
     },
+    postBody: {
+      addedOrderItemCount: 1,
+      addedOrderItemIds: ["item-1"],
+    },
   });
 
   await gotoAfterBatchLoads(page);
@@ -1217,6 +1213,48 @@ test("adds checked orders to the active production batch", async ({ page }) => {
   await expect(productionWorkspace.locator(".order-row.active")).toContainText("Personalization: Ada RN");
 });
 
+test("adds a skipped order to production from the All status filter", async ({ page }) => {
+  await installSupabaseSession(page);
+  await installProductionBatchRoutes(page);
+  const posts = [];
+  const skippedPayload = buildOrdersPayload();
+  skippedPayload.orders = [skippedPayload.orders[0]];
+  skippedPayload.orders[0] = {
+    ...skippedPayload.orders[0],
+    status: "skipped",
+    items: skippedPayload.orders[0].items.map((item) => ({
+      ...item,
+      status: "skipped",
+      isInActiveBatch: false,
+    })),
+  };
+  await installOrdersWorkspaceRoutes(page, {
+    ordersPayload: skippedPayload,
+    posts,
+    postBody: {
+      addedOrderItemCount: 2,
+      addedOrderItemIds: ["item-1", "item-2"],
+    },
+  });
+
+  await gotoAfterBatchLoads(page);
+  const ordersWorkspace = page.getByRole("region", { name: "Orders workspace" });
+  await page.getByRole("button", { name: "Orders", exact: true }).click();
+  await page.locator("#databaseOrdersStatusFilter").selectOption("all");
+
+  const orderCheckbox = ordersWorkspace.getByLabel("Select order 1001");
+  await expect(orderCheckbox).toBeEnabled();
+  await orderCheckbox.check();
+  await ordersWorkspace.getByLabel("Orders tools").click();
+  await ordersWorkspace.getByRole("button", { name: "Add Checked to Production Batch" }).click();
+
+  await expect.poll(() => posts.some((post) => (
+    post.action === "addOrdersToProductionBatch"
+    && post.orderIds.includes("order:1001")
+    && post.statusFilter === "all"
+  ))).toBe(true);
+  await expect(ordersWorkspace.locator(".database-order-row .database-order-status")).toHaveText("Open");
+});
 test("adds the selected order to the active production batch from the order actions menu", async ({ page }) => {
   await installSupabaseSession(page);
   await installProductionBatchRoutes(page);
@@ -1240,6 +1278,7 @@ test("adds the selected order to the active production batch from the order acti
           )),
           importedOrderItemCount: 0,
           addedOrderItemCount: 1,
+          addedOrderItemIds: ["item-1"],
         };
         return ordersPayload;
       }

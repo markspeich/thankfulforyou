@@ -369,7 +369,7 @@ export async function listWorkspaceOrders({ workspaceId, activeBatchId = null, s
 
   const activeBatchItemIds = new Set(
     batchItems
-      .filter((item) => item.status !== "archived")
+      .filter((item) => item.status === "active")
       .map((item) => item.order_item_id),
   );
   const designsByOrderItemId = new Map(designRows.map((design) => [design.order_item_id, design]));
@@ -420,7 +420,7 @@ export async function addOrderItemsToProductionBatch({
   };
 }
 
-async function queryOrderItemIdsForGroups({ supabase, workspaceId, orderIds, eligibleStatuses = ["open", "complete"] }) {
+async function queryOrderItemIdsForGroups({ supabase, workspaceId, orderIds, eligibleStatuses = ["open", "complete", "skipped"] }) {
   const normalizedIds = [...new Set((orderIds || []).filter((id) => typeof id === "string" && id))];
   const orderNumbers = normalizedIds
     .filter((id) => id.startsWith("order:"))
@@ -439,6 +439,7 @@ async function queryOrderItemIdsForGroups({ supabase, workspaceId, orderIds, eli
         .select("id")
         .eq("workspace_id", workspaceId)
         .in("status", eligibleStatuses)
+
         .in("order_number", orderNumbers),
     );
   }
@@ -449,6 +450,7 @@ async function queryOrderItemIdsForGroups({ supabase, workspaceId, orderIds, eli
         .select("id")
         .eq("workspace_id", workspaceId)
         .in("status", eligibleStatuses)
+
         .in("id", itemIds),
     );
   }
