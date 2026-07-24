@@ -278,6 +278,11 @@ function hasDesignCustomizationFields(fields) {
 }
 
 function getCustomizationFields(row, rowText, customizationBlock) {
+  const rowFields = parseRowCustomizationFields(row, rowText);
+  if (hasDesignCustomizationFields(rowFields)) {
+    return rowFields;
+  }
+
   if (customizationBlock) {
     const clipboardFields = parseCustomizationFields(customizationBlock);
     if (hasDesignCustomizationFields(clipboardFields)) {
@@ -285,7 +290,7 @@ function getCustomizationFields(row, rowText, customizationBlock) {
     }
   }
 
-  return parseRowCustomizationFields(row, rowText);
+  return rowFields;
 }
 
 function buildOrderItemLabel(orderNumber, buyerName, itemNumber) {

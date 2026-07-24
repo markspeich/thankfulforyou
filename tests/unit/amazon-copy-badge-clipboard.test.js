@@ -152,6 +152,27 @@ function makeOrderItemRow({
   });
 }
 
+function addCustomizationMarkup(row, fields) {
+  const entries = Object.entries(fields).map(([label, value]) => {
+    const labelElement = makeElement({ text: label + ":" });
+    const valueElement = makeElement({ text: value });
+    const entry = makeElement();
+    entry.matches = vi.fn((selector) => selector === ".customization-modification");
+    entry.querySelector = vi.fn((selector) => {
+      if (selector === ".a-color-tertiary") return labelElement;
+      if (selector === ".customization-modification-value") return valueElement;
+      return null;
+    });
+    return entry;
+  });
+  const originalQuerySelectorAll = row.querySelectorAll;
+  row.querySelectorAll = vi.fn((selector) => {
+    if (selector === ".customization-modification") return entries;
+    return originalQuerySelectorAll(selector);
+  });
+  return row;
+}
+
 describe("amazon copy badge clipboard", () => {
   it("labels the injected Amazon copy button as Copy Orders", () => {
     const { createdButton, append } = loadClipboardScript({ existingCopyButton: false });
@@ -280,6 +301,39 @@ describe("amazon copy badge clipboard", () => {
     expect(payload.items).toMatchObject([
       { transactionId: "item-1", colorName: "Sky Blue", personalization: "Sandi S\nRN" },
       { transactionId: "item-2", colorName: "Pink", quantity: "2", personalization: "Lauren\nRN" },
+    ]);
+  });
+  it("uses each item row customization when the clipboard contains only one item customization", async () => {
+    const { createdButton, clipboardWrites } = loadClipboardScript({
+      rows: [
+        addCustomizationMarkup(makeOrderItemRow({ orderItemId: "item-1" }), {
+          Color: "Glitter Purple",
+          "Text Line 1": "LOVE",
+          "Text Line 2": "THAT",
+          "Text Line 3": "FOR ME",
+        }),
+        addCustomizationMarkup(makeOrderItemRow({ orderItemId: "item-2" }), {
+          Color: "Lilac",
+          "Text Line 1": "PIT 3",
+          "Text Line 2": "IS",
+          "Text Line 3": "MY HOME",
+        }),
+      ],
+      clipboardText: [
+        "Customizations:",
+        "Surface 1:",
+        "Color: Lilac",
+        "Text Line 1: PIT 3",
+        "Text Line 2: IS",
+        "Text Line 3: MY HOME",
+      ].join("\n"),
+      existingCopyButton: false,
+    });
+    await createdButton.handlers.click();
+    const payload = JSON.parse(clipboardWrites[0]);
+    expect(payload.items).toMatchObject([
+      { transactionId: "item-1", colorName: "Glitter Purple", personalization: "LOVE\nTHAT\nFOR ME" },
+      { transactionId: "item-2", colorName: "Lilac", personalization: "PIT 3\nIS\nMY HOME" },
     ]);
   });
   it("copies color and text lines from Amazon detail-page customization markup when clipboard text is empty", async () => {
