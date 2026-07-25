@@ -119,10 +119,25 @@ async function readResponseBody(response, limit, request) {
         reader.releaseLock();
       }
     } else if (response.body?.[Symbol.asyncIterator]) {
-      for await (const chunk of response.body) {
-        if (request.signal.aborted) throw abortError(request);
-        addChunk(chunk);
+      const iterator = response.body[Symbol.asyncIterator]();
+      let iteratorDone = false;
+      try {
+        while (true) {
+          if (request.signal.aborted) throw abortError(request);
+          const { done, value } = await awaitWithRequestAbort(iterator.next(), request);
+          if (done) {
+            iteratorDone = true;
+            break;
+          }
+          addChunk(value);
+        }
+      } finally {
+        if (!iteratorDone) {
+          try { Promise.resolve(iterator.return?.()).catch(() => {}); } catch { /* Best-effort iterator cancellation. */ }
+          try { response.body.destroy?.(); } catch { /* Best-effort stream cancellation. */ }
+        }
       }
+
     } else {
       addChunk(await awaitWithRequestAbort(response.arrayBuffer(), request));
     }
@@ -220,7 +235,7 @@ export async function fetchAmazonCustomizationJson({ url, fetchImpl = fetch, sig
     for (let redirectCount = 0; redirectCount <= 3; redirectCount += 1) {
       let response;
       try {
-        response = await fetchImpl(currentUrl, { redirect: "manual", signal: request.signal });
+        response = await fetchImpl(currentUrl, { redirect: "manual", credentials: "omit", signal: request.signal });
       } catch {
         if (request.signal.aborted) throw abortError(request);
         throw archiveError("customization_download_failed", 502);

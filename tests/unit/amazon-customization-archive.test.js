@@ -99,6 +99,10 @@ describe("Amazon Custom archive reader", () => {
     });
     expect(result["version3.0"].customizationInfo.surfaces[0].areas[1].text).toBe("Jane");
     expect(fetchImpl).toHaveBeenCalledWith(trustedUrl, expect.objectContaining({ redirect: "manual" }));
+    const fetchOptions = fetchImpl.mock.calls[0][1];
+    expect(fetchOptions.credentials).toBe("omit");
+    expect(fetchOptions.headers).toBeUndefined();
+    expect(Object.keys(fetchOptions)).toEqual(["redirect", "credentials", "signal"]);
   });
 
   it("returns safe cancellation and timeout errors", async () => {
@@ -126,4 +130,45 @@ describe("Amazon Custom archive reader", () => {
     });
     await expect(fetchAmazonCustomizationJson({ url: trustedUrl, fetchImpl, limits: { timeoutMs: 1 } })).rejects.toMatchObject({ code: "customization_download_timeout", statusCode: 504 });
   }, 250);
+  it("keeps a stalled async iterator cancellable and returns it on timeout", async () => {
+    let returned = false;
+    const iterator = {
+      next: () => new Promise(() => {}),
+      return: () => { returned = true; return Promise.resolve({ done: true }); },
+      [Symbol.asyncIterator]() { return this; },
+    };
+    const fetchImpl = vi.fn().mockResolvedValue({ ok: true, status: 200, headers: new Headers(), body: iterator });
+    await expect(fetchAmazonCustomizationJson({ url: trustedUrl, fetchImpl, limits: { timeoutMs: 1 } })).rejects.toMatchObject({ code: "customization_download_timeout", statusCode: 504 });
+    expect(returned).toBe(true);
+  }, 250);
+
+  it("follows trusted same-host redirect chains", async () => {
+    const archive = await validZip();
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(response(null, { status: 302, headers: { location: "/first-hop" } }))
+      .mockResolvedValueOnce(response(null, { status: 307, headers: { location: "https://zme-caps.amazon.com/final-hop" } }))
+      .mockResolvedValueOnce(response(archive));
+    await expect(fetchAmazonCustomizationJson({ url: trustedUrl, fetchImpl })).resolves.toMatchObject({ orderId: "TEST-ORDER" });
+    expect(fetchImpl.mock.calls.map(([url]) => url)).toEqual([
+      trustedUrl,
+      "https://zme-caps.amazon.com/first-hop",
+      "https://zme-caps.amazon.com/final-hop",
+    ]);
+  });
+
+  it("allows exactly three trusted redirects and rejects a fourth", async () => {
+    const archive = await validZip();
+    const threeRedirects = vi.fn()
+      .mockResolvedValueOnce(response(null, { status: 302, headers: { location: "/one" } }))
+      .mockResolvedValueOnce(response(null, { status: 302, headers: { location: "/two" } }))
+      .mockResolvedValueOnce(response(null, { status: 302, headers: { location: "/three" } }))
+      .mockResolvedValueOnce(response(archive));
+    await expect(fetchAmazonCustomizationJson({ url: trustedUrl, fetchImpl: threeRedirects })).resolves.toMatchObject({ orderId: "TEST-ORDER" });
+    expect(threeRedirects).toHaveBeenCalledTimes(4);
+
+    const fourthRedirect = vi.fn().mockResolvedValue(response(null, { status: 302, headers: { location: "/again" } }));
+    await expect(fetchAmazonCustomizationJson({ url: trustedUrl, fetchImpl: fourthRedirect })).rejects.toMatchObject({ code: "customization_download_failed", statusCode: 502 });
+    expect(fourthRedirect).toHaveBeenCalledTimes(4);
+  });
+
 });
