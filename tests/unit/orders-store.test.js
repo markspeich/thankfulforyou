@@ -260,6 +260,45 @@ afterEach(() => {
 });
 
 describe("orders store", () => {
+  it("exposes generic import payload builders without persistence-only IDs", async () => {
+    const {
+      buildImportedDesignLineRows,
+      buildImportedDesignRow,
+      buildImportedOrderItemRow,
+    } = await import("../../api/_lib/orders-store.js");
+    const item = {
+      id: "amazon-order-item:1",
+      text: "Ada\nRN",
+      source: { orderNumber: "1001", quantity: "2" },
+      settings: {
+        lines: [
+          { fontId: "skywalk" },
+          { fontId: "somekind" },
+        ],
+      },
+    };
+    const context = { workspaceId: "workspace-1", userId: "user-1" };
+
+    expect(buildImportedOrderItemRow(item, context)).toMatchObject({
+      id: "amazon-order-item:1",
+      workspace_id: "workspace-1",
+      order_number: "1001",
+      quantity: 2,
+      updated_by: "user-1",
+    });
+    expect(buildImportedDesignRow(item, context)).toMatchObject({
+      workspace_id: "workspace-1",
+      order_item_id: "amazon-order-item:1",
+      design_text: "Ada\nRN",
+      updated_by: "user-1",
+    });
+    expect(buildImportedDesignLineRows(item)).toEqual([
+      expect.objectContaining({ line_index: 0, text: "Ada", font_id: "skywalk" }),
+      expect.objectContaining({ line_index: 1, text: "RN", font_id: "somekind" }),
+    ]);
+    expect(buildImportedDesignLineRows(item)[0]).not.toHaveProperty("design_id");
+  });
+
   it("lists non-archived workspace order items grouped by order number with designs and active batch membership", async () => {
     resetDb({
       order_items: [

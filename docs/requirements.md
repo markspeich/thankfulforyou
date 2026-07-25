@@ -331,6 +331,8 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Amazon customization blocks appended to ShipStation `Notes to Buyer` must preserve existing notes and must be idempotent by Amazon order-item ID so retries do not duplicate content.
 - The Amazon importer should create one app order item for every ShipStation line item, including items without usable customization; items without usable free-text customization should be marked `Customization needed`.
 - ShipStation-backed Amazon imports should use Amazon order-item IDs as durable imported item identities, must not overwrite existing app items, and should import into Orders without automatically adding items to the active Production Batch.
+- Concurrent Amazon imports for one workspace must be prevented with an owner-scoped ten-minute lease; active imports must renew the lease at least every five minutes and must not renew or release a lease owned by another run.
+- Each normalized Amazon shipment batch must persist its new order items, designs, and ordered design lines atomically so a malformed item cannot leave partial app data.
 - A ShipStation shipment should receive the `Amazon Customization Imported` tag only after its notes update and all of its app item persistence operations have succeeded or been recognized as already complete.
 - One Amazon shipment's failure must not stop other eligible shipments; failed shipments should remain untagged and retryable.
 - Amazon import completion feedback should separately report processed shipments, imported app items, existing app items, already-processed shipments, customization-needed items, and failures.

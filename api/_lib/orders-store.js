@@ -63,7 +63,7 @@ function buildImportedOrderItemId(item) {
   return `fallback:${fallbackParts.join("|")}`;
 }
 
-function buildOrderItemRow(item, { workspaceId, userId }) {
+export function buildImportedOrderItemRow(item, { workspaceId, userId }) {
   const source = item?.source && typeof item.source === "object" ? item.source : {};
 
   return {
@@ -83,7 +83,7 @@ function buildOrderItemRow(item, { workspaceId, userId }) {
   };
 }
 
-function buildDesignRow(item, { workspaceId, userId }) {
+export function buildImportedDesignRow(item, { workspaceId, userId }) {
   const settings = item?.settings && typeof item.settings === "object" ? item.settings : {};
   const text = item?.text ?? settings.text ?? "";
 
@@ -137,11 +137,11 @@ function buildLineInputs(item) {
   return inputs.length ? inputs : [{ text: "", settings: {} }];
 }
 
-function buildDesignLineRows(item, designId) {
+export function buildImportedDesignLineRows(item, designId = null) {
   return buildLineInputs(item).map((line, lineIndex) => {
     const itemKind = normalizeItemKind(line.settings.kind);
     return {
-      design_id: designId,
+      ...(designId ? { design_id: designId } : {}),
       line_index: lineIndex,
       item_kind: itemKind,
       text: itemKind === "text" ? line.text : "",
@@ -747,7 +747,7 @@ export async function importWorkspaceOrderItems({
   }
 
   const supabase = createSupabaseAdminClient();
-  const orderRows = importItems.map((item) => buildOrderItemRow(item, { workspaceId, userId }));
+  const orderRows = importItems.map((item) => buildImportedOrderItemRow(item, { workspaceId, userId }));
   const requestedOrderItemIds = orderRows.map((row) => row.id);
   const existingOrderItemIds = await queryExistingOrderItemIds({
     supabase,
@@ -798,7 +798,7 @@ export async function importWorkspaceOrderItems({
     return importedOrderItemIds.includes(orderItemId)
       && !isProtectedDesign(existingDesignByOrderItemId.get(orderItemId));
   });
-  const designRows = mutableItems.map((item) => buildDesignRow(item, { workspaceId, userId }));
+  const designRows = mutableItems.map((item) => buildImportedDesignRow(item, { workspaceId, userId }));
   let savedDesigns = [];
 
   if (designRows.length) {
@@ -822,7 +822,7 @@ export async function importWorkspaceOrderItems({
   const lineRows = mutableItems.flatMap((item) => {
     const orderItemId = buildImportedOrderItemId(item);
     const designId = designIdByOrderItemId.get(orderItemId);
-    return designId ? buildDesignLineRows(item, designId) : [];
+    return designId ? buildImportedDesignLineRows(item, designId) : [];
   });
   const savedDesignIds = [...designIdByOrderItemId]
     .filter(([orderItemId]) => mutableOrderItemIds.has(orderItemId))
