@@ -48,11 +48,12 @@ function assertShipmentPage(value) {
   return page;
 }
 
-function retryAfterMilliseconds(value) {
+function retryAfterMilliseconds(value, now) {
   if (typeof value !== "string" || !value.trim()) return 0;
   const seconds = Number(value);
-  if (!Number.isFinite(seconds)) return 0;
-  return Math.min(Math.max(Math.round(seconds * 1000), 0), MAX_RETRY_AFTER_MS);
+  const delay = Number.isFinite(seconds) ? seconds * 1000 : Date.parse(value) - now();
+  if (!Number.isFinite(delay)) return 0;
+  return Math.min(Math.max(Math.round(delay), 0), MAX_RETRY_AFTER_MS);
 }
 
 function combineSignals(callerSignal, timeoutSignal) {
@@ -91,6 +92,7 @@ export function createShipStationClient({
   fetchImpl = fetch,
   sleep = defaultSleep,
   createTimeoutSignal = () => AbortSignal.timeout(TIMEOUT_MS),
+  now = () => Date.now(),
 } = {}) {
   if (typeof apiKey !== "string" || !apiKey.trim()) throw new ShipStationError("configuration");
 
@@ -165,7 +167,7 @@ export function createShipStationClient({
         throw new ShipStationError(retryable ? (statusCode === 429 ? "rate_limited" : "temporary") : "request_failed", { statusCode, retryable });
       }
       const delay = statusCode === 429
-        ? retryAfterMilliseconds(response.headers?.get?.("retry-after"))
+        ? retryAfterMilliseconds(response.headers?.get?.("retry-after"), now)
         : RETRY_BACKOFF_MS * (2 ** attempt);
       combined.cleanup();
       await wait(delay, signal);

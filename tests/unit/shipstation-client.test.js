@@ -109,6 +109,31 @@ describe("ShipStation V2 client", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(3);
   });
 
+  it("honors future and past HTTP-date Retry-After values with a deterministic clock", async () => {
+    const futureSleep = vi.fn();
+    const futureFetch = vi.fn()
+      .mockResolvedValueOnce(response({}, 429, new Headers({ "Retry-After": "Fri, 25 Jul 2026 22:00:20 GMT" })))
+      .mockResolvedValueOnce(response(shipment()));
+    await createShipStationClient({
+      apiKey: "secret",
+      fetchImpl: futureFetch,
+      sleep: futureSleep,
+      now: () => Date.parse("2026-07-25T22:00:00Z"),
+    }).updateNotesToBuyer({ shipmentId: "se-1", notesToBuyer: "ok" });
+    expect(futureSleep).toHaveBeenCalledWith(10000, undefined);
+
+    const pastSleep = vi.fn();
+    const pastFetch = vi.fn()
+      .mockResolvedValueOnce(response({}, 429, new Headers({ "Retry-After": "Fri, 25 Jul 2026 21:59:59 GMT" })))
+      .mockResolvedValueOnce(response(shipment()));
+    await createShipStationClient({
+      apiKey: "secret",
+      fetchImpl: pastFetch,
+      sleep: pastSleep,
+      now: () => Date.parse("2026-07-25T22:00:00Z"),
+    }).updateNotesToBuyer({ shipmentId: "se-1", notesToBuyer: "ok" });
+    expect(pastSleep).toHaveBeenCalledWith(0, undefined);
+  });
   it("uses bounded exponential backoff for 5xx responses and never retries a 4xx", async () => {
     const sleep = vi.fn();
     const fetchImpl = vi.fn()
