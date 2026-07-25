@@ -11,6 +11,29 @@ import {
 const PROCESSED_TAG = "Amazon Customization Imported";
 const STARTED_AT = new Date("2026-07-25T15:00:00.000Z");
 
+function deferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((onResolve, onReject) => {
+    resolve = onResolve;
+    reject = onReject;
+  });
+  return { promise, resolve, reject };
+}
+
+async function flushMicrotasks(iterations = 20) {
+  for (let index = 0; index < iterations; index += 1) {
+    await Promise.resolve();
+  }
+}
+
+async function flushUntil(predicate, iterations = 100) {
+  for (let index = 0; index < iterations; index += 1) {
+    if (predicate()) return;
+    await Promise.resolve();
+  }
+}
+
 function customization(name = "Jane", color = "Teal") {
   return {
     "version3.0": {
@@ -145,6 +168,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllEnvs();
 });
 
@@ -606,6 +630,286 @@ describe("Amazon import service", () => {
       expect(event).not.toHaveProperty("url");
       expect(event).not.toHaveProperty("personalization");
     }
+  });
+
+  it("renews the lease while an archive fetch remains in flight", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(STARTED_AT);
+    const archive = deferred();
+    const f = fixture({
+      clock: () => new Date(Date.now()),
+      shipments: [shipment("heartbeat", {
+        items: [item("heartbeat-item", {
+          customizedUrl: "https://zme-caps.amazon.com/heartbeat.zip",
+        })],
+      })],
+    });
+    f.fetchCustomizationJson.mockReturnValue(archive.promise);
+
+    const runPromise = run(f);
+    await flushMicrotasks();
+    await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+    const renewalsWhilePending = f.store.renewAmazonImportLock.mock.calls.length;
+    archive.resolve(customization());
+    await runPromise;
+
+    expect(renewalsWhilePending).toBe(1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("surfaces a lost active heartbeat before held work can cause later effects", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(STARTED_AT);
+    const archive = deferred();
+    const f = fixture({
+      clock: () => new Date(Date.now()),
+      shipments: [shipment("lost-heartbeat", {
+        items: [item("lost-heartbeat-item", {
+          customizedUrl: "https://zme-caps.amazon.com/lost.zip",
+        })],
+      })],
+    });
+    f.fetchCustomizationJson.mockReturnValue(archive.promise);
+    f.store.renewAmazonImportLock.mockResolvedValue(false);
+    let failureWhileArchivePending;
+    const runPromise = run(f).catch((error) => {
+      failureWhileArchivePending = error;
+    });
+
+    await flushMicrotasks();
+    await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+    await flushMicrotasks();
+    const observedFailure = failureWhileArchivePending;
+    archive.resolve(customization());
+    await runPromise;
+
+    expect(observedFailure).toMatchObject({ code: "import_lock_lost", statusCode: 409 });
+    expect(f.client.updateNotesToBuyer).not.toHaveBeenCalled();
+    expect(f.store.importAmazonOrderItemsTransactional).not.toHaveBeenCalled();
+    expect(f.client.addShipmentTag).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("checks cancellation before and immediately after lock acquisition", async () => {
+    const alreadyAborted = new AbortController();
+    alreadyAborted.abort();
+    const before = fixture();
+    await expect(before.service.prepare({
+      workspaceId: "workspace-1",
+      userId: "user-1",
+      signal: alreadyAborted.signal,
+    })).rejects.toMatchObject({ name: "AbortError" });
+    expect(before.store.acquireAmazonImportLock).not.toHaveBeenCalled();
+
+    const acquisition = deferred();
+    const during = fixture();
+    during.store.acquireAmazonImportLock.mockReturnValue(acquisition.promise);
+    const controller = new AbortController();
+    const preparePromise = during.service.prepare({
+      workspaceId: "workspace-1",
+      userId: "user-1",
+      signal: controller.signal,
+    });
+    await flushMicrotasks();
+    controller.abort();
+    acquisition.resolve(true);
+    const outcome = await preparePromise.then(
+      (prepared) => ({ prepared }),
+      (error) => ({ error }),
+    );
+    if (outcome.prepared) await outcome.prepared.release();
+
+    expect(outcome.error).toMatchObject({ name: "AbortError" });
+    expect(during.createShipStationClient).not.toHaveBeenCalled();
+    expect(during.store.releaseAmazonImportLock).toHaveBeenCalledOnce();
+  });
+
+  it("terminates cancellation during an in-flight heartbeat renewal", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(STARTED_AT);
+    const archive = deferred();
+    const renewal = deferred();
+    const controller = new AbortController();
+    const f = fixture({
+      clock: () => new Date(Date.now()),
+      shipments: [shipment("renew-abort", {
+        items: [item("renew-abort-item", {
+          customizedUrl: "https://zme-caps.amazon.com/renew-abort.zip",
+        })],
+      })],
+    });
+    f.fetchCustomizationJson.mockReturnValue(archive.promise);
+    f.store.renewAmazonImportLock.mockReturnValue(renewal.promise);
+    let failureWhileArchivePending;
+    const runPromise = run(f, { signal: controller.signal }).catch((error) => {
+      failureWhileArchivePending = error;
+    });
+
+    await flushMicrotasks();
+    await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+    controller.abort();
+    renewal.resolve(true);
+    await flushMicrotasks();
+    const observedFailure = failureWhileArchivePending;
+    archive.resolve(customization());
+    await runPromise;
+
+    expect(f.store.renewAmazonImportLock).toHaveBeenCalledOnce();
+    expect(observedFailure).toMatchObject({ name: "AbortError" });
+    expect(f.store.importAmazonOrderItemsTransactional).not.toHaveBeenCalled();
+    expect(f.client.addShipmentTag).not.toHaveBeenCalled();
+  });
+
+  it("does not tag or complete after cancellation during transactional persistence", async () => {
+    const persistence = deferred();
+    const controller = new AbortController();
+    const f = fixture({ shipments: [shipment("persistence-abort")] });
+    f.store.importAmazonOrderItemsTransactional.mockReturnValue(persistence.promise);
+    let failureWhilePersistencePending;
+    const runPromise = run(f, { signal: controller.signal }).catch((error) => {
+      failureWhilePersistencePending = error;
+    });
+
+    await flushUntil(() => f.store.importAmazonOrderItemsTransactional.mock.calls.length === 1);
+    expect(f.store.importAmazonOrderItemsTransactional).toHaveBeenCalledOnce();
+    controller.abort();
+    await flushMicrotasks();
+    const observedFailure = failureWhilePersistencePending;
+    persistence.resolve({
+      importedOrderItemIds: ["amazon-order-item:persistence-abort-item"],
+      existingOrderItemIds: [],
+    });
+    await runPromise;
+
+    expect(observedFailure).toMatchObject({ name: "AbortError" });
+    expect(f.client.addShipmentTag).not.toHaveBeenCalled();
+    expect(f.events.some((event) => event.type === "complete")).toBe(false);
+  });
+
+  it("checks cancellation after the final completion callback", async () => {
+    const controller = new AbortController();
+    const f = fixture();
+    const outcome = await f.service.prepare({
+      workspaceId: "workspace-1",
+      userId: "user-1",
+      signal: controller.signal,
+      onProgress: async (event) => {
+        f.events.push(event);
+        if (event.type === "complete") controller.abort();
+      },
+    }).then((prepared) => prepared.run()).then(
+      (value) => ({ value }),
+      (error) => ({ error }),
+    );
+
+    expect(f.events.at(-1)?.type).toBe("complete");
+    expect(outcome.error).toMatchObject({ name: "AbortError" });
+    expect(outcome).not.toHaveProperty("value");
+  });
+
+  it("makes release-before-run terminal and rejects a second run", async () => {
+    const released = fixture();
+    const releasedPrepared = await released.service.prepare({
+      workspaceId: "workspace-1",
+      userId: "user-1",
+    });
+    await releasedPrepared.release();
+    await expect(releasedPrepared.run()).rejects.toMatchObject({
+      code: "import_not_active",
+      statusCode: 409,
+    });
+    expect(released.client.iteratePendingShipments).not.toHaveBeenCalled();
+
+    const repeated = fixture();
+    const repeatedPrepared = await repeated.service.prepare({
+      workspaceId: "workspace-1",
+      userId: "user-1",
+    });
+    await repeatedPrepared.run();
+    await expect(repeatedPrepared.run()).rejects.toMatchObject({
+      code: "import_already_started",
+      statusCode: 409,
+    });
+    expect(repeated.client.iteratePendingShipments).toHaveBeenCalledOnce();
+  });
+
+  it("stops an active run when release relinquishes ownership", async () => {
+    const archive = deferred();
+    const f = fixture({
+      shipments: [shipment("concurrent-release", {
+        items: [item("concurrent-release-item", {
+          customizedUrl: "https://zme-caps.amazon.com/release.zip",
+        })],
+      })],
+    });
+    f.fetchCustomizationJson.mockReturnValue(archive.promise);
+    const prepared = await f.service.prepare({
+      workspaceId: "workspace-1",
+      userId: "user-1",
+    });
+    let runFailure;
+    const runPromise = prepared.run().catch((error) => {
+      runFailure = error;
+    });
+    await flushMicrotasks();
+
+    await prepared.release();
+    await flushMicrotasks();
+    const observedFailure = runFailure;
+    archive.resolve(customization());
+    await runPromise;
+
+    expect(observedFailure).toMatchObject({ code: "import_not_active", statusCode: 409 });
+    expect(f.client.updateNotesToBuyer).not.toHaveBeenCalled();
+    expect(f.store.importAmazonOrderItemsTransactional).not.toHaveBeenCalled();
+    expect(f.client.addShipmentTag).not.toHaveBeenCalled();
+  });
+
+  it("deduplicates concurrent release attempts and retries a failed release", async () => {
+    const firstRelease = deferred();
+    const releaseFailure = new Error("release failed");
+    const f = fixture();
+    f.store.releaseAmazonImportLock
+      .mockReturnValueOnce(firstRelease.promise)
+      .mockResolvedValueOnce(true);
+    const prepared = await f.service.prepare({
+      workspaceId: "workspace-1",
+      userId: "user-1",
+    });
+
+    const first = prepared.release();
+    const concurrent = prepared.release();
+    const firstRejected = expect(first).rejects.toBe(releaseFailure);
+    const concurrentRejected = expect(concurrent).rejects.toBe(releaseFailure);
+    expect(f.store.releaseAmazonImportLock).toHaveBeenCalledOnce();
+    firstRelease.reject(releaseFailure);
+    await firstRejected;
+    await concurrentRejected;
+    await expect(prepared.release()).resolves.toBeUndefined();
+
+    expect(f.store.releaseAmazonImportLock).toHaveBeenCalledTimes(2);
+    await expect(prepared.run()).rejects.toMatchObject({ code: "import_not_active" });
+  });
+
+  it("preserves a primary run error when release fails and allows release retry", async () => {
+    const listingFailure = new Error("listing failed");
+    const releaseFailure = new Error("release failed");
+    const f = fixture();
+    f.client.iteratePendingShipments.mockImplementation(async function* () {
+      throw listingFailure;
+    });
+    f.store.releaseAmazonImportLock
+      .mockRejectedValueOnce(releaseFailure)
+      .mockResolvedValueOnce(true);
+    const prepared = await f.service.prepare({
+      workspaceId: "workspace-1",
+      userId: "user-1",
+    });
+
+    await expect(prepared.run()).rejects.toBe(listingFailure);
+    await expect(prepared.release()).resolves.toBeUndefined();
+
+    expect(f.store.releaseAmazonImportLock).toHaveBeenCalledTimes(2);
   });
 
   it("exports safe import errors without retaining sensitive causes", () => {

@@ -73,6 +73,8 @@ export function createAmazonImportService({
   appendNoteBlocks,
   clock = () => new Date(),
   randomUUID = uuid,
+  setIntervalFn = (callback, milliseconds) => setInterval(callback, milliseconds),
+  clearIntervalFn = (handle) => clearInterval(handle),
 }) {
   async function prepare({
     workspaceId,
@@ -80,6 +82,7 @@ export function createAmazonImportService({
     signal,
     onProgress = () => {},
   }) {
+    if (signal?.aborted) throw abortError();
     const started = currentDate(clock);
     const lockToken = randomUUID();
     const acquired = await store.acquireAmazonImportLock({
@@ -87,6 +90,14 @@ export function createAmazonImportService({
       lockToken,
       now: started,
     });
+    if (signal?.aborted) {
+      if (acquired) {
+        try {
+          await store.releaseAmazonImportLock({ workspaceId, lockToken });
+        } catch {}
+      }
+      throw abortError();
+    }
     if (!acquired) {
       throw new AmazonImportError(
         "import_in_progress",
@@ -95,70 +106,178 @@ export function createAmazonImportService({
       );
     }
 
-    let released = false;
-    const release = async () => {
-      if (released) return;
-      released = true;
-      await store.releaseAmazonImportLock({ workspaceId, lockToken });
+    let runState = "prepared";
+    let hasRun = false;
+    let releaseState = "held";
+    let releasePromise = null;
+    let heartbeatHandle = null;
+    let renewalPromise = null;
+    let lastRenewedAt = started.getTime();
+    let activeFailure = null;
+    let rejectActiveFailure;
+    let abortListener = null;
+    const activeFailurePromise = new Promise((_, reject) => {
+      rejectActiveFailure = reject;
+    });
+    activeFailurePromise.catch(() => {});
+
+    const inactiveError = () => new AmazonImportError(
+      "import_not_active",
+      "The Amazon import is no longer active.",
+      409,
+    );
+    const alreadyStartedError = () => new AmazonImportError(
+      "import_already_started",
+      "This Amazon import run has already started.",
+      409,
+    );
+    const lostLockError = () => new AmazonImportError(
+      "import_lock_lost",
+      "The Amazon import lease was lost. Please retry.",
+      409,
+    );
+    const failActive = (error) => {
+      if (activeFailure) return activeFailure;
+      activeFailure = error;
+      rejectActiveFailure(error);
+      return error;
+    };
+    const stopHeartbeat = () => {
+      if (heartbeatHandle != null) {
+        clearIntervalFn(heartbeatHandle);
+        heartbeatHandle = null;
+      }
+      if (abortListener) {
+        signal?.removeEventListener?.("abort", abortListener);
+        abortListener = null;
+      }
+    };
+    const checkActive = () => {
+      if (activeFailure) throw activeFailure;
+      if (signal?.aborted) throw failActive(abortError());
+      if (runState !== "running" || releaseState !== "held") {
+        throw failActive(inactiveError());
+      }
+    };
+    const renewIfDue = async () => {
+      checkActive();
+      if (renewalPromise) return renewalPromise;
+      const now = currentDate(clock);
+      if (now.getTime() - lastRenewedAt < HEARTBEAT_INTERVAL_MS) return;
+      const attempt = (async () => {
+        if (signal?.aborted) throw abortError();
+        const renewed = await store.renewAmazonImportLock({
+          workspaceId,
+          lockToken,
+          now,
+        });
+        if (signal?.aborted) throw abortError();
+        if (!renewed) throw lostLockError();
+        lastRenewedAt = now.getTime();
+        checkActive();
+      })();
+      renewalPromise = attempt;
+      try {
+        return await attempt;
+      } catch (error) {
+        throw failActive(error);
+      } finally {
+        if (renewalPromise === attempt) renewalPromise = null;
+      }
+    };
+    const ensureActive = async () => {
+      checkActive();
+      await renewIfDue();
+      checkActive();
+    };
+    const awaitActive = async (operation) => {
+      await ensureActive();
+      const pending = operation();
+      const result = await Promise.race([pending, activeFailurePromise]);
+      await ensureActive();
+      return result;
+    };
+    const startHeartbeat = () => {
+      abortListener = () => failActive(abortError());
+      signal?.addEventListener?.("abort", abortListener, { once: true });
+      if (signal?.aborted) abortListener();
+      heartbeatHandle = setIntervalFn(() => {
+        void renewIfDue().catch(() => {});
+      }, HEARTBEAT_INTERVAL_MS);
+      heartbeatHandle?.unref?.();
+    };
+
+    const release = () => {
+      if (releaseState === "released") return Promise.resolve();
+      if (releasePromise) return releasePromise;
+      if (runState === "prepared" || runState === "running") runState = "finished";
+      stopHeartbeat();
+      failActive(inactiveError());
+      releaseState = "releasing";
+      const pendingRenewal = renewalPromise;
+      const attempt = (async () => {
+        if (pendingRenewal) {
+          try {
+            await pendingRenewal;
+          } catch {}
+        }
+        await store.releaseAmazonImportLock({ workspaceId, lockToken });
+        releaseState = "released";
+      })();
+      const tracked = attempt.finally(() => {
+        if (releaseState !== "released") releaseState = "held";
+        if (releasePromise === tracked) releasePromise = null;
+      });
+      releasePromise = tracked;
+      return tracked;
     };
 
     let client;
     let amazonStoreId;
     try {
+      if (signal?.aborted) throw abortError();
       const config = readShipStationConfig();
       amazonStoreId = config.amazonStoreId;
       client = createShipStationClient({ apiKey: config.apiKey });
+      if (signal?.aborted) throw abortError();
     } catch (error) {
-      await release();
+      try {
+        await release();
+      } catch {}
       throw error;
     }
 
-    let lastRenewedAt = started.getTime();
-    const ensureActive = async () => {
-      if (signal?.aborted) throw abortError();
-      const now = currentDate(clock);
-      if (now.getTime() - lastRenewedAt < HEARTBEAT_INTERVAL_MS) return;
-      const renewed = await store.renewAmazonImportLock({
-        workspaceId,
-        lockToken,
-        now,
-      });
-      if (!renewed) {
-        throw new AmazonImportError(
-          "import_lock_lost",
-          "The Amazon import lease was lost. Please retry.",
-          409,
-        );
-      }
-      lastRenewedAt = now.getTime();
-    };
-
     const run = async () => {
+      if (hasRun) throw alreadyStartedError();
+      if (runState !== "prepared" || releaseState !== "held") throw inactiveError();
+      hasRun = true;
+      runState = "running";
+      startHeartbeat();
+      let primaryError = null;
       try {
-        await ensureActive();
-        await onProgress({
+        await awaitActive(() => onProgress({
           type: "progress",
           stage: "fetching_shipments",
           processed: 0,
           total: null,
-        });
-        await ensureActive();
+        }));
 
         const shipments = [];
-        for await (const shipment of client.iteratePendingShipments({
+        const shipmentIterator = client.iteratePendingShipments({
           storeId: amazonStoreId,
           signal,
-        })) {
-          shipments.push(shipment);
-          await ensureActive();
+        })[Symbol.asyncIterator]();
+        while (true) {
+          const next = await awaitActive(() => shipmentIterator.next());
+          if (next.done) break;
+          shipments.push(next.value);
         }
-        await ensureActive();
-        await onProgress({
+        await awaitActive(() => onProgress({
           type: "progress",
           stage: "processing_shipments",
           processed: 0,
           total: shipments.length,
-        });
+        }));
 
         let processedShipments = 0;
         let importedItems = 0;
@@ -170,7 +289,6 @@ export function createAmazonImportService({
         for (let index = 0; index < shipments.length; index += 1) {
           const shipment = shipments[index];
           await ensureActive();
-
           if (isProcessed(shipment)) {
             alreadyProcessedShipments += 1;
           } else {
@@ -182,8 +300,9 @@ export function createAmazonImportService({
                 const url = customizationUrl(item);
                 let customization = {};
                 if (url) {
-                  customization = await fetchCustomizationJson({ url, signal });
-                  await ensureActive();
+                  customization = await awaitActive(
+                    () => fetchCustomizationJson({ url, signal }),
+                  );
                 }
                 const normalized = normalizeItem({ shipment, item, customization });
                 normalizedItems.push(normalized);
@@ -202,34 +321,31 @@ export function createAmazonImportService({
                 blocks: noteBlocks,
               });
               if (noteResult.notes !== existingNotes) {
-                await ensureActive();
-                await client.updateNotesToBuyer({
+                await awaitActive(() => client.updateNotesToBuyer({
                   shipmentId: shipment.shipment_id,
                   notesToBuyer: noteResult.notes,
                   signal,
-                });
-                await ensureActive();
+                }));
               }
 
-              await ensureActive();
-              const persistence = await store.importAmazonOrderItemsTransactional({
-                workspaceId,
-                userId,
-                items: normalizedItems,
-              });
-              await ensureActive();
+              const persistence = await awaitActive(
+                () => store.importAmazonOrderItemsTransactional({
+                  workspaceId,
+                  userId,
+                  items: normalizedItems,
+                }),
+              );
               importedItems += persistence.importedOrderItemIds.length;
               existingItems += persistence.existingOrderItemIds.length;
               customizationNeeded += normalizedItems.filter(
                 (item) => item?.source?.customizationNeeded,
               ).length;
 
-              await client.addShipmentTag({
+              await awaitActive(() => client.addShipmentTag({
                 shipmentId: shipment.shipment_id,
                 tagName: PROCESSED_TAG,
                 signal,
-              });
-              await ensureActive();
+              }));
               processedShipments += 1;
             } catch (error) {
               if (isGlobalFailure(error, signal)) throw error;
@@ -237,12 +353,12 @@ export function createAmazonImportService({
             }
           }
 
-          await onProgress({
+          await awaitActive(() => onProgress({
             type: "progress",
             stage: "processing_shipments",
             processed: index + 1,
             total: shipments.length,
-          });
+          }));
         }
 
         await ensureActive();
@@ -255,10 +371,19 @@ export function createAmazonImportService({
           customizationNeeded,
           failed,
         };
-        await onProgress(result);
+        await awaitActive(() => onProgress(result));
         return result;
+      } catch (error) {
+        primaryError = error;
+        throw error;
       } finally {
-        await release();
+        stopHeartbeat();
+        runState = "finished";
+        try {
+          await release();
+        } catch (releaseError) {
+          if (!primaryError) throw releaseError;
+        }
       }
     };
 
