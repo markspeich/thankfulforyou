@@ -1,5 +1,6 @@
 const MAX_NOTES_LENGTH = 1000;
 const URL_PATTERN = /^(?:https?:)?\/\//i;
+const DATA_URL_PATTERN = /^data:/i;
 const ASSET_VALUE_PATTERN = /(?:^|[\\/])[^\s]+\.(?:avif|gif|jpe?g|png|svg|webp)(?:[?#].*)?$/i;
 const SVG_PATTERN = /<svg\b|<path\b|<g\b/i;
 const EXCLUDED_LABEL_PATTERN = /(?:\b(?:url|preview|layout|placement|position|asset|image|svg|filename|filepath|file path)\b|\bid\b|identifier|uuid|guid)/i;
@@ -8,12 +9,27 @@ function normalizedString(value) {
   return typeof value === "string" || typeof value === "number" ? String(value).trim() : "";
 }
 
+function firstNonBlank(...values) {
+  return values.find((value) => normalizedString(value));
+}
+
+function decodedValue(value) {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+
 function acceptedField(name, value) {
+  const decoded = decodedValue(value);
   return Boolean(name && value && !name.startsWith("^")
     && !EXCLUDED_LABEL_PATTERN.test(name)
     && !URL_PATTERN.test(value)
-    && !ASSET_VALUE_PATTERN.test(value)
-    && !SVG_PATTERN.test(value));
+    && !DATA_URL_PATTERN.test(value)
+    && !ASSET_VALUE_PATTERN.test(decoded)
+    && !SVG_PATTERN.test(decoded));
 }
 
 function field(name, value) {
@@ -42,26 +58,38 @@ function extractV3Fields(document) {
   for (const area of v3Areas(document)) {
     const type = normalizedString(area?.customizationType).toLowerCase();
     if (type.includes("text")) {
-      const response = field(area?.label, area?.text ?? area?.displayValue);
+      const response = field(area?.label, firstNonBlank(area?.text, area?.displayValue));
       if (response) freeTextFields.push(response);
       continue;
     }
     if (type.includes("option") || area?.optionValue != null) {
-      const response = field(area?.label, area?.optionValue ?? area?.displayValue);
+      const response = field(area?.label, firstNonBlank(area?.optionValue, area?.displayValue));
       if (response) configurationFields.push(response);
     }
   }
   return { freeTextFields, configurationFields };
 }
 
-function legacyNodes(value, nodes = []) {
-  if (Array.isArray(value)) {
-    for (const child of value) legacyNodes(child, nodes);
-    return nodes;
+function legacyNodes(document) {
+  const root = documentRoot(document);
+  const containers = [
+    root?.nodes,
+    root?.customizationNodes,
+    root?.customizations,
+    root?.customizationInfo?.nodes,
+    root?.customizationInfo?.customizations,
+  ];
+  const nodes = [];
+  const seen = new Set();
+  function visit(children) {
+    for (const node of Array.isArray(children) ? children : []) {
+      if (!node || typeof node !== "object" || seen.has(node)) continue;
+      seen.add(node);
+      if (typeof node.type === "string") nodes.push(node);
+      for (const nested of [node.children, node.nodes, node.areas]) visit(nested);
+    }
   }
-  if (!value || typeof value !== "object") return nodes;
-  if (typeof value.type === "string") nodes.push(value);
-  for (const child of Object.values(value)) legacyNodes(child, nodes);
+  for (const container of containers) visit(container);
   return nodes;
 }
 
@@ -72,12 +100,12 @@ function extractLegacyFields(document) {
   for (const node of legacyNodes(root)) {
     const type = normalizedString(node.type).toLowerCase();
     if (type.includes("text")) {
-      const response = field(node.label, node.text ?? node.value ?? node.displayValue);
+      const response = field(node.label, firstNonBlank(node.text, node.value, node.displayValue));
       if (response) freeTextFields.push(response);
       continue;
     }
     if (type.includes("option")) {
-      const response = field(node.label, node.optionSelection?.label ?? node.optionValue ?? node.displayValue);
+      const response = field(node.label, firstNonBlank(node.optionSelection?.label, node.optionValue, node.displayValue));
       if (response) configurationFields.push(response);
     }
   }
@@ -142,6 +170,7 @@ function orderNumber(shipment) {
 export function normalizeShipStationItem({ shipment = {}, item = {}, customization = {} }) {
   const { freeTextFields, configurationFields } = extractAmazonCustomizationFields(customization);
   const orderItemId = sourceString(item.external_order_item_id);
+  if (!orderItemId) throw new TypeError("Amazon order item ID is required");
   const text = freeTextFields.map((response) => response.value).join("\n");
   return {
     id: `amazon-order-item:${orderItemId}`,

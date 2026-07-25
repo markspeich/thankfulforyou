@@ -59,6 +59,39 @@ describe("Amazon customization normalizer", () => {
     });
   });
 
+
+  it("ignores preview, render, and layout metadata outside recognized legacy node containers", () => {
+    // Break caught: recursive traversal imports generated metadata or repeats a response.
+    const nameNode = { type: "text", label: "Name", displayValue: "Morgan" };
+    const legacy = {
+      customizationData: {
+        nodes: [nameNode],
+        customizations: [nameNode],
+        preview: { nodes: [{ type: "text", label: "Preview name", displayValue: "Wrong" }] },
+        render: { type: "text", label: "Rendered name", displayValue: "Wrong" },
+        layout: { children: [{ type: "option", label: "Layout color", displayValue: "Wrong" }] },
+      },
+    };
+    expect(extractAmazonCustomizationFields(legacy)).toEqual({
+      freeTextFields: [{ name: "Name", value: "Morgan" }],
+      configurationFields: [],
+    });
+  });
+
+  it("falls back past blank values and excludes data URLs plus encoded SVG and assets", () => {
+    // Break caught: blank primary values hide customer choices or encoded generated artwork becomes design text.
+    const customization = { "version3.0": { customizationInfo: { surfaces: [{ areas: [
+      { customizationType: "text", label: "Name", text: " ", displayValue: "Avery" },
+      { customizationType: "option", label: "Color", optionValue: " ", displayValue: "Teal" },
+      { customizationType: "text", label: "Engraving", text: "data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=" },
+      { customizationType: "text", label: "Placement", text: "%3Csvg%3E%3C%2Fsvg%3E" },
+      { customizationType: "option", label: "Selection", optionValue: "asset%2Epng" },
+    ] }] } } };
+    expect(extractAmazonCustomizationFields(customization)).toEqual({
+      freeTextFields: [{ name: "Name", value: "Avery" }],
+      configurationFields: [{ name: "Color", value: "Teal" }],
+    });
+  });
   it("formats product-title note blocks and appends only missing item markers", () => {
     // Break caught: retries duplicate blocks, alter buyer notes, or use archive titles.
     const first = buildAmazonNoteBlock({
@@ -152,5 +185,14 @@ describe("Amazon customization normalizer", () => {
       personalizationResponses: [{ name: "Color", value: "Purple" }],
       customizationNeeded: true,
     });
+  });
+
+  it("rejects a missing external Amazon order-item ID", () => {
+    // Break caught: blank upstream IDs collapse distinct imported items into amazon-order-item:.
+    expect(() => normalizeShipStationItem({
+      shipment: { shipment_id: "se-3" },
+      item: { external_order_item_id: " ", name: "Badge Reel" },
+      customization: {},
+    })).toThrow(/order item ID/i);
   });
 });
