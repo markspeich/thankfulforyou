@@ -1,0 +1,156 @@
+import { describe, expect, it } from "vitest";
+import {
+  appendAmazonNoteBlocks,
+  buildAmazonNoteBlock,
+  extractAmazonCustomizationFields,
+  normalizeShipStationItem,
+} from "../../api/_lib/amazon-customization-normalizer.js";
+
+const observedCustomization = {
+  title: "Amazon archive title that must not be used",
+  customizationData: {},
+  "version3.0": {
+    customizationInfo: {
+      surfaces: [{
+        areas: [
+          { customizationType: "text", label: "Text Line 1", text: "Jane" },
+          { customizationType: "text", label: "Text Line 2", displayValue: "RN" },
+          { customizationType: "option", label: "Color", optionValue: "Teal" },
+          { customizationType: "text", label: "^Internal font", text: "Candlepin" },
+          { customizationType: "text", label: "Preview Image", text: "https://amazon.test/preview.png" },
+          { customizationType: "option", label: "Layout", optionValue: "centered" },
+          { customizationType: "option", label: "Area ID", optionValue: "abc-123" },
+          { customizationType: "text", label: "SVG", text: "<svg><path /></svg>" },
+          { customizationType: "text", label: "", text: "No label" },
+          { customizationType: "text", label: "Empty", text: " " },
+        ],
+      }],
+    },
+  },
+};
+
+describe("Amazon customization normalizer", () => {
+  it("preserves observed v3 source order while excluding non-production fields", () => {
+    // Break caught: accepting archive metadata or losing ordered text/configuration fields.
+    expect(extractAmazonCustomizationFields(observedCustomization)).toEqual({
+      freeTextFields: [
+        { name: "Text Line 1", value: "Jane" },
+        { name: "Text Line 2", value: "RN" },
+      ],
+      configurationFields: [{ name: "Color", value: "Teal" }],
+    });
+  });
+
+  it("uses the narrow legacy fallback only for human-readable text and option nodes", () => {
+    // Break caught: legacy payloads no longer retain customer text/configuration selections.
+    const legacy = {
+      customizationData: {
+        nodes: [
+          { type: "text", label: "Name", value: "Morgan" },
+          { type: "option", label: "Font", optionSelection: { label: "Skywalk" } },
+          { type: "image", label: "Artwork", displayValue: "/images/art.png" },
+          { type: "text", label: "^Hidden", displayValue: "ignore" },
+        ],
+      },
+    };
+    expect(extractAmazonCustomizationFields(legacy)).toEqual({
+      freeTextFields: [{ name: "Name", value: "Morgan" }],
+      configurationFields: [{ name: "Font", value: "Skywalk" }],
+    });
+  });
+
+  it("formats product-title note blocks and appends only missing item markers", () => {
+    // Break caught: retries duplicate blocks, alter buyer notes, or use archive titles.
+    const first = buildAmazonNoteBlock({
+      productTitle: "Badge Reel",
+      orderItemId: "item-1",
+      fields: [{ name: "Name", value: "Jane" }, { name: "Color", value: "Teal" }],
+    });
+    const second = buildAmazonNoteBlock({
+      productTitle: "RN Reel",
+      orderItemId: "item-2",
+      fields: [{ name: "Credentials", value: "RN" }],
+    });
+    expect(first).toBe("Amazon Customization -- Badge Reel\nName: Jane\nColor: Teal\nAmazon Order Item: item-1");
+    expect(appendAmazonNoteBlocks({
+      existingNotes: "Please gift wrap.",
+      blocks: [first, second, first],
+    })).toEqual({
+      notes: "Please gift wrap.\n\nAmazon Customization -- Badge Reel\nName: Jane\nColor: Teal\nAmazon Order Item: item-1\n\nAmazon Customization -- RN Reel\nCredentials: RN\nAmazon Order Item: item-2",
+      appendedItemIds: ["item-1", "item-2"],
+    });
+    expect(appendAmazonNoteBlocks({ existingNotes: `${first}\n\nExisting`, blocks: [first, second] })).toEqual({
+      notes: `${first}\n\nExisting\n\n${second}`,
+      appendedItemIds: ["item-2"],
+    });
+  });
+
+  it("rejects a notes update instead of truncating it beyond ShipStation's limit", () => {
+    // Break caught: an oversized notes payload is silently truncated.
+    expect(() => appendAmazonNoteBlocks({
+      existingNotes: "a".repeat(990),
+      blocks: ["Amazon Order Item: item-1"],
+    })).toThrow(/1000/i);
+  });
+
+  it("normalizes every ShipStation item with ordered free text and source metadata", () => {
+    // Break caught: the app identity/title/source mapping does not match the import contract.
+    const result = normalizeShipStationItem({
+      shipment: {
+        shipment_id: "se-shipment-1",
+        external_order_id: "amazon-order-1",
+        ship_by_date: "2026-08-01",
+      },
+      item: {
+        external_order_item_id: "amazon-item-1",
+        name: "ShipStation Badge Reel",
+        asin: "B012345",
+        sku: "REEL-TEAL",
+        image_url: "https://image.test/75.png",
+        quantity: 2,
+      },
+      customization: observedCustomization,
+    });
+    expect(result).toEqual({
+      id: "amazon-order-item:amazon-item-1",
+      text: "Jane\nRN",
+      source: {
+        marketplace: "amazon",
+        orderNumber: "amazon-order-1",
+        transactionId: "amazon-item-1",
+        amazonOrderItemId: "amazon-item-1",
+        shipStationShipmentId: "se-shipment-1",
+        listingId: "B012345",
+        sku: "REEL-TEAL",
+        listingTitle: "ShipStation Badge Reel",
+        listingImageUrl75x75: "https://image.test/75.png",
+        quantity: "2",
+        shipByDate: "2026-08-01",
+        personalizationResponses: [
+          { name: "Text Line 1", value: "Jane" },
+          { name: "Text Line 2", value: "RN" },
+          { name: "Color", value: "Teal" },
+        ],
+        customizationNeeded: false,
+      },
+    });
+  });
+
+  it("marks configuration-only items as needing customization without dropping their metadata", () => {
+    // Break caught: items without free text are skipped or incorrectly considered ready.
+    const result = normalizeShipStationItem({
+      shipment: { shipment_id: "se-2", order_number: "amazon-order-2", ship_by_date: "2026-08-02" },
+      item: { external_order_item_id: "amazon-item-2", name: "Plain Reel", quantity: 1 },
+      customization: { "version3.0": { customizationInfo: { surfaces: [{ areas: [
+        { customizationType: "option", label: "Color", optionValue: "Purple" },
+      ] }] } } },
+    });
+    expect(result.text).toBe("");
+    expect(result.source).toMatchObject({
+      orderNumber: "amazon-order-2",
+      listingTitle: "Plain Reel",
+      personalizationResponses: [{ name: "Color", value: "Purple" }],
+      customizationNeeded: true,
+    });
+  });
+});
