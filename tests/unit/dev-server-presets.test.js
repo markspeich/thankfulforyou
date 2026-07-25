@@ -256,3 +256,10 @@ describe("dev server Etsy import wrapper", () => {
     expect(source).toContain('"/api/etsy-import": "../api/etsy-import.js"');
   });
 });
+
+describe("dev server Amazon import wrapper", () => {
+  it("maps /api/amazon-import to its API handler", async () => {
+    const source = await readFile("tools/dev_server.mjs", "utf8");
+    expect(source).toContain('"/api/amazon-import": "../api/amazon-import.js"');
+  });
+});
