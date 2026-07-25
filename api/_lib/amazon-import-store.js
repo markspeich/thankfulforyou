@@ -42,7 +42,7 @@ function validateIdArray(value) {
     && new Set(value).size === value.length;
 }
 
-function validateImportResult(data) {
+function validateImportResult(data, requestedIds) {
   if (!data || typeof data !== "object" || Array.isArray(data)
     || !validateIdArray(data.importedOrderItemIds)
     || !validateIdArray(data.existingOrderItemIds)) {
@@ -50,7 +50,13 @@ function validateImportResult(data) {
   }
 
   const importedIds = new Set(data.importedOrderItemIds);
-  if (data.existingOrderItemIds.some((id) => importedIds.has(id))) {
+  const existingIds = new Set(data.existingOrderItemIds);
+  const requestedIdSet = new Set(requestedIds);
+  const returnedIds = [...data.importedOrderItemIds, ...data.existingOrderItemIds];
+  if (data.existingOrderItemIds.some((id) => importedIds.has(id))
+    || returnedIds.length !== requestedIds.length
+    || returnedIds.some((id) => !requestedIdSet.has(id))
+    || requestedIds.some((id) => !importedIds.has(id) && !existingIds.has(id))) {
     throw new AmazonImportStoreError("Amazon import database returned an invalid response.");
   }
 
@@ -163,11 +169,17 @@ export async function importAmazonOrderItemsTransactional({
 
   const context = { workspaceId: normalizedWorkspaceId, userId: userId || null };
   const payload = items.map((item) => buildTransactionalItem(item, context));
+  const requestedIds = payload.map(({ orderItem }) => orderItem.id);
+  if (new Set(requestedIds).size !== requestedIds.length) {
+    throw new AmazonImportStoreError(
+      "Amazon import items must have unique order item IDs.",
+    );
+  }
   const { data, error } = await createSupabaseAdminClient().rpc("import_amazon_order_items", {
     p_workspace_id: normalizedWorkspaceId,
     p_user_id: userId || null,
     p_items: payload,
   });
   throwDatabaseError(error, "Unable to import Amazon order items.");
-  return validateImportResult(data);
+  return validateImportResult(data, requestedIds);
 }

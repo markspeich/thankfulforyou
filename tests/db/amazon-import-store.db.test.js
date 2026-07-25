@@ -1,7 +1,13 @@
 import { randomUUID } from "node:crypto";
 
 import { createClient } from "@supabase/supabase-js";
-import { beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+
+import {
+  buildImportedDesignLineRows,
+  buildImportedDesignRow,
+  buildImportedOrderItemRow,
+} from "../../api/_lib/orders-store.js";
 
 import {
   acquireAmazonImportLock,
@@ -13,6 +19,11 @@ import { createSupabaseAdminClient } from "../../api/_lib/supabase-admin.js";
 import { loadEnvFile } from "../../tools/env_file.mjs";
 
 const PRIMARY_WORKSPACE_ID = "11111111-1111-4111-8111-111111111111";
+let importUserId;
+let nonMemberUserId;
+let secondaryWorkspaceId;
+let secondaryPresetId;
+let secondarySizeGuideId;
 
 function item(id, text = "Ada\nRN") {
   return {
@@ -36,6 +47,15 @@ function item(id, text = "Ada\nRN") {
   };
 }
 
+function payloadFor(normalizedItem, workspaceId = PRIMARY_WORKSPACE_ID, userId = importUserId) {
+  const context = { workspaceId, userId };
+  return {
+    orderItem: buildImportedOrderItemRow(normalizedItem, context),
+    design: buildImportedDesignRow(normalizedItem, context),
+    lines: buildImportedDesignLineRows(normalizedItem),
+  };
+}
+
 beforeAll(() => {
   loadEnvFile();
   const supabaseUrl = process.env.SUPABASE_URL || "";
@@ -43,6 +63,64 @@ beforeAll(() => {
   if (!allowRemote && !/^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?/.test(supabaseUrl)) {
     throw new Error(`Refusing to run DB tests against non-local SUPABASE_URL: ${supabaseUrl || "<missing>"}.`);
   }
+});
+
+beforeAll(async () => {
+  const admin = createSupabaseAdminClient();
+  const { data: importUser, error: importUserError } = await admin.auth.admin.createUser({
+    email: `amazon-import-member-${randomUUID()}@example.com`,
+    password: `T-${randomUUID()}!`,
+    email_confirm: true,
+  });
+  expect(importUserError).toBeNull();
+  importUserId = importUser.user.id;
+
+  const { data: nonMember, error: nonMemberError } = await admin.auth.admin.createUser({
+    email: `amazon-import-nonmember-${randomUUID()}@example.com`,
+    password: `T-${randomUUID()}!`,
+    email_confirm: true,
+  });
+  expect(nonMemberError).toBeNull();
+  nonMemberUserId = nonMember.user.id;
+
+  secondaryWorkspaceId = randomUUID();
+  secondaryPresetId = `amazon-secondary-preset-${randomUUID()}`;
+  secondarySizeGuideId = `amazon-secondary-size-${randomUUID()}`;
+  const { error: workspaceError } = await admin.from("workspaces").insert({
+    id: secondaryWorkspaceId,
+    name: "Amazon Import Secondary Workspace",
+  });
+  expect(workspaceError).toBeNull();
+  const { error: membershipError } = await admin.from("workspace_memberships").insert({
+    workspace_id: PRIMARY_WORKSPACE_ID,
+    user_id: importUserId,
+    role: "operator",
+  });
+  expect(membershipError).toBeNull();
+  const { error: presetError } = await admin.from("presets").insert({
+    id: secondaryPresetId,
+    workspace_id: secondaryWorkspaceId,
+    name: "Secondary Amazon Preset",
+  });
+  expect(presetError).toBeNull();
+  const { error: sizeGuideError } = await admin.from("size_guides").insert({
+    id: secondarySizeGuideId,
+    workspace_id: secondaryWorkspaceId,
+    name: "Secondary Amazon Size",
+    max_width_in: 2,
+    max_height_in: 2,
+    min_width_in: 1,
+    min_height_in: 1,
+  });
+  expect(sizeGuideError).toBeNull();
+});
+
+afterAll(async () => {
+  const admin = createSupabaseAdminClient();
+  await Promise.all([
+    importUserId ? admin.auth.admin.deleteUser(importUserId) : Promise.resolve(),
+    nonMemberUserId ? admin.auth.admin.deleteUser(nonMemberUserId) : Promise.resolve(),
+  ]);
 });
 
 describe("Amazon import database integration", () => {
@@ -91,7 +169,7 @@ describe("Amazon import database integration", () => {
     const secondId = `amazon-order-item:${randomUUID()}`;
     const result = await importAmazonOrderItemsTransactional({
       workspaceId: PRIMARY_WORKSPACE_ID,
-      userId: null,
+      userId: importUserId,
       items: [item(firstId), item(secondId, "Grace\nLPN")],
     });
     expect(result).toEqual({
@@ -133,13 +211,13 @@ describe("Amazon import database integration", () => {
     const id = `amazon-order-item:${randomUUID()}`;
     await importAmazonOrderItemsTransactional({
       workspaceId: PRIMARY_WORKSPACE_ID,
-      userId: null,
+      userId: importUserId,
       items: [item(id, "Original")],
     });
 
     const result = await importAmazonOrderItemsTransactional({
       workspaceId: PRIMARY_WORKSPACE_ID,
-      userId: null,
+      userId: importUserId,
       items: [item(id, "Replacement")],
     });
     expect(result).toEqual({
@@ -166,7 +244,7 @@ describe("Amazon import database integration", () => {
 
     await expect(importAmazonOrderItemsTransactional({
       workspaceId: PRIMARY_WORKSPACE_ID,
-      userId: null,
+      userId: importUserId,
       items: [valid, invalid],
     })).rejects.toThrow("Unable to import Amazon order items");
 
@@ -175,6 +253,110 @@ describe("Amazon import database integration", () => {
       .from("order_items")
       .select("id")
       .in("id", [validId, invalidId]);
+    expect(error).toBeNull();
+    expect(data).toEqual([]);
+  });
+
+  it("rejects duplicate item IDs in the RPC before any rows are written", async () => {
+    const id = `amazon-order-item:${randomUUID()}`;
+    const duplicatePayload = payloadFor(item(id));
+    const admin = createSupabaseAdminClient();
+
+    const { error } = await admin.rpc("import_amazon_order_items", {
+      p_workspace_id: PRIMARY_WORKSPACE_ID,
+      p_user_id: importUserId,
+      p_items: [duplicatePayload, duplicatePayload],
+    });
+    expect(error?.message).toContain("unique order item IDs");
+
+    const { data: orders, error: queryError } = await admin
+      .from("order_items")
+      .select("id")
+      .eq("id", id);
+    expect(queryError).toBeNull();
+    expect(orders).toEqual([]);
+  });
+
+  it("rejects an authenticated user without workspace membership", async () => {
+    const id = `amazon-order-item:${randomUUID()}`;
+    await expect(importAmazonOrderItemsTransactional({
+      workspaceId: PRIMARY_WORKSPACE_ID,
+      userId: nonMemberUserId,
+      items: [item(id)],
+    })).rejects.toThrow("Unable to import Amazon order items.");
+
+    const admin = createSupabaseAdminClient();
+    const { data, error } = await admin
+      .from("order_items")
+      .select("id")
+      .eq("id", id);
+    expect(error).toBeNull();
+    expect(data).toEqual([]);
+  });
+
+  it("rejects a durable ID that already belongs to another workspace and rolls back", async () => {
+    const conflictId = `amazon-order-item:${randomUUID()}`;
+    const validId = `amazon-order-item:${randomUUID()}`;
+    const admin = createSupabaseAdminClient();
+    const { error: existingError } = await admin.from("order_items").insert({
+      id: conflictId,
+      workspace_id: secondaryWorkspaceId,
+      status: "open",
+      source_json: { source: "secondary-workspace" },
+    });
+    expect(existingError).toBeNull();
+
+    await expect(importAmazonOrderItemsTransactional({
+      workspaceId: PRIMARY_WORKSPACE_ID,
+      userId: importUserId,
+      items: [item(validId), item(conflictId)],
+    })).rejects.toThrow("Unable to import Amazon order items.");
+
+    const { data: validRows, error: validError } = await admin
+      .from("order_items")
+      .select("id")
+      .eq("id", validId);
+    expect(validError).toBeNull();
+    expect(validRows).toEqual([]);
+    const { data: existing, error: conflictError } = await admin
+      .from("order_items")
+      .select("workspace_id, source_json")
+      .eq("id", conflictId)
+      .maybeSingle();
+    expect(conflictError).toBeNull();
+    expect(existing).toEqual({
+      workspace_id: secondaryWorkspaceId,
+      source_json: { source: "secondary-workspace" },
+    });
+  });
+
+  it("rejects preset and size guide references from another workspace and rolls back", async () => {
+    const presetValidId = `amazon-order-item:${randomUUID()}`;
+    const crossPresetId = `amazon-order-item:${randomUUID()}`;
+    const crossPresetItem = item(crossPresetId);
+    crossPresetItem.presetId = secondaryPresetId;
+
+    await expect(importAmazonOrderItemsTransactional({
+      workspaceId: PRIMARY_WORKSPACE_ID,
+      userId: importUserId,
+      items: [item(presetValidId), crossPresetItem],
+    })).rejects.toThrow("Unable to import Amazon order items.");
+
+    const sizeValidId = `amazon-order-item:${randomUUID()}`;
+    const crossSizeId = `amazon-order-item:${randomUUID()}`;
+    const crossSizeItem = item(crossSizeId);
+    crossSizeItem.settings.boundingSizePresetId = secondarySizeGuideId;
+    await expect(importAmazonOrderItemsTransactional({
+      workspaceId: PRIMARY_WORKSPACE_ID,
+      userId: importUserId,
+      items: [item(sizeValidId), crossSizeItem],
+    })).rejects.toThrow("Unable to import Amazon order items.");
+
+    const admin = createSupabaseAdminClient();
+    const { data, error } = await admin
+      .from("order_items")
+      .select("id")
+      .in("id", [presetValidId, crossPresetId, sizeValidId, crossSizeId]);
     expect(error).toBeNull();
     expect(data).toEqual([]);
   });

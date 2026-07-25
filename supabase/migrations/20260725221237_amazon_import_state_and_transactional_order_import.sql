@@ -40,6 +40,7 @@ declare
   v_line_row public.design_lines%rowtype;
   v_design_id uuid;
   v_inserted_id text;
+  v_existing_workspace_id uuid;
   v_item_index integer;
   v_line_index integer;
   v_imported_ids text[] := array[]::text[];
@@ -61,20 +62,42 @@ begin
       message = 'p_workspace_id does not reference an existing workspace';
   end if;
 
-  if p_user_id is not null and not exists (
+  if p_user_id is null then
+    raise exception using
+      errcode = '22023',
+      message = 'p_user_id is required';
+  end if;
+
+  if not exists (
     select 1
-    from auth.users
-    where id = p_user_id
+    from public.workspace_memberships
+    where workspace_id = p_workspace_id
+      and user_id = p_user_id
   ) then
     raise exception using
-      errcode = '23503',
-      message = 'p_user_id does not reference an existing user';
+      errcode = '42501',
+      message = 'p_user_id is not a member of p_workspace_id';
   end if;
 
   if p_items is null or jsonb_typeof(p_items) <> 'array' then
     raise exception using
       errcode = '22023',
       message = 'p_items must be a JSON array';
+  end if;
+
+  if exists (
+    select 1
+    from (
+      select value -> 'orderItem' ->> 'id' as order_item_id
+      from jsonb_array_elements(p_items)
+    ) as requested_items
+    where order_item_id is not null
+    group by order_item_id
+    having count(*) > 1
+  ) then
+    raise exception using
+      errcode = '22023',
+      message = 'p_items must contain unique order item IDs';
   end if;
 
   for v_item, v_item_index in
@@ -167,6 +190,28 @@ begin
         message = format('p_items[%s].design has invalid values', v_item_index - 1);
     end if;
 
+    if v_design_row.preset_id is not null and not exists (
+      select 1
+      from public.presets
+      where id = v_design_row.preset_id
+        and workspace_id = p_workspace_id
+    ) then
+      raise exception using
+        errcode = '23503',
+        message = format('p_items[%s].design preset does not belong to the workspace', v_item_index - 1);
+    end if;
+
+    if v_design_row.size_guide_id is not null and not exists (
+      select 1
+      from public.size_guides
+      where id = v_design_row.size_guide_id
+        and workspace_id = p_workspace_id
+    ) then
+      raise exception using
+        errcode = '23503',
+        message = format('p_items[%s].design size guide does not belong to the workspace', v_item_index - 1);
+    end if;
+
     for v_line, v_line_index in
       select value, ordinality::integer
       from jsonb_array_elements(v_lines) with ordinality
@@ -244,6 +289,20 @@ begin
     returning id into v_inserted_id;
 
     if v_inserted_id is null then
+      select workspace_id
+      into v_existing_workspace_id
+      from public.order_items
+      where id = v_order_row.id;
+
+      if v_existing_workspace_id is distinct from p_workspace_id then
+        raise exception using
+          errcode = '23505',
+          message = format(
+            'order item ID %s already belongs to another workspace',
+            v_order_row.id
+          );
+      end if;
+
       v_existing_ids := array_append(v_existing_ids, v_order_row.id);
       continue;
     end if;

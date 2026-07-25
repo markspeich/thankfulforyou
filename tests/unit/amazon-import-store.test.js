@@ -181,7 +181,7 @@ describe("Amazon import store", () => {
     database.responses.push({
       data: {
         importedOrderItemIds: ["amazon-order-item:NEW"],
-        existingOrderItemIds: ["amazon-order-item:EXISTING"],
+        existingOrderItemIds: [],
       },
       error: null,
     });
@@ -215,7 +215,7 @@ describe("Amazon import store", () => {
       items,
     })).resolves.toEqual({
       importedOrderItemIds: ["amazon-order-item:NEW"],
-      existingOrderItemIds: ["amazon-order-item:EXISTING"],
+      existingOrderItemIds: [],
     });
 
     expect(database.calls).toEqual([{
@@ -262,6 +262,73 @@ describe("Amazon import store", () => {
       },
     }]);
     expect(database.calls[0].args.p_items[0].lines[0]).not.toHaveProperty("design_id");
+  });
+
+  it("rejects duplicate requested item IDs before calling the RPC", async () => {
+    const { importAmazonOrderItemsTransactional } = await import("../../api/_lib/amazon-import-store.js");
+    const duplicate = {
+      id: "amazon-order-item:DUPLICATE",
+      text: "Ada",
+      source: { orderNumber: "1001" },
+    };
+
+    await expect(importAmazonOrderItemsTransactional({
+      workspaceId: "workspace-1",
+      userId: "user-1",
+      items: [duplicate, { ...duplicate, text: "Replacement" }],
+    })).rejects.toMatchObject({
+      name: "AmazonImportStoreError",
+      code: "amazon_import_store_error",
+      message: "Amazon import items must have unique order item IDs.",
+    });
+    expect(database.calls).toEqual([]);
+  });
+
+  it.each([
+    {
+      label: "missing a requested ID",
+      data: {
+        importedOrderItemIds: ["amazon-order-item:A"],
+        existingOrderItemIds: [],
+      },
+    },
+    {
+      label: "returns an unrequested ID",
+      data: {
+        importedOrderItemIds: ["amazon-order-item:A"],
+        existingOrderItemIds: ["amazon-order-item:UNREQUESTED"],
+      },
+    },
+    {
+      label: "duplicates an ID within one result array",
+      data: {
+        importedOrderItemIds: ["amazon-order-item:A", "amazon-order-item:A"],
+        existingOrderItemIds: ["amazon-order-item:B"],
+      },
+    },
+    {
+      label: "overlaps imported and existing IDs",
+      data: {
+        importedOrderItemIds: ["amazon-order-item:A"],
+        existingOrderItemIds: ["amazon-order-item:A", "amazon-order-item:B"],
+      },
+    },
+  ])("rejects an RPC result that $label", async ({ data }) => {
+    database.responses.push({ data, error: null });
+    const { importAmazonOrderItemsTransactional } = await import("../../api/_lib/amazon-import-store.js");
+
+    await expect(importAmazonOrderItemsTransactional({
+      workspaceId: "workspace-1",
+      userId: "user-1",
+      items: [
+        { id: "amazon-order-item:A", text: "Ada" },
+        { id: "amazon-order-item:B", text: "RN" },
+      ],
+    })).rejects.toMatchObject({
+      name: "AmazonImportStoreError",
+      code: "amazon_import_store_error",
+      message: "Amazon import database returned an invalid response.",
+    });
   });
 
   it("strictly validates RPC results and hides database details", async () => {
