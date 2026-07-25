@@ -4,6 +4,7 @@ const DATA_URL_PATTERN = /^data:/i;
 const ASSET_VALUE_PATTERN = /(?:^|[\\/])[^\s]+\.(?:avif|gif|jpe?g|png|svg|webp)(?:[?#].*)?$/i;
 const SVG_PATTERN = /<svg\b|<path\b|<g\b/i;
 const EXCLUDED_LABEL_PATTERN = /(?:\b(?:url|preview|layout|placement|position|asset|image|svg|filename|filepath|file path)\b|\bid\b|identifier|uuid|guid)/i;
+const METADATA_NODE_TYPE_PATTERN = /(?:preview|render(?:ed)?|layout|asset|image|svg|thumbnail|placement)/i;
 
 function normalizedString(value) {
   return typeof value === "string" || typeof value === "number" ? String(value).trim() : "";
@@ -14,11 +15,17 @@ function firstNonBlank(...values) {
 }
 
 function decodedValue(value) {
-  try {
-    return decodeURIComponent(value);
-  } catch {
-    return value;
+  let decoded = value;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const next = decodeURIComponent(decoded);
+      if (next === decoded) break;
+      decoded = next;
+    } catch {
+      break;
+    }
   }
+  return decoded;
 }
 
 
@@ -28,6 +35,7 @@ function acceptedField(name, value) {
     && !EXCLUDED_LABEL_PATTERN.test(name)
     && !URL_PATTERN.test(value)
     && !DATA_URL_PATTERN.test(value)
+    && !DATA_URL_PATTERN.test(decoded)
     && !ASSET_VALUE_PATTERN.test(decoded)
     && !SVG_PATTERN.test(decoded));
 }
@@ -85,6 +93,7 @@ function legacyNodes(document) {
     for (const node of Array.isArray(children) ? children : []) {
       if (!node || typeof node !== "object" || seen.has(node)) continue;
       seen.add(node);
+      if (METADATA_NODE_TYPE_PATTERN.test(normalizedString(node.type))) continue;
       if (typeof node.type === "string") nodes.push(node);
       for (const nested of [node.children, node.nodes, node.areas]) visit(nested);
     }
@@ -93,20 +102,28 @@ function legacyNodes(document) {
   return nodes;
 }
 
+function appendUniqueLegacyField(fields, seenFields, kind, response) {
+  if (!response) return;
+  const key = `${kind}\u0000${response.name}\u0000${response.value}`;
+  if (seenFields.has(key)) return;
+  seenFields.add(key);
+  fields.push(response);
+}
 function extractLegacyFields(document) {
   const freeTextFields = [];
   const configurationFields = [];
+  const seenFields = new Set();
   const root = documentRoot(document);
   for (const node of legacyNodes(root)) {
     const type = normalizedString(node.type).toLowerCase();
     if (type.includes("text")) {
       const response = field(node.label, firstNonBlank(node.text, node.value, node.displayValue));
-      if (response) freeTextFields.push(response);
+      appendUniqueLegacyField(freeTextFields, seenFields, "text", response);
       continue;
     }
     if (type.includes("option")) {
       const response = field(node.label, firstNonBlank(node.optionSelection?.label, node.optionValue, node.displayValue));
-      if (response) configurationFields.push(response);
+      appendUniqueLegacyField(configurationFields, seenFields, "option", response);
     }
   }
   return { freeTextFields, configurationFields };

@@ -62,11 +62,13 @@ describe("Amazon customization normalizer", () => {
 
   it("ignores preview, render, and layout metadata outside recognized legacy node containers", () => {
     // Break caught: recursive traversal imports generated metadata or repeats a response.
-    const nameNode = { type: "text", label: "Name", displayValue: "Morgan" };
     const legacy = {
       customizationData: {
-        nodes: [nameNode],
-        customizations: [nameNode],
+        nodes: [
+          { type: "text", label: "Name", displayValue: "Morgan" },
+          { type: "preview", children: [{ type: "text", label: "Nested preview", displayValue: "Wrong" }] },
+        ],
+        customizations: [{ type: "text", label: "Name", displayValue: "Morgan" }],
         preview: { nodes: [{ type: "text", label: "Preview name", displayValue: "Wrong" }] },
         render: { type: "text", label: "Rendered name", displayValue: "Wrong" },
         layout: { children: [{ type: "option", label: "Layout color", displayValue: "Wrong" }] },
@@ -85,10 +87,15 @@ describe("Amazon customization normalizer", () => {
       { customizationType: "option", label: "Color", optionValue: " ", displayValue: "Teal" },
       { customizationType: "text", label: "Engraving", text: "data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=" },
       { customizationType: "text", label: "Placement", text: "%3Csvg%3E%3C%2Fsvg%3E" },
+      { customizationType: "text", label: "Encoded data", text: "data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2Zz48L3N2Zz4%3D" },
       { customizationType: "option", label: "Selection", optionValue: "asset%2Epng" },
+      { customizationType: "text", label: "Broken encoded value", text: "%E0%A4%A" },
     ] }] } } };
     expect(extractAmazonCustomizationFields(customization)).toEqual({
-      freeTextFields: [{ name: "Name", value: "Avery" }],
+      freeTextFields: [
+        { name: "Name", value: "Avery" },
+        { name: "Broken encoded value", value: "%E0%A4%A" },
+      ],
       configurationFields: [{ name: "Color", value: "Teal" }],
     });
   });
