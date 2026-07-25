@@ -86,6 +86,27 @@ function installSupabaseSessionWithLogoutTracking(page, session) {
   }, { providedSession: session });
 }
 
+function installRefreshableSupabaseSession(page) {
+  return page.addInitScript(() => {
+    window.__APP_CONFIG__ = { supabaseUrl: "https://example.supabase.co", supabaseAnonKey: "anon-key" };
+    let session = {
+      access_token: "expired-token",
+      refresh_token: "refresh-token",
+      user: { id: "user-1", email: "mark@example.com" },
+    };
+    window.__TFU_TEST_SUPABASE_CLIENT__ = {
+      auth: {
+        getSession: async () => ({ data: { session }, error: null }),
+        refreshSession: async () => {
+          session = { ...session, access_token: "refreshed-token" };
+          return { data: { session }, error: null };
+        },
+        onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }),
+      },
+    };
+  });
+}
+
 test("shows an operator sign-in screen when no batch session exists", async ({ page }) => {
   await installSupabaseSession(page, null);
 
@@ -112,6 +133,73 @@ test("shows a blocked configuration error when Supabase config is missing", asyn
 
   await expect(page.locator("#productionBatchSignInForm")).toBeHidden();
   await expect(page.locator("#productionBatchAuthError")).toContainText("Supabase browser config is missing.");
+});
+
+test("silently refreshes an expired JWT and retries production batch startup", async ({ page }) => {
+  await installRefreshableSupabaseSession(page);
+
+  await page.route("**/api/batch-session", async (route) => {
+    if (route.request().headers().authorization === "Bearer expired-token") {
+      await route.fulfill({
+        status: 401,
+        contentType: "application/json; charset=utf-8",
+        body: JSON.stringify({ error: "JWT has expired" }),
+      });
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify({
+        operator: { id: "user-1", email: "mark@example.com" },
+        workspace: { id: "workspace-1", name: "Thankful For You" },
+        batch: { id: "batch-1", workspaceId: "workspace-1" },
+      }),
+    });
+  });
+  await page.route("**/api/production-batch?batchId=batch-1", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify({
+        batch: { id: "batch-1", workspaceId: "workspace-1" },
+        activeOrderItemId: "remote-order-1",
+        orderItems: [
+          {
+            id: "remote-order-1",
+            revision: 1,
+            text: "Refreshed Session Design",
+            status: "in-progress",
+            settings: {
+              text: "Refreshed Session Design",
+              presetId: "preset-oval",
+              backingMm: 2.2,
+              weldExportedDesign: true,
+              lines: [
+                {
+                  fontId: "candlepin",
+                  bridgeMm: 0.5,
+                  lineBridgeMm: 0.5,
+                  offsetXMm: 0,
+                  fontSizeMm: 34,
+                  horizontalScale: 1,
+                  verticalScale: 1,
+                  lockTextHeight: false,
+                },
+              ],
+            },
+          },
+        ],
+      }),
+    });
+  });
+
+  await page.goto("/production-batch");
+
+  await expect(page.locator("#productionBatchAuthGate")).toBeHidden();
+  await expect(page.locator("#importStatus")).not.toContainText("Supabase sync unavailable");
+  await expect(page.locator("#textInput")).toHaveValue("Refreshed Session Design");
+  await expect(page.locator("#initialBatchLoading")).toBeHidden();
 });
 
 test("returns to the sign-in state when a production batch save gets a 401", async ({ page }) => {

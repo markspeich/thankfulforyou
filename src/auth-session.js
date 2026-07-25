@@ -99,6 +99,17 @@ export async function getSignedInSession() {
   return data.session;
 }
 
+export async function refreshAccessToken() {
+  const client = getBrowserSupabaseClient();
+  const { data, error } = await client.auth.refreshSession();
+
+  if (error) {
+    throw error;
+  }
+
+  return data.session?.access_token ?? null;
+}
+
 export async function getAccessToken() {
   const session = await getSignedInSession();
   return session?.access_token ?? null;
