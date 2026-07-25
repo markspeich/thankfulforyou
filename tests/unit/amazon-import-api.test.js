@@ -132,6 +132,20 @@ describe("Amazon import API", () => {
     expect(res.flushHeaders).not.toHaveBeenCalled();
   });
 
+  it("maps exposed auth-shaped secrets to a fixed public response", async () => {
+    const secret = "https://signed.example/archive?api_key=secret note=Sensitive body=raw";
+    const res = response();
+    const unsafe = Object.assign(new Error(secret), { statusCode: 401, expose: true, code: "upstream" });
+
+    await createAmazonImportHandler({ resolveAuth: vi.fn().mockRejectedValue(unsafe) })({ method: "POST" }, res);
+
+    expect(res).toMatchObject({ statusCode: 401, body: { error: "Authentication required." } });
+    expect(JSON.stringify(res.body)).not.toContain("signed.example");
+    expect(JSON.stringify(res.body)).not.toContain("api_key");
+    expect(JSON.stringify(res.body)).not.toContain("Sensitive");
+
+    expect(JSON.stringify(res.body)).not.toContain("raw");
+  });
   it("writes one safe fallback error frame and releases when a run fails", async () => {
     const secret = "https://zme-caps.amazon.com/archive?key=do-not-leak";
     const release = vi.fn();
@@ -174,6 +188,25 @@ describe("Amazon import API", () => {
     expect(res.write).toHaveBeenCalledOnce();
     expect(res.chunks.join("")).not.toContain("Sensitive customization");
     expect(res.ended).not.toBe(true);
+  });
+  it("writes a safe error frame when release fails after a successful run", async () => {
+    const release = vi.fn().mockRejectedValue(new Error("release API key secret"));
+    const res = response();
+
+    await createAmazonImportHandler({
+      resolveAuth: vi.fn().mockResolvedValue({ workspaceId: "workspace-1", userId: "user-1" }),
+      serviceFactory: () => ({
+        prepare: async () => ({ run: async () => {}, release }),
+      }),
+    })({ method: "POST" }, res);
+
+    expect(release).toHaveBeenCalledOnce();
+    expect(res.chunks).toEqual([
+      '{"type":"error","code":"import_failed","message":"Unable to import Amazon orders."}\n',
+    ]);
+    expect(res.chunks.join("")).not.toContain("secret");
+
+    expect(res.ended).toBe(true);
   });
 
   it("passes the exact Amazon service dependencies to its factory", async () => {

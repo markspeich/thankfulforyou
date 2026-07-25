@@ -13,6 +13,11 @@ const SAFE_AMAZON_ERROR_MESSAGES = Object.freeze({
   import_not_active: "The Amazon import is no longer active.",
   import_already_started: "This Amazon import run has already started.",
 });
+const SAFE_AUTH_ERROR_MESSAGES = Object.freeze({
+  401: "Authentication required.",
+  403: "Shared workspace access denied.",
+  503: "Unable to reach Supabase auth from this dev server process.",
+});
 
 const PROGRESS_STAGES = new Set(["fetching_shipments", "processing_shipments"]);
 
@@ -38,8 +43,11 @@ function publicError(error) {
   if (message) {
     return { statusCode: 409, body: { error: message, code: error.code } };
   }
-  if (error?.expose && Number.isInteger(error.statusCode)) {
-    return { statusCode: error.statusCode, body: { error: error.message } };
+  const authMessage = error?.expose && Number.isInteger(error.statusCode)
+    ? SAFE_AUTH_ERROR_MESSAGES[error.statusCode]
+    : null;
+  if (authMessage) {
+    return { statusCode: error.statusCode, body: { error: authMessage } };
   }
   return { statusCode: 500, body: { error: FALLBACK_ERROR } };
 }
@@ -61,12 +69,11 @@ export function createAmazonImportHandler({
     let prepared;
     let streaming = false;
     let transportFailed = false;
-    const release = async () => {
-      try {
-        await prepared?.release();
-      } catch {
-        // The run or response failure remains the primary result.
-      }
+    let releasePromise;
+    const release = () => {
+      if (!prepared) return Promise.resolve();
+      if (!releasePromise) releasePromise = Promise.resolve().then(() => prepared.release());
+      return releasePromise;
     };
 
     try {
@@ -107,7 +114,7 @@ export function createAmazonImportHandler({
       await release();
       if (isResponseWritable(res)) res.end();
     } catch (error) {
-      await release();
+      try { await release(); } catch { /* The original run or response failure remains primary. */ }
       if (!streaming) {
         const response = publicError(error);
         res.status(response.statusCode).json(response.body);

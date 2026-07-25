@@ -213,6 +213,9 @@ const server = createServer(async (request, response) => {
       };
       const res = {
         statusCode: 200,
+        get destroyed() { return response.destroyed; },
+        get writableEnded() { return response.writableEnded; },
+        get writableFinished() { return response.writableFinished; },
         status(code) {
           this.statusCode = code;
           return this;
@@ -246,6 +249,8 @@ const server = createServer(async (request, response) => {
         end() { response.end(); },
         write(chunk) { return response.write(chunk); },
         flushHeaders() { response.flushHeaders(); },
+        once(...args) { return response.once(...args); },
+        off(...args) { return response.off(...args); },
       };
 
       try { await handler(req, res); }

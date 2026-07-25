@@ -263,3 +263,16 @@ describe("dev server Amazon import wrapper", () => {
     expect(source).toContain('"/api/amazon-import": "../api/amazon-import.js"');
   });
 });
+describe("dev server streaming response facade", () => {
+
+  it("delegates close state and EventEmitter methods needed for backpressure", async () => {
+    const source = await readFile("tools/dev_server.mjs", "utf8");
+
+    expect(source).toContain("get destroyed() { return response.destroyed; }");
+    expect(source).toContain("get writableEnded() { return response.writableEnded; }");
+    expect(source).toContain("get writableFinished() { return response.writableFinished; }");
+    expect(source).toContain("write(chunk) { return response.write(chunk); }");
+    expect(source).toContain("once(...args) { return response.once(...args); }");
+    expect(source).toContain("off(...args) { return response.off(...args); }");
+  });
+});
