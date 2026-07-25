@@ -60,6 +60,10 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 ## Current Production Requirements
 
 - Loading the app, importing or pasting orders, adding order items to a production batch, and completing a production batch must show a modal progress dialog immediately. The same dialog must transition to a completion summary with operation-relevant counts when the work finishes.
+- If pasted clipboard data is invalid or cannot be imported, the progress dialog must stop spinning and transition to a dismissible, plain-language error state without import summary counts.
+- Unrecognized clipboard contents must tell the operator to copy the orders again and retry rather than exposing a parser error.
+- Blocked clipboard permission must tell the operator to allow clipboard access for the site and retry rather than exposing the browser's raw clipboard API error.
+- If the browser blocks clipboard reads without showing a permission prompt, the error dialog must provide a focused manual-paste field that can import the pasted order data through the same workflow.
 
 - The canonical production app URL is `https://app.thankfulforyou.net`.
 - Production OAuth callbacks and other absolute application URLs must use the canonical production hostname rather than a Vercel deployment hostname.

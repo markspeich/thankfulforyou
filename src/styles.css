@@ -872,9 +872,38 @@ select {
 }
 
 .paste-summary-counts[hidden],
+.paste-fallback[hidden],
 #pasteSummaryActions[hidden],
 #closePasteSummaryButton[hidden] {
   display: none;
+}
+
+.paste-fallback {
+  display: grid;
+  gap: 10px;
+}
+
+.paste-fallback label {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.paste-fallback textarea {
+  width: 100%;
+  min-height: 112px;
+  resize: vertical;
+  padding: 12px;
+  border: 1px solid #cbdce2;
+  border-radius: 10px;
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+}
+
+.paste-fallback .confirmation-dialog-button {
+  justify-self: end;
 }
 
 .paste-summary-counts {
