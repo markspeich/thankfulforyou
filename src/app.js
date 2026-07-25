@@ -332,6 +332,10 @@ const pasteSummaryActions = document.querySelector("#pasteSummaryActions");
 const pasteSummaryLabels = [document.querySelector("#pasteSummaryImportedLabel"), document.querySelector("#pasteSummarySkippedLabel"), document.querySelector("#pasteSummaryAddedLabel")];
 const operationProgress = document.querySelector("#operationProgress");
 const operationProgressLabel = document.querySelector("#operationProgressLabel");
+const pasteFallback = document.querySelector("#pasteFallback");
+const pasteFallbackInput = document.querySelector("#pasteFallbackInput");
+const pasteFallbackImportButton = document.querySelector("#pasteFallbackImportButton");
+let pasteFallbackTarget = null;
 const presetAssignmentDialog = document.querySelector("#presetAssignmentDialog");
 const presetAssignmentDescription = document.querySelector("#presetAssignmentDescription");
 const closePresetAssignmentDialogButton = document.querySelector("#closePresetAssignmentDialogButton");
@@ -5840,6 +5844,9 @@ function startOperationDialog({ title, description, progressLabel = "Working..."
   pasteSummaryTitle.textContent = title; pasteSummaryDescription.textContent = description; operationProgressLabel.textContent = progressLabel;
   [pasteSummaryImportedCount, pasteSummarySkippedCount, pasteSummaryAddedCount].forEach((node) => { node.textContent = "0"; });
   ["Imported", "Skipped duplicates", "Added to batch"].forEach((label, index) => { pasteSummaryLabels[index].textContent = label; });
+  pasteFallback.hidden = true;
+  pasteFallbackInput.value = "";
+  pasteFallbackTarget = null;
   operationProgress.hidden = false; pasteSummaryCounts.hidden = true; pasteSummaryActions.hidden = true; closePasteSummaryButton.hidden = true;
   pasteSummaryDialog.querySelector(".batch-summary-card").dataset.operationState = "progress";
   if (!pasteSummaryDialog.open) {
@@ -5859,9 +5866,46 @@ function completeOperationDialog({ title, description, metrics = [] }) {
     pasteSummaryLabels[index].textContent = metric.label || "Total";
     node.textContent = String(Math.max(0, Number(metric.value) || 0));
   });
-  operationProgress.hidden = true; pasteSummaryCounts.hidden = false; pasteSummaryActions.hidden = false; closePasteSummaryButton.hidden = false;
+  operationProgress.hidden = true; pasteSummaryCounts.hidden = metrics.length === 0; pasteSummaryActions.hidden = false; closePasteSummaryButton.hidden = false;
   pasteSummaryDialog.querySelector(".batch-summary-card").dataset.operationState = "complete";
   if (!pasteSummaryDialog.open) pasteSummaryDialog.showModal();
+}
+function getPasteFailurePresentation(error, fallbackMessage) {
+  const errorMessage = error instanceof Error ? error.message : "";
+  const clipboardAccessBlocked = error?.name === "NotAllowedError"
+    || /clipboard.*permission|permission.*clipboard|read permission denied/i.test(errorMessage);
+  if (clipboardAccessBlocked) {
+    return {
+      title: "Clipboard Access Blocked",
+      description: "Your browser didn't show a clipboard permission prompt. Paste the copied order data below to continue.",
+      allowManualPaste: true,
+    };
+  }
+  if (error instanceof SyntaxError || errorMessage === "Clipboard data did not include any importable Etsy designs.") {
+    return {
+      title: "Couldn't Paste Orders",
+      description: "We couldn't find recognizable order data in your clipboard. Copy the orders again and retry.",
+    };
+  }
+  return {
+    title: "Paste Failed",
+    description: fallbackMessage,
+  };
+}
+function showOperationErrorDialog(error, fallbackMessage, target) {
+  const presentation = getPasteFailurePresentation(error, fallbackMessage);
+  completeOperationDialog(presentation);
+  pasteFallback.hidden = !presentation.allowManualPaste;
+  if (presentation.allowManualPaste) {
+    pasteFallbackTarget = target;
+    pasteFallbackInput.focus();
+  }
+}
+async function importManualPasteFallback() {
+  const target = pasteFallbackTarget;
+  const clipboardText = pasteFallbackInput.value;
+  if (target === "orders") await importOrdersFromClipboard({ clipboardText });
+  if (target === "productionBatch") await importFromClipboard({ clipboardText });
 }
 function showPasteSummaryDialog({ targetLabel = "Orders", importedCount = 0, skippedDuplicateCount = 0, addedToBatchCount = 0 } = {}) {
   completeOperationDialog({ title: "Paste Summary", description: `Clipboard import results for ${targetLabel}.`, metrics: [{ label: "Imported", value: importedCount }, { label: "Skipped duplicates", value: skippedDuplicateCount }, { label: "Added to batch", value: addedToBatchCount }] });
@@ -10476,8 +10520,8 @@ async function completeCurrentProductionBatch() {
   completeOperationDialog({ title: "Production Batch Complete", description: "The production batch was completed successfully.", metrics: [{ label: "Designs completed", value: completedOrderCount }, { label: "Incomplete overrides", value: incompleteOrders.length }, { label: "Remaining", value: 0 }] });
 }
 
-async function importFromClipboard() {
-  if (!navigator.clipboard?.readText) {
+async function importFromClipboard({ clipboardText: providedClipboardText = null } = {}) {
+  if (providedClipboardText === null && !navigator.clipboard?.readText) {
     updateWorkflowAlert("Clipboard import is not available in this browser context.", "error");
     return;
   }
@@ -10494,7 +10538,7 @@ async function importFromClipboard() {
   render();
 
   try {
-    const clipboardText = await navigator.clipboard.readText();
+    const clipboardText = providedClipboardText ?? await navigator.clipboard.readText();
     const importedItems = parseImportedItems(clipboardText, { getPresetIdForListingId });
     assertImportableItems(importedItems);
     const { filteredItems, skippedCount } = filterNewProductionBatchImportItems(importedItems);
@@ -10536,6 +10580,7 @@ async function importFromClipboard() {
       "Clipboard import failed.",
       "Production batch session expired. Sign in again to continue importing orders.",
     );
+    showOperationErrorDialog(error, "Clipboard import failed.", "productionBatch");
   } finally {
     ordersDatabaseMutationInFlight = false;
     importClipboardButton.disabled = false;
@@ -10544,8 +10589,8 @@ async function importFromClipboard() {
   }
 }
 
-async function importOrdersFromClipboard() {
-  if (!navigator.clipboard?.readText) {
+async function importOrdersFromClipboard({ clipboardText: providedClipboardText = null } = {}) {
+  if (providedClipboardText === null && !navigator.clipboard?.readText) {
     updateWorkflowAlert("Clipboard import is not available in this browser context.", "error");
     return;
   }
@@ -10562,7 +10607,7 @@ async function importOrdersFromClipboard() {
   render();
 
   try {
-    const clipboardText = await navigator.clipboard.readText();
+    const clipboardText = providedClipboardText ?? await navigator.clipboard.readText();
     const importedItems = parseImportedItems(clipboardText, { getPresetIdForListingId });
     assertImportableItems(importedItems);
     const accessToken = await resolveProductionBatchMutationAccessToken();
@@ -10588,6 +10633,7 @@ async function importOrdersFromClipboard() {
       "Clipboard import failed.",
       "Production batch session expired. Sign in again to continue importing orders.",
     );
+    showOperationErrorDialog(error, "Clipboard import failed.", "orders");
   } finally {
     databaseOrdersImporting = false;
     ordersDatabaseMutationInFlight = false;
@@ -12728,6 +12774,9 @@ colorCountsDialog?.addEventListener("click", (event) => {
 });
 closePasteSummaryButton?.addEventListener("click", closePasteSummaryDialog);
 pasteSummaryDoneButton?.addEventListener("click", closePasteSummaryDialog);
+pasteFallbackImportButton?.addEventListener("click", () => {
+  void importManualPasteFallback();
+});
 pasteSummaryDialog?.addEventListener("cancel", (event) => { if (pasteSummaryDialog.querySelector(".batch-summary-card")?.dataset.operationState === "progress") event.preventDefault(); });
 pasteSummaryDialog?.addEventListener("click", (event) => {
   if (event.target === pasteSummaryDialog) {

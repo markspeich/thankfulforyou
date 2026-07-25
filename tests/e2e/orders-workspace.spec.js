@@ -44,6 +44,20 @@ function installClipboardText(page, text) {
   }, text);
 }
 
+function installClipboardReadError(page, { name, message }) {
+  return page.addInitScript(({ errorName, errorMessage }) => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        readText: async () => {
+          throw new DOMException(errorMessage, errorName);
+        },
+        writeText: async () => {},
+      },
+    });
+  }, { errorName: name, errorMessage: message });
+}
+
 async function installProductionBatchRoutes(page, options = {}) {
   const { orderItems = [], onGet = null, onPut = null } = options;
   let productionBatchSnapshot = {
@@ -1031,6 +1045,63 @@ test("pastes imported Etsy items into the active production batch", async ({ pag
   });
   await expect.poll(() => productionBatchGetCount).toBe(1);
   await expect(page.getByRole("button", { name: "Paste", exact: true })).toBeEnabled();
+});
+
+test("explains invalid clipboard data without showing import counts", async ({ page }) => {
+  await installSupabaseSession(page);
+  await installClipboardText(page, "this is not order data");
+  await installProductionBatchRoutes(page);
+  await installOrdersWorkspaceRoutes(page);
+
+  await gotoAfterBatchLoads(page);
+  await page.getByRole("button", { name: "Production Batch", exact: true }).click();
+  await page.getByLabel("Batch tools").click();
+  await page.getByRole("button", { name: "Paste", exact: true }).click();
+
+  const dialog = page.locator("#pasteSummaryDialog");
+  await expect(dialog).toBeVisible();
+  await expect(dialog.locator("#operationProgress")).toBeHidden();
+  await expect(dialog.locator("#pasteSummaryTitle")).toHaveText("Couldn't Paste Orders");
+  await expect(dialog.locator("#pasteSummaryDescription")).toHaveText(
+    "We couldn't find recognizable order data in your clipboard. Copy the orders again and retry.",
+  );
+  await expect(dialog.locator("#pasteSummaryCounts")).toBeHidden();
+  const closeButton = dialog.getByRole("button", { name: "Close paste summary" });
+  await expect(closeButton).toBeVisible();
+  await closeButton.click();
+  await expect(dialog).toBeHidden();
+});
+
+test("imports through a manual paste fallback when clipboard permission is blocked", async ({ page }) => {
+  const orderPosts = [];
+  await installSupabaseSession(page);
+  await installClipboardReadError(page, {
+    name: "NotAllowedError",
+    message: "Failed to execute 'readText' on 'Clipboard': Read permission denied.",
+  });
+  await installProductionBatchRoutes(page);
+  await installOrdersWorkspaceRoutes(page, { posts: orderPosts });
+
+  await gotoAfterBatchLoads(page);
+  await page.getByRole("button", { name: "Production Batch", exact: true }).click();
+  await page.getByLabel("Batch tools").click();
+  await page.getByRole("button", { name: "Paste", exact: true }).click();
+
+  const dialog = page.locator("#pasteSummaryDialog");
+  await expect(dialog).toBeVisible();
+  await expect(dialog.locator("#operationProgress")).toBeHidden();
+  await expect(dialog.locator("#pasteSummaryTitle")).toHaveText("Clipboard Access Blocked");
+  await expect(dialog.locator("#pasteSummaryDescription")).toHaveText(
+    "Your browser didn't show a clipboard permission prompt. Paste the copied order data below to continue.",
+  );
+  await expect(dialog.locator("#pasteSummaryCounts")).toBeHidden();
+  await dialog.getByLabel("Paste order data").fill(buildClipboardPayload());
+  await dialog.getByRole("button", { name: "Import Pasted Orders" }).click();
+
+  await expect.poll(() => orderPosts).toHaveLength(1);
+  expect(orderPosts[0]).toMatchObject({ action: "importClipboardItems", target: "productionBatch" });
+  await expect(dialog.locator("#pasteSummaryTitle")).toHaveText("Paste Summary");
+  await expect(dialog.locator("#pasteSummaryImportedCount")).toHaveText("1");
 });
 
 test("skips duplicate production batch clipboard items without posting to orders", async ({ page }) => {

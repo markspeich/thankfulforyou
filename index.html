@@ -1107,6 +1107,13 @@
             <p class="operation-progress-note">Keep this window open while the operation finishes.</p>
           </div>
         </div>
+        <div id="pasteFallback" class="paste-fallback" hidden>
+          <label for="pasteFallbackInput">Paste order data</label>
+          <textarea id="pasteFallbackInput" rows="5" autocomplete="off" placeholder="Press Ctrl+V to paste the copied order data"></textarea>
+          <button id="pasteFallbackImportButton" class="confirmation-dialog-button confirmation-dialog-confirm" type="button">
+            Import Pasted Orders
+          </button>
+        </div>
         <dl id="pasteSummaryCounts" class="paste-summary-counts">
           <div>
             <dt id="pasteSummaryImportedLabel">Imported</dt>
