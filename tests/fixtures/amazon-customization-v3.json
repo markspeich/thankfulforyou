@@ -1,0 +1,17 @@
+{
+  "orderId": "TEST-ORDER",
+  "orderItemId": "TEST-ITEM",
+  "customizationData": {},
+  "version3.0": {
+    "customizationInfo": {
+      "surfaces": [{
+        "name": "Surface 1",
+        "areas": [
+          { "customizationType": "Option", "name": "Color 1", "label": "Color", "optionValue": "Teal" },
+          { "customizationType": "Text", "name": "Text Input 1", "label": "Text Line 1", "text": "Jane" },
+          { "customizationType": "Text", "name": "Text Input 2", "label": "^Internal", "text": "ignore me" }
+        ]
+      }]
+    }
+  }
+}
