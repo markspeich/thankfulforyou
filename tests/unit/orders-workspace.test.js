@@ -6,6 +6,7 @@ import {
   getEtsyConnectionActionDescriptor,
   getEtsyImportProgressDescriptor,
   getEtsyImportSummary,
+  getAmazonImportSummary,
   getOrderItemCustomizationWarning,
   getCopyableSavedBuild,
   getOrderLifecycleStatusDescriptor,
@@ -413,9 +414,50 @@ describe("Etsy workspace descriptors", () => {
       .toBe("1 order imported, 2 existing orders, 1 item needing customization, 0 failures.");
   });
 
-  it("warns for direct and mapped Etsy source metadata", () => {
-    expect(getOrderItemCustomizationWarning({ source: { customizationNeeded: true } })).not.toBeNull();
-    expect(getOrderItemCustomizationWarning({ source: { source: { customizationNeeded: true } } })).not.toBeNull();
+  it("uses marketplace-neutral customization guidance for Etsy and Amazon items", () => {
+    expect(getOrderItemCustomizationWarning({
+      source: { customizationNeeded: true },
+    })).toEqual({
+      label: "Customization needed",
+      detail: "Review this item before production.",
+    });
+    expect(getOrderItemCustomizationWarning({
+      source: { source: { marketplace: "amazon", customizationNeeded: true } },
+    })).toEqual({
+      label: "Customization needed",
+      detail: "Review this item before production.",
+    });
     expect(getOrderItemCustomizationWarning({ source: { customizationNeeded: false } })).toBeNull();
+  });
+});
+
+describe("Amazon workspace descriptors", () => {
+  it("summarizes the six approved Amazon import outcomes", () => {
+    expect(getAmazonImportSummary({
+      processedShipments: 3,
+      importedItems: 4,
+      existingItems: 2,
+      alreadyProcessedShipments: 1,
+      customizationNeeded: 2,
+      failed: 0,
+      customerName: "Do not render",
+      signedUrl: "https://zme-caps.amazon.com/private",
+    })).toBe(
+      "3 shipments processed, 4 items imported, 2 existing items, 1 already-processed shipment, 2 items needing customization, 0 failures.",
+    );
+  });
+
+  it("normalizes invalid Amazon summary counts without exposing extra fields", () => {
+    expect(getAmazonImportSummary({
+      processedShipments: -4,
+      importedItems: "not-a-count",
+      existingItems: 1.8,
+      alreadyProcessedShipments: Number.POSITIVE_INFINITY,
+      customizationNeeded: null,
+      failed: 1,
+      apiKey: "secret",
+    })).toBe(
+      "0 shipments processed, 0 items imported, 0 existing items, 0 already-processed shipments, 0 items needing customization, 1 failure.",
+    );
   });
 });

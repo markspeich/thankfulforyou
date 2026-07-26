@@ -271,9 +271,30 @@ export function getEtsyImportSummary(summary = {}) {
   return `${importedLabel}, ${noun(existing, "existing order")}, ${noun(customization, "item needing customization")}, ${noun(failed, "failure", "failures")}.`;
 }
 
+function normalizeAmazonCount(value) {
+  return Number.isInteger(value) && value >= 0 && Number.isFinite(value) ? value : 0;
+}
+
+export function getAmazonImportSummary(summary = {}) {
+  const processedShipments = normalizeAmazonCount(summary.processedShipments);
+  const importedItems = normalizeAmazonCount(summary.importedItems);
+  const existingItems = normalizeAmazonCount(summary.existingItems);
+  const alreadyProcessedShipments = normalizeAmazonCount(summary.alreadyProcessedShipments);
+  const customizationNeeded = normalizeAmazonCount(summary.customizationNeeded);
+  const failed = normalizeAmazonCount(summary.failed);
+  const noun = (count, singular, plural = `${singular}s`) => `${count} ${count === 1 ? singular : plural}`;
+  return [
+    noun(processedShipments, "shipment processed", "shipments processed"),
+    noun(importedItems, "item imported", "items imported"),
+    noun(existingItems, "existing item", "existing items"),
+    noun(alreadyProcessedShipments, "already-processed shipment"),
+    noun(customizationNeeded, "item needing customization", "items needing customization"),
+    noun(failed, "failure", "failures"),
+  ].join(", ") + ".";
+}
 export function getOrderItemCustomizationWarning(item) {
   const source = item?.source?.source && typeof item.source.source === "object" ? item.source.source : item?.source;
   return source?.customizationNeeded
-    ? { label: "Customization needed", detail: "Review this Etsy item before production." }
+    ? { label: "Customization needed", detail: "Review this item before production." }
     : null;
 }

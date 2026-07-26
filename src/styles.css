@@ -2838,6 +2838,44 @@ button:disabled {
   white-space: nowrap;
 }
 
+.database-order-items-panel .editor-header h2 {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.database-order-marketplace-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  border-radius: 7px;
+  background: #f6f7f8;
+}
+
+.database-order-marketplace-icon svg {
+  width: 21px;
+  height: 21px;
+  fill: currentColor;
+}
+
+.database-order-marketplace-icon.is-etsy {
+  color: #f1641e;
+}
+
+.database-order-marketplace-icon.is-amazon {
+  color: #172235;
+}
+
+.database-order-marketplace-smile {
+  fill: none;
+  stroke: #ff9900;
+  stroke-linecap: round;
+  stroke-width: 1.8;
+}
+
 .database-order-row-meta,
 .database-order-selected-meta,
 .database-order-item-listing,
@@ -3951,16 +3989,16 @@ button:disabled {
   border-color: var(--button-border-hover);
   background: var(--button-enabled-hover);
 }
-.etsy-import-button {
-  min-width: 5.5rem;
+.etsy-import-button,
+.amazon-import-button {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
   gap: 0.45rem;
   white-space: nowrap;
 }
 
-.etsy-import-button-spinner {
+.etsy-import-button-spinner,
+.amazon-import-button-spinner {
   width: 0.85rem;
   height: 0.85rem;
   flex: 0 0 auto;
@@ -3993,6 +4031,7 @@ button:disabled {
 
 .etsy-import-feedback[hidden],
 .etsy-import-button-spinner[hidden],
+.amazon-import-button-spinner[hidden],
 .etsy-import-summary-dismiss[hidden] {
   display: none;
 }
@@ -4044,7 +4083,13 @@ button:disabled {
 }
 
 @media (max-width: 760px) {
+  .database-orders-list-panel > .batch-header {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
   .database-orders-list-panel .batch-header-actions {
+    width: 100%;
     flex-wrap: wrap;
     justify-content: flex-end;
   }
@@ -4055,7 +4100,8 @@ button:disabled {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .etsy-import-button-spinner {
+  .etsy-import-button-spinner,
+  .amazon-import-button-spinner {
     animation: none;
     transition: none;
   }

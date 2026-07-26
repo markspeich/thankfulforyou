@@ -320,6 +320,22 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - The Etsy import summary card must provide a small right-aligned X button that dismisses the card after review.
 - Showing the Etsy import summary card must not overlap or obscure the Orders filters, the `Select all visible` control, or the first order row at supported viewport sizes.
 - Amazon order and customization import should be designed and implemented separately from the Etsy API import.
+- The Orders workspace header should keep `Paste` and the Orders ellipsis menu visible without horizontal overflow. The ellipsis menu should contain an `Import` group with `Import Etsy` followed by `Import Amazon`, then the existing `Orders` action group.
+- The first ShipStation-backed Amazon import should be operator-initiated and should process every pending shipment in the configured Amazon ShipStation store that is not tagged `Amazon Customization Imported`.
+- ShipStation API credentials, signed Amazon customization URLs, downloaded archives, and customer customization data must remain server-side and must not be exposed in browser responses, logs, or version control.
+- The Amazon importer should process every ShipStation line item in each eligible shipment, using the ShipStation product title rather than the original Amazon title in operator-facing imported data and appended ShipStation notes.
+- For line items with a `CustomizedURL` option, the importer should download the Amazon Custom ZIP archive and use its JSON `customizationData`; XML, image, and SVG archive entries should not be used for text import.
+- Amazon customization fields whose names begin with `^` must be excluded from ShipStation notes, app source metadata, and editable design text.
+- Human-readable Amazon configuration selections should be retained in imported source metadata and appended ShipStation notes, while only customer-entered free-text fields should initialize editable design lines.
+- Amazon shipments with multiple line items should append one clearly labeled `Notes to Buyer` customization block per item, using the ShipStation product title and Amazon order-item ID.
+- Amazon customization blocks appended to ShipStation `Notes to Buyer` must preserve existing notes and must be idempotent by Amazon order-item ID so retries do not duplicate content.
+- The Amazon importer should create one app order item for every ShipStation line item, including items without usable customization; items without usable free-text customization should be marked `Customization needed`.
+- ShipStation-backed Amazon imports should use Amazon order-item IDs as durable imported item identities, must not overwrite existing app items, and should import into Orders without automatically adding items to the active Production Batch.
+- Concurrent Amazon imports for one workspace must be prevented with an owner-scoped ten-minute lease; active imports must renew the lease at least every five minutes and must not renew or release a lease owned by another run.
+- Each normalized Amazon shipment batch must persist its new order items, designs, and ordered design lines atomically so a malformed item cannot leave partial app data.
+- A ShipStation shipment should receive the `Amazon Customization Imported` tag only after its notes update and all of its app item persistence operations have succeeded or been recognized as already complete.
+- One Amazon shipment's failure must not stop other eligible shipments; failed shipments should remain untagged and retryable.
+- Amazon import completion feedback should separately report processed shipments, imported app items, existing app items, already-processed shipments, customization-needed items, and failures.
 - Imported listing IDs should be usable to auto-select the app preset for each imported order.
 - Imported Etsy listing metadata should include the listing title and the 75 by 75 listing image URL when those fields are present in the Etsy order data.
 - Imported order items must persist a nullable `Ship By Date` as a calendar date without timezone-driven day shifts.
@@ -652,6 +668,7 @@ For batch Etsy order sessions, the preferred workflow is:
 - In the Orders workspace selected-order item cards, each card title should be `Order Item`, with imported listing text in the header, imported Etsy listing image in the left body column, and saved design preview in the right body column. The bottom metadata should show `Personalization: <design text>` above imported color, with quantity stacked below color.
 - In the Orders workspace order list, each grouped order row should show the imported listing image from the first order item at the beginning of the row; grouped orders with multiple order items should show a compact stacked thumbnail treatment.
 - In the Orders workspace order list, buyer name, ship-by date when available, item count, and active-batch membership should each appear on its own clearly labeled metadata line rather than being concatenated into one line; each line's label and value should be vertically centered with one another.
+- In the Orders workspace selected-order detail header, imported Etsy and Amazon orders should use the same `Order <order number>` title format with a compact accessible marketplace icon; the displayed number may fall back to item source metadata, while genuine manual orders should retain the `Manual Order: <design text>` title without a marketplace icon.
 - In the Production Batch row list, each row should show the imported listing/product image when available and should not show the imported listing title; row text should prioritize the order number, buyer, personalization, status, and connectedness indicators.
 
 - Clicking `Save` should immediately mark the current design as finished for editing, even if connectedness analysis is still running in the background.

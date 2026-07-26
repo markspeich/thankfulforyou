@@ -18,8 +18,20 @@ describe("Vercel routing", () => {
     const config = JSON.parse(await readFile("vercel.json", "utf8"));
     const appShellRewrites = config.rewrites.filter((rewrite) => rewrite.destination === "/index.html");
 
-    for (const path of ["/api/etsy-connection", "/api/etsy-callback", "/api/etsy-import"]) {
+    for (const path of ["/api/etsy-connection", "/api/etsy-callback", "/api/etsy-import", "/api/amazon-import"]) {
       expect(appShellRewrites.every((rewrite) => !new RegExp(`^${rewrite.source}$`).test(path))).toBe(true);
     }
+  });
+
+  it("enables cancellation only for the Amazon import Node function", async () => {
+    const config = JSON.parse(await readFile("vercel.json", "utf8"));
+
+    expect(config.functions["api/amazon-import.js"]).toEqual({
+      supportsCancellation: true,
+    });
+    expect(config.functions["api/**/*.py"]).toMatchObject({
+      includeFiles: "public/fonts/**/*",
+      maxDuration: 60,
+    });
   });
 });

@@ -431,6 +431,53 @@ test("updates and opens bookmarked Orders workspace order URLs", async ({ page }
   await expect(page).toHaveURL(/\/orders\/order%3A1001$/);
 });
 
+test("identifies Etsy and Amazon in selected imported order headers", async ({ page }) => {
+  await installSupabaseSession(page);
+  await installProductionBatchRoutes(page);
+  const ordersPayload = buildOrdersPayload();
+  ordersPayload.orders.push({
+    id: "item:amazon-order-item:1234567890",
+    orderNumber: null,
+    buyerName: null,
+    status: "open",
+    isInActiveBatch: false,
+    items: [{
+      id: "amazon-order-item:1234567890",
+      orderNumber: null,
+      buyerName: null,
+      listingTitle: "Badge Reel - Custom",
+      isInActiveBatch: false,
+      source: {
+        marketplace: "amazon",
+        orderNumber: "114-1234567-1234567",
+        listingTitle: "Badge Reel - Custom",
+      },
+      design: {
+        text: "Slave Driver",
+        lines: [{ lineIndex: 0, text: "Slave Driver", fontId: "candlepin" }],
+      },
+    }],
+  });
+  await installOrdersWorkspaceRoutes(page, { ordersPayload });
+
+  await page.goto("/orders/order%3A1001");
+
+  const ordersWorkspace = page.getByRole("region", { name: "Orders workspace" });
+  const selectedHeading = ordersWorkspace.locator(".database-order-items-panel .editor-header h2");
+  await expect(selectedHeading).toHaveText("Order 1001");
+  await expect(selectedHeading.getByRole("img", { name: "Etsy" })).toBeVisible();
+
+  await ordersWorkspace
+    .locator(".database-order-row")
+    .filter({ hasText: "Manual Order: Slave Driver" })
+    .getByRole("button")
+    .click();
+
+  await expect(selectedHeading).toHaveText("Order 114-1234567-1234567");
+  await expect(selectedHeading.getByRole("img", { name: "Amazon" })).toBeVisible();
+  await expect(selectedHeading).not.toContainText("Manual Order:");
+});
+
 test("renders grouped database orders and selected order item cards", async ({ page }) => {
   await installSupabaseSession(page);
   await installProductionBatchRoutes(page);
@@ -1120,7 +1167,11 @@ test("skips duplicate production batch clipboard items without posting to orders
   await expect(page.locator("#workflowAlertText")).toHaveText(
     "Skipped 1 Etsy design already in the batch. No new designs were added.",
   );
-  await expect(page.locator("#pasteSummaryDialog")).toBeHidden();
+  const summary = page.locator("#pasteSummaryDialog");
+  await expect(summary).toBeVisible();
+  await expect(summary.locator("#pasteSummaryImportedCount")).toHaveText("0");
+  await expect(summary.locator("#pasteSummarySkippedCount")).toHaveText("1");
+  await expect(summary.locator("#pasteSummaryAddedCount")).toHaveText("0");
 });
 
 test("imports Orders clipboard items with blank personalization text", async ({ page }) => {
@@ -1183,9 +1234,18 @@ test("adds an individual order item to the active production batch from the item
 
 test("hydrates the selected production batch item after adding from Orders", async ({ page }) => {
   const productionBatchOrderItems = [];
+  const savedBatchSnapshots = [];
+  const ordersPayload = buildOrdersPayload();
+  ordersPayload.orders[0].items[0].source.marketplace = "amazon";
   await installSupabaseSession(page);
-  await installProductionBatchRoutes(page, { orderItems: productionBatchOrderItems });
+  await installProductionBatchRoutes(page, {
+    orderItems: productionBatchOrderItems,
+    onPut(snapshot) {
+      savedBatchSnapshots.push(structuredClone(snapshot));
+    },
+  });
   await installOrdersWorkspaceRoutes(page, {
+    ordersPayload,
     onPost(post) {
       if (post.action === "addOrderItemToProductionBatch") {
         productionBatchOrderItems.push(buildAdaProductionBatchOrderItem());
@@ -1210,6 +1270,11 @@ test("hydrates the selected production batch item after adding from Orders", asy
   const productionWorkspace = page.getByRole("region", { name: "Order items workspace" });
   await expect(productionWorkspace.locator(".order-row.active")).toContainText("Personalization: Ada RN");
   await expect(page.locator("#textInput")).toHaveValue("Ada RN");
+  await page.locator("#textInput").fill("Ada RN updated");
+  await expect.poll(() => savedBatchSnapshots.length).toBeGreaterThan(0);
+  expect(savedBatchSnapshots.at(-1).orderItems[0].source).toMatchObject({
+    marketplace: "amazon",
+  });
 });
 
 test("shows the production batch auth gate when an orders mutation requires authentication", async ({ page }) => {

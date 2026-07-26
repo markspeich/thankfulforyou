@@ -10,7 +10,7 @@ async function routes(page, connection = "connected", customizationNeeded = fals
   return () => gets;
 }
 async function stream(page) { await page.addInitScript(() => { const original = fetch.bind(window); window.calls = 0; window.controllers = []; window.pushEvent = e => window.controllers.at(-1)?.enqueue(new TextEncoder().encode(`${JSON.stringify(e)}\n`)); window.closeStream = () => window.controllers.shift()?.close(); window.fetch = (input, init) => { if (new URL(typeof input === "string" ? input : input.url, location.href).pathname !== "/api/etsy-import") return original(input, init); window.calls++; return Promise.resolve(new Response(new ReadableStream({ start(c) { window.controllers.push(c); } }), { status: 200, headers: { "Content-Type": "application/x-ndjson" } })); }; }); }
-async function open(page, url = "/orders") { await page.goto(url); await expect(page.getByRole("region", { name: "Orders workspace" })).toBeVisible(); }
+async function open(page, url = "/orders") { await page.goto(url); await expect(page.getByRole("region", { name: "Orders workspace" })).toBeVisible(); await page.locator("#ordersToolsMenu summary").click(); }
 async function navigationIntent(page) {
   const session = await page.context().newCDPSession(page);
   await session.send("Page.enable");
@@ -30,8 +30,8 @@ test("disconnected Orders connects Etsy once", async ({ page }) => {
 
 test("connected import reports stages and completion while preserving selection", async ({ page }) => {
   await session(page); const gets = await routes(page); await stream(page); await open(page, "/orders?etsy=connected&keep=yes"); await expect(page.locator(".etsy-import-status")).toHaveText("Connected to Etsy.");
-  await page.getByRole("button", { name: /Order 1001/ }).click();
-  const button = page.locator(".etsy-import-button"); await expect(button).toHaveText("Import from Etsy"); await button.click(); await expect(button).toHaveText("Importing\u2026"); await expect(button).toBeDisabled(); await expect(button.locator(".etsy-import-button-spinner")).toBeVisible(); await expect(button).toHaveAttribute("aria-busy", "true");
+  await page.locator("#ordersToolsMenu summary").click(); await page.getByRole("button", { name: /Order 1001/ }).click(); await page.locator("#ordersToolsMenu summary").click();
+  const button = page.locator(".etsy-import-button"); await expect(button).toHaveText("Import from Etsy"); await button.click(); await expect(button).toHaveText("Importing\u2026"); await expect(button).toBeDisabled(); await expect(button.locator(".etsy-import-button-spinner")).not.toHaveAttribute("hidden", ""); await expect(button).toHaveAttribute("aria-busy", "true"); await expect(page.locator("#ordersToolsMenu")).not.toHaveAttribute("open", "");
   await button.evaluate(element => element.click()); await expect.poll(() => page.evaluate(() => calls)).toBe(1);
   await page.evaluate(() => pushEvent({ type: "progress", stage: "fetching_receipts", processed: 0, total: null })); await expect(page.locator("#etsyImportFeedback")).toBeHidden(); await expect(page.getByRole("progressbar")).toHaveCount(0);
   await page.evaluate(() => pushEvent({ type: "progress", stage: "importing_items", processed: 6, total: 14 })); await expect(page.locator("#etsyImportFeedback")).toBeHidden();
@@ -75,8 +75,8 @@ test("import queues a forced refresh behind an in-flight Orders request", async 
 
 test("stream errors retry and reauthorization reconnects", async ({ page }) => {
   await session(page); await routes(page); await stream(page); await open(page); await page.getByRole("button", { name: "Import from Etsy" }).click();
-  await page.evaluate(() => pushEvent({ type: "error", code: "temporary", message: "Try Etsy again." })); await expect(page.getByRole("button", { name: "Retry" })).toBeVisible(); await expect(page.locator(".etsy-import-button-spinner")).toBeHidden();
-  await page.getByRole("button", { name: "Retry" }).click(); await expect.poll(() => page.evaluate(() => calls)).toBe(2); await page.evaluate(() => pushEvent({ type: "error", code: "reauthorize", message: "Reconnect Etsy." })); await expect(page.getByRole("button", { name: "Reconnect Etsy Shop" })).toBeVisible();
+  await page.evaluate(() => pushEvent({ type: "error", code: "temporary", message: "Try Etsy again." })); await page.locator("#ordersToolsMenu summary").click(); await expect(page.getByRole("button", { name: "Retry" })).toBeVisible(); await expect(page.locator(".etsy-import-button-spinner")).toBeHidden();
+  await page.getByRole("button", { name: "Retry" }).click(); await expect.poll(() => page.evaluate(() => calls)).toBe(2); await page.evaluate(() => pushEvent({ type: "error", code: "reauthorize", message: "Reconnect Etsy." })); await page.locator("#ordersToolsMenu summary").click(); await expect(page.getByRole("button", { name: "Reconnect Etsy Shop" })).toBeVisible();
 });
 
 test("callback error stays reconnect-required and reconnect navigates once", async ({ page }) => {

@@ -161,6 +161,7 @@ const server = createServer(async (request, response) => {
   if (
     requestUrl.pathname === "/api/batch-session"
     || requestUrl.pathname === "/api/etsy-import"
+    || requestUrl.pathname === "/api/amazon-import"
     || requestUrl.pathname === "/api/orders"
     || requestUrl.pathname === "/api/production-batch"
     || requestUrl.pathname === "/api/fonts"
@@ -187,6 +188,7 @@ const server = createServer(async (request, response) => {
     try {
       const modulePathByPathname = {
         "/api/etsy-import": "../api/etsy-import.js",
+        "/api/amazon-import": "../api/amazon-import.js",
         "/api/batch-session": "../api/batch-session.js",
         "/api/orders": "../api/orders.js",
         "/api/production-batch": "../api/production-batch.js",
@@ -211,6 +213,9 @@ const server = createServer(async (request, response) => {
       };
       const res = {
         statusCode: 200,
+        get destroyed() { return response.destroyed; },
+        get writableEnded() { return response.writableEnded; },
+        get writableFinished() { return response.writableFinished; },
         status(code) {
           this.statusCode = code;
           return this;
@@ -244,6 +249,8 @@ const server = createServer(async (request, response) => {
         end() { response.end(); },
         write(chunk) { return response.write(chunk); },
         flushHeaders() { response.flushHeaders(); },
+        once(...args) { return response.once(...args); },
+        off(...args) { return response.off(...args); },
       };
 
       try { await handler(req, res); }
