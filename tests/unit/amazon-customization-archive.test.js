@@ -1,4 +1,7 @@
-import { readFile } from "node:fs/promises";
+import { copyFile, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import { createZip } from "../fixtures/create-amazon-customization-zip.mjs";
 import {
@@ -18,6 +21,24 @@ async function customizationJson() {
   return readFile(new URL("amazon-customization-v3.json", fixtures));
 }
 
+describe("Amazon customization fixture generator", () => {
+  it("does not rewrite the fixture when imported as a helper", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "amazon-fixture-"));
+    try {
+      const generatorPath = join(directory, "create-amazon-customization-zip.mjs");
+      const archivePath = join(directory, "amazon-customization.zip");
+      await copyFile(new URL("../fixtures/create-amazon-customization-zip.mjs", import.meta.url), generatorPath);
+      await writeFile(join(directory, "amazon-customization-v3.json"), "{}\n");
+      await writeFile(archivePath, "existing fixture");
+
+      await import(`${pathToFileURL(generatorPath).href}?test=${Date.now()}`);
+
+      await expect(readFile(archivePath, "utf8")).resolves.toBe("existing fixture");
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+});
 describe("Amazon Custom archive reader", () => {
   it("rejects non-HTTPS and non-Amazon customization URLs before fetching", async () => {
     const fetchImpl = vi.fn();

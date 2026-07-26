@@ -1,5 +1,6 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { deflateRawSync } from "node:zlib";
+import { pathToFileURL } from "node:url";
 
 const encoder = new TextEncoder();
 
@@ -44,12 +45,14 @@ function createZip(entries) {
   return Buffer.concat([...locals, ...centrals, end]);
 }
 
-const json = await readFile(new URL("./amazon-customization-v3.json", import.meta.url));
-await writeFile(new URL("./amazon-customization.zip", import.meta.url), createZip([
-  { name: "customization.json", contents: json },
-  { name: "metadata.xml", contents: "<metadata />" },
-  { name: "preview.jpg", contents: "synthetic preview" },
-  { name: "preview.svg", contents: "<svg />" },
-]));
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  const json = await readFile(new URL("./amazon-customization-v3.json", import.meta.url));
+  await writeFile(new URL("./amazon-customization.zip", import.meta.url), createZip([
+    { name: "customization.json", contents: json },
+    { name: "metadata.xml", contents: "<metadata />" },
+    { name: "preview.jpg", contents: "synthetic preview" },
+    { name: "preview.svg", contents: "<svg />" },
+  ]));
+}
 
 export { createZip };
