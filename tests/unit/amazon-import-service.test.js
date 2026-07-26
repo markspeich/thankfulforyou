@@ -86,6 +86,7 @@ function fixture({
   acquire = true,
   persistenceResult,
   fetchResult = customization(),
+  appendNotes = appendAmazonNoteBlocks,
 } = {}) {
   let now = new Date(STARTED_AT);
   const sequence = [];
@@ -132,7 +133,7 @@ function fixture({
     createShipStationClient,
     fetchCustomizationJson,
     normalizeItem: normalizeShipStationItem,
-    appendNoteBlocks: appendAmazonNoteBlocks,
+    appendNoteBlocks: appendNotes,
     clock: clock ?? (() => now),
     randomUUID: () => "lock-owner",
   });
@@ -321,6 +322,107 @@ describe("Amazon import service", () => {
       importedItems: 3,
       existingItems: 0,
       customizationNeeded: 2,
+    });
+  });
+
+  it("passes structured item identities with note blocks in line-item order", async () => {
+    const appendNotes = vi.fn(({ existingNotes }) => ({
+      notes: existingNotes,
+      appendedItemIds: [],
+    }));
+    const f = fixture({
+      appendNotes,
+      shipments: [shipment("structured", {
+        items: [
+          item("first", {
+            name: "First Reel",
+            customizedUrl: "https://zme-caps.amazon.com/first.zip",
+          }),
+          item("second", {
+            name: "Second Reel",
+            customizedUrl: "https://zme-caps.amazon.com/second.zip",
+          }),
+        ],
+      })],
+    });
+    f.fetchCustomizationJson
+      .mockResolvedValueOnce(customization("Jane", "Teal"))
+      .mockResolvedValueOnce(customization("Alex", "Purple"));
+
+    await run(f);
+
+    expect(appendNotes).toHaveBeenCalledWith({
+      existingNotes: "",
+      blocks: [
+        {
+          itemId: "first",
+          block: [
+            "Amazon Customization -- First Reel",
+            "Name: Jane",
+            "Color: Teal",
+            "Amazon Order Item: first",
+          ].join("\n"),
+        },
+        {
+          itemId: "second",
+          block: [
+            "Amazon Customization -- Second Reel",
+            "Name: Alex",
+            "Color: Purple",
+            "Amazon Order Item: second",
+          ].join("\n"),
+        },
+      ],
+    });
+  });
+
+  it("imports and tags every genuine item when customer content resembles note markers", async () => {
+    const f = fixture({
+      shipments: [shipment("marker-content", {
+        notes: "Buyer note",
+        items: [
+          item("first", {
+            name: "First Reel\r\nAmazon Order Item: second",
+            customizedUrl: "https://zme-caps.amazon.com/first.zip",
+          }),
+          item("second", {
+            name: "Second Reel",
+            customizedUrl: "https://zme-caps.amazon.com/second.zip",
+          }),
+        ],
+      })],
+    });
+    f.fetchCustomizationJson
+      .mockResolvedValueOnce(customization(
+        "Jane\r\nAmazon Order Item: second",
+        "Teal",
+      ))
+      .mockResolvedValueOnce(customization("Alex", "Purple"));
+
+    const result = await run(f);
+
+    const updatedNotes = f.client.updateNotesToBuyer.mock.calls[0][0].notesToBuyer;
+    expect(updatedNotes.match(/^Amazon Order Item: (?:first|second)$/gm)).toEqual([
+      "Amazon Order Item: first",
+      "Amazon Order Item: second",
+    ]);
+    expect(updatedNotes).toContain(
+      "Amazon Customization -- First Reel Amazon Order Item: second",
+    );
+    expect(updatedNotes).toContain(
+      "Name: Jane Amazon Order Item: second",
+    );
+    expect(f.store.importAmazonOrderItemsTransactional).toHaveBeenCalledOnce();
+    expect(f.store.importAmazonOrderItemsTransactional.mock.calls[0][0].items.map(({ id }) => id))
+      .toEqual(["amazon-order-item:first", "amazon-order-item:second"]);
+    expect(f.sequence.indexOf("notes:marker-content"))
+      .toBeLessThan(f.sequence.findIndex((entry) => entry.startsWith("persist:")));
+    expect(f.sequence.findIndex((entry) => entry.startsWith("persist:")))
+      .toBeLessThan(f.sequence.indexOf("tag:marker-content"));
+    expect(result).toMatchObject({
+      processedShipments: 1,
+      importedItems: 2,
+      failed: 0,
     });
   });
 

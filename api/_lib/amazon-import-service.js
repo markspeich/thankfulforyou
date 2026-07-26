@@ -307,11 +307,14 @@ export function createAmazonImportService({
                 const normalized = normalizeItem({ shipment, item, customization });
                 normalizedItems.push(normalized);
                 if (url) {
-                  noteBlocks.push(buildAmazonNoteBlock({
-                    productTitle: item.name,
-                    orderItemId: item.external_order_item_id,
-                    fields: normalized?.source?.personalizationResponses ?? [],
-                  }));
+                  noteBlocks.push({
+                    itemId: item.external_order_item_id,
+                    block: buildAmazonNoteBlock({
+                      productTitle: item.name,
+                      orderItemId: item.external_order_item_id,
+                      fields: normalized?.source?.personalizationResponses ?? [],
+                    }),
+                  });
                 }
               }
 
