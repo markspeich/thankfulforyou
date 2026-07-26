@@ -2838,6 +2838,44 @@ button:disabled {
   white-space: nowrap;
 }
 
+.database-order-items-panel .editor-header h2 {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.database-order-marketplace-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  border-radius: 7px;
+  background: #f6f7f8;
+}
+
+.database-order-marketplace-icon svg {
+  width: 21px;
+  height: 21px;
+  fill: currentColor;
+}
+
+.database-order-marketplace-icon.is-etsy {
+  color: #f1641e;
+}
+
+.database-order-marketplace-icon.is-amazon {
+  color: #172235;
+}
+
+.database-order-marketplace-smile {
+  fill: none;
+  stroke: #ff9900;
+  stroke-linecap: round;
+  stroke-width: 1.8;
+}
+
 .database-order-row-meta,
 .database-order-selected-meta,
 .database-order-item-listing,

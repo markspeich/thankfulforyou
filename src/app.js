@@ -5623,6 +5623,73 @@ function getDatabaseOrderNumber(order) {
   return String(order?.id || "").replace(/^order:/, "") || "Unknown";
 }
 
+function getImportedDatabaseOrderNumber(order) {
+  const candidates = [
+    order?.orderNumber,
+    ...(Array.isArray(order?.items)
+      ? order.items.flatMap((item) => [
+        item?.orderNumber,
+        item?.source?.orderNumber,
+        item?.source?.source?.orderNumber,
+      ])
+      : []),
+  ];
+  const match = candidates.find((value) => typeof value === "string" && value.trim());
+  return match ? match.trim() : "";
+}
+
+function getDatabaseOrderMarketplace(order) {
+  if (!getImportedDatabaseOrderNumber(order)) {
+    return "";
+  }
+
+  const sourceMarketplace = (Array.isArray(order?.items) ? order.items : [])
+    .flatMap((item) => [item?.source?.marketplace, item?.source?.source?.marketplace])
+    .find((value) => typeof value === "string" && value.trim());
+  return sourceMarketplace?.trim().toLowerCase() === "amazon" ? "amazon" : "etsy";
+}
+
+function createDatabaseOrderMarketplaceIcon(marketplace) {
+  const marketplaceName = marketplace === "amazon" ? "Amazon" : "Etsy";
+  const icon = document.createElement("span");
+  icon.className = `database-order-marketplace-icon is-${marketplace}`;
+  icon.setAttribute("role", "img");
+  icon.setAttribute("aria-label", marketplaceName);
+
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("focusable", "false");
+  const mark = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  if (marketplace === "amazon") {
+    mark.setAttribute("d", "M7.3 10.4c0-3 1.9-4.8 5.1-4.8 3 0 4.6 1.5 4.6 4.3v5.4c0 .8.1 1.5.6 2.3l-2.5 1.7c-.4-.6-.7-1.1-.8-1.7-1 1.2-2.2 1.8-3.8 1.8-2.4 0-4.1-1.5-4.1-3.8 0-2.7 2-4.2 5.8-4.2h1.7v-1.2c0-1.4-.6-2.1-1.8-2.1-1.1 0-1.8.7-1.9 2.1l-2.9.2Zm6.6 3.1h-1.4c-2 0-2.9.6-2.9 1.8 0 1 .7 1.6 1.8 1.6 1 0 1.9-.5 2.5-1.4v-2Z");
+    const smile = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    smile.setAttribute("class", "database-order-marketplace-smile");
+    smile.setAttribute("d", "M5.2 20.1c4.2 2.2 9.3 2.3 13.6.1");
+    svg.append(mark, smile);
+  } else {
+    mark.setAttribute("d", "M5 3h14v4H10v3h7v4h-7v3h9v4H5V3Z");
+    svg.append(mark);
+  }
+  icon.append(svg);
+  return icon;
+}
+
+function renderSelectedDatabaseOrderTitle(order) {
+  const importedOrderNumber = getImportedDatabaseOrderNumber(order);
+  const marketplace = getDatabaseOrderMarketplace(order);
+  if (importedOrderNumber && marketplace) {
+    selectedDatabaseOrderTitle.replaceChildren(
+      createDatabaseOrderMarketplaceIcon(marketplace),
+      document.createTextNode(`Order ${importedOrderNumber}`),
+    );
+    return;
+  }
+  selectedDatabaseOrderTitle.textContent = order
+    ? getDatabaseOrderTitle(order)
+    : "Selected order items";
+}
+
 function getDatabaseOrderTitle(order) {
   const rawOrderNumber = typeof order?.orderNumber === "string" ? order.orderNumber.trim() : "";
   if (rawOrderNumber) {
@@ -6890,9 +6957,7 @@ function renderSelectedDatabaseOrderItems() {
   const selectedOrder = getSelectedGroupedOrder(visibleOrders, selectedDatabaseOrderId);
 
   if (selectedDatabaseOrderTitle) {
-    selectedDatabaseOrderTitle.textContent = selectedOrder
-      ? getDatabaseOrderTitle(selectedOrder)
-      : "Selected order items";
+    renderSelectedDatabaseOrderTitle(selectedOrder);
   }
   if (selectedDatabaseOrderMeta) {
     selectedDatabaseOrderMeta.textContent = selectedOrder

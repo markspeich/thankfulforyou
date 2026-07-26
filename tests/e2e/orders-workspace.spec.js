@@ -431,6 +431,53 @@ test("updates and opens bookmarked Orders workspace order URLs", async ({ page }
   await expect(page).toHaveURL(/\/orders\/order%3A1001$/);
 });
 
+test("identifies Etsy and Amazon in selected imported order headers", async ({ page }) => {
+  await installSupabaseSession(page);
+  await installProductionBatchRoutes(page);
+  const ordersPayload = buildOrdersPayload();
+  ordersPayload.orders.push({
+    id: "item:amazon-order-item:1234567890",
+    orderNumber: null,
+    buyerName: null,
+    status: "open",
+    isInActiveBatch: false,
+    items: [{
+      id: "amazon-order-item:1234567890",
+      orderNumber: null,
+      buyerName: null,
+      listingTitle: "Badge Reel - Custom",
+      isInActiveBatch: false,
+      source: {
+        marketplace: "amazon",
+        orderNumber: "114-1234567-1234567",
+        listingTitle: "Badge Reel - Custom",
+      },
+      design: {
+        text: "Slave Driver",
+        lines: [{ lineIndex: 0, text: "Slave Driver", fontId: "candlepin" }],
+      },
+    }],
+  });
+  await installOrdersWorkspaceRoutes(page, { ordersPayload });
+
+  await page.goto("/orders/order%3A1001");
+
+  const ordersWorkspace = page.getByRole("region", { name: "Orders workspace" });
+  const selectedHeading = ordersWorkspace.locator(".database-order-items-panel .editor-header h2");
+  await expect(selectedHeading).toHaveText("Order 1001");
+  await expect(selectedHeading.getByRole("img", { name: "Etsy" })).toBeVisible();
+
+  await ordersWorkspace
+    .locator(".database-order-row")
+    .filter({ hasText: "Manual Order: Slave Driver" })
+    .getByRole("button")
+    .click();
+
+  await expect(selectedHeading).toHaveText("Order 114-1234567-1234567");
+  await expect(selectedHeading.getByRole("img", { name: "Amazon" })).toBeVisible();
+  await expect(selectedHeading).not.toContainText("Manual Order:");
+});
+
 test("renders grouped database orders and selected order item cards", async ({ page }) => {
   await installSupabaseSession(page);
   await installProductionBatchRoutes(page);
