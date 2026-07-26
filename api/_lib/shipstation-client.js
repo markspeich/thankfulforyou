@@ -114,7 +114,7 @@ export function createShipStationClient({
     if (signal?.aborted) throw new ShipStationError("aborted");
   }
 
-  async function request({ path, method = "GET", body, signal, validate, emptyResponse = false }) {
+  async function request({ path, method = "GET", body, signal, validate }) {
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
       if (signal?.aborted) throw new ShipStationError("aborted");
       const combined = combineSignals(signal, createTimeoutSignal(TIMEOUT_MS));
@@ -137,15 +137,7 @@ export function createShipStationClient({
         throw new ShipStationError("temporary", { retryable: true });
       }
 
-      if (emptyResponse && response.status === 204) {
-        combined.cleanup();
-        return undefined;
-      }
-      if (emptyResponse && response.ok) {
-        combined.cleanup();
-        throw new ShipStationError("invalid_response");
-      }
-      if (response.ok && !emptyResponse) {
+      if (response.ok) {
         try {
           const payload = await response.json();
           if (combined.signal?.aborted) throw new ShipStationError(signal?.aborted ? "aborted" : "temporary", { retryable: !signal?.aborted });
@@ -193,7 +185,18 @@ export function createShipStationClient({
 
   function addShipmentTag({ shipmentId, tagName, signal } = {}) {
     if (typeof shipmentId !== "string" || !shipmentId || typeof tagName !== "string" || !tagName) throw new ShipStationError("invalid_response");
-    return request({ path: `/shipments/${encodeURIComponent(shipmentId)}/tags/${encodeURIComponent(tagName)}`, method: "POST", signal, emptyResponse: true });
+    return request({
+      path: '/shipments/' + encodeURIComponent(shipmentId) + '/tags/' + encodeURIComponent(tagName),
+      method: 'POST',
+      signal,
+      validate(payload) {
+        const result = assertObject(payload);
+        if (result.shipment_id !== shipmentId || !result.tag || typeof result.tag !== 'object' || Array.isArray(result.tag) || result.tag.name !== tagName) {
+          throw new ShipStationError('invalid_response');
+        }
+        return undefined;
+      },
+    });
   }
 
   return Object.freeze({ iteratePendingShipments, updateNotesToBuyer, addShipmentTag });

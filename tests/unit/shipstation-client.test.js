@@ -81,8 +81,11 @@ describe("ShipStation V2 client", () => {
     await expect(malformed.updateNotesToBuyer({ shipmentId: "se-1", notesToBuyer: "x" })).rejects.toMatchObject({ code: "invalid_response" });
   });
 
-  it("posts an encoded tag path and accepts only its documented empty success response", async () => {
-    const fetchImpl = vi.fn().mockResolvedValue({ ok: true, status: 204, headers: new Headers() });
+  it("posts an encoded tag path and validates its documented JSON success response", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(response({
+      shipment_id: "se/1",
+      tag: { name: "Amazon Customization Imported" },
+    }));
     const client = createShipStationClient({ apiKey: "secret", fetchImpl });
 
     await expect(client.addShipmentTag({ shipmentId: "se/1", tagName: "Amazon Customization Imported" })).resolves.toBeUndefined();
@@ -90,9 +93,22 @@ describe("ShipStation V2 client", () => {
       "https://api.shipstation.com/v2/shipments/se%2F1/tags/Amazon%20Customization%20Imported",
       expect.objectContaining({ method: "POST", headers: expect.objectContaining({ "API-Key": "secret" }) }),
     );
+  });
 
-    const partial = createShipStationClient({ apiKey: "secret", fetchImpl: vi.fn().mockResolvedValue(response({ status: "partial" }, 207)) });
-    await expect(partial.addShipmentTag({ shipmentId: "se-1", tagName: "tag" })).rejects.toMatchObject({ code: "invalid_response" });
+  it("rejects tag responses that do not confirm the requested shipment and tag", async () => {
+    for (const upstreamResponse of [
+      response({ shipment_id: "se-other", tag: { name: "tag" } }),
+      response({ shipment_id: "se-1", tag: { name: "other" } }),
+      response({ shipment_id: "se-1", tag: {} }),
+      response({ status: "partial" }, 207),
+      { ok: true, status: 204, headers: new Headers() },
+    ]) {
+      const client = createShipStationClient({ apiKey: "secret", fetchImpl: vi.fn().mockResolvedValue(upstreamResponse) });
+      await expect(client.addShipmentTag({ shipmentId: "se-1", tagName: "tag" })).rejects.toMatchObject({
+        code: "invalid_response",
+        retryable: false,
+      });
+    }
   });
 
   it("honors bounded Retry-After and retries no more than three total attempts", async () => {
