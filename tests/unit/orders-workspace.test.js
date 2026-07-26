@@ -414,9 +414,19 @@ describe("Etsy workspace descriptors", () => {
       .toBe("1 order imported, 2 existing orders, 1 item needing customization, 0 failures.");
   });
 
-  it("warns for direct and mapped Etsy source metadata", () => {
-    expect(getOrderItemCustomizationWarning({ source: { customizationNeeded: true } })).not.toBeNull();
-    expect(getOrderItemCustomizationWarning({ source: { source: { customizationNeeded: true } } })).not.toBeNull();
+  it("uses marketplace-neutral customization guidance for Etsy and Amazon items", () => {
+    expect(getOrderItemCustomizationWarning({
+      source: { customizationNeeded: true },
+    })).toEqual({
+      label: "Customization needed",
+      detail: "Review this item before production.",
+    });
+    expect(getOrderItemCustomizationWarning({
+      source: { source: { marketplace: "amazon", customizationNeeded: true } },
+    })).toEqual({
+      label: "Customization needed",
+      detail: "Review this item before production.",
+    });
     expect(getOrderItemCustomizationWarning({ source: { customizationNeeded: false } })).toBeNull();
   });
 });

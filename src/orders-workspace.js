@@ -295,6 +295,6 @@ export function getAmazonImportSummary(summary = {}) {
 export function getOrderItemCustomizationWarning(item) {
   const source = item?.source?.source && typeof item.source.source === "object" ? item.source.source : item?.source;
   return source?.customizationNeeded
-    ? { label: "Customization needed", detail: "Review this Etsy item before production." }
+    ? { label: "Customization needed", detail: "Review this item before production." }
     : null;
 }
