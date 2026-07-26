@@ -320,7 +320,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - The Etsy import summary card must provide a small right-aligned X button that dismisses the card after review.
 - Showing the Etsy import summary card must not overlap or obscure the Orders filters, the `Select all visible` control, or the first order row at supported viewport sizes.
 - Amazon order and customization import should be designed and implemented separately from the Etsy API import.
-- The Orders workspace header should provide an `Import Amazon` action beside the Etsy import action.
+- The Orders workspace header should keep `Paste` and the Orders ellipsis menu visible without horizontal overflow. The ellipsis menu should contain an `Import` group with `Import Etsy` followed by `Import Amazon`, then the existing `Orders` action group.
 - The first ShipStation-backed Amazon import should be operator-initiated and should process every pending shipment in the configured Amazon ShipStation store that is not tagged `Amazon Customization Imported`.
 - ShipStation API credentials, signed Amazon customization URLs, downloaded archives, and customer customization data must remain server-side and must not be exposed in browser responses, logs, or version control.
 - The Amazon importer should process every ShipStation line item in each eligible shipment, using the ShipStation product title rather than the original Amazon title in operator-facing imported data and appended ShipStation notes.
