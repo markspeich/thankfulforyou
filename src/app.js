@@ -99,6 +99,7 @@ import {
 import {
   getAccessToken,
   getSignedInSession,
+  refreshAccessToken,
   signOutBrowserSession,
   signInWithPassword as signInOperatorWithPassword,
 } from "./auth-session.js";
@@ -806,8 +807,32 @@ function isProductionBatchAuthenticationError(error) {
   return Boolean(
     error instanceof Error
       && typeof error.message === "string"
-      && /authentication required/i.test(error.message),
+      && /(authentication required|jwt has expired)/i.test(error.message),
   );
+}
+
+async function runProductionBatchRequestWithSessionRefresh(request, accessToken = productionBatchAccessToken) {
+  try {
+    return await request(accessToken);
+  } catch (error) {
+    if (!isProductionBatchAuthenticationError(error) || readProductionBatchAccessTokenOverride()) {
+      throw error;
+    }
+
+    let refreshedToken = null;
+    try {
+      refreshedToken = await refreshAccessToken();
+    } catch {
+      throw new Error("Authentication required.");
+    }
+
+    if (!refreshedToken) {
+      throw new Error("Authentication required.");
+    }
+
+    productionBatchAccessToken = refreshedToken;
+    return request(refreshedToken);
+  }
 }
 
 function handleProductionBatchAuthenticationRequired(detail = "Production batch session expired. Sign in again to continue.") {
@@ -5044,7 +5069,10 @@ async function retryRevisionOnlyProductionBatchConflict({
 
   let latestSnapshot = null;
   try {
-    latestSnapshot = await fetchProductionBatchSnapshot(productionBatchContext.id, accessToken);
+    latestSnapshot = await runProductionBatchRequestWithSessionRefresh(
+      (requestToken) => fetchProductionBatchSnapshot(productionBatchContext.id, requestToken),
+      accessToken,
+    );
   } catch {
     return false;
   }
@@ -5118,7 +5146,10 @@ async function saveBatchSnapshotToRemote(options = {}) {
     }
     productionBatchAccessToken = accessToken;
 
-    const savedSnapshot = await saveProductionBatchSnapshot(snapshot, { keepalive, accessToken, changedOrderItemIds });
+    const savedSnapshot = await runProductionBatchRequestWithSessionRefresh(
+      (requestToken) => saveProductionBatchSnapshot(snapshot, { keepalive, accessToken: requestToken, changedOrderItemIds }),
+      accessToken,
+    );
     if (productionBatchConflictState) {
       renderProductionBatchToast();
       return false;
@@ -5231,7 +5262,10 @@ async function restoreInitialBatchState(accessToken) {
   productionBatchConflictState = null;
 
   try {
-    batchSession = await fetchBatchSession(accessToken);
+    batchSession = await runProductionBatchRequestWithSessionRefresh(
+      (requestToken) => fetchBatchSession(requestToken),
+      accessToken,
+    );
     batchSessionContext = batchSession;
     if (batchSession?.batch) {
       enableProductionBatchSync(batchSession.batch);
@@ -5262,7 +5296,10 @@ async function restoreInitialBatchState(accessToken) {
 
   if (batchSession?.batch?.id) {
     try {
-      remoteSnapshot = await fetchProductionBatchSnapshot(batchSession.batch.id, accessToken);
+      remoteSnapshot = await runProductionBatchRequestWithSessionRefresh(
+        (requestToken) => fetchProductionBatchSnapshot(batchSession.batch.id, requestToken),
+        productionBatchAccessToken,
+      );
     } catch (error) {
       if (isProductionBatchAuthenticationError(error)) {
         handleProductionBatchAuthenticationRequired("Production batch session expired. Sign in again to reopen the production batch.");
@@ -6249,7 +6286,10 @@ async function refreshProductionBatchSnapshot(accessToken) {
     return false;
   }
 
-  const snapshot = await fetchProductionBatchSnapshot(batchId, accessToken);
+  const snapshot = await runProductionBatchRequestWithSessionRefresh(
+    (requestToken) => fetchProductionBatchSnapshot(batchId, requestToken),
+    accessToken,
+  );
   if (snapshot?.batch) {
     enableProductionBatchSync(snapshot.batch);
   }

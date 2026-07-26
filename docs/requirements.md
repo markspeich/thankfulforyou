@@ -646,6 +646,7 @@ For batch Etsy order sessions, the preferred workflow is:
 - Adding order items to a production batch should return and apply compact mutation results instead of reloading the full Orders workspace and production-batch snapshot when the existing client state can be updated safely.
 - Adding items and completing a production batch should execute their related database writes transactionally and minimize serial database and network round trips.
 - Independent startup resources, including fonts, presets, the active production batch, and workspace fonts, should load concurrently where they do not depend on one another.
+- When production-batch requests fail because the Supabase access JWT expired, the app should refresh the browser session and retry the request once without alerting the operator; it should require sign-in only when the session cannot be refreshed.
 - Orders and production-batch API responses should expose server timing information, and requests taking at least one second should emit structured slow-request diagnostics.
 - If any current production batch items are not visibly complete/exported or lack export-ready saved geometry where that can be checked, completing the production batch should show an explicit warning confirmation before proceeding.
 - The Orders workspace should default to showing only open orders.
