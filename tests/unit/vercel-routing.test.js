@@ -34,4 +34,16 @@ describe("Vercel routing", () => {
       maxDuration: 60,
     });
   });
+
+  it("excludes the local preset writer from Vercel while keeping its development route", async () => {
+    const ignoredPaths = (await readFile(".vercelignore", "utf8"))
+      .split(/\r?\n/)
+      .map(line => line.trim())
+      .filter(Boolean);
+    const devServerSource = await readFile("tools/dev_server.mjs", "utf8");
+
+    expect(ignoredPaths).toContain("api/presets.js");
+    expect(devServerSource).toContain('\"/api/presets\"');
+    expect(devServerSource).toContain('import("../api/presets.js")');
+  });
 });

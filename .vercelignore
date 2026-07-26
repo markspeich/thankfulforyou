@@ -6,3 +6,4 @@ playwright-report/
 coverage/
 playwright.config.js
 vitest.config.js
+api/presets.js
