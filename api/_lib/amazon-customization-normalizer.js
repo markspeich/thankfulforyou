@@ -5,9 +5,24 @@ const ASSET_VALUE_PATTERN = /(?:^|[\\/])[^\s]+\.(?:avif|gif|jpe?g|png|svg|webp)(
 const SVG_PATTERN = /<svg\b|<path\b|<g\b/i;
 const EXCLUDED_LABEL_PATTERN = /(?:\b(?:url|preview|layout|placement|position|asset|image|svg|filename|filepath|file path)\b|\bid\b|identifier|uuid|guid)/i;
 const METADATA_NODE_TYPE_PATTERN = /(?:preview|render(?:ed)?|layout|asset|image|svg|thumbnail|placement)/i;
+const NOTE_CONTROL_PATTERN = /[\u0000-\u001F\u007F-\u009F\u2028\u2029]+/g;
+const ITEM_ID_CONTROL_PATTERN = /[\u0000-\u001F\u007F-\u009F\u2028\u2029]/;
+const BLOCK_CONTROL_PATTERN = /[\u0000-\u0009\u000B\u000C\u000E-\u001F\u007F-\u009F\u2028\u2029]/;
 
 function normalizedString(value) {
   return typeof value === "string" || typeof value === "number" ? String(value).trim() : "";
+}
+
+function noteText(value) {
+  return normalizedString(value).replace(NOTE_CONTROL_PATTERN, " ").replace(/ {2,}/g, " ").trim();
+}
+
+function normalizedItemId(value) {
+  const itemId = normalizedString(value);
+  if (!itemId || ITEM_ID_CONTROL_PATTERN.test(itemId)) {
+    throw new TypeError("Amazon order item ID is required and cannot contain control characters");
+  }
+  return itemId;
 }
 
 function firstNonBlank(...values) {
@@ -137,40 +152,74 @@ export function extractAmazonCustomizationFields(document) {
 }
 
 function itemMarker(itemId) {
-  return `Amazon Order Item: ${normalizedString(itemId)}`;
+  return `Amazon Order Item: ${normalizedItemId(itemId)}`;
 }
 
-function itemIdFromBlock(block) {
-  const match = String(block).match(/^Amazon Order Item: (.+)$/m);
-  return match ? normalizedString(match[1]) : "";
+function existingItemIds(notes) {
+  const ids = new Set();
+  const lines = String(notes).split(/\r?\n/);
+  for (let index = 0; index < lines.length; index += 1) {
+    if (index + 1 < lines.length && lines[index + 1] !== "") continue;
+    const match = lines[index].match(/^Amazon Order Item: (.+)$/);
+    if (!match) continue;
+    try {
+      ids.add(normalizedItemId(match[1]));
+    } catch {
+      continue;
+    }
+  }
+  return ids;
+}
+
+function validatedNoteBlock(itemId, block) {
+  if (typeof block !== "string") {
+    throw new TypeError("Amazon note block text is required");
+  }
+  const normalizedBlock = block.replace(/\r\n/g, "\n");
+  if (BLOCK_CONTROL_PATTERN.test(normalizedBlock) || normalizedBlock.includes("\r")) {
+    throw new TypeError("Amazon note blocks cannot contain control characters");
+  }
+  const lines = normalizedBlock.split("\n");
+  const expectedMarker = itemMarker(itemId);
+  const structuralMarkers = lines.filter((line) => line.startsWith("Amazon Order Item:"));
+  if (structuralMarkers.length !== 1 || structuralMarkers[0] !== expectedMarker || lines.at(-1) !== expectedMarker) {
+    throw new TypeError("Amazon note block marker does not match its item ID");
+  }
+  return normalizedBlock;
 }
 
 export function buildAmazonNoteBlock({ productTitle, orderItemId, fields = [] }) {
-  const title = normalizedString(productTitle);
+  const title = noteText(productTitle);
   const marker = itemMarker(orderItemId);
-  if (!title || marker === "Amazon Order Item: ") throw new TypeError("Amazon product title and order item ID are required");
+  if (!title) throw new TypeError("Amazon product title is required");
   const lines = fields
     .map((response) => field(response?.name, response?.value))
     .filter(Boolean)
-    .map((response) => `${response.name}: ${response.value}`);
+    .map((response) => ({ name: noteText(response.name), value: noteText(response.value) }))
+    .filter((response) => response.name && response.value)
+    .map((response) => {
+      const line = `${response.name}: ${response.value}`;
+      return line.startsWith("Amazon Order Item:") ? `Customization ${line}` : line;
+    });
   return [`Amazon Customization -- ${title}`, ...lines, marker].join("\n");
 }
 
 export function appendAmazonNoteBlocks({ existingNotes = "", blocks = [], maxLength = MAX_NOTES_LENGTH }) {
   const notes = typeof existingNotes === "string" ? existingNotes : "";
-  const knownItemIds = new Set();
-  const markerPattern = /^Amazon Order Item: (.+)$/gm;
-  for (const match of notes.matchAll(markerPattern)) knownItemIds.add(normalizedString(match[1]));
+  const knownItemIds = existingItemIds(notes);
 
   const appendedItemIds = [];
   const acceptedBlocks = [];
-  for (const block of blocks) {
-    const itemId = itemIdFromBlock(block);
-    if (!itemId) throw new TypeError("Amazon note blocks require an Amazon Order Item marker");
+  for (const entry of blocks) {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      throw new TypeError("Amazon note blocks require structured item entries");
+    }
+    const itemId = normalizedItemId(entry.itemId);
     if (knownItemIds.has(itemId)) continue;
+    const block = validatedNoteBlock(itemId, entry.block);
     knownItemIds.add(itemId);
     appendedItemIds.push(itemId);
-    acceptedBlocks.push(String(block));
+    acceptedBlocks.push(block);
   }
   const appended = acceptedBlocks.join("\n\n");
   const combined = !appended ? notes : notes ? `${notes}\n\n${appended}` : appended;
@@ -180,15 +229,28 @@ export function appendAmazonNoteBlocks({ existingNotes = "", blocks = [], maxLen
 
 function sourceString(value) { return value == null ? "" : String(value).trim(); }
 
+function structuredUnitPrice(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const amount = typeof value.amount === "number"
+    ? (Number.isFinite(value.amount) ? String(value.amount) : "")
+    : (typeof value.amount === "string" ? value.amount.trim() : "");
+  const currency = typeof value.currency === "string" ? value.currency.trim() : "";
+  if (!amount && !currency) return null;
+  return {
+    ...(amount ? { amount } : {}),
+    ...(currency ? { currency } : {}),
+  };
+}
+
 function orderNumber(shipment) {
   return sourceString(shipment?.amazon_order_id ?? shipment?.external_order_id ?? shipment?.order_number);
 }
 
 export function normalizeShipStationItem({ shipment = {}, item = {}, customization = {} }) {
   const { freeTextFields, configurationFields } = extractAmazonCustomizationFields(customization);
-  const orderItemId = sourceString(item.external_order_item_id);
-  if (!orderItemId) throw new TypeError("Amazon order item ID is required");
+  const orderItemId = normalizedItemId(item.external_order_item_id);
   const text = freeTextFields.map((response) => response.value).join("\n");
+  const price = structuredUnitPrice(item.unit_price);
   return {
     id: `amazon-order-item:${orderItemId}`,
     text,
@@ -204,6 +266,7 @@ export function normalizeShipStationItem({ shipment = {}, item = {}, customizati
       listingImageUrl75x75: sourceString(item.image_url),
       quantity: sourceString(item.quantity || 1),
       shipByDate: sourceString(shipment.ship_by_date),
+      ...(price ? { price } : {}),
       personalizationResponses: [...freeTextFields, ...configurationFields],
       customizationNeeded: freeTextFields.length === 0,
     },

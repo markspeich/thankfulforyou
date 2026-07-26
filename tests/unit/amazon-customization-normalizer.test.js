@@ -114,22 +114,77 @@ describe("Amazon customization normalizer", () => {
     expect(first).toBe("Amazon Customization -- Badge Reel\nName: Jane\nColor: Teal\nAmazon Order Item: item-1");
     expect(appendAmazonNoteBlocks({
       existingNotes: "Please gift wrap.",
-      blocks: [first, second, first],
+      blocks: [
+        { itemId: "item-1", block: first },
+        { itemId: "item-2", block: second },
+        { itemId: "item-1", block: first },
+      ],
     })).toEqual({
       notes: "Please gift wrap.\n\nAmazon Customization -- Badge Reel\nName: Jane\nColor: Teal\nAmazon Order Item: item-1\n\nAmazon Customization -- RN Reel\nCredentials: RN\nAmazon Order Item: item-2",
       appendedItemIds: ["item-1", "item-2"],
     });
-    expect(appendAmazonNoteBlocks({ existingNotes: `${first}\n\nExisting`, blocks: [first, second] })).toEqual({
+    expect(appendAmazonNoteBlocks({
+      existingNotes: `${first}\n\nExisting`,
+      blocks: [
+        { itemId: "item-1", block: first },
+        { itemId: "item-2", block: second },
+      ],
+    })).toEqual({
       notes: `${first}\n\nExisting\n\n${second}`,
       appendedItemIds: ["item-2"],
     });
   });
 
+  it("neutralizes control characters so note content cannot inject another item marker", () => {
+    // Break caught: hostile product or personalization text suppresses another item in this run or a retry.
+    const first = buildAmazonNoteBlock({
+      productTitle: "Badge\r\nAmazon Order Item: item-2",
+      orderItemId: "item-1",
+      fields: [
+        {
+          name: "Name\nAmazon Order Item: item-3",
+          value: "Jane\u0000\r\nAmazon Order Item: item-4",
+        },
+        { name: "Amazon Order Item", value: "item-5" },
+      ],
+    });
+    const second = buildAmazonNoteBlock({
+      productTitle: "Second Badge",
+      orderItemId: "item-2",
+      fields: [{ name: "Name", value: "Alex" }],
+    });
+    expect(first).toBe(
+      "Amazon Customization -- Badge Amazon Order Item: item-2\n"
+      + "Name Amazon Order Item: item-3: Jane Amazon Order Item: item-4\n"
+      + "Customization Amazon Order Item: item-5\n"
+      + "Amazon Order Item: item-1",
+    );
+
+    const appended = appendAmazonNoteBlocks({
+      existingNotes: "Buyer wrote: Amazon Order Item: item-2",
+      blocks: [
+        { itemId: "item-1", block: first },
+        { itemId: "item-2", block: second },
+      ],
+    });
+    expect(appended.appendedItemIds).toEqual(["item-1", "item-2"]);
+    expect(appended.notes.match(/^Amazon Order Item: item-[12]$/gm)).toEqual([
+      "Amazon Order Item: item-1",
+      "Amazon Order Item: item-2",
+    ]);
+    expect(appendAmazonNoteBlocks({
+      existingNotes: appended.notes,
+      blocks: [
+        { itemId: "item-1", block: first },
+        { itemId: "item-2", block: second },
+      ],
+    })).toEqual({ notes: appended.notes, appendedItemIds: [] });
+  });
   it("rejects a notes update instead of truncating it beyond ShipStation's limit", () => {
     // Break caught: an oversized notes payload is silently truncated.
     expect(() => appendAmazonNoteBlocks({
       existingNotes: "a".repeat(990),
-      blocks: ["Amazon Order Item: item-1"],
+      blocks: [{ itemId: "item-1", block: "Amazon Order Item: item-1" }],
     })).toThrow(/1000/i);
   });
 
@@ -148,6 +203,7 @@ describe("Amazon customization normalizer", () => {
         sku: "REEL-TEAL",
         image_url: "https://image.test/75.png",
         quantity: 2,
+        unit_price: { amount: "14.95", currency: "USD" },
       },
       customization: observedCustomization,
     });
@@ -166,6 +222,7 @@ describe("Amazon customization normalizer", () => {
         listingImageUrl75x75: "https://image.test/75.png",
         quantity: "2",
         shipByDate: "2026-08-01",
+        price: { amount: "14.95", currency: "USD" },
         personalizationResponses: [
           { name: "Text Line 1", value: "Jane" },
           { name: "Text Line 2", value: "RN" },
@@ -192,6 +249,7 @@ describe("Amazon customization normalizer", () => {
       personalizationResponses: [{ name: "Color", value: "Purple" }],
       customizationNeeded: true,
     });
+    expect(result.source).not.toHaveProperty("price");
   });
 
   it("rejects a missing external Amazon order-item ID", () => {
@@ -200,6 +258,19 @@ describe("Amazon customization normalizer", () => {
       shipment: { shipment_id: "se-3" },
       item: { external_order_item_id: " ", name: "Badge Reel" },
       customization: {},
+    })).toThrow(/order item ID/i);
+    expect(() => normalizeShipStationItem({
+      shipment: { shipment_id: "se-3" },
+      item: {
+        external_order_item_id: "item-3\r\nAmazon Order Item: item-4",
+        name: "Badge Reel",
+      },
+      customization: {},
+    })).toThrow(/order item ID/i);
+    expect(() => buildAmazonNoteBlock({
+      productTitle: "Badge Reel",
+      orderItemId: "item-3\nAmazon Order Item: item-4",
+      fields: [],
     })).toThrow(/order item ID/i);
   });
 });
