@@ -6579,8 +6579,8 @@ async function startAmazonImport() {
   amazonImportError = null;
   renderEtsyImportUi();
   try {
-    await importAmazonOrders({
-      accessToken: request.accessToken,
+    await runProductionBatchRequestWithSessionRefresh((accessToken) => importAmazonOrders({
+      accessToken,
       signal: request.controller.signal,
       onEvent: async (event) => {
         if (amazonSessionRequest !== request) return;
@@ -6592,7 +6592,7 @@ async function startAmazonImport() {
         if (event.type === "complete") amazonImportResult = event;
         await Promise.resolve();
       },
-    });
+    }), request.accessToken);
     if (amazonSessionRequest === request) {
       const selectedOrderId = selectedDatabaseOrderId;
       await loadDatabaseOrders({ force: true });

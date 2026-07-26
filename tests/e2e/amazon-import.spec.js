@@ -16,6 +16,15 @@ function session(page) {
           },
           error: null,
         }),
+        refreshSession: async () => {
+          window.amazonRefreshCalls = (window.amazonRefreshCalls || 0) + 1;
+          return {
+            data: {
+              session: { access_token: "refreshed-token", user: { id: "u", email: "operator@example.com" } },
+            },
+            error: null,
+          };
+        },
         signOut: async () => {
           window.amazonTestSignOutStarted = true;
           if (window.amazonTestDelaySignOut) {
@@ -265,6 +274,37 @@ test("Amazon safe failure retries without rendering upstream or customer fields"
     closeAmazonStream();
   }, completion);
   await expect(dialog.locator("#pasteSummaryTitle")).toHaveText("Amazon Import Complete");
+});
+
+test("Amazon refreshes an expired session and retries the import once", async ({ page }) => {
+  await session(page);
+  await routes(page);
+  await page.addInitScript(event => {
+    const originalFetch = fetch.bind(window);
+    window.amazonAuthHeaders = [];
+    window.fetch = (input, init = {}) => {
+      const path = new URL(typeof input === "string" ? input : input.url, location.href).pathname;
+      if (path !== "/api/amazon-import") return originalFetch(input, init);
+      window.amazonAuthHeaders.push(init.headers?.Authorization || null);
+      if (window.amazonAuthHeaders.length === 1) {
+        return Promise.resolve(new Response(null, { status: 401 }));
+      }
+      return Promise.resolve(new Response(
+        `${JSON.stringify(event)}\n`,
+        { status: 200, headers: { "Content-Type": "application/x-ndjson" } },
+      ));
+    };
+  }, completion);
+  await open(page);
+
+  await page.getByRole("button", { name: "Import Amazon" }).click();
+
+  await expect.poll(() => page.evaluate(() => window.amazonRefreshCalls || 0)).toBe(1);
+  await expect.poll(() => page.evaluate(() => window.amazonAuthHeaders)).toEqual([
+    "Bearer token",
+    "Bearer refreshed-token",
+  ]);
+  await expect(page.locator("#pasteSummaryTitle")).toHaveText("Amazon Import Complete");
 });
 
 test("Amazon completion queues one forced refresh behind an in-flight Orders load", async ({ page }) => {
