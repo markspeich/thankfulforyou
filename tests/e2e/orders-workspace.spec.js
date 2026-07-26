@@ -1167,7 +1167,11 @@ test("skips duplicate production batch clipboard items without posting to orders
   await expect(page.locator("#workflowAlertText")).toHaveText(
     "Skipped 1 Etsy design already in the batch. No new designs were added.",
   );
-  await expect(page.locator("#pasteSummaryDialog")).toBeHidden();
+  const summary = page.locator("#pasteSummaryDialog");
+  await expect(summary).toBeVisible();
+  await expect(summary.locator("#pasteSummaryImportedCount")).toHaveText("0");
+  await expect(summary.locator("#pasteSummarySkippedCount")).toHaveText("1");
+  await expect(summary.locator("#pasteSummaryAddedCount")).toHaveText("0");
 });
 
 test("imports Orders clipboard items with blank personalization text", async ({ page }) => {

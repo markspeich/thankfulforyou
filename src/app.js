@@ -342,6 +342,7 @@ const pasteFallback = document.querySelector("#pasteFallback");
 const pasteFallbackInput = document.querySelector("#pasteFallbackInput");
 const pasteFallbackImportButton = document.querySelector("#pasteFallbackImportButton");
 let pasteFallbackTarget = null;
+let operationDialogVersion = 0;
 const presetAssignmentDialog = document.querySelector("#presetAssignmentDialog");
 const presetAssignmentDescription = document.querySelector("#presetAssignmentDescription");
 const closePresetAssignmentDialogButton = document.querySelector("#closePresetAssignmentDialogButton");
@@ -5959,6 +5960,7 @@ function buildSkippedBatchImportMessage(skippedCount) {
 
 function startOperationDialog({ title, description, progressLabel = "Working...", modal = true }) {
   if (!(pasteSummaryDialog instanceof HTMLDialogElement)) return;
+  operationDialogVersion += 1;
   pasteSummaryTitle.textContent = title; pasteSummaryDescription.textContent = description; operationProgressLabel.textContent = progressLabel;
   [pasteSummaryImportedCount, pasteSummarySkippedCount, pasteSummaryAddedCount].forEach((node) => { node.textContent = "0"; });
   ["Imported", "Skipped duplicates", "Added to batch"].forEach((label, index) => { pasteSummaryLabels[index].textContent = label; });
@@ -13193,7 +13195,10 @@ if (appRouteWriteCount === 0) {
   });
 }
 completeOperationDialog({ title: "Workspace Ready", description: "The production workspace finished loading.", metrics: [{ label: "Batch designs", value: orders.length }, { label: "Orders loaded", value: databaseOrders.length }] });
-setTimeout(closePasteSummaryDialog, 1200);
+const workspaceReadyDialogVersion = operationDialogVersion;
+setTimeout(() => {
+  if (operationDialogVersion === workspaceReadyDialogVersion) closePasteSummaryDialog();
+}, 1200);
 if ((!restoredBatch.source || restoredBatch.count === 0) && workflowAlert.dataset.state !== "error") {
   updateWorkflowAlert("", "pending");
 }

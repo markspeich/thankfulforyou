@@ -219,6 +219,22 @@ async function pasteProductionBatchClipboard(page) {
   await expect(page.locator("#pasteSummaryDialog")).not.toBeVisible();
 }
 
+test("startup auto-close does not dismiss a newer paste summary", async ({ page }) => {
+  await installPresetRoutes(page);
+  await page.goto("/production-batch");
+  await setClipboardPayload(page, JSON.stringify([{
+    orderNumber: "STARTUP-TIMER-1",
+    listingId: "1884223710",
+    buyerName: "Startup Timer Tester",
+    personalization: "Taylor\nRN",
+    quantity: 1,
+  }]));
+
+  await page.locator("#importClipboardButton").click();
+  await expect(page.locator("#pasteSummaryDialog")).toBeVisible();
+  await page.waitForTimeout(1300);
+  await expect(page.locator("#pasteSummaryDialog")).toBeVisible();
+});
 async function selectPresetEditorRow(page, name) {
   await page.locator(".preset-library-row", { hasText: name }).click();
 }
