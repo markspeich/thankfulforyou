@@ -1,3 +1,4 @@
+import { EventEmitter } from "node:events";
 import { describe, expect, it, vi } from "vitest";
 import { createAmazonImportHandler } from "../../api/amazon-import.js";
 import { AmazonImportError } from "../../api/_lib/amazon-import-service.js";
@@ -29,7 +30,8 @@ describe("Amazon import API", () => {
     const serviceFactory = vi.fn(() => ({
       prepare: async ({ onProgress, signal }) => {
         calls.push("prepare");
-        expect(signal).toBe(abortController.signal);
+        expect(signal).not.toBe(abortController.signal);
+        expect(signal).toBeInstanceOf(AbortSignal);
         return {
           run: async () => {
             calls.push("run");
@@ -189,6 +191,134 @@ describe("Amazon import API", () => {
     expect(res.chunks.join("")).not.toContain("Sensitive customization");
     expect(res.ended).not.toBe(true);
   });
+
+  it("bridges Web request cancellation into the service signal and releases", async () => {
+    const source = new AbortController();
+    const release = vi.fn();
+    let serviceSignal;
+    let started;
+    const runStarted = new Promise((resolve) => { started = resolve; });
+    const res = response();
+    const request = { method: "POST", signal: source.signal };
+
+    const pending = createAmazonImportHandler({
+      resolveAuth: vi.fn().mockResolvedValue({ workspaceId: "workspace-1", userId: "user-1" }),
+      serviceFactory: () => ({
+        prepare: async ({ signal }) => {
+          serviceSignal = signal;
+          return {
+            run: async () => new Promise((resolve, reject) => {
+              started();
+              signal.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), { once: true });
+            }),
+            release,
+          };
+        },
+      }),
+      waitUntil: vi.fn(),
+    })(request, res);
+
+    await runStarted;
+    source.abort();
+    await pending;
+
+    expect(serviceSignal).not.toBe(source.signal);
+    expect(serviceSignal.aborted).toBe(true);
+    expect(release).toHaveBeenCalledOnce();
+  });
+
+  it("bridges legacy aborted request errors and removes its listener", async () => {
+    const source = new AbortController();
+    const request = new EventEmitter();
+    const fallbackErrorListener = () => {};
+    request.on("error", fallbackErrorListener);
+    request.method = "POST";
+    request.signal = source.signal;
+    const release = vi.fn();
+    const waitUntil = vi.fn();
+    let serviceSignal;
+    let started;
+    const runStarted = new Promise((resolve) => { started = resolve; });
+
+    const pending = createAmazonImportHandler({
+      resolveAuth: vi.fn().mockResolvedValue({ workspaceId: "workspace-1", userId: "user-1" }),
+      serviceFactory: () => ({
+        prepare: async ({ signal }) => {
+          serviceSignal = signal;
+          return {
+            run: async () => new Promise((resolve, reject) => {
+              started();
+              signal.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), { once: true });
+            }),
+            release,
+          };
+        },
+      }),
+      waitUntil,
+    })(request, response());
+
+    await runStarted;
+    request.emit("error", new Error("aborted"));
+    await Promise.resolve();
+    const abortedByLegacyError = serviceSignal.aborted;
+    source.abort();
+    await pending;
+
+    expect(abortedByLegacyError).toBe(true);
+    expect(release).toHaveBeenCalledOnce();
+    expect(request.listenerCount("error")).toBe(1);
+    expect(request.listeners("error")).toEqual([fallbackErrorListener]);
+    expect(waitUntil).toHaveBeenCalledOnce();
+    await expect(waitUntil.mock.calls[0][0]).resolves.toBeUndefined();
+  });
+
+  it("protects prepare cleanup when cancellation arrives before a release handle", async () => {
+    const source = new AbortController();
+    const waitUntil = vi.fn();
+    let rejectPrepare;
+    let started;
+    const prepareStarted = new Promise((resolve) => { started = resolve; });
+
+    const pending = createAmazonImportHandler({
+      resolveAuth: vi.fn().mockResolvedValue({ workspaceId: "workspace-1", userId: "user-1" }),
+      serviceFactory: () => ({
+        prepare: () => new Promise((resolve, reject) => {
+          rejectPrepare = reject;
+          started();
+        }),
+      }),
+      waitUntil,
+    })({ method: "POST", signal: source.signal }, response());
+
+    await prepareStarted;
+    source.abort();
+    await Promise.resolve();
+    const registrationsAtCancellation = waitUntil.mock.calls.length;
+    rejectPrepare(new DOMException("Aborted", "AbortError"));
+    await pending;
+
+    expect(registrationsAtCancellation).toBe(1);
+    expect(waitUntil).toHaveBeenCalledOnce();
+    await expect(waitUntil.mock.calls[0][0]).resolves.toBeUndefined();
+  });
+
+  it("registers the memoized release promise with the function lifecycle", async () => {
+    const release = vi.fn().mockResolvedValue(undefined);
+    const waitUntil = vi.fn();
+
+    await createAmazonImportHandler({
+      resolveAuth: vi.fn().mockResolvedValue({ workspaceId: "workspace-1", userId: "user-1" }),
+      serviceFactory: () => ({
+        prepare: async () => ({ run: async () => {}, release }),
+      }),
+      waitUntil,
+    })({ method: "POST" }, response());
+
+    expect(release).toHaveBeenCalledOnce();
+    expect(waitUntil).toHaveBeenCalledOnce();
+    await expect(waitUntil.mock.calls[0][0]).resolves.toBeUndefined();
+  });
+
   it("writes a safe error frame when release fails after a successful run", async () => {
     const release = vi.fn().mockRejectedValue(new Error("release API key secret"));
     const res = response();

@@ -1,3 +1,4 @@
+import { waitUntil as vercelWaitUntil } from "@vercel/functions";
 import { resolveProductionBatchAuth } from "./_lib/production-batch-auth.js";
 import * as amazonImportStore from "./_lib/amazon-import-store.js";
 import { createShipStationClient } from "./_lib/shipstation-client.js";
@@ -60,19 +61,62 @@ function streamedErrorFrame(error) {
   };
 }
 
+function createRequestCancellation(req, onAbort) {
+  const controller = new AbortController();
+  const sourceSignal = req?.signal;
+  let cleaned = false;
+  const abort = () => {
+    if (!controller.signal.aborted) {
+      controller.abort();
+      onAbort();
+    }
+  };
+  const onLegacyError = (error) => {
+    if (error?.message === "aborted") abort();
+  };
+  if (sourceSignal) {
+    if (sourceSignal.aborted) abort();
+    else sourceSignal.addEventListener?.("abort", abort, { once: true });
+  }
+  req?.on?.("error", onLegacyError);
+  return {
+    signal: controller.signal,
+    cleanup() {
+      if (cleaned) return;
+      cleaned = true;
+      sourceSignal?.removeEventListener?.("abort", abort);
+      req?.off?.("error", onLegacyError);
+    },
+  };
+
+}
 export function createAmazonImportHandler({
   resolveAuth = resolveProductionBatchAuth,
   serviceFactory = createAmazonImportService,
   dependencies = {},
+  waitUntil = vercelWaitUntil,
 } = {}) {
   return async (req, res) => {
     let prepared;
+    let preparePromise;
     let streaming = false;
     let transportFailed = false;
+    let requestCancellation;
     let releasePromise;
+    let signal;
+    const protectLifecycle = (promise) => {
+      try {
+        waitUntil(Promise.resolve(promise).catch(() => {}));
+      } catch {
+        // Local development has no Vercel request lifecycle context.
+      }
+    };
     const release = () => {
       if (!prepared) return Promise.resolve();
-      if (!releasePromise) releasePromise = Promise.resolve().then(() => prepared.release());
+      if (!releasePromise) {
+        releasePromise = Promise.resolve().then(() => prepared.release());
+        protectLifecycle(releasePromise);
+      }
       return releasePromise;
     };
 
@@ -84,6 +128,12 @@ export function createAmazonImportHandler({
         return;
       }
 
+      requestCancellation = createRequestCancellation(req, () => {
+        if (prepared) void release().catch(() => {});
+        else if (preparePromise) protectLifecycle(preparePromise);
+      });
+      signal = requestCancellation.signal;
+
       const auth = await resolveAuth(req);
       const service = serviceFactory({
         store: dependencies.store || amazonImportStore,
@@ -92,19 +142,20 @@ export function createAmazonImportHandler({
         normalizeItem: dependencies.normalizeItem || normalizeShipStationItem,
         appendNoteBlocks: dependencies.appendNoteBlocks || appendAmazonNoteBlocks,
       });
-      prepared = await service.prepare({
+      preparePromise = service.prepare({
         ...auth,
-        signal: req.signal,
+        signal,
         async onProgress(event) {
           if (!streaming) return;
           try {
-            await writeNdjson(res, safeProgressFrame(event), { signal: req.signal });
+            await writeNdjson(res, safeProgressFrame(event), { signal });
           } catch (error) {
             transportFailed = true;
             throw error;
           }
         },
       });
+      prepared = await preparePromise;
 
       res.status(200);
       res.setHeader("Content-Type", "application/x-ndjson; charset=utf-8");
@@ -122,11 +173,13 @@ export function createAmazonImportHandler({
       }
       if (transportFailed || !isResponseWritable(res)) return;
       try {
-        await writeNdjson(res, streamedErrorFrame(error), { signal: req.signal });
+        await writeNdjson(res, streamedErrorFrame(error), { signal });
         if (isResponseWritable(res)) res.end();
       } catch {
         // The connection is no longer writable.
       }
+    } finally {
+      requestCancellation?.cleanup();
     }
   };
 }

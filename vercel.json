@@ -18,6 +18,9 @@
     }
   ],
   "functions": {
+    "api/amazon-import.js": {
+      "supportsCancellation": true
+    },
     "api/**/*.py": {
       "includeFiles": "public/fonts/**/*",
       "maxDuration": 60,

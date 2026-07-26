@@ -22,4 +22,16 @@ describe("Vercel routing", () => {
       expect(appShellRewrites.every((rewrite) => !new RegExp(`^${rewrite.source}$`).test(path))).toBe(true);
     }
   });
+
+  it("enables cancellation only for the Amazon import Node function", async () => {
+    const config = JSON.parse(await readFile("vercel.json", "utf8"));
+
+    expect(config.functions["api/amazon-import.js"]).toEqual({
+      supportsCancellation: true,
+    });
+    expect(config.functions["api/**/*.py"]).toMatchObject({
+      includeFiles: "public/fonts/**/*",
+      maxDuration: 60,
+    });
+  });
 });
