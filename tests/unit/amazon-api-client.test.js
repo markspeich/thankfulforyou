@@ -177,6 +177,14 @@ describe("Amazon API browser client", () => {
     });
   });
 
+  it("identifies an authentication failure so the caller can refresh the session", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 401 })));
+
+    await expect(importAmazonOrders()).rejects.toMatchObject({
+      message: "Authentication required.",
+    });
+  });
+
   it("rejects oversized records, cancels the reader, and releases its lock", async () => {
     const cancel = vi.fn().mockResolvedValue(undefined);
     const releaseLock = vi.fn();

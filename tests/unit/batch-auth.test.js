@@ -105,6 +105,27 @@ describe("production batch auth helper", () => {
     });
   });
 
+  it("returns 401 when Supabase throws while verifying an expired bearer token", async () => {
+    createSupabaseAdminClientMock.mockReturnValue({
+      auth: {
+        getClaims: vi.fn().mockRejectedValue(new Error("JWT has expired")),
+      },
+      from: vi.fn(),
+    });
+
+    const { resolveProductionBatchAuth } = await import("../../api/_lib/production-batch-auth.js");
+
+    await expect(resolveProductionBatchAuth({
+      headers: {
+        authorization: "Bearer expired-token",
+      },
+    })).rejects.toMatchObject({
+      statusCode: 401,
+      expose: true,
+      message: "Authentication required.",
+    });
+  });
+
   it("returns 503 when the dev server cannot reach Supabase auth", async () => {
     const fetchError = new Error("fetch failed");
     fetchError.name = "AuthRetryableFetchError";

@@ -36,7 +36,16 @@ export async function resolveProductionBatchAuth(req) {
   }
 
   const supabase = createSupabaseAdminClient();
-  const { data: claimsData, error: claimsError } = await supabase.auth.getClaims(accessToken);
+  let claimsResult;
+  try {
+    claimsResult = await supabase.auth.getClaims(accessToken);
+  } catch (error) {
+    if (isSupabaseAuthNetworkError(error)) {
+      throw createAuthError(503, "Unable to reach Supabase auth from this dev server process.");
+    }
+    throw createAuthError(401, "Authentication required.");
+  }
+  const { data: claimsData, error: claimsError } = claimsResult;
 
   if (isSupabaseAuthNetworkError(claimsError)) {
     throw createAuthError(503, "Unable to reach Supabase auth from this dev server process.");
