@@ -1230,9 +1230,18 @@ test("adds an individual order item to the active production batch from the item
 
 test("hydrates the selected production batch item after adding from Orders", async ({ page }) => {
   const productionBatchOrderItems = [];
+  const savedBatchSnapshots = [];
+  const ordersPayload = buildOrdersPayload();
+  ordersPayload.orders[0].items[0].source.marketplace = "amazon";
   await installSupabaseSession(page);
-  await installProductionBatchRoutes(page, { orderItems: productionBatchOrderItems });
+  await installProductionBatchRoutes(page, {
+    orderItems: productionBatchOrderItems,
+    onPut(snapshot) {
+      savedBatchSnapshots.push(structuredClone(snapshot));
+    },
+  });
   await installOrdersWorkspaceRoutes(page, {
+    ordersPayload,
     onPost(post) {
       if (post.action === "addOrderItemToProductionBatch") {
         productionBatchOrderItems.push(buildAdaProductionBatchOrderItem());
@@ -1257,6 +1266,11 @@ test("hydrates the selected production batch item after adding from Orders", asy
   const productionWorkspace = page.getByRole("region", { name: "Order items workspace" });
   await expect(productionWorkspace.locator(".order-row.active")).toContainText("Personalization: Ada RN");
   await expect(page.locator("#textInput")).toHaveValue("Ada RN");
+  await page.locator("#textInput").fill("Ada RN updated");
+  await expect.poll(() => savedBatchSnapshots.length).toBeGreaterThan(0);
+  expect(savedBatchSnapshots.at(-1).orderItems[0].source).toMatchObject({
+    marketplace: "amazon",
+  });
 });
 
 test("shows the production batch auth gate when an orders mutation requires authentication", async ({ page }) => {

@@ -3461,6 +3461,7 @@ function normalizeStoredSource(source) {
   }
 
   return {
+    marketplace: typeof source.marketplace === "string" ? source.marketplace.trim().toLowerCase() : "",
     orderNumber: source.orderNumber == null ? "" : String(source.orderNumber).trim(),
     listingId: source.listingId == null ? "" : String(source.listingId).trim(),
     buyerName: typeof source.buyerName === "string" ? source.buyerName.trim() : "",
@@ -3476,6 +3477,7 @@ function normalizeStoredSource(source) {
 
 function normalizeEditableOrderSource(source = null) {
   return normalizeStoredSource(source || {}) || {
+    marketplace: "",
     orderNumber: "",
     listingId: "",
     buyerName: "",
