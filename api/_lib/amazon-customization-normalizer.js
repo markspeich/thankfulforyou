@@ -243,7 +243,13 @@ function structuredUnitPrice(value) {
 }
 
 function orderNumber(shipment) {
-  return sourceString(shipment?.amazon_order_id ?? shipment?.external_order_id ?? shipment?.order_number);
+  return sourceString(
+    shipment?.amazon_order_id
+      ?? shipment?.shipment_number
+      ?? shipment?.external_shipment_id
+      ?? shipment?.external_order_id
+      ?? shipment?.order_number,
+  );
 }
 
 export function normalizeShipStationItem({ shipment = {}, item = {}, customization = {} }) {
@@ -257,6 +263,7 @@ export function normalizeShipStationItem({ shipment = {}, item = {}, customizati
     source: {
       marketplace: "amazon",
       orderNumber: orderNumber(shipment),
+      buyerName: sourceString(shipment?.ship_to?.name),
       transactionId: orderItemId,
       amazonOrderItemId: orderItemId,
       shipStationShipmentId: sourceString(shipment.shipment_id),

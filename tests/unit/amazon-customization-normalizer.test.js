@@ -193,8 +193,9 @@ describe("Amazon customization normalizer", () => {
     const result = normalizeShipStationItem({
       shipment: {
         shipment_id: "se-shipment-1",
-        external_order_id: "amazon-order-1",
+        shipment_number: "111-2222222-3333333",
         ship_by_date: "2026-08-01",
+        ship_to: { name: "Jane Customer" },
       },
       item: {
         external_order_item_id: "amazon-item-1",
@@ -212,7 +213,8 @@ describe("Amazon customization normalizer", () => {
       text: "Jane\nRN",
       source: {
         marketplace: "amazon",
-        orderNumber: "amazon-order-1",
+        orderNumber: "111-2222222-3333333",
+        buyerName: "Jane Customer",
         transactionId: "amazon-item-1",
         amazonOrderItemId: "amazon-item-1",
         shipStationShipmentId: "se-shipment-1",
