@@ -17,6 +17,10 @@ function session(page) {
           error: null,
         }),
         signOut: async () => {
+          window.amazonTestSignOutStarted = true;
+          if (window.amazonTestDelaySignOut) {
+            await new Promise(resolve => { window.resolveAmazonTestSignOut = resolve; });
+          }
           sessionStorage.setItem("amazon-test-signed-out", "true");
           return { error: null };
         },
@@ -61,6 +65,7 @@ async function routes(page, orderHandler = null) {
     json: { status: "connected", shopName: "Badge Shop" },
   }));
   await page.route("**/api/amazon-import", route => route.abort("blockedbyclient"));
+  await page.route("**/api/etsy-import", route => route.abort("blockedbyclient"));
   return () => gets;
 }
 
@@ -69,6 +74,8 @@ async function amazonStream(page) {
     const originalFetch = fetch.bind(window);
     window.amazonCalls = 0;
     window.amazonControllers = [];
+    window.etsyCalls = 0;
+    window.etsyControllers = [];
     window.pushAmazonEvent = event => {
       window.amazonControllers.at(-1)?.enqueue(
         new TextEncoder().encode(`${JSON.stringify(event)}\n`),
@@ -77,13 +84,17 @@ async function amazonStream(page) {
     window.closeAmazonStream = () => window.amazonControllers.pop()?.close();
     window.fetch = (input, init = {}) => {
       const path = new URL(typeof input === "string" ? input : input.url, location.href).pathname;
-      if (path !== "/api/amazon-import") return originalFetch(input, init);
-      window.amazonCalls += 1;
+      const isAmazon = path === "/api/amazon-import";
+      const isEtsy = path === "/api/etsy-import";
+      if (!isAmazon && !isEtsy) return originalFetch(input, init);
+      const controllers = isAmazon ? window.amazonControllers : window.etsyControllers;
+      if (isAmazon) window.amazonCalls += 1;
+      if (isEtsy) window.etsyCalls += 1;
       return Promise.resolve(new Response(new ReadableStream({
         start(controller) {
-          window.amazonControllers.push(controller);
+          controllers.push(controller);
           init.signal?.addEventListener("abort", () => {
-            sessionStorage.setItem("amazon-test-aborted", "true");
+            sessionStorage.setItem(isAmazon ? "amazon-test-aborted" : "etsy-test-aborted", "true");
             try { controller.error(init.signal.reason); } catch { /* already closed */ }
           }, { once: true });
         },
@@ -136,6 +147,23 @@ test("Amazon is a stable ordered header action and imports once with mutual excl
   await expect.poll(() => page.evaluate(() => window.amazonCalls)).toBe(1);
 });
 
+test("a held Etsy import disables Amazon until workspace teardown", async ({ page }) => {
+  await session(page);
+  await routes(page);
+  await amazonStream(page);
+  await open(page);
+
+  const etsy = page.locator(".etsy-import-button");
+  const amazon = page.locator(".amazon-import-button");
+  await etsy.click();
+  await expect.poll(() => page.evaluate(() => window.etsyCalls)).toBe(1);
+  await expect(etsy).toHaveAttribute("aria-busy", "true");
+  await expect(amazon).toBeDisabled();
+
+  await page.locator("#orderWorkspaceButton").evaluate(element => element.click());
+  await expect.poll(() => page.evaluate(() => sessionStorage.getItem("etsy-test-aborted"))).toBe("true");
+});
+
 test("Amazon progress and all six completion metrics use the operation dialog", async ({ page }) => {
   await session(page);
   const gets = await routes(page);
@@ -178,6 +206,28 @@ test("Amazon progress and all six completion metrics use the operation dialog", 
   await expect.poll(gets).toBeGreaterThan(1);
   await expect(page.locator(".database-order-row.is-selected")).toContainText("Order 1001");
   await expect(page.locator(".amazon-import-button")).toHaveText("Import Amazon");
+});
+
+test("terminal validation failure never renders success or refreshes Orders", async ({ page }) => {
+  await session(page);
+  const gets = await routes(page);
+  await amazonStream(page);
+  await open(page);
+  await expect(page.locator(".database-order-row").first()).toBeVisible();
+  const initialGets = gets();
+
+  await page.getByRole("button", { name: "Import Amazon" }).click();
+  await page.evaluate(event => {
+    pushAmazonEvent(event);
+    pushAmazonEvent(event);
+    closeAmazonStream();
+  }, completion);
+
+  const dialog = page.locator("#pasteSummaryDialog");
+  await expect(dialog.locator("#pasteSummaryTitle")).toHaveText("Amazon Import Failed");
+  await expect(dialog.locator("#pasteSummaryDescription")).toHaveText("Unable to import Amazon orders.");
+  await expect(dialog.locator("#pasteSummaryTitle")).not.toHaveText("Amazon Import Complete");
+  expect(gets()).toBe(initialGets);
 });
 
 test("Amazon safe failure retries without rendering upstream or customer fields", async ({ page }) => {
@@ -236,18 +286,49 @@ test("Amazon completion queues one forced refresh behind an in-flight Orders loa
   await expect(page.locator(".database-order-row.is-selected")).toContainText("Order 1001");
 });
 
-test("auth reset aborts an active Amazon stream", async ({ page }) => {
+test("sign-out aborts Amazon before a delayed auth request settles", async ({ page }) => {
   await session(page);
-  await routes(page);
+  const gets = await routes(page);
   await amazonStream(page);
   await open(page);
+  await expect(page.locator(".database-order-row").first()).toBeVisible();
+  const initialGets = gets();
+  await page.evaluate(() => { window.amazonTestDelaySignOut = true; });
 
   await page.getByRole("button", { name: "Import Amazon" }).click();
   await expect(page.locator(".amazon-import-button")).toHaveAttribute("aria-busy", "true");
   await page.locator("#productionBatchLogoutButton").click();
-
-  await expect(page.getByRole("heading", { name: "Sign in to production batch" })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => window.amazonTestSignOutStarted)).toBe(true);
   await expect.poll(() => page.evaluate(() => sessionStorage.getItem("amazon-test-aborted"))).toBe("true");
+
+  await page.evaluate(event => {
+    try { pushAmazonEvent(event); } catch { /* the aborted stream must reject later events */ }
+  }, completion);
+  await expect(page.locator("#pasteSummaryTitle")).not.toHaveText("Amazon Import Complete");
+  expect(gets()).toBe(initialGets);
+
+  await page.evaluate(() => window.resolveAmazonTestSignOut());
+  await expect(page.getByRole("heading", { name: "Sign in to production batch" })).toBeVisible();
+});
+
+test("leaving Orders aborts a held Amazon request and ignores later events", async ({ page }) => {
+  await session(page);
+  const gets = await routes(page);
+  await amazonStream(page);
+  await open(page);
+  await expect(page.locator(".database-order-row").first()).toBeVisible();
+  const initialGets = gets();
+
+  await page.getByRole("button", { name: "Import Amazon" }).click();
+  await expect.poll(() => page.evaluate(() => window.amazonCalls)).toBe(1);
+  await page.locator("#orderWorkspaceButton").evaluate(element => element.click());
+  await expect.poll(() => page.evaluate(() => sessionStorage.getItem("amazon-test-aborted"))).toBe("true");
+  await page.evaluate(() => {
+    try {
+      pushAmazonEvent({ type: "progress", stage: "processing_shipments", processed: 1, total: 1 });
+    } catch { /* the aborted stream must reject later events */ }
+  });
+  expect(gets()).toBe(initialGets);
 });
 
 test("compact Orders layout keeps every import action usable above filters and rows", async ({ page }) => {

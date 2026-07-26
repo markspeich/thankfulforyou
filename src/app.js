@@ -892,13 +892,13 @@ async function handleProductionBatchSignOut() {
   if (productionBatchLogoutButton) {
     productionBatchLogoutButton.disabled = true;
   }
+  batchSessionContext = null;
+  productionBatchAccessToken = null;
+  resetEtsySessionRequest(null);
+  resetAmazonSessionRequest(null);
 
   try {
     await signOutBrowserSession();
-    batchSessionContext = null;
-    productionBatchAccessToken = null;
-    resetEtsySessionRequest(null);
-    resetAmazonSessionRequest(null);
     if (productionBatchEmailInput) {
       productionBatchEmailInput.value = "";
     }

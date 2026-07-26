@@ -125,6 +125,7 @@ export async function importAmazonOrders({
   const decoder = new TextDecoder("utf-8", { fatal: true });
   let pending = new Uint8Array();
   let terminalSeen = false;
+  let terminalEvent = null;
   let completed = false;
 
   const notify = async (bytes) => {
@@ -141,7 +142,11 @@ export async function importAmazonOrders({
     if (!record.trim()) return;
     if (terminalSeen) throw publicImportError();
     const event = parseEvent(record);
-    if (event.type === "complete") terminalSeen = true;
+    if (event.type === "complete") {
+      terminalSeen = true;
+      terminalEvent = event;
+      return;
+    }
     await onEvent(event);
   };
 
@@ -164,7 +169,8 @@ export async function importAmazonOrders({
     }
 
     if (pending.length) await notify(pending);
-    if (!terminalSeen) throw publicImportError();
+    if (!terminalSeen || !terminalEvent) throw publicImportError();
+    await onEvent(terminalEvent);
     completed = true;
   } catch (error) {
     throw toPublicError(error);

@@ -128,8 +128,29 @@ describe("Amazon API browser client", () => {
 
     for (const body of bodies) {
       fetch.mockResolvedValueOnce(new Response(stream([body])));
-      await expect(importAmazonOrders()).rejects.toThrow("Unable to import Amazon orders.");
+      const onEvent = vi.fn();
+      await expect(importAmazonOrders({ onEvent })).rejects.toThrow("Unable to import Amazon orders.");
+      expect(onEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: "complete" }));
     }
+  });
+
+  it("decodes a streamed error when one UTF-8 codepoint is split across chunks", async () => {
+    const bytes = new TextEncoder().encode(JSON.stringify({
+      type: "error",
+      code: "import_failed",
+      message: "Jos\u00e9",
+    }) + "\n");
+    const accentedByte = bytes.indexOf(0xc3);
+    expect(accentedByte).toBeGreaterThan(0);
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(stream([
+      bytes.slice(0, accentedByte + 1),
+      bytes.slice(accentedByte + 1),
+    ]))));
+
+    await expect(importAmazonOrders()).rejects.toMatchObject({
+      message: "Unable to import Amazon orders.",
+      code: "import_failed",
+    });
   });
 
   it("uses only the generic public error for HTTP and streamed failures", async () => {
@@ -159,10 +180,15 @@ describe("Amazon API browser client", () => {
   it("rejects oversized records, cancels the reader, and releases its lock", async () => {
     const cancel = vi.fn().mockResolvedValue(undefined);
     const releaseLock = vi.fn();
-    const read = vi.fn().mockResolvedValueOnce({
-      value: new TextEncoder().encode("x".repeat((256 * 1024) + 1)),
-      done: false,
-    });
+    const read = vi.fn()
+      .mockResolvedValueOnce({
+        value: new TextEncoder().encode("x".repeat(192 * 1024)),
+        done: false,
+      })
+      .mockResolvedValueOnce({
+        value: new TextEncoder().encode("x".repeat((64 * 1024) + 1)),
+        done: false,
+      });
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
       ok: true,
       body: { getReader: () => ({ read, cancel, releaseLock }) },
