@@ -223,6 +223,7 @@ describe("Amazon customization normalizer", () => {
         listingTitle: "ShipStation Badge Reel",
         listingImageUrl75x75: "https://image.test/75.png",
         quantity: "2",
+        colorName: "Teal",
         shipByDate: "2026-08-01",
         price: { amount: "14.95", currency: "USD" },
         personalizationResponses: [

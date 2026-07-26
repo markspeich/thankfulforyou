@@ -62,20 +62,28 @@ describe("ShipStation V2 client", () => {
     }
   });
 
-  it("updates notes with only the partial notes payload and validates its shipment response", async () => {
+  it("includes ShipStation's required routing context when updating buyer notes", async () => {
     const fetchImpl = vi.fn().mockResolvedValue(response(shipment({ notes_to_buyer: "Existing\nImported" })));
     const client = createShipStationClient({ apiKey: "secret", fetchImpl });
 
-    await expect(client.updateNotesToBuyer({ shipmentId: "se/1", notesToBuyer: "Existing\nImported" })).resolves.toMatchObject({ shipment_id: "se-1" });
+    await expect(client.updateNotesToBuyer({
+      shipmentId: "se/1",
+      notesToBuyer: "Existing\nImported",
+      shipTo: { name: "Buyer" },
+      warehouseId: "se-warehouse",
+    })).resolves.toMatchObject({ shipment_id: "se-1" });
     expect(fetchImpl).toHaveBeenCalledWith(
       "https://api.shipstation.com/v2/shipments/se%2F1",
       expect.objectContaining({
         method: "PUT",
-        body: JSON.stringify({ notes_to_buyer: "Existing\nImported" }),
+        body: JSON.stringify({
+          notes_to_buyer: "Existing\nImported",
+          ship_to: { name: "Buyer" },
+          warehouse_id: "se-warehouse",
+        }),
         headers: expect.objectContaining({ "API-Key": "secret", Accept: "application/json", "Content-Type": "application/json" }),
       }),
     );
-    expect(Object.keys(JSON.parse(fetchImpl.mock.calls[0][1].body))).toEqual(["notes_to_buyer"]);
 
     const malformed = createShipStationClient({ apiKey: "secret", fetchImpl: vi.fn().mockResolvedValue(response({ shipment_id: "se-1" })) });
     await expect(malformed.updateNotesToBuyer({ shipmentId: "se-1", notesToBuyer: "x" })).rejects.toMatchObject({ code: "invalid_response" });

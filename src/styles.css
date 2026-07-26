@@ -3991,10 +3991,8 @@ button:disabled {
 }
 .etsy-import-button,
 .amazon-import-button {
-  min-width: 5.5rem;
   display: inline-flex;
   align-items: center;
-  justify-content: center;
   gap: 0.45rem;
   white-space: nowrap;
 }

@@ -254,6 +254,9 @@ function orderNumber(shipment) {
 
 export function normalizeShipStationItem({ shipment = {}, item = {}, customization = {} }) {
   const { freeTextFields, configurationFields } = extractAmazonCustomizationFields(customization);
+  const color = configurationFields.find(
+    (response) => response.name.toLowerCase() === "color",
+  );
   const orderItemId = normalizedItemId(item.external_order_item_id);
   const text = freeTextFields.map((response) => response.value).join("\n");
   const price = structuredUnitPrice(item.unit_price);
@@ -272,6 +275,7 @@ export function normalizeShipStationItem({ shipment = {}, item = {}, customizati
       listingTitle: sourceString(item.name),
       listingImageUrl75x75: sourceString(item.image_url),
       quantity: sourceString(item.quantity || 1),
+      colorName: sourceString(color?.value),
       shipByDate: sourceString(shipment.ship_by_date),
       ...(price ? { price } : {}),
       personalizationResponses: [...freeTextFields, ...configurationFields],

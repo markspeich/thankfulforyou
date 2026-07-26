@@ -327,6 +327,9 @@ export function createAmazonImportService({
                 await awaitActive(() => client.updateNotesToBuyer({
                   shipmentId: shipment.shipment_id,
                   notesToBuyer: noteResult.notes,
+                  shipTo: shipment.ship_to,
+                  shipFrom: shipment.ship_from,
+                  warehouseId: shipment.warehouse_id,
                   signal,
                 }));
               }

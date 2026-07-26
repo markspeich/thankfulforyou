@@ -109,6 +109,7 @@ async function amazonStream(page) {
 async function open(page, url = "/orders") {
   await page.goto(url);
   await expect(page.getByRole("region", { name: "Orders workspace" })).toBeVisible();
+  await page.locator("#ordersToolsMenu summary").click();
 }
 
 const completion = {
@@ -121,19 +122,20 @@ const completion = {
   failed: 1,
 };
 
-test("Amazon is a stable ordered header action and imports once with mutual exclusion", async ({ page }) => {
+test("Orders imports are ordered inside the tools menu and import once with mutual exclusion", async ({ page }) => {
   await session(page);
   await routes(page);
   await amazonStream(page);
   await open(page);
 
   const actions = page.locator("#databaseOrdersWorkspace .batch-header-actions");
-  await expect(actions.locator(":scope > *")).toHaveCount(4);
-  await expect(actions.locator(":scope > *").nth(0)).toHaveClass(/etsy-import-button/);
-  await expect(actions.locator(":scope > *").nth(1)).toHaveClass(/amazon-import-button/);
-  await expect(actions.locator(":scope > *").nth(2)).toHaveAttribute("id", "pasteOrdersButton");
-  await expect(actions.locator(":scope > *").nth(3)).toHaveAttribute("id", "ordersToolsMenu");
-  await expect(page.locator("#ordersToolsMenu .amazon-import-button")).toHaveCount(0);
+  await expect(actions.locator(":scope > *")).toHaveCount(2);
+  await expect(actions.locator(":scope > *").nth(0)).toHaveAttribute("id", "pasteOrdersButton");
+  await expect(actions.locator(":scope > *").nth(1)).toHaveAttribute("id", "ordersToolsMenu");
+  const importActions = page.locator("#ordersImportActions");
+  await expect(importActions.locator(":scope > button")).toHaveCount(2);
+  await expect(importActions.locator(":scope > button").nth(0)).toHaveClass(/etsy-import-button/);
+  await expect(importActions.locator(":scope > button").nth(1)).toHaveClass(/amazon-import-button/);
 
   const amazon = page.locator(".amazon-import-button");
   const etsy = page.locator(".etsy-import-button");
@@ -141,7 +143,8 @@ test("Amazon is a stable ordered header action and imports once with mutual excl
   await amazon.click();
   await expect(amazon).toBeDisabled();
   await expect(amazon).toHaveAttribute("aria-busy", "true");
-  await expect(amazon.locator(".amazon-import-button-spinner")).toBeVisible();
+  await expect(amazon.locator(".amazon-import-button-spinner")).not.toHaveAttribute("hidden", "");
+  await expect(page.locator("#ordersToolsMenu")).not.toHaveAttribute("open", "");
   await expect(etsy).toBeDisabled();
   await amazon.evaluate(element => element.click());
   await expect.poll(() => page.evaluate(() => window.amazonCalls)).toBe(1);
@@ -170,8 +173,10 @@ test("Amazon progress and all six completion metrics use the operation dialog", 
   await amazonStream(page);
   await open(page, "/orders/order%3A1001");
   await expect(page.locator(".database-order-row").first()).toBeVisible();
+  await page.locator("#ordersToolsMenu summary").click();
   await page.getByRole("button", { name: /Order 1001/ }).click();
 
+  await page.locator("#ordersToolsMenu summary").click();
   await page.getByRole("button", { name: "Import Amazon" }).click();
   const dialog = page.locator("#pasteSummaryDialog");
   await expect(dialog).toBeVisible();
@@ -246,6 +251,8 @@ test("Amazon safe failure retries without rendering upstream or customer fields"
   const dialog = page.locator("#pasteSummaryDialog");
   await expect(dialog.locator("#pasteSummaryTitle")).toHaveText("Amazon Import Failed");
   await expect(dialog.locator("#pasteSummaryDescription")).toHaveText("Unable to import Amazon orders.");
+  await dialog.getByRole("button", { name: "Done" }).click();
+  await page.locator("#ordersToolsMenu summary").click();
   await expect(page.getByRole("button", { name: "Retry" })).toBeVisible();
   for (const sensitive of ["secret-key", "customer Jane", "note body", "zme-caps.amazon.com"]) {
     await expect(page.locator("body")).not.toContainText(sensitive);
@@ -331,7 +338,7 @@ test("leaving Orders aborts a held Amazon request and ignores later events", asy
   expect(gets()).toBe(initialGets);
 });
 
-test("compact Orders layout keeps every import action usable above filters and rows", async ({ page }) => {
+test("compact Orders layout keeps Paste and the tools menu visible above filters and rows", async ({ page }) => {
   await page.setViewportSize({ width: 667, height: 445 });
   await session(page);
   await routes(page);
@@ -344,10 +351,10 @@ test("compact Orders layout keeps every import action usable above filters and r
   await expect(actions).toBeVisible();
   await expect(filters).toBeVisible();
   await expect(firstOrder).toBeVisible();
-  await expect(page.locator(".etsy-import-button")).toBeEnabled();
-  await expect(page.locator(".amazon-import-button")).toBeEnabled();
   await expect(page.locator("#pasteOrdersButton")).toBeEnabled();
   await expect(page.locator("#ordersToolsMenu")).toBeVisible();
+  await expect(page.locator(".etsy-import-button")).toBeEnabled();
+  await expect(page.locator(".amazon-import-button")).toBeEnabled();
 
   const [actionsBox, filtersBox, rowBox] = await Promise.all([
     actions.boundingBox(),

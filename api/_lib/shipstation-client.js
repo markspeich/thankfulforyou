@@ -178,9 +178,25 @@ export function createShipStationClient({
     }
   }
 
-  function updateNotesToBuyer({ shipmentId, notesToBuyer, signal } = {}) {
-    if (typeof shipmentId !== "string" || !shipmentId || typeof notesToBuyer !== "string") throw new ShipStationError("invalid_response");
-    return request({ path: `/shipments/${encodeURIComponent(shipmentId)}`, method: "PUT", body: { notes_to_buyer: notesToBuyer }, signal, validate: assertShipment });
+  function updateNotesToBuyer({ shipmentId, notesToBuyer, shipTo, shipFrom, warehouseId, signal } = {}) {
+    const hasShipTo = shipTo && typeof shipTo === "object" && !Array.isArray(shipTo);
+    const hasShipFrom = shipFrom && typeof shipFrom === "object" && !Array.isArray(shipFrom);
+    const hasWarehouse = typeof warehouseId === "string" && warehouseId;
+    if (typeof shipmentId !== "string" || !shipmentId || typeof notesToBuyer !== "string") {
+      throw new ShipStationError("invalid_response");
+    }
+    return request({
+      path: `/shipments/${encodeURIComponent(shipmentId)}`,
+      method: "PUT",
+      body: {
+        notes_to_buyer: notesToBuyer,
+        ...(hasShipTo ? { ship_to: shipTo } : {}),
+        ...(hasWarehouse ? { warehouse_id: warehouseId }
+          : hasShipFrom ? { ship_from: shipFrom } : {}),
+      },
+      signal,
+      validate: assertShipment,
+    });
   }
 
   function addShipmentTag({ shipmentId, tagName, signal } = {}) {

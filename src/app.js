@@ -276,7 +276,7 @@ const importClipboardButton = document.querySelector("#importClipboardButton");
 const clearBatchButton = document.querySelector("#clearBatchButton");
 const workflowAlert = document.querySelector("#importStatus");
 const workflowAlertText = document.querySelector("#workflowAlertText");
-const databaseOrdersHeaderActions = databaseOrdersWorkspace?.querySelector(".batch-header-actions");
+const ordersImportActions = document.querySelector("#ordersImportActions");
 const etsyImportButton = document.createElement("button");
 const etsyImportButtonSpinner = document.createElement("span");
 const etsyImportButtonLabel = document.createElement("span");
@@ -6281,9 +6281,9 @@ async function refreshOrdersAndProductionBatch({ payload = null, accessToken, re
   }
 }
 function initializeEtsyImportUi() {
-  if (!databaseOrdersHeaderActions) return;
+  if (!ordersImportActions) return;
   etsyImportButton.type = "button";
-  etsyImportButton.className = "batch-primary-action etsy-import-button";
+  etsyImportButton.className = "batch-tool-button etsy-import-button";
   etsyImportButton.setAttribute("aria-controls", "etsyImportFeedback");
   etsyImportFeedback.id = "etsyImportFeedback";
   etsyImportButtonSpinner.className = "etsy-import-button-spinner";
@@ -6301,7 +6301,7 @@ function initializeEtsyImportUi() {
   etsyImportDismissButton.textContent = "\u00d7";
   etsyImportDismissButton.hidden = true;
   etsyImportFeedback.append(etsyImportStatus, etsyImportDismissButton);
-  databaseOrdersHeaderActions.prepend(etsyImportButton);
+  ordersImportActions.append(etsyImportButton);
   databaseOrdersWorkspace?.querySelector(".database-orders-filters")?.before(etsyImportFeedback);
 }
 
@@ -6486,15 +6486,15 @@ async function handleEtsyImportAction() {
 }
 
 function initializeAmazonImportUi() {
-  if (!databaseOrdersHeaderActions) return;
+  if (!ordersImportActions) return;
   amazonImportButton.type = "button";
-  amazonImportButton.className = "batch-primary-action amazon-import-button";
+  amazonImportButton.className = "batch-tool-button amazon-import-button";
   amazonImportButtonSpinner.className = "amazon-import-button-spinner";
   amazonImportButtonSpinner.setAttribute("aria-hidden", "true");
   amazonImportButtonSpinner.hidden = true;
   amazonImportButtonLabel.className = "amazon-import-button-label";
   amazonImportButton.append(amazonImportButtonSpinner, amazonImportButtonLabel);
-  etsyImportButton.after(amazonImportButton);
+  ordersImportActions.append(amazonImportButton);
   renderAmazonImportUi();
 }
 
@@ -12649,9 +12649,11 @@ pasteOrdersButton?.addEventListener("click", () => {
   void importOrdersFromClipboard();
 });
 etsyImportButton.addEventListener("click", () => {
+  ordersToolsMenu?.removeAttribute("open");
   void handleEtsyImportAction();
 });
 amazonImportButton.addEventListener("click", () => {
+  ordersToolsMenu?.removeAttribute("open");
   void startAmazonImport();
 });
 addCheckedOrdersToBatchButton?.addEventListener("click", () => {
@@ -12660,6 +12662,7 @@ addCheckedOrdersToBatchButton?.addEventListener("click", () => {
 etsyImportDismissButton.addEventListener("click", () => {
   etsyImportResult = null;
   renderEtsyImportUi();
+  ordersToolsMenu?.setAttribute("open", "");
   etsyImportButton.focus();
 });
 presetWorkspaceButton.addEventListener("click", () => {
