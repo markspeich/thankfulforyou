@@ -67,11 +67,20 @@ function errorLogMetadata(error, { stage, streaming }) {
       : isShipStationError && SAFE_SHIPSTATION_ERROR_CODES.has(error.code) ? error.code : null,
     statusCode: Number.isInteger(error?.statusCode) ? error.statusCode : null,
     retryable: typeof error?.retryable === "boolean" ? error.retryable : null,
-    requestId: isShipStationError && SAFE_SHIPSTATION_REQUEST_ID.test(error.requestId) ? error.requestId : null,
+    requestId: isShipStationError && typeof error.requestId === "string" && SAFE_SHIPSTATION_REQUEST_ID.test(error.requestId) ? error.requestId : null,
     streaming,
 
   };
 }
+
+function failureStage(prepared, error, fallback) {
+  try {
+    return prepared?.stageForError?.(error) === "release" ? "release" : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 function streamedErrorFrame(error) {
   return {
     type: "error",
@@ -134,10 +143,7 @@ export function createAmazonImportHandler({
     const release = () => {
       if (!prepared) return Promise.resolve();
       if (!releasePromise) {
-        releasePromise = Promise.resolve().then(() => {
-          stage = "release";
-          return prepared.release();
-        });
+        releasePromise = Promise.resolve().then(() => prepared.release());
         protectLifecycle(releasePromise);
       }
       return releasePromise;
@@ -187,10 +193,11 @@ export function createAmazonImportHandler({
       streaming = true;
       stage = "run";
       await prepared.run();
+      stage = "release";
       await release();
       if (isResponseWritable(res)) res.end();
     } catch (error) {
-      console.error("Amazon import API error", errorLogMetadata(error, { stage, streaming }));
+      console.error("Amazon import API error", errorLogMetadata(error, { stage: failureStage(prepared, error, stage), streaming }));
       try { await release(); } catch { /* The original run or response failure remains primary. */ }
       if (!streaming) {
         const response = publicError(error);

@@ -1,8 +1,21 @@
 import { EventEmitter } from "node:events";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createAmazonImportHandler } from "../../api/amazon-import.js";
-import { AmazonImportError } from "../../api/_lib/amazon-import-service.js";
+import {
+  AmazonImportError,
+  createAmazonImportService,
+} from "../../api/_lib/amazon-import-service.js";
 import { ShipStationError } from "../../api/_lib/shipstation-client.js";
+
+function deferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((onResolve, onReject) => {
+    resolve = onResolve;
+    reject = onReject;
+  });
+  return { promise, resolve, reject };
+}
 
 function response() {
   return {
@@ -19,6 +32,28 @@ function response() {
     flushHeaders: vi.fn(),
   };
 }
+
+function realServiceDependencies({ client, releaseAmazonImportLock }) {
+  vi.stubEnv("SHIPSTATION_API_KEY", "shipstation-secret");
+  vi.stubEnv("SHIPSTATION_AMAZON_STORE_ID", "se-4461867");
+  return {
+    store: {
+      acquireAmazonImportLock: vi.fn().mockResolvedValue(true),
+      renewAmazonImportLock: vi.fn().mockResolvedValue(true),
+      releaseAmazonImportLock,
+      importAmazonOrderItemsTransactional: vi.fn(),
+    },
+    createShipStationClient: vi.fn(() => client),
+    fetchCustomizationJson: vi.fn(),
+    normalizeItem: vi.fn(),
+    appendNoteBlocks: vi.fn(),
+  };
+}
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllEnvs();
+});
 
 describe("Amazon import API", () => {
   it("authenticates and prepares before flushing headers, then writes ordered NDJSON", async () => {
@@ -85,6 +120,7 @@ describe("Amazon import API", () => {
       requestId: "req-safe",
       streaming: false,
     });
+    expect(consoleError).toHaveBeenCalledOnce();
     expect(JSON.stringify(consoleError.mock.calls)).not.toContain("secret body");
     expect(JSON.stringify(consoleError.mock.calls)).not.toContain("secret stack");
     consoleError.mockRestore();
@@ -111,6 +147,7 @@ describe("Amazon import API", () => {
       requestId: null,
       streaming: true,
     });
+    expect(consoleError).toHaveBeenCalledOnce();
     expect(JSON.stringify(consoleError.mock.calls)).not.toContain("secret body");
     expect(JSON.stringify(consoleError.mock.calls)).not.toContain("secret stack");
     expect(JSON.stringify(consoleError.mock.calls)).not.toContain("secret request id");
@@ -123,8 +160,113 @@ describe("Amazon import API", () => {
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
     await createAmazonImportHandler({ resolveAuth: vi.fn().mockResolvedValue({ workspaceId: "workspace-1", userId: "user-1" }), serviceFactory: () => ({ prepare: async () => { throw error; } }) })({ method: "POST" }, response());
     expect(consoleError).toHaveBeenCalledWith("Amazon import API error", { stage: "prepare", errorName: null, errorCode: null, statusCode: 418, retryable: true, requestId: null, streaming: false });
+    expect(consoleError).toHaveBeenCalledOnce();
     for (const secret of Object.values(secrets)) expect(JSON.stringify(consoleError.mock.calls)).not.toContain(secret);
     consoleError.mockRestore();
+  });
+
+  it("rejects object request IDs from log metadata without coercing them", async () => {
+    const error = new ShipStationError("request_failed", { statusCode: 401 });
+    error.requestId = { toString: () => "req-safe" };
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await createAmazonImportHandler({
+      resolveAuth: vi.fn().mockResolvedValue({ workspaceId: "workspace-1", userId: "user-1" }),
+      serviceFactory: () => ({ prepare: async () => { throw error; } }),
+    })({ method: "POST" }, response());
+
+    expect(consoleError).toHaveBeenCalledWith("Amazon import API error", {
+      stage: "prepare",
+      errorName: "ShipStationError",
+      errorCode: "request_failed",
+      statusCode: 401,
+      retryable: false,
+      requestId: null,
+      streaming: false,
+    });
+    expect(consoleError).toHaveBeenCalledOnce();
+  });
+
+  it("attributes a real service primary release failure to release", async () => {
+    const releaseError = new Error("release API key secret");
+    const releaseAmazonImportLock = vi.fn()
+      .mockRejectedValueOnce(releaseError)
+      .mockResolvedValueOnce(undefined);
+    const dependencies = realServiceDependencies({
+      client: {
+        iteratePendingShipments: vi.fn(async function* () {}),
+      },
+      releaseAmazonImportLock,
+    });
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await createAmazonImportHandler({
+      resolveAuth: vi.fn().mockResolvedValue({ workspaceId: "workspace-1", userId: "user-1" }),
+      serviceFactory: createAmazonImportService,
+      dependencies,
+      waitUntil: vi.fn(),
+    })({ method: "POST" }, response());
+
+    expect(consoleError).toHaveBeenCalledWith("Amazon import API error", {
+      stage: "release",
+      errorName: null,
+      errorCode: null,
+      statusCode: null,
+      retryable: null,
+      requestId: null,
+      streaming: true,
+    });
+    expect(consoleError).toHaveBeenCalledOnce();
+    expect(JSON.stringify(consoleError.mock.calls)).not.toContain("release API key secret");
+    expect(releaseAmazonImportLock).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps a real service cancellation failure attributed to run while release is pending", async () => {
+    const source = new AbortController();
+    const iterationStarted = deferred();
+    const releasePending = deferred();
+    const releaseAmazonImportLock = vi.fn(() => releasePending.promise);
+    const dependencies = realServiceDependencies({
+      client: {
+        iteratePendingShipments: vi.fn(({ signal }) => ({
+          [Symbol.asyncIterator]() { return this; },
+          next: () => new Promise((_resolve, reject) => {
+            iterationStarted.resolve();
+            signal.addEventListener(
+              "abort",
+              () => reject(new DOMException("Aborted", "AbortError")),
+              { once: true },
+            );
+          }),
+        })),
+      },
+      releaseAmazonImportLock,
+    });
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const pending = createAmazonImportHandler({
+      resolveAuth: vi.fn().mockResolvedValue({ workspaceId: "workspace-1", userId: "user-1" }),
+      serviceFactory: createAmazonImportService,
+      dependencies,
+      waitUntil: vi.fn(),
+    })({ method: "POST", signal: source.signal }, response());
+
+    await iterationStarted.promise;
+    source.abort();
+    await vi.waitFor(() => expect(releaseAmazonImportLock).toHaveBeenCalledOnce());
+    releasePending.resolve();
+    await pending;
+
+    expect(consoleError).toHaveBeenCalledWith("Amazon import API error", {
+      stage: "run",
+      errorName: null,
+      errorCode: null,
+      statusCode: null,
+      retryable: null,
+      requestId: null,
+      streaming: true,
+    });
+    expect(consoleError).toHaveBeenCalledOnce();
+    expect(releaseAmazonImportLock).toHaveBeenCalledOnce();
   });
 
   it("omits notes and URLs from streamed progress frames", async () => {

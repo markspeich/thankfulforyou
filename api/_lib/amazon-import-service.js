@@ -114,6 +114,8 @@ export function createAmazonImportService({
     let renewalPromise = null;
     let lastRenewedAt = started.getTime();
     let activeFailure = null;
+    let primaryReleaseError;
+    let hasPrimaryReleaseError = false;
     let rejectActiveFailure;
     let abortListener = null;
     const activeFailurePromise = new Promise((_, reject) => {
@@ -388,12 +390,23 @@ export function createAmazonImportService({
         try {
           await release();
         } catch (releaseError) {
-          if (!primaryError) throw releaseError;
+          if (!primaryError) {
+            primaryReleaseError = releaseError;
+            hasPrimaryReleaseError = true;
+            throw releaseError;
+          }
         }
       }
     };
 
-    return { run, release, lockToken };
+    return {
+      run,
+      release,
+      lockToken,
+      stageForError(error) {
+        return hasPrimaryReleaseError && error === primaryReleaseError ? "release" : null;
+      },
+    };
   }
 
   return { prepare };
