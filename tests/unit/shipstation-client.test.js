@@ -62,6 +62,27 @@ describe("ShipStation V2 client", () => {
     }
   });
 
+  it("preserves a ShipStation request ID without retaining error details", async () => {
+    const client = createShipStationClient({
+      apiKey: "secret",
+      fetchImpl: vi.fn().mockResolvedValue(response({
+        request_id: "req-safe",
+        errors: [{ message: "secret body" }],
+      }, 401)),
+    });
+
+    const error = await client.iteratePendingShipments({ storeId: "se-4461867" }).next().catch((caught) => caught);
+
+    expect(error).toMatchObject({
+      code: "request_failed",
+      statusCode: 401,
+      retryable: false,
+      requestId: "req-safe",
+    });
+    expect(String(error)).not.toContain("secret body");
+    expect(JSON.stringify(error)).not.toContain("secret body");
+  });
+
   it("includes ShipStation's required routing context when updating buyer notes", async () => {
     const fetchImpl = vi.fn().mockResolvedValue(response(shipment({ notes_to_buyer: "Existing\nImported" })));
     const client = createShipStationClient({ apiKey: "secret", fetchImpl });
