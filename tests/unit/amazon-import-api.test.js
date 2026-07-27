@@ -2,6 +2,7 @@ import { EventEmitter } from "node:events";
 import { describe, expect, it, vi } from "vitest";
 import { createAmazonImportHandler } from "../../api/amazon-import.js";
 import { AmazonImportError } from "../../api/_lib/amazon-import-service.js";
+import { ShipStationError } from "../../api/_lib/shipstation-client.js";
 
 function response() {
   return {
@@ -66,14 +67,9 @@ describe("Amazon import API", () => {
 
 
   it("logs allowlisted metadata when prepare fails before streaming", async () => {
-    const error = Object.assign(new Error("secret body"), {
-      name: "ShipStationError",
-      code: "request_failed",
-      statusCode: 401,
-      retryable: false,
-      requestId: "req-safe",
-      stack: "secret stack",
-    });
+    const error = new ShipStationError("request_failed", { statusCode: 401, retryable: false, requestId: "req-safe" });
+    error.message = "secret body";
+    error.stack = "secret stack";
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
     await createAmazonImportHandler({
       resolveAuth: vi.fn().mockResolvedValue({ workspaceId: "workspace-1", userId: "user-1" }),
@@ -95,14 +91,9 @@ describe("Amazon import API", () => {
   });
 
   it("logs allowlisted metadata when run fails after streaming starts", async () => {
-    const error = Object.assign(new Error("secret body"), {
-      name: "ShipStationError",
-      code: "request_failed",
-      statusCode: 401,
-      retryable: false,
-      requestId: "req-safe",
-      stack: "secret stack",
-    });
+    const error = new ShipStationError("request_failed", { statusCode: 401, retryable: false, requestId: "secret request id" });
+    error.message = "secret body";
+    error.stack = "secret stack";
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
     await createAmazonImportHandler({
       resolveAuth: vi.fn().mockResolvedValue({ workspaceId: "workspace-1", userId: "user-1" }),
@@ -117,11 +108,22 @@ describe("Amazon import API", () => {
       errorCode: "request_failed",
       statusCode: 401,
       retryable: false,
-      requestId: "req-safe",
+      requestId: null,
       streaming: true,
     });
     expect(JSON.stringify(consoleError.mock.calls)).not.toContain("secret body");
     expect(JSON.stringify(consoleError.mock.calls)).not.toContain("secret stack");
+    expect(JSON.stringify(consoleError.mock.calls)).not.toContain("secret request id");
+    consoleError.mockRestore();
+  });
+
+  it("logs no unverified string metadata from an arbitrary error", async () => {
+    const secrets = { body: "secret body", name: "secret-error-name", code: "secret-error-code", requestId: "secret-request-id", stack: "secret stack" };
+    const error = Object.assign(new Error(secrets.body), { name: secrets.name, code: secrets.code, requestId: secrets.requestId, stack: secrets.stack, statusCode: 418, retryable: true });
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    await createAmazonImportHandler({ resolveAuth: vi.fn().mockResolvedValue({ workspaceId: "workspace-1", userId: "user-1" }), serviceFactory: () => ({ prepare: async () => { throw error; } }) })({ method: "POST" }, response());
+    expect(consoleError).toHaveBeenCalledWith("Amazon import API error", { stage: "prepare", errorName: null, errorCode: null, statusCode: 418, retryable: true, requestId: null, streaming: false });
+    for (const secret of Object.values(secrets)) expect(JSON.stringify(consoleError.mock.calls)).not.toContain(secret);
     consoleError.mockRestore();
   });
 

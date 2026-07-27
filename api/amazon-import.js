@@ -1,7 +1,7 @@
 import { waitUntil as vercelWaitUntil } from "@vercel/functions";
 import { resolveProductionBatchAuth } from "./_lib/production-batch-auth.js";
 import * as amazonImportStore from "./_lib/amazon-import-store.js";
-import { createShipStationClient } from "./_lib/shipstation-client.js";
+import { createShipStationClient, ShipStationError } from "./_lib/shipstation-client.js";
 import { fetchAmazonCustomizationJson } from "./_lib/amazon-customization-archive.js";
 import { appendAmazonNoteBlocks, normalizeShipStationItem } from "./_lib/amazon-customization-normalizer.js";
 import { AmazonImportError, createAmazonImportService } from "./_lib/amazon-import-service.js";
@@ -19,6 +19,9 @@ const SAFE_AUTH_ERROR_MESSAGES = Object.freeze({
   403: "Shared workspace access denied.",
   503: "Unable to reach Supabase auth from this dev server process.",
 });
+const SAFE_SHIPSTATION_ERROR_CODES = new Set(["configuration", "invalid_response", "aborted", "temporary", "rate_limited", "request_failed"]);
+const SAFE_SHIPSTATION_REQUEST_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+
 
 const PROGRESS_STAGES = new Set(["fetching_shipments", "processing_shipments"]);
 
@@ -54,17 +57,21 @@ function publicError(error) {
 }
 
 function errorLogMetadata(error, { stage, streaming }) {
+  const isAmazonImportError = error instanceof AmazonImportError;
+  const isShipStationError = error instanceof ShipStationError;
   return {
     stage,
-    errorName: typeof error?.name === "string" ? error.name : null,
-    errorCode: typeof error?.code === "string" ? error.code : null,
+    errorName: isAmazonImportError ? "AmazonImportError" : isShipStationError ? "ShipStationError" : null,
+    errorCode: isAmazonImportError && SAFE_AMAZON_ERROR_MESSAGES[error.code]
+      ? error.code
+      : isShipStationError && SAFE_SHIPSTATION_ERROR_CODES.has(error.code) ? error.code : null,
     statusCode: Number.isInteger(error?.statusCode) ? error.statusCode : null,
     retryable: typeof error?.retryable === "boolean" ? error.retryable : null,
-    requestId: typeof error?.requestId === "string" ? error.requestId : null,
+    requestId: isShipStationError && SAFE_SHIPSTATION_REQUEST_ID.test(error.requestId) ? error.requestId : null,
     streaming,
+
   };
 }
-
 function streamedErrorFrame(error) {
   return {
     type: "error",
