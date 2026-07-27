@@ -165,9 +165,13 @@ export function createShipStationClient({
       const statusCode = Number.isInteger(response?.status) ? response.status : null;
       const retryable = statusCode === 429 || (statusCode >= 500 && statusCode <= 599);
       if (!retryable || attempt === MAX_ATTEMPTS - 1) {
-        combined.cleanup();
-        const requestId = await readRequestId(response);
-        throw new ShipStationError(retryable ? (statusCode === 429 ? "rate_limited" : "temporary") : "request_failed", { statusCode, retryable, requestId });
+        try {
+          const requestId = await readRequestId(response);
+          if (signal?.aborted || combined.signal?.aborted) throw new ShipStationError(signal?.aborted ? "aborted" : "temporary", { retryable: !signal?.aborted });
+          throw new ShipStationError(retryable ? (statusCode === 429 ? "rate_limited" : "temporary") : "request_failed", { statusCode, retryable, requestId });
+        } finally {
+          combined.cleanup();
+        }
       }
       const delay = statusCode === 429
         ? retryAfterMilliseconds(response.headers?.get?.("retry-after"), now)
