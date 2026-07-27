@@ -236,6 +236,26 @@ describe("Amazon customization normalizer", () => {
     });
   });
 
+  it("uses the Amazon SKU as the preset listing identity when ShipStation omits the ASIN", () => {
+    // Break caught: Amazon imports without an ASIN disable preset-to-listing assignment.
+    const result = normalizeShipStationItem({
+      shipment: {
+        shipment_id: "se-shipment-without-asin",
+        shipment_number: "114-0233450-6206634",
+      },
+      item: {
+        external_order_item_id: "165616583183721",
+        name: "Badge Reel - Nurse",
+        asin: "",
+        sku: "NURSE-SOMEKIND",
+        quantity: 1,
+      },
+      customization: observedCustomization,
+    });
+
+    expect(result.source.listingId).toBe("NURSE-SOMEKIND");
+  });
+
   it("marks configuration-only items as needing customization without dropping their metadata", () => {
     // Break caught: items without free text are skipped or incorrectly considered ready.
     const result = normalizeShipStationItem({

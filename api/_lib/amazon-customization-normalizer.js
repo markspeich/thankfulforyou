@@ -270,7 +270,7 @@ export function normalizeShipStationItem({ shipment = {}, item = {}, customizati
       transactionId: orderItemId,
       amazonOrderItemId: orderItemId,
       shipStationShipmentId: sourceString(shipment.shipment_id),
-      listingId: sourceString(item.asin),
+      listingId: sourceString(item.asin) || sourceString(item.sku),
       sku: sourceString(item.sku),
       listingTitle: sourceString(item.name),
       listingImageUrl75x75: sourceString(item.image_url),

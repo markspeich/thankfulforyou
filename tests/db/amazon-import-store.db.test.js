@@ -235,6 +235,47 @@ describe("Amazon import database integration", () => {
     expect(design.design_text).toBe("Original");
   });
 
+  it("fills a missing Amazon listing identity on re-import without changing the saved design", async () => {
+    // Break caught: existing Amazon rows remain permanently unable to assign presets.
+    const id = `amazon-order-item:${randomUUID()}`;
+    const original = item(id, "Original");
+    original.source.listingId = "";
+    await importAmazonOrderItemsTransactional({
+      workspaceId: PRIMARY_WORKSPACE_ID,
+      userId: importUserId,
+      items: [original],
+    });
+
+    const replacement = item(id, "Replacement");
+    replacement.source.listingId = "NURSE-SOMEKIND";
+    await importAmazonOrderItemsTransactional({
+      workspaceId: PRIMARY_WORKSPACE_ID,
+      userId: importUserId,
+      items: [replacement],
+    });
+
+    const supabase = createSupabaseAdminClient();
+    const [{ data: orderItem, error: orderError }, { data: design, error: designError }] = await Promise.all([
+      supabase
+        .from("order_items")
+        .select("listing_id, source_json")
+        .eq("id", id)
+        .maybeSingle(),
+      supabase
+        .from("designs")
+        .select("design_text")
+        .eq("order_item_id", id)
+        .maybeSingle(),
+    ]);
+    expect(orderError).toBeNull();
+    expect(designError).toBeNull();
+    expect(orderItem).toMatchObject({
+      listing_id: "NURSE-SOMEKIND",
+      source_json: { listingId: "NURSE-SOMEKIND" },
+    });
+    expect(design.design_text).toBe("Original");
+  });
+
   it("rolls back every row when one line payload violates the schema", async () => {
     const validId = `amazon-order-item:${randomUUID()}`;
     const invalidId = `amazon-order-item:${randomUUID()}`;
