@@ -21,6 +21,7 @@ function response() {
 
 describe("Amazon import API", () => {
   it("authenticates and prepares before flushing headers, then writes ordered NDJSON", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
     const calls = [];
     const resolveAuth = vi.fn(async () => {
       calls.push("auth");
@@ -59,6 +60,69 @@ describe("Amazon import API", () => {
       '{"type":"complete","importedItems":1}\n',
     ]);
     expect(res.ended).toBe(true);
+    expect(consoleError).not.toHaveBeenCalled();
+    consoleError.mockRestore();
+  });
+
+
+  it("logs allowlisted metadata when prepare fails before streaming", async () => {
+    const error = Object.assign(new Error("secret body"), {
+      name: "ShipStationError",
+      code: "request_failed",
+      statusCode: 401,
+      retryable: false,
+      requestId: "req-safe",
+      stack: "secret stack",
+    });
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    await createAmazonImportHandler({
+      resolveAuth: vi.fn().mockResolvedValue({ workspaceId: "workspace-1", userId: "user-1" }),
+      serviceFactory: () => ({ prepare: async () => { throw error; } }),
+    })({ method: "POST" }, response());
+
+    expect(consoleError).toHaveBeenCalledWith("Amazon import API error", {
+      stage: "prepare",
+      errorName: "ShipStationError",
+      errorCode: "request_failed",
+      statusCode: 401,
+      retryable: false,
+      requestId: "req-safe",
+      streaming: false,
+    });
+    expect(JSON.stringify(consoleError.mock.calls)).not.toContain("secret body");
+    expect(JSON.stringify(consoleError.mock.calls)).not.toContain("secret stack");
+    consoleError.mockRestore();
+  });
+
+  it("logs allowlisted metadata when run fails after streaming starts", async () => {
+    const error = Object.assign(new Error("secret body"), {
+      name: "ShipStationError",
+      code: "request_failed",
+      statusCode: 401,
+      retryable: false,
+      requestId: "req-safe",
+      stack: "secret stack",
+    });
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    await createAmazonImportHandler({
+      resolveAuth: vi.fn().mockResolvedValue({ workspaceId: "workspace-1", userId: "user-1" }),
+      serviceFactory: () => ({
+        prepare: async () => ({ run: async () => { throw error; }, release: vi.fn() }),
+      }),
+    })({ method: "POST" }, response());
+
+    expect(consoleError).toHaveBeenCalledWith("Amazon import API error", {
+      stage: "run",
+      errorName: "ShipStationError",
+      errorCode: "request_failed",
+      statusCode: 401,
+      retryable: false,
+      requestId: "req-safe",
+      streaming: true,
+    });
+    expect(JSON.stringify(consoleError.mock.calls)).not.toContain("secret body");
+    expect(JSON.stringify(consoleError.mock.calls)).not.toContain("secret stack");
+    consoleError.mockRestore();
   });
 
   it("omits notes and URLs from streamed progress frames", async () => {

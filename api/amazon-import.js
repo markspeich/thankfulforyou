@@ -53,6 +53,18 @@ function publicError(error) {
   return { statusCode: 500, body: { error: FALLBACK_ERROR } };
 }
 
+function errorLogMetadata(error, { stage, streaming }) {
+  return {
+    stage,
+    errorName: typeof error?.name === "string" ? error.name : null,
+    errorCode: typeof error?.code === "string" ? error.code : null,
+    statusCode: Number.isInteger(error?.statusCode) ? error.statusCode : null,
+    retryable: typeof error?.retryable === "boolean" ? error.retryable : null,
+    requestId: typeof error?.requestId === "string" ? error.requestId : null,
+    streaming,
+  };
+}
+
 function streamedErrorFrame(error) {
   return {
     type: "error",
@@ -104,6 +116,7 @@ export function createAmazonImportHandler({
     let requestCancellation;
     let releasePromise;
     let signal;
+    let stage = "auth";
     const protectLifecycle = (promise) => {
       try {
         waitUntil(Promise.resolve(promise).catch(() => {}));
@@ -114,7 +127,10 @@ export function createAmazonImportHandler({
     const release = () => {
       if (!prepared) return Promise.resolve();
       if (!releasePromise) {
-        releasePromise = Promise.resolve().then(() => prepared.release());
+        releasePromise = Promise.resolve().then(() => {
+          stage = "release";
+          return prepared.release();
+        });
         protectLifecycle(releasePromise);
       }
       return releasePromise;
@@ -142,6 +158,7 @@ export function createAmazonImportHandler({
         normalizeItem: dependencies.normalizeItem || normalizeShipStationItem,
         appendNoteBlocks: dependencies.appendNoteBlocks || appendAmazonNoteBlocks,
       });
+      stage = "prepare";
       preparePromise = service.prepare({
         ...auth,
         signal,
@@ -161,10 +178,12 @@ export function createAmazonImportHandler({
       res.setHeader("Content-Type", "application/x-ndjson; charset=utf-8");
       res.flushHeaders?.();
       streaming = true;
+      stage = "run";
       await prepared.run();
       await release();
       if (isResponseWritable(res)) res.end();
     } catch (error) {
+      console.error("Amazon import API error", errorLogMetadata(error, { stage, streaming }));
       try { await release(); } catch { /* The original run or response failure remains primary. */ }
       if (!streaming) {
         const response = publicError(error);
