@@ -225,7 +225,7 @@ describe("production batch store", () => {
     expect(orderItemsUpsertIndex).toBeLessThan(batchUpsertIndex);
   });
 
-  it("only bumps and upserts changed order rows for scoped saves without rewriting batch positions", async () => {
+  it("only saves changed design data for scoped saves without writing batch membership", async () => {
     const { saveProductionBatch } = await import("../../api/_lib/production-batch-store.js");
 
     await saveProductionBatch({
@@ -276,8 +276,7 @@ describe("production batch store", () => {
     expect(designsUpsert.payload).toHaveLength(1);
     expect(designsUpsert.payload[0]).toMatchObject({ order_item_id: "order-2", revision: 4 });
     expect(batchItemsDelete).toBeUndefined();
-    expect(batchItemsUpsert.payload).toHaveLength(1);
-    expect(batchItemsUpsert.payload[0]).toMatchObject({ order_item_id: "order-2" });
+    expect(batchItemsUpsert).toBeUndefined();
     expect(batchItemsInsert).toBeUndefined();
   });
 

@@ -283,17 +283,6 @@ export async function saveProductionBatch({ snapshot, userId, changedOrderItemId
         throw batchItemsError;
       }
     }
-  } else {
-    const changedBatchItems = rows.batchItems.filter((item) => changedOrderItemIdSet.has(item.order_item_id));
-    if (changedBatchItems.length) {
-      const { error: changedBatchItemsError } = await supabase
-        .from("batch_items")
-        .upsert(changedBatchItems, { onConflict: "batch_id,order_item_id" });
-
-      if (changedBatchItemsError) {
-        throw changedBatchItemsError;
-      }
-    }
   }
 
   let savedDesigns = [];

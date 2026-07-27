@@ -672,6 +672,7 @@ For batch Etsy order sessions, the preferred workflow is:
 - In the Production Batch row list, each row should show the imported listing/product image when available and should not show the imported listing title; row text should prioritize the order number, buyer, personalization, status, and connectedness indicators.
 
 - Clicking `Save` should immediately mark the current design as finished for editing, even if connectedness analysis is still running in the background.
+- Saving an existing design through a scoped production-batch save must update only that design's order and layout data; it must not rewrite `batch_items` membership or positions, including when active batch positions contain gaps after removals.
 - After clicking `Save`, both `Save` and `Save & Next` should stay disabled for that design until the operator changes the text or layout settings again.
 - The selected-order `Cancel` button should stay disabled until the active design has unsaved changes relative to its last saved shared design state.
 - Clicking `Cancel` should restore the active design text and layout settings to the last saved shared design state without publishing a new production batch revision.
