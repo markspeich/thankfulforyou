@@ -1,7 +1,7 @@
 import { waitUntil as vercelWaitUntil } from "@vercel/functions";
 import { resolveProductionBatchAuth } from "./_lib/production-batch-auth.js";
 import * as amazonImportStore from "./_lib/amazon-import-store.js";
-import { createShipStationClient } from "./_lib/shipstation-client.js";
+import { createShipStationClient, ShipStationError } from "./_lib/shipstation-client.js";
 import { fetchAmazonCustomizationJson } from "./_lib/amazon-customization-archive.js";
 import { appendAmazonNoteBlocks, normalizeShipStationItem } from "./_lib/amazon-customization-normalizer.js";
 import { AmazonImportError, createAmazonImportService } from "./_lib/amazon-import-service.js";
@@ -19,6 +19,9 @@ const SAFE_AUTH_ERROR_MESSAGES = Object.freeze({
   403: "Shared workspace access denied.",
   503: "Unable to reach Supabase auth from this dev server process.",
 });
+const SAFE_SHIPSTATION_ERROR_CODES = new Set(["configuration", "invalid_response", "aborted", "temporary", "rate_limited", "request_failed"]);
+const SAFE_SHIPSTATION_REQUEST_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+
 
 const PROGRESS_STAGES = new Set(["fetching_shipments", "processing_shipments"]);
 
@@ -51,6 +54,31 @@ function publicError(error) {
     return { statusCode: error.statusCode, body: { error: authMessage } };
   }
   return { statusCode: 500, body: { error: FALLBACK_ERROR } };
+}
+
+function errorLogMetadata(error, { stage, streaming }) {
+  const isAmazonImportError = error instanceof AmazonImportError;
+  const isShipStationError = error instanceof ShipStationError;
+  return {
+    stage,
+    errorName: isAmazonImportError ? "AmazonImportError" : isShipStationError ? "ShipStationError" : null,
+    errorCode: isAmazonImportError && SAFE_AMAZON_ERROR_MESSAGES[error.code]
+      ? error.code
+      : isShipStationError && SAFE_SHIPSTATION_ERROR_CODES.has(error.code) ? error.code : null,
+    statusCode: Number.isInteger(error?.statusCode) ? error.statusCode : null,
+    retryable: typeof error?.retryable === "boolean" ? error.retryable : null,
+    requestId: isShipStationError && typeof error.requestId === "string" && SAFE_SHIPSTATION_REQUEST_ID.test(error.requestId) ? error.requestId : null,
+    streaming,
+
+  };
+}
+
+function failureStage(prepared, error, fallback) {
+  try {
+    return prepared?.stageForError?.(error) === "release" ? "release" : fallback;
+  } catch {
+    return fallback;
+  }
 }
 
 function streamedErrorFrame(error) {
@@ -104,6 +132,7 @@ export function createAmazonImportHandler({
     let requestCancellation;
     let releasePromise;
     let signal;
+    let stage = "auth";
     const protectLifecycle = (promise) => {
       try {
         waitUntil(Promise.resolve(promise).catch(() => {}));
@@ -142,6 +171,7 @@ export function createAmazonImportHandler({
         normalizeItem: dependencies.normalizeItem || normalizeShipStationItem,
         appendNoteBlocks: dependencies.appendNoteBlocks || appendAmazonNoteBlocks,
       });
+      stage = "prepare";
       preparePromise = service.prepare({
         ...auth,
         signal,
@@ -161,10 +191,13 @@ export function createAmazonImportHandler({
       res.setHeader("Content-Type", "application/x-ndjson; charset=utf-8");
       res.flushHeaders?.();
       streaming = true;
+      stage = "run";
       await prepared.run();
+      stage = "release";
       await release();
       if (isResponseWritable(res)) res.end();
     } catch (error) {
+      console.error("Amazon import API error", errorLogMetadata(error, { stage: failureStage(prepared, error, stage), streaming }));
       try { await release(); } catch { /* The original run or response failure remains primary. */ }
       if (!streaming) {
         const response = publicError(error);

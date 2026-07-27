@@ -62,6 +62,48 @@ describe("ShipStation V2 client", () => {
     }
   });
 
+  it("preserves a ShipStation request ID without retaining error details", async () => {
+    const client = createShipStationClient({
+      apiKey: "secret",
+      fetchImpl: vi.fn().mockResolvedValue(response({
+        request_id: "req-safe",
+        errors: [{ message: "secret body" }],
+      }, 401)),
+    });
+
+    const error = await client.iteratePendingShipments({ storeId: "se-4461867" }).next().catch((caught) => caught);
+
+    expect(error).toMatchObject({
+      code: "request_failed",
+      statusCode: 401,
+      retryable: false,
+      requestId: "req-safe",
+    });
+    expect(String(error)).not.toContain("secret body");
+    expect(JSON.stringify(error)).not.toContain("secret body");
+  });
+
+  it("keeps the timeout active while parsing a terminal error response", async () => {
+    const timeout = new AbortController();
+    const fetchImpl = vi.fn((_url, options) => Promise.resolve({
+      ok: false,
+      status: 401,
+      json: () => new Promise((_resolve, reject) => {
+        options.signal.addEventListener("abort", () => reject(new DOMException("secret body", "AbortError")), { once: true });
+      }),
+    }));
+    const client = createShipStationClient({ apiKey: "secret", fetchImpl, createTimeoutSignal: () => timeout.signal });
+    const pending = client.iteratePendingShipments({ storeId: "se-4461867", signal: new AbortController().signal }).next();
+
+    await vi.waitFor(() => expect(fetchImpl).toHaveBeenCalledOnce());
+    timeout.abort();
+
+    await expect(Promise.race([
+      pending,
+      new Promise((_resolve, reject) => setTimeout(() => reject(new Error("request did not respect the timeout")), 50)),
+    ])).rejects.toMatchObject({ code: "temporary", retryable: true });
+  });
+
   it("includes ShipStation's required routing context when updating buyer notes", async () => {
     const fetchImpl = vi.fn().mockResolvedValue(response(shipment({ notes_to_buyer: "Existing\nImported" })));
     const client = createShipStationClient({ apiKey: "secret", fetchImpl });

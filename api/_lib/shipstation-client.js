@@ -5,12 +5,13 @@ const MAX_RETRY_AFTER_MS = 10_000;
 const RETRY_BACKOFF_MS = 250;
 
 export class ShipStationError extends Error {
-  constructor(code, { statusCode = null, retryable = false } = {}) {
+  constructor(code, { statusCode = null, retryable = false, requestId = null } = {}) {
     super("Unable to communicate with ShipStation.");
     this.name = "ShipStationError";
     this.code = code;
     this.statusCode = statusCode;
     this.retryable = retryable;
+    this.requestId = typeof requestId === "string" && requestId ? requestId : null;
   }
 }
 
@@ -54,6 +55,15 @@ function retryAfterMilliseconds(value, now) {
   const delay = Number.isFinite(seconds) ? seconds * 1000 : Date.parse(value) - now();
   if (!Number.isFinite(delay)) return 0;
   return Math.min(Math.max(Math.round(delay), 0), MAX_RETRY_AFTER_MS);
+}
+
+async function readRequestId(response) {
+  try {
+    const payload = await response.json();
+    return typeof payload?.request_id === "string" && payload.request_id ? payload.request_id : null;
+  } catch {
+    return null;
+  }
 }
 
 function combineSignals(callerSignal, timeoutSignal) {
@@ -155,8 +165,13 @@ export function createShipStationClient({
       const statusCode = Number.isInteger(response?.status) ? response.status : null;
       const retryable = statusCode === 429 || (statusCode >= 500 && statusCode <= 599);
       if (!retryable || attempt === MAX_ATTEMPTS - 1) {
-        combined.cleanup();
-        throw new ShipStationError(retryable ? (statusCode === 429 ? "rate_limited" : "temporary") : "request_failed", { statusCode, retryable });
+        try {
+          const requestId = await readRequestId(response);
+          if (signal?.aborted || combined.signal?.aborted) throw new ShipStationError(signal?.aborted ? "aborted" : "temporary", { retryable: !signal?.aborted });
+          throw new ShipStationError(retryable ? (statusCode === 429 ? "rate_limited" : "temporary") : "request_failed", { statusCode, retryable, requestId });
+        } finally {
+          combined.cleanup();
+        }
       }
       const delay = statusCode === 429
         ? retryAfterMilliseconds(response.headers?.get?.("retry-after"), now)
