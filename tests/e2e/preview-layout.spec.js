@@ -6,6 +6,7 @@ test.describe.configure({ mode: "serial" });
 const PRODUCTION_BATCH_REMOTE_RESTORE_TEST_TITLE = "restores the production batch from the backend before stale local cache";
 const PRODUCTION_BATCH_CONFLICT_TEST_TITLE = "keeps shared sync enabled on revision conflict";
 const PRODUCTION_BATCH_PAGEHIDE_TEST_TITLE = "pagehide keepalive saves even while a shared autosave is in flight";
+const PRODUCTION_BATCH_AMAZON_LABEL_TEST_TITLE = "labels imported Amazon orders as Amazon in the production batch editor";
 const SAMPLE_CLIPBOARD_URL = new URL("../../docs/sample-clipboard.txt", import.meta.url);
 const productionBatchSnapshots = new WeakMap();
 
@@ -663,6 +664,7 @@ test.beforeEach(async ({ page, request }, testInfo) => {
     testInfo.title === PRODUCTION_BATCH_REMOTE_RESTORE_TEST_TITLE
     || testInfo.title === PRODUCTION_BATCH_CONFLICT_TEST_TITLE
     || testInfo.title === PRODUCTION_BATCH_PAGEHIDE_TEST_TITLE
+    || testInfo.title === PRODUCTION_BATCH_AMAZON_LABEL_TEST_TITLE
   ) {
     return;
   }
@@ -3201,6 +3203,55 @@ test("deletes a single design from the queue", async ({ page }) => {
   await expect(page.locator("#orderCountOutput")).toHaveText("1");
   await expect(page.locator("#orderList .order-row")).toHaveCount(1);
   await expect(page.locator("#activeOrderName")).toHaveText("Design 1");
+});
+
+test(PRODUCTION_BATCH_AMAZON_LABEL_TEST_TITLE, async ({ page }) => {
+  const amazonOrderNumber = "114-0233450-6206634";
+  await installSupabaseSession(page);
+  await page.route("**/api/batch-session", route => route.fulfill({
+    json: {
+      operator: { id: "user-1", email: "mark@example.com" },
+      workspace: { id: "workspace-1", name: "Thankful For You" },
+      batch: { id: "batch-1", workspaceId: "workspace-1" },
+    },
+  }));
+  await page.route("**/api/production-batch**", route => route.fulfill({
+    json: {
+      batch: { id: "batch-1", workspaceId: "workspace-1" },
+      activeOrderItemId: "amazon-item-1",
+      orderItems: [{
+        id: "amazon-item-1",
+        revision: 1,
+        text: "Anna\nRN",
+        status: "in-progress",
+        source: {
+          marketplace: "amazon",
+          orderNumber: amazonOrderNumber,
+          buyerName: "Anna K WengerKeller",
+        },
+        settings: {
+          text: "Anna\nRN",
+          presetId: "preset-oval",
+          backingMm: 2.2,
+          weldExportedDesign: true,
+          lines: [
+            { fontId: "candlepin", bridgeMm: 0.5, lineBridgeMm: 0.5, offsetXMm: 0, fontSizeMm: 34, horizontalScale: 1, verticalScale: 1, lockTextHeight: false },
+            { fontId: "somekind", bridgeMm: 0.5, lineBridgeMm: 0.5, offsetXMm: 0, fontSizeMm: 24, horizontalScale: 1, verticalScale: 1, lockTextHeight: false },
+          ],
+        },
+      }],
+    },
+  }));
+  await page.route("**/api/orders**", route => route.fulfill({ json: { orders: [] } }));
+  await page.route("**/api/layout-analyze", route => route.fulfill({
+    json: buildMockAnalysisResponse(),
+  }));
+
+  await page.goto("/production-batch");
+  await waitForProductionBatchStartup(page);
+
+  await expect(page.locator("#activeOrderMeta")).toContainText(`Amazon #${amazonOrderNumber}`);
+  await expect(page.locator("#activeOrderMeta")).not.toContainText("Etsy");
 });
 
 test("skips already imported Etsy line items when importing another batch", async ({ page }) => {
