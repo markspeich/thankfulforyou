@@ -3237,7 +3237,8 @@ function buildActiveMeta(order) {
   const buyerName = order.source?.buyerName;
 
   if (orderNumber) {
-    metaParts.push(`Etsy #${orderNumber}`);
+    const marketplaceLabel = order.source?.marketplace === "amazon" ? "Amazon" : "Etsy";
+    metaParts.push(`${marketplaceLabel} #${orderNumber}`);
   }
 
   if (listingId) {

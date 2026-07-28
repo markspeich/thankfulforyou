@@ -81,7 +81,10 @@ export function normalizeImportedText(value) {
 }
 
 export function normalizeImportedEntry(entry, options = {}) {
-  const { getPresetIdForListingId = () => null } = options;
+  const {
+    getPresetIdForListingId = () => null,
+    marketplace = "",
+  } = options;
 
   if (!entry || typeof entry !== "object") {
     return null;
@@ -116,6 +119,7 @@ export function normalizeImportedEntry(entry, options = {}) {
     text: personalization,
     presetId,
     source: {
+      ...(marketplace ? { marketplace } : {}),
       orderNumber,
       listingId,
       buyerName,
@@ -153,6 +157,7 @@ export function buildImportedBatchIdentity(source, text = "") {
 
 export function parseImportedItems(payloadText, options = {}) {
   const parsed = JSON.parse(payloadText);
+  const marketplace = parsed?.source === "thankfulforyou-amazon-clipboard" ? "amazon" : "";
   const rawItems = Array.isArray(parsed)
     ? parsed
     : Array.isArray(parsed?.items)
@@ -164,6 +169,6 @@ export function parseImportedItems(payloadText, options = {}) {
   }
 
   return rawItems
-    .map((entry) => normalizeImportedEntry(entry, options))
+    .map((entry) => normalizeImportedEntry(entry, { ...options, marketplace }))
     .filter(Boolean);
 }

@@ -104,6 +104,26 @@ describe("Etsy import parsing", () => {
     ]);
   });
 
+  it("preserves the Amazon marketplace from the clipboard payload source", () => {
+    // Break caught: pasted Amazon orders are persisted without a marketplace and displayed as Etsy.
+    expect(parseImportedItems(JSON.stringify({
+      source: "thankfulforyou-amazon-clipboard",
+      version: 1,
+      items: [{
+        orderNumber: "114-0233450-6206634",
+        listingId: "B0H6ND1TL3",
+        transactionId: "165616583183721",
+        buyerName: "Kathy",
+        personalization: "Kathy\nRN",
+      }],
+    }))).toMatchObject([{
+      source: {
+        marketplace: "amazon",
+        orderNumber: "114-0233450-6206634",
+      },
+    }]);
+  });
+
   it("preserves malformed numeric HTML entities in personalization text", () => {
     expect(parseImportedItems(JSON.stringify({
       items: [{ personalization: "A &#999999999999; B" }],
