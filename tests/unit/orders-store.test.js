@@ -1315,6 +1315,10 @@ describe("orders store", () => {
     expect(supabaseMock.db.batch_items).toEqual([
       expect.objectContaining({ order_item_id: "item-other-order" }),
     ]);
+    expect(supabaseMock.calls.filter((call) => (
+      call.operation === "select"
+      && ["designs", "design_lines"].includes(call.table)
+    ))).toEqual([]);
   });
 
   it("marks items in multiple orders skipped and removes their batch memberships", async () => {

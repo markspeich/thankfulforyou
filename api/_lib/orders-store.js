@@ -485,20 +485,6 @@ export async function addOrderGroupsToProductionBatch({
   return addOrderItemsToProductionBatch({ workspaceId, userId, batchId, orderItemIds });
 }
 
-function getOrderItemsForStatusUpdate(order, status) {
-  return (Array.isArray(order?.items) ? order.items : [])
-    .filter((item) => {
-      if (!item?.id) {
-        return false;
-      }
-      if (status === "skipped") {
-        return item.status !== "skipped" && item.status !== "complete";
-      }
-      return item.status === "skipped";
-    })
-    .map((item) => item.id);
-}
-
 async function clearActiveProductionBatchSelectionsForOrderItems({
   supabase,
   workspaceId,
@@ -600,22 +586,18 @@ export async function updateOrderGroupStatus({
     return { orderItemIds: [], status: normalizedStatus || null };
   }
 
-  const { orders } = await listWorkspaceOrders({
+  const supabase = createSupabaseAdminClient();
+  const orderItemIds = await queryOrderItemIdsForGroups({
+    supabase,
     workspaceId,
-    activeBatchId: null,
-    statusFilter: "all",
+    orderIds: [normalizedOrderId],
+    eligibleStatuses: normalizedStatus === "skipped" ? ["open"] : ["skipped"],
   });
-  const order = orders.find((candidate) => (
-    candidate.id === normalizedOrderId
-    || candidate.orderNumber === normalizedOrderId
-  ));
-  const orderItemIds = getOrderItemsForStatusUpdate(order, normalizedStatus);
 
   if (!orderItemIds.length) {
     return { orderItemIds: [], status: normalizedStatus };
   }
 
-  const supabase = createSupabaseAdminClient();
   const savedAt = new Date().toISOString();
   const { data, error } = await supabase
     .from("order_items")
