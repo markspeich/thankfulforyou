@@ -217,6 +217,10 @@ describe("amazon copy badge clipboard", () => {
         listingTitle: "Personalized Nurse Badge Reel",
         listingImageUrl75x75: "https://example.test/badge.jpg",
         personalization: "Sandi S\nRN",
+        customerFontSelections: [
+          { lineIndex: 0, name: "Candlepin" },
+          { lineIndex: 1, name: "Somekind" },
+        ],
       }),
     ]);
   });

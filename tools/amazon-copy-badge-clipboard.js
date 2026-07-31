@@ -142,6 +142,16 @@ function getOrderItemRows() {
 const CUSTOMIZATION_FIELD_LABELS = [
   "Surface 1",
   "Badge Reel Type",
+  "Text Line 10 Font",
+  "Text Line 9 Font",
+  "Text Line 8 Font",
+  "Text Line 7 Font",
+  "Text Line 6 Font",
+  "Text Line 5 Font",
+  "Text Line 4 Font",
+  "Text Line 3 Font",
+  "Text Line 2 Font",
+  "Text Line 1 Font",
   "Text Line 10",
   "Text Line 9",
   "Text Line 8",
@@ -273,6 +283,25 @@ function buildPersonalization(fields) {
     .filter(Boolean)
     .join("\n");
 }
+function buildCustomerFontSelections(fields) {
+  const selections = [];
+  const textLineValues = Array.from({ length: 10 }, (_, index) => fields.get(`Text Line ${index + 1}`) || "");
+  if (textLineValues.some(Boolean)) {
+    textLineValues.forEach((value, lineIndex) => {
+      const name = fields.get(`Text Line ${lineIndex + 1} Font`) || "";
+      if (value && name) selections.push({ lineIndex, name });
+    });
+    return selections;
+  }
+  let lineIndex = 0;
+  for (const [textKey, fontKey] of [["Name", "Name Font"], ["Title", "Title Font"]]) {
+    if (!fields.get(textKey)) continue;
+    const name = fields.get(fontKey) || "";
+    if (name) selections.push({ lineIndex, name });
+    lineIndex += 1;
+  }
+  return selections;
+}
 function hasDesignCustomizationFields(fields) {
   return Boolean(fields.get("Color") || buildPersonalization(fields));
 }
@@ -332,6 +361,7 @@ async function analyzeAmazonOrderForClipboard() {
       label: buildOrderItemLabel(orderNumber, buyerName, index + 1),
       shipByDate,
       personalization: buildPersonalization(fields),
+      customerFontSelections: buildCustomerFontSelections(fields),
     };
   });
 }

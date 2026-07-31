@@ -6,6 +6,9 @@ import { fetchAmazonCustomizationJson } from "./_lib/amazon-customization-archiv
 import { appendAmazonNoteBlocks, normalizeShipStationItem } from "./_lib/amazon-customization-normalizer.js";
 import { AmazonImportError, createAmazonImportService } from "./_lib/amazon-import-service.js";
 import { isResponseWritable, writeNdjson } from "./_lib/ndjson-writer.js";
+import { loadPresetSnapshot } from "./_lib/preset-store.js";
+import { listWorkspaceFonts } from "./_lib/font-store.js";
+import { createAmazonItemEnricher } from "./_lib/amazon-import-enrichment.js";
 
 const FALLBACK_ERROR = "Unable to import Amazon orders.";
 const SAFE_AMAZON_ERROR_MESSAGES = Object.freeze({
@@ -164,12 +167,31 @@ export function createAmazonImportHandler({
       signal = requestCancellation.signal;
 
       const auth = await resolveAuth(req);
+      const needsWorkspaceContext = serviceFactory === createAmazonImportService
+        || dependencies.loadPresetSnapshot
+        || dependencies.listWorkspaceFonts;
+      let enrichItem = dependencies.enrichItem;
+      if (!enrichItem && needsWorkspaceContext) {
+        const [presetSnapshot, fonts] = await Promise.all([
+          (dependencies.loadPresetSnapshot || loadPresetSnapshot)(auth.workspaceId),
+          (dependencies.listWorkspaceFonts || listWorkspaceFonts)({ workspaceId: auth.workspaceId }),
+        ]);
+        enrichItem = createAmazonItemEnricher({
+          presetSnapshot,
+          fontOptions: (fonts || []).map((font) => ({
+            id: font?.id,
+            displayName: font?.displayName ?? font?.display_name,
+            label: font?.label,
+          })),
+        });
+      }
       const service = serviceFactory({
         store: dependencies.store || amazonImportStore,
         createShipStationClient: dependencies.createShipStationClient || createShipStationClient,
         fetchCustomizationJson: dependencies.fetchCustomizationJson || fetchAmazonCustomizationJson,
         normalizeItem: dependencies.normalizeItem || normalizeShipStationItem,
         appendNoteBlocks: dependencies.appendNoteBlocks || appendAmazonNoteBlocks,
+        ...(enrichItem ? { enrichItem } : {}),
       });
       stage = "prepare";
       preparePromise = service.prepare({

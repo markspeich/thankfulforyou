@@ -7,6 +7,7 @@ import {
   AmazonImportError,
   createAmazonImportService,
 } from "../../api/_lib/amazon-import-service.js";
+import { createAmazonItemEnricher } from "../../api/_lib/amazon-import-enrichment.js";
 
 const PROCESSED_TAG = "Amazon Customization Imported";
 const STARTED_AT = new Date("2026-07-25T15:00:00.000Z");
@@ -87,6 +88,7 @@ function fixture({
   persistenceResult,
   fetchResult = customization(),
   appendNotes = appendAmazonNoteBlocks,
+  enrichItem = (value) => value,
 } = {}) {
   let now = new Date(STARTED_AT);
   const sequence = [];
@@ -134,6 +136,7 @@ function fixture({
     fetchCustomizationJson,
     normalizeItem: normalizeShipStationItem,
     appendNoteBlocks: appendNotes,
+    enrichItem,
     clock: clock ?? (() => now),
     randomUUID: () => "lock-owner",
   });
@@ -174,6 +177,68 @@ afterEach(() => {
 });
 
 describe("Amazon import service", () => {
+  it("builds listing preset lines before overlaying recognized customer fonts", () => {
+    // Break caught: customer fonts replace full line settings or run without listing overrides.
+    const enrich = createAmazonItemEnricher({
+      presetSnapshot: {
+        defaultPresetId: "preset-default",
+        presets: [{
+          id: "preset-amazon",
+          globalDefaults: { backingMm: 4.2, globalHorizontalScale: 1.1 },
+          lineDefaults: { fontId: "candlepin", bridgeMm: 0.6, fontSizeMm: 30, horizontalScale: 0.95 },
+          lineRules: [{ match: { type: "first" }, settings: { fontSizeMm: 36, lockTextHeight: true } }],
+          listingAssignments: [{
+            listingId: "ASIN-1",
+            lineOverrides: [{ lineIndex: 1, settings: { offsetXMm: 2, verticalScale: 1.2 } }],
+          }],
+        }],
+      },
+      fontOptions: [
+        { id: "skywalk", displayName: "Skywalk" },
+        { id: "somekind", displayName: "Somekind" },
+      ],
+    });
+
+    expect(enrich({
+      text: "Maria\nRN",
+      source: {
+        listingId: "ASIN-1",
+        customerFontSelections: [
+          { lineIndex: 0, name: "Skywalk" },
+          { lineIndex: 1, name: "Somekind" },
+        ],
+      },
+    })).toMatchObject({
+      presetId: "preset-amazon",
+      settings: {
+        backingMm: 4.2,
+        globalHorizontalScale: 1.1,
+        lines: [
+          { fontId: "skywalk", bridgeMm: 0.6, fontSizeMm: 36, horizontalScale: 0.95, lockTextHeight: true },
+          { fontId: "somekind", bridgeMm: 0.6, fontSizeMm: 30, horizontalScale: 0.95, offsetXMm: 2, verticalScale: 1.2 },
+        ],
+      },
+    });
+  });
+  it("enriches normalized items before transactional persistence", async () => {
+    // Break caught: server preset/font settings are computed but never reach persistence.
+    const enrichItem = vi.fn((normalized) => ({
+      ...normalized,
+      presetId: "preset-amazon",
+      settings: { lines: [{ fontId: "skywalk", bridgeMm: 0.8 }] },
+    }));
+    const f = fixture({ enrichItem });
+
+    const prepared = await f.service.prepare({ workspaceId: "workspace-1", userId: "user-1" });
+    await prepared.run();
+    await prepared.release();
+
+    expect(enrichItem).toHaveBeenCalledWith(expect.objectContaining({ id: "amazon-order-item:shipment-1-item" }));
+    expect(f.store.importAmazonOrderItemsTransactional.mock.calls[0][0].items[0]).toMatchObject({
+      presetId: "preset-amazon",
+      settings: { lines: [{ fontId: "skywalk", bridgeMm: 0.8 }] },
+    });
+  });
   it("acquires the workspace lock before reading configuration or creating a client", async () => {
     const blocked = fixture({ acquire: false });
 

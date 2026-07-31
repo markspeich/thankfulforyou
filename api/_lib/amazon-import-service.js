@@ -70,6 +70,7 @@ export function createAmazonImportService({
   createShipStationClient,
   fetchCustomizationJson,
   normalizeItem,
+  enrichItem = (item) => item,
   appendNoteBlocks,
   clock = () => new Date(),
   randomUUID = uuid,
@@ -306,7 +307,7 @@ export function createAmazonImportService({
                     () => fetchCustomizationJson({ url, signal }),
                   );
                 }
-                const normalized = normalizeItem({ shipment, item, customization });
+                const normalized = enrichItem(normalizeItem({ shipment, item, customization }));
                 normalizedItems.push(normalized);
                 if (url) {
                   noteBlocks.push({

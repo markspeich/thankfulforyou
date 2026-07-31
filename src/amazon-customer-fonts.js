@@ -1,0 +1,50 @@
+function clean(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function key(value) {
+  return clean(value).toLowerCase();
+}
+
+export function normalizeCustomerFontSelections(selections) {
+  if (!Array.isArray(selections)) return [];
+  const byLine = new Map();
+  for (const selection of selections) {
+    const lineIndex = Number(selection?.lineIndex);
+    const name = clean(selection?.name);
+    if (!Number.isInteger(lineIndex) || lineIndex < 0 || !name || byLine.has(lineIndex)) continue;
+    byLine.set(lineIndex, { lineIndex, name });
+  }
+  return [...byLine.values()].sort((left, right) => left.lineIndex - right.lineIndex);
+}
+
+export function resolveCustomerFontId(name, fontOptions = []) {
+  const requested = key(name);
+  if (!requested) return null;
+  for (const font of Array.isArray(fontOptions) ? fontOptions : []) {
+    const aliases = [font?.id, font?.label, font?.displayName]
+      .map(key)
+      .filter(Boolean)
+      .flatMap((value) => [value, value.replace(/\s+laser$/, "")]);
+    if (aliases.includes(requested)) return clean(font?.id) || null;
+  }
+  return null;
+}
+
+export function overlayCustomerFontsOnLines(lines, selections, fontOptions) {
+  const normalized = normalizeCustomerFontSelections(selections);
+  const fontByLine = new Map(normalized.map((selection) => [
+    selection.lineIndex,
+    resolveCustomerFontId(selection.name, fontOptions),
+  ]));
+  return (Array.isArray(lines) ? lines : []).map((line, lineIndex) => {
+    const current = line && typeof line === "object" ? line : {};
+    const fontId = fontByLine.get(lineIndex);
+    return fontId && fontId !== current.fontId ? { ...current, fontId } : { ...current };
+  });
+}
+
+export function formatCustomerFontSelection(selection) {
+  const [normalized] = normalizeCustomerFontSelections([selection]);
+  return normalized ? `Line ${normalized.lineIndex + 1} Font: ${normalized.name}` : "";
+}
