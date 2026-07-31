@@ -845,6 +845,67 @@ describe("orders store", () => {
     expect(result.orders.map((order) => order.id)).toEqual(["order:3202", "order:3203"]);
   });
 
+  it("merges an Etsy expected ship date into a duplicate item's source metadata", async () => {
+    const cachedBuild = { signature: "saved-signature", layout: { text: "Saved" } };
+    resetDb({
+      order_items: [{
+        id: "transaction:txn-ship-date",
+        workspace_id: "workspace-1",
+        status: "complete",
+        order_number: "3401",
+        buyer_name: "Ada",
+        transaction_id: "txn-ship-date",
+        ship_by_date: "2026-07-06",
+        source_json: {
+          orderNumber: "3401",
+          transactionId: "txn-ship-date",
+          listingTitle: "Existing badge reel",
+          expected_ship_date: 1783400340,
+        },
+        quantity: 1,
+      }],
+      designs: [{
+        id: "design-transaction:txn-ship-date",
+        workspace_id: "workspace-1",
+        order_item_id: "transaction:txn-ship-date",
+        design_text: "Saved",
+        production_status: "saved",
+        cached_build_json: cachedBuild,
+      }],
+    });
+    const { importWorkspaceOrderItems } = await import("../../api/_lib/orders-store.js");
+
+    await importWorkspaceOrderItems({
+      workspaceId: "workspace-1",
+      userId: "user-1",
+      items: [{
+        text: "Do not overwrite",
+        source: {
+          orderNumber: "3401",
+          transactionId: "txn-ship-date",
+          buyerName: "Ada",
+          expected_ship_date: null,
+          shipByDate: "2026-07-08",
+        },
+      }],
+    });
+
+    const existingItem = supabaseMock.db.order_items.find((item) => item.id === "transaction:txn-ship-date");
+    const existingDesign = supabaseMock.db.designs.find((design) => design.order_item_id === "transaction:txn-ship-date");
+
+    expect(existingItem).toMatchObject({
+      status: "complete",
+      ship_by_date: "2026-07-08",
+      source_json: {
+        orderNumber: "3401",
+        transactionId: "txn-ship-date",
+        listingTitle: "Existing badge reel",
+        expected_ship_date: null,
+      },
+    });
+    expect(existingDesign).toMatchObject({ design_text: "Saved", cached_build_json: cachedBuild });
+  });
+
   it("does not replace existing draft design lines when a duplicate item is pasted", async () => {
     resetDb({
       order_items: [{
