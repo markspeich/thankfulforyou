@@ -151,6 +151,24 @@ export function extractAmazonCustomizationFields(document) {
     : extractLegacyFields(document);
 }
 
+function fontFieldBase(name) {
+  const match = normalizedString(name).match(/^(.*?)(?:\s+font)$/i);
+  return match ? match[1].trim().toLowerCase() : null;
+}
+
+function customerFontData(freeTextFields, configurationFields) {
+  const textFields = freeTextFields.filter((response) => fontFieldBase(response.name) == null);
+  const fontFields = [...freeTextFields, ...configurationFields]
+    .map((response) => ({ response, base: fontFieldBase(response.name) }))
+    .filter(({ base }) => base != null);
+  const customerFontSelections = textFields.flatMap((response, lineIndex) => {
+    const base = response.name.trim().toLowerCase();
+    const selection = fontFields.find((candidate) => candidate.base === base)?.response.value;
+    return selection ? [{ lineIndex, name: selection }] : [];
+  });
+  return { textFields, customerFontSelections };
+}
+
 function itemMarker(itemId) {
   return `Amazon Order Item: ${normalizedItemId(itemId)}`;
 }
@@ -254,11 +272,12 @@ function orderNumber(shipment) {
 
 export function normalizeShipStationItem({ shipment = {}, item = {}, customization = {} }) {
   const { freeTextFields, configurationFields } = extractAmazonCustomizationFields(customization);
+  const { textFields, customerFontSelections } = customerFontData(freeTextFields, configurationFields);
   const color = configurationFields.find(
     (response) => response.name.toLowerCase() === "color",
   );
   const orderItemId = normalizedItemId(item.external_order_item_id);
-  const text = freeTextFields.map((response) => response.value).join("\n");
+  const text = textFields.map((response) => response.value).join("\n");
   const price = structuredUnitPrice(item.unit_price);
   return {
     id: `amazon-order-item:${orderItemId}`,
@@ -279,7 +298,8 @@ export function normalizeShipStationItem({ shipment = {}, item = {}, customizati
       shipByDate: sourceString(shipment.ship_by_date),
       ...(price ? { price } : {}),
       personalizationResponses: [...freeTextFields, ...configurationFields],
-      customizationNeeded: freeTextFields.length === 0,
+      ...(customerFontSelections.length ? { customerFontSelections } : {}),
+      customizationNeeded: textFields.length === 0,
     },
   };
 }

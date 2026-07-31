@@ -411,6 +411,32 @@ test("opens a bookmarked production batch design URL", async ({ page }) => {
   await expect(page.locator("#orderList .order-row.active")).toContainText("Katherine RN");
 });
 
+test("shows imported customer font selections beneath Quantity and hides them when absent", async ({ page }) => {
+  await installSupabaseSession(page);
+  const amazonOrder = buildAdaProductionBatchOrderItem();
+  amazonOrder.source.customerFontSelections = [
+    { lineIndex: 1, name: "Somekind" },
+    { lineIndex: 0, name: "Skywalk" },
+  ];
+  await installProductionBatchRoutes(page, {
+    orderItems: [amazonOrder, buildDuplicateBatchOrderItem()],
+  });
+
+  await page.goto("/production-batch/item-1");
+
+  const customerFonts = page.locator("#customerFontSelections");
+  await expect(customerFonts).toBeVisible();
+  await expect(customerFonts.evaluate((element) => element.previousElementSibling?.id)).resolves.toBe("importedQuantityField");
+  await expect(customerFonts.locator(".customer-font-selection")).toHaveText([
+    "Line 1 Font: Skywalk",
+    "Line 2 Font: Somekind",
+  ]);
+
+  await page.locator("#orderList .order-row").filter({ hasText: "Katherine RN" }).locator(".order-item").click();
+  await expect(customerFonts).toBeHidden();
+  await expect(customerFonts.locator(".customer-font-selection")).toHaveCount(0);
+});
+
 test("updates and opens bookmarked Orders workspace order URLs", async ({ page }) => {
   await installSupabaseSession(page);
   await installProductionBatchRoutes(page);
