@@ -59,6 +59,11 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 
 ## Current Production Requirements
 
+- Amazon imports must preserve each customer's per-line font selection from Seller Central clipboard customizations and Amazon Custom/ShipStation data.
+- For Amazon orders assigned a preset by ASIN, the preset must establish every line setting first; a recognized customer font selection must override only that line's `fontId`, and only when it differs from the preset font. All other preset settings must remain unchanged.
+- Recognized Amazon customer font selections must persist into the saved design and appear as the effective font in the Production Batch design editor, preview, analysis, and export.
+- The Production Batch order metadata section must display each non-empty imported customer font selection directly beneath the `Quantity` field using `Line 1 Font: Skywalk`, `Line 2 Font: Somekind`, and the corresponding line number and customer-facing font name. Unknown font names must remain visible for review without overriding the preset font.
+
 - Loading the app, importing or pasting orders, adding order items to a production batch, and completing a production batch must show a modal progress dialog immediately. The same dialog must transition to a completion summary with operation-relevant counts when the work finishes.
 - If pasted clipboard data is invalid or cannot be imported, the progress dialog must stop spinning and transition to a dismissible, plain-language error state without import summary counts.
 - Unrecognized clipboard contents must tell the operator to copy the orders again and retry rather than exposing a parser error.

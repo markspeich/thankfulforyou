@@ -83,6 +83,8 @@ export function normalizeImportedText(value) {
 export function normalizeImportedEntry(entry, options = {}) {
   const {
     getPresetIdForListingId = () => null,
+    getPresetSettingsForImport = null,
+    fontOptions = [],
     marketplace = "",
   } = options;
 
@@ -114,10 +116,21 @@ export function normalizeImportedEntry(entry, options = {}) {
   }
 
   const presetId = getPresetIdForListingId(listingId);
+  const customerFontSelections = normalizeCustomerFontSelections(entry.customerFontSelections);
+  const presetSettings = typeof getPresetSettingsForImport === "function"
+    ? getPresetSettingsForImport({ text: personalization, presetId, listingId })
+    : null;
+  const settings = presetSettings && typeof presetSettings === "object"
+    ? {
+        ...presetSettings,
+        lines: overlayCustomerFontsOnLines(presetSettings.lines, customerFontSelections, fontOptions),
+      }
+    : null;
 
   return {
     text: personalization,
     presetId,
+    ...(settings ? { settings } : {}),
     source: {
       ...(marketplace ? { marketplace } : {}),
       orderNumber,
@@ -128,6 +141,7 @@ export function normalizeImportedEntry(entry, options = {}) {
       listingTitle,
       listingImageUrl75x75,
       transactionId,
+      ...(customerFontSelections.length ? { customerFontSelections } : {}),
       ...(shipByDate ? { shipByDate } : {}),
     },
   };
@@ -172,3 +186,7 @@ export function parseImportedItems(payloadText, options = {}) {
     .map((entry) => normalizeImportedEntry(entry, { ...options, marketplace }))
     .filter(Boolean);
 }
+import {
+  normalizeCustomerFontSelections,
+  overlayCustomerFontsOnLines,
+} from "./amazon-customer-fonts.js";

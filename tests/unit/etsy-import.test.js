@@ -124,6 +124,46 @@ describe("Etsy import parsing", () => {
     }]);
   });
 
+  it("applies customer fonts over preset lines without changing other preset settings", () => {
+    const getPresetSettingsForImport = vi.fn(() => ({
+      backingMm: 4.2,
+      lines: [
+        { fontId: "candlepin", bridgeMm: 0.7, fontSizeMm: 31 },
+        { fontId: "somekind", offsetXMm: 2, lockTextHeight: true },
+      ],
+    }));
+    const result = parseImportedItems(JSON.stringify({
+      source: "thankfulforyou-amazon-clipboard",
+      items: [{
+        listingId: "B0H6ND1TL3",
+        personalization: "Maria\nRN",
+        customerFontSelections: [
+          { lineIndex: 0, name: "Skywalk" },
+          { lineIndex: 1, name: "Somekind" },
+        ],
+      }],
+    }), {
+      getPresetIdForListingId: () => "preset-asin",
+      getPresetSettingsForImport,
+      fontOptions: [
+        { id: "candlepin", label: "Candlepin Laser" },
+        { id: "skywalk", label: "Skywalk Laser" },
+        { id: "somekind", label: "Somekind" },
+      ],
+    });
+    expect(result[0].settings).toEqual({
+      backingMm: 4.2,
+      lines: [
+        { fontId: "skywalk", bridgeMm: 0.7, fontSizeMm: 31 },
+        { fontId: "somekind", offsetXMm: 2, lockTextHeight: true },
+      ],
+    });
+    expect(result[0].source.customerFontSelections).toEqual([
+      { lineIndex: 0, name: "Skywalk" },
+      { lineIndex: 1, name: "Somekind" },
+    ]);
+  });
+
   it("preserves malformed numeric HTML entities in personalization text", () => {
     expect(parseImportedItems(JSON.stringify({
       items: [{ personalization: "A &#999999999999; B" }],

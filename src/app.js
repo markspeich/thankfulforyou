@@ -16,6 +16,10 @@ import {
   measureLineBounds,
 } from "./layout-math.js";
 import {
+  formatCustomerFontSelection,
+  normalizeCustomerFontSelections,
+} from "./amazon-customer-fonts.js";
+import {
   buildPresetLines,
   deleteBoundingSizePresetDefinitionLocally,
   deletePresetDefinitionLocally,
@@ -375,6 +379,7 @@ const listingReferenceCard = document.querySelector("#listingReferenceCard");
 const listingReferenceTitle = document.querySelector("#listingReferenceTitle");
 const listingReferenceImage = document.querySelector("#listingReferenceImage");
 const textInput = document.querySelector("#textInput");
+const customerFontSelections = document.querySelector("#customerFontSelections");
 const orderColorInput = document.querySelector("#orderColorInput");
 const orderQuantityInput = document.querySelector("#orderQuantityInput");
 const editOrderColorButton = document.querySelector("#editOrderColorButton");
@@ -3499,6 +3504,7 @@ function normalizeStoredSource(source) {
     transactionId: source.transactionId == null ? "" : String(source.transactionId).trim(),
     importSource: typeof source.importSource === "string" ? source.importSource.trim() : "",
     manualPresetOverride: Boolean(source.manualPresetOverride),
+    customerFontSelections: normalizeCustomerFontSelections(source.customerFontSelections),
   };
 }
 
@@ -5368,6 +5374,7 @@ function createBatchItem({
   status = "in-progress",
   presetId = null,
   source = null,
+  settings = null,
 } = {}) {
   const defaultPresetId = getDefaultPresetId();
   const normalizedPresetId = isValidPresetId(presetId) ? presetId : defaultPresetId;
@@ -5380,7 +5387,11 @@ function createBatchItem({
     updatedBy: null,
     text,
     status,
-    settings: normalizeSettings({
+    settings: normalizeSettings(settings && typeof settings === "object" ? {
+      ...settings,
+      text,
+      presetId: normalizedPresetId,
+    } : {
       text,
       presetId: normalizedPresetId,
       backingMm: presetBaseSettings.backingMm,
@@ -6101,6 +6112,7 @@ function appendImportedItemsToProductionBatch(importedItems, { maxCount = import
       status: "not-started",
       presetId: item.presetId,
       source: item.source,
+      settings: item.settings,
     });
     orders.push(order);
     firstAppendedOrderId = firstAppendedOrderId || order.id;
@@ -8765,6 +8777,16 @@ function summarizeOrderText(text) {
   return summary || "No text entered";
 }
 
+function buildImportedPresetSettings({ text, presetId, listingId }) {
+  const rawLines = getRawTextLines(text);
+  return {
+    ...getPresetBaseSettings(presetId),
+    text,
+    presetId,
+    lines: buildPresetLines(presetId, rawLines.length, createDefaultLineSettings, { listingId }),
+  };
+}
+
 function renderListingReference(order) {
   const hasImportedReference = Boolean(order?.source?.orderNumber || order?.source?.listingId || order?.source?.transactionId || order?.source?.importSource);
   const listingTitle = order?.source?.listingTitle?.trim() || order?.source?.listingId?.trim() || (hasImportedReference ? "Imported Etsy listing" : "Design details");
@@ -9252,6 +9274,18 @@ function renderPresetListingIndicator(order) {
   presetListingIndicator.title = `Listing ID ${listingId} is assigned to ${mappedPresetName}.`;
 }
 
+function renderCustomerFontSelections(order) {
+  const selections = normalizeCustomerFontSelections(order?.source?.customerFontSelections);
+  const rows = selections.map((selection) => {
+    const row = document.createElement("div");
+    row.className = "customer-font-selection";
+    row.textContent = formatCustomerFontSelection(selection);
+    return row;
+  });
+  customerFontSelections.replaceChildren(...rows);
+  customerFontSelections.hidden = rows.length === 0;
+}
+
 function renderOrderList() {
   const searchTerm = orderSearchInput.value.trim().toLowerCase();
   const visibleOrders = orders.filter((order) => {
@@ -9371,6 +9405,7 @@ function renderOrderList() {
   renderListingReference(activeOrder);
   renderImportedColor(activeOrder);
   renderPresetListingIndicator(activeOrder);
+  renderCustomerFontSelections(activeOrder);
   activeOrderName.textContent = activeOrder ? buildBatchOrderNumber(activeOrder) : "No design selected";
   activeOrderMeta.textContent = buildActiveMeta(activeOrder);
   renderProductionBatchToast(activeOrder);
@@ -10780,7 +10815,11 @@ async function importFromClipboard({ clipboardText: providedClipboardText = null
 
   try {
     const clipboardText = providedClipboardText ?? await navigator.clipboard.readText();
-    const importedItems = parseImportedItems(clipboardText, { getPresetIdForListingId });
+    const importedItems = parseImportedItems(clipboardText, {
+      getPresetIdForListingId,
+      getPresetSettingsForImport: buildImportedPresetSettings,
+      fontOptions: FONT_OPTIONS,
+    });
     assertImportableItems(importedItems);
     const { filteredItems, skippedCount } = filterNewProductionBatchImportItems(importedItems);
     if (!filteredItems.length) {
@@ -10849,7 +10888,11 @@ async function importOrdersFromClipboard({ clipboardText: providedClipboardText 
 
   try {
     const clipboardText = providedClipboardText ?? await navigator.clipboard.readText();
-    const importedItems = parseImportedItems(clipboardText, { getPresetIdForListingId });
+    const importedItems = parseImportedItems(clipboardText, {
+      getPresetIdForListingId,
+      getPresetSettingsForImport: buildImportedPresetSettings,
+      fontOptions: FONT_OPTIONS,
+    });
     assertImportableItems(importedItems);
     const accessToken = await resolveProductionBatchMutationAccessToken();
     const batchId = getActiveProductionBatchId();

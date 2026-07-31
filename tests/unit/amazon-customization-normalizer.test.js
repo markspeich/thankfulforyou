@@ -30,6 +30,29 @@ const observedCustomization = {
 };
 
 describe("Amazon customization normalizer", () => {
+  it("pairs Amazon Custom font fields with their emitted text lines", () => {
+    // Break caught: font configuration fields become design text or lose their line association.
+    const customization = { "version3.0": { customizationInfo: { surfaces: [{ areas: [
+      { customizationType: "text", label: "Name", text: "Maria" },
+      { customizationType: "text", label: "Name Font", text: "Skywalk" },
+      { customizationType: "text", label: "Title", text: "RN" },
+      { customizationType: "option", label: "Title Font", optionValue: "Somekind" },
+    ] }] } } };
+
+    expect(normalizeShipStationItem({
+      shipment: { external_order_id: "order-1" },
+      item: { external_order_item_id: "item-1", asin: "ASIN-1" },
+      customization,
+    })).toMatchObject({
+      text: "Maria\nRN",
+      source: {
+        customerFontSelections: [
+          { lineIndex: 0, name: "Skywalk" },
+          { lineIndex: 1, name: "Somekind" },
+        ],
+      },
+    });
+  });
   it("preserves observed v3 source order while excluding non-production fields", () => {
     // Break caught: accepting archive metadata or losing ordered text/configuration fields.
     expect(extractAmazonCustomizationFields(observedCustomization)).toEqual({
