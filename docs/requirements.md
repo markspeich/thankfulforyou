@@ -346,7 +346,8 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Imported order items must persist a nullable `Ship By Date` as a calendar date without timezone-driven day shifts.
 - The Etsy `Copy Orders` browser helper must retrieve Ship By Date from Etsy order fulfillment data.
 - The Amazon `Copy Orders` browser helper must retrieve Ship By Date from the Seller Central order summary.
-- Etsy API imports must retrieve Ship By Date from the receipt `expected_ship_date` field.
+- Etsy API imports must retrieve Ship By Date from the transaction `expected_ship_date` field.
+- Etsy API imports must retain the transaction's original nullable `expected_ship_date` epoch value as `source_json.expected_ship_date` on each order item alongside the normalized `ship_by_date` calendar date, without retaining the complete raw Etsy transaction payload.
 - The Orders workspace must show Ship By Date in grouped order rows and selected order-item details, using the earliest available date for grouped multi-item orders.
 - The app should maintain a configurable mapping from Etsy listing ID to production preset name.
 - The current preset mapping must include Etsy listing ID `1884223710` to `Skywalk, Somekind`.
