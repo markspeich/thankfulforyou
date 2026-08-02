@@ -43,7 +43,7 @@ export async function fetchBatchSession(accessToken = null) {
   const payload = await readJsonOrFallback(response, {});
 
   if (!response.ok) {
-    throw new Error(payload.error || "Unable to load the production batch session.");
+    throw Object.assign(new Error(payload.error || "Unable to load the production batch session."), { status: response.status });
   }
 
   return payload;
@@ -58,7 +58,7 @@ export async function fetchProductionBatchSnapshot(batchId, accessToken = null) 
   const payload = await readJsonOrFallback(response, {});
 
   if (!response.ok) {
-    throw new Error(payload.error || "Unable to load the production batch.");
+    throw Object.assign(new Error(payload.error || "Unable to load the production batch."), { status: response.status });
   }
 
   return payload;
@@ -88,7 +88,7 @@ export async function saveProductionBatchSnapshot(snapshot, options = {}) {
   }
 
   if (!response.ok) {
-    throw new Error(payload.error || "Unable to save the production batch.");
+    throw Object.assign(new Error(payload.error || "Unable to save the production batch."), { status: response.status });
   }
 
   return payload;
@@ -110,7 +110,7 @@ export async function completeProductionBatch(batchId, options = {}) {
   const payload = await readJsonOrFallback(response, {});
 
   if (!response.ok) {
-    throw new Error(payload.error || "Unable to complete the production batch.");
+    throw Object.assign(new Error(payload.error || "Unable to complete the production batch."), { status: response.status });
   }
 
   return payload;
@@ -134,7 +134,7 @@ export async function removeProductionBatchItem(batchId, orderItemId, options = 
   const payload = await readJsonOrFallback(response, {});
 
   if (!response.ok) {
-    throw new Error(payload.error || "Unable to remove the production batch item.");
+    throw Object.assign(new Error(payload.error || "Unable to remove the production batch item."), { status: response.status });
   }
 
   return payload;

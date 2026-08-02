@@ -26,6 +26,14 @@ const complete = {
 };
 
 describe("Amazon API browser client", () => {
+  it("preserves unauthorized response status for session recovery", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 401 })));
+    const { importAmazonOrders } = await import("../../src/amazon-api.js");
+
+    await expect(importAmazonOrders({ accessToken: "expired-token" }))
+      .rejects.toMatchObject({ message: "Authentication required.", status: 401 });
+  });
+
   it("posts once with bearer authentication and an NDJSON accept header", async () => {
     const fetch = vi.fn().mockResolvedValue(new Response(stream([
       `${JSON.stringify(complete)}\n`,

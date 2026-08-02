@@ -8,10 +8,11 @@ function authHeaders(accessToken, headers = {}) {
 async function jsonOr(response, fallback = {}) {
   try { return await response.json(); } catch { return fallback; }
 }
-function safeError(payload, fallback) {
+function safeError(payload, fallback, status = null) {
   const message = typeof payload?.error === "string" && payload.error.trim() ? payload.error.trim() : fallback;
   const error = new Error(message);
   if (typeof payload?.code === "string" && payload.code.trim()) error.code = payload.code.trim();
+  if (Number.isInteger(status)) error.status = status;
   return error;
 }
 export async function fetchEtsyConnection({ accessToken = null, signal } = {}) {
@@ -19,7 +20,7 @@ export async function fetchEtsyConnection({ accessToken = null, signal } = {}) {
     headers: authHeaders(accessToken, { Accept: "application/json" }), signal,
   });
   const payload = await jsonOr(response);
-  if (!response.ok) throw safeError(payload, CONNECTION_ERROR);
+  if (!response.ok) throw safeError(payload, CONNECTION_ERROR, response.status);
   return payload;
 }
 export async function beginEtsyAuthorization({ accessToken = null, signal } = {}) {
@@ -29,7 +30,7 @@ export async function beginEtsyAuthorization({ accessToken = null, signal } = {}
     body: JSON.stringify({ action: "beginAuthorization" }), signal,
   });
   const payload = await jsonOr(response);
-  if (!response.ok) throw safeError(payload, AUTHORIZATION_ERROR);
+  if (!response.ok) throw safeError(payload, AUTHORIZATION_ERROR, response.status);
   let url;
   try { url = new URL(payload?.authorizeUrl); } catch { throw new Error(AUTHORIZATION_ERROR); }
   if (url.origin !== "https://www.etsy.com"
@@ -82,7 +83,7 @@ export async function importEtsyOrders({ accessToken = null, signal, onEvent = (
   const response = await fetch("/api/etsy-import", {
     method: "POST", headers: authHeaders(accessToken, { Accept: "application/x-ndjson" }), signal,
   });
-  if (!response.ok) throw safeError(await jsonOr(response), IMPORT_ERROR);
+  if (!response.ok) throw safeError(await jsonOr(response), IMPORT_ERROR, response.status);
   if (!response.body?.getReader) throw new Error(IMPORT_ERROR);
   const reader = response.body.getReader();
   const decoder = new TextDecoder();

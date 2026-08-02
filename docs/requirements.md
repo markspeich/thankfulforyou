@@ -59,6 +59,9 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 
 ## Current Production Requirements
 
+- Authenticated app requests must silently recover from an expired Supabase access token by refreshing the session and retrying the failed request once. Operators should only be returned to sign-in when the session cannot be refreshed or the retried request is still unauthorized.
+- Authentication expiry must not leave an operation progress dialog spinning indefinitely. Every action must settle its dialog into either a completion state or a dismissible error state.
+
 - Amazon imports must preserve each customer's per-line font selection from Seller Central clipboard customizations and Amazon Custom/ShipStation data.
 - For Amazon version 3 customization documents, each text area's non-empty `fontFamily` is the authoritative customer font selection for that corresponding imported text line; separate labeled fields such as `Name Font` and `Title Font` remain the fallback when an area-level font is unavailable.
 - Amazon imports from a ShipStation `CustomizationURL` must retain the complete parsed customization JSON in a dedicated server-side diagnostic field on the order item, including when an existing order item is re-imported. The latest successfully imported document may replace the previously retained document without replacing the saved design.

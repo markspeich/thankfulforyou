@@ -10,6 +10,18 @@ afterEach(() => {
 });
 
 describe("production batch api client", () => {
+  it("preserves unauthorized response status for session recovery", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: false,
+      status: 401,
+      json: async () => ({ error: "Access denied." }),
+    }));
+    const { fetchBatchSession } = await import("../../src/production-batch-api.js");
+
+    await expect(fetchBatchSession("expired-token"))
+      .rejects.toMatchObject({ message: "Access denied.", status: 401 });
+  });
+
   it("loads the batch session payload", async () => {
     const payload = {
       operator: { id: "user-1", email: "mark@example.com" },

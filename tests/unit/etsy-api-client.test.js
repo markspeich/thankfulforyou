@@ -13,6 +13,17 @@ function stream(chunks) {
 }
 
 describe("Etsy API browser client", () => {
+  it("preserves unauthorized response status for session recovery", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(
+      JSON.stringify({ error: "Access denied." }),
+      { status: 401, headers: { "Content-Type": "application/json" } },
+    )));
+    const { fetchEtsyConnection } = await import("../../src/etsy-api.js");
+
+    await expect(fetchEtsyConnection({ accessToken: "expired-token" }))
+      .rejects.toMatchObject({ message: "Access denied.", status: 401 });
+  });
+
   it("loads connection with auth and handles safe errors", async () => {
     const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ status: "connected" }), { status: 200 }));
     vi.stubGlobal("fetch", fetch);

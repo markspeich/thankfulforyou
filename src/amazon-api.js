@@ -119,7 +119,9 @@ export async function importAmazonOrders({
     throw toPublicError(error);
   }
 
-  if (response.status === 401) throw new Error("Authentication required.");
+  if (response.status === 401) {
+    throw Object.assign(new Error("Authentication required."), { status: 401 });
+  }
   if (!response.ok || !response.body?.getReader) throw publicImportError();
 
   const reader = response.body.getReader();

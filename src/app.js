@@ -86,6 +86,10 @@ import {
 } from "./etsy-api.js";
 import { importAmazonOrders } from "./amazon-api.js";
 import {
+  isAuthenticationError,
+  runAuthenticatedRequest,
+} from "./authenticated-request.js";
+import {
   filterGroupedOrders,
   getEtsyConnectionActionDescriptor,
   getEtsyImportSummary,
@@ -103,7 +107,6 @@ import {
 import {
   getAccessToken,
   getSignedInSession,
-  refreshAccessToken,
   signOutBrowserSession,
   signInWithPassword as signInOperatorWithPassword,
 } from "./auth-session.js";
@@ -810,35 +813,17 @@ function showProductionBatchSignIn(error = "") {
 }
 
 function isProductionBatchAuthenticationError(error) {
-  return Boolean(
-    error instanceof Error
-      && typeof error.message === "string"
-      && /(authentication required|jwt has expired)/i.test(error.message),
-  );
+  return isAuthenticationError(error);
 }
 
 async function runProductionBatchRequestWithSessionRefresh(request, accessToken = productionBatchAccessToken) {
-  try {
-    return await request(accessToken);
-  } catch (error) {
-    if (!isProductionBatchAuthenticationError(error) || readProductionBatchAccessTokenOverride()) {
-      throw error;
-    }
-
-    let refreshedToken = null;
-    try {
-      refreshedToken = await refreshAccessToken();
-    } catch {
-      throw new Error("Authentication required.");
-    }
-
-    if (!refreshedToken) {
-      throw new Error("Authentication required.");
-    }
-
-    productionBatchAccessToken = refreshedToken;
-    return request(refreshedToken);
-  }
+  return runAuthenticatedRequest(request, {
+    accessToken,
+    disableRefresh: Boolean(readProductionBatchAccessTokenOverride()),
+    onAccessToken(refreshedToken) {
+      productionBatchAccessToken = refreshedToken;
+    },
+  });
 }
 
 function handleProductionBatchAuthenticationRequired(detail = "Production batch session expired. Sign in again to continue.") {
@@ -6043,6 +6028,14 @@ function showOperationErrorDialog(error, fallbackMessage, target) {
     pasteFallbackInput.focus();
   }
 }
+function showActionOperationError(error, fallbackMessage) {
+  completeOperationDialog({
+    title: "Operation Failed",
+    description: error instanceof Error && error.message && !isProductionBatchAuthenticationError(error)
+      ? error.message
+      : fallbackMessage,
+  });
+}
 async function importManualPasteFallback() {
   const target = pasteFallbackTarget;
   const clipboardText = pasteFallbackInput.value;
@@ -6440,10 +6433,10 @@ async function loadEtsyConnection() {
     etsyImportError = null;
   }
   try {
-    const connection = await fetchEtsyConnection({
-      accessToken: request.accessToken,
+    const connection = await runProductionBatchRequestWithSessionRefresh((accessToken) => fetchEtsyConnection({
+      accessToken,
       signal: request.controller.signal,
-    });
+    }), request.accessToken);
     if (etsySessionRequest === request) {
       etsyConnection = etsyOAuthStatus.includes("failed")
         ? { status: "reconnect_required", reconnectRequired: true }
@@ -6466,10 +6459,10 @@ async function beginEtsyConnection() {
   etsyImportError = null;
   renderEtsyImportUi();
   try {
-    const authorizeUrl = await beginEtsyAuthorization({
-      accessToken: request.accessToken,
+    const authorizeUrl = await runProductionBatchRequestWithSessionRefresh((accessToken) => beginEtsyAuthorization({
+      accessToken,
       signal: request.controller.signal,
-    });
+    }), request.accessToken);
     if (etsySessionRequest === request) window.location.assign(authorizeUrl);
   } catch (error) {
     if (etsySessionRequest === request && error?.name !== "AbortError") etsyImportError = error;
@@ -6491,8 +6484,8 @@ async function startEtsyImport() {
   etsyImportResult = null;
   renderEtsyImportUi();
   try {
-    await importEtsyOrders({
-      accessToken: request.accessToken,
+    await runProductionBatchRequestWithSessionRefresh((accessToken) => importEtsyOrders({
+      accessToken,
       signal: request.controller.signal,
       onEvent: async (event) => {
         if (etsySessionRequest !== request) return;
@@ -6501,7 +6494,7 @@ async function startEtsyImport() {
         renderEtsyImportUi();
         await Promise.resolve();
       },
-    });
+    }), request.accessToken);
     if (etsySessionRequest === request) {
       const selectedOrderId = selectedDatabaseOrderId;
       invalidateDatabaseOrders();
@@ -6523,6 +6516,7 @@ async function startEtsyImport() {
       etsyImporting = false;
       renderEtsyImportUi();
       if (etsyImportResult) completeOperationDialog({ title: "Etsy Import Complete", description: getEtsyImportSummary(etsyImportResult), metrics: [{ label: "Imported", value: etsyImportResult.imported }, { label: "Existing", value: etsyImportResult.existing }, { label: "Needs review", value: etsyImportResult.customizationNeeded }] });
+      else if (etsyImportError) showActionOperationError(etsyImportError, "Unable to import Etsy orders.");
     }
   }
 }
@@ -6682,11 +6676,11 @@ async function performDatabaseOrdersLoad({ force = false } = {}) {
   updateWorkflowAlert("Loading orders...", "pending", { autoHideMs: 0 });
 
   try {
-    const payload = await fetchWorkspaceOrders({
+    const payload = await runProductionBatchRequestWithSessionRefresh((accessToken) => fetchWorkspaceOrders({
       batchId,
       statusFilter: databaseOrdersStatusFilterValue,
-      accessToken: productionBatchAccessToken,
-    });
+      accessToken,
+    }));
     if (loadMutationVersion !== databaseOrdersMutationVersion) {
       return;
     }
@@ -7286,12 +7280,12 @@ async function addDatabaseOrderItemToBatch(item, button = null) {
 
   try {
     const accessToken = await resolveProductionBatchMutationAccessToken();
-    const payload = await addOrderItemToProductionBatch({
+    const payload = await runProductionBatchRequestWithSessionRefresh((requestToken) => addOrderItemToProductionBatch({
       batchId,
       orderItemId,
       statusFilter: databaseOrdersStatusFilterValue,
-      accessToken,
-    });
+      accessToken: requestToken,
+    }), accessToken);
 
     applyAddedOrderItemsDelta(payload);
     updateWorkflowAlert(buildAddedToBatchMessage(payload), "success");
@@ -7302,6 +7296,7 @@ async function addDatabaseOrderItemToBatch(item, button = null) {
       "Unable to add the order item to the production batch.",
       "Production batch session expired. Sign in again to continue adding orders.",
     );
+    showActionOperationError(error, "Unable to add the order item to the production batch.");
   } finally {
     ordersDatabaseMutationInFlight = false;
     if (button) {
@@ -7337,12 +7332,12 @@ async function updateDatabaseOrderItemStatus({
 
   try {
     const accessToken = await resolveProductionBatchMutationAccessToken();
-    const payload = await updateOrderItemLifecycleStatus({
+    const payload = await runProductionBatchRequestWithSessionRefresh((requestToken) => updateOrderItemLifecycleStatus({
       action,
       batchId,
       orderItemId,
-      accessToken,
-    });
+      accessToken: requestToken,
+    }), accessToken);
 
     if (nextFilter) {
       databaseOrdersStatusFilterValue = nextFilter;
@@ -7353,7 +7348,7 @@ async function updateDatabaseOrderItemStatus({
     checkedDatabaseOrderIds.clear();
     await refreshOrdersAndProductionBatch({
       payload: nextFilter ? payload : null,
-      accessToken,
+      accessToken: productionBatchAccessToken,
       refreshBatch: action === "skipOrderItem",
     });
     updateWorkflowAlert(successMessage, "success");
@@ -7438,12 +7433,12 @@ async function updateDatabaseOrderStatus({
 
   try {
     const accessToken = await resolveProductionBatchMutationAccessToken();
-    const payload = await updateOrderItemLifecycleStatus({
+    const payload = await runProductionBatchRequestWithSessionRefresh((requestToken) => updateOrderItemLifecycleStatus({
       action,
       batchId,
       orderId,
-      accessToken,
-    });
+      accessToken: requestToken,
+    }), accessToken);
 
     if (nextFilter) {
       databaseOrdersStatusFilterValue = nextFilter;
@@ -7454,7 +7449,7 @@ async function updateDatabaseOrderStatus({
     checkedDatabaseOrderIds.clear();
     await refreshOrdersAndProductionBatch({
       payload: nextFilter ? payload : null,
-      accessToken,
+      accessToken: productionBatchAccessToken,
       refreshBatch: action === "skipOrder",
     });
     updateWorkflowAlert(successMessage, "success");
@@ -7546,12 +7541,12 @@ async function updateCheckedDatabaseOrdersStatus({
 
   try {
     const accessToken = await resolveProductionBatchMutationAccessToken();
-    const payload = await updateOrderItemLifecycleStatus({
+    const payload = await runProductionBatchRequestWithSessionRefresh((requestToken) => updateOrderItemLifecycleStatus({
       action,
       batchId,
       orderIds,
-      accessToken,
-    });
+      accessToken: requestToken,
+    }), accessToken);
 
     if (nextFilter) {
       databaseOrdersStatusFilterValue = nextFilter;
@@ -7654,12 +7649,12 @@ async function addCheckedDatabaseOrdersToBatch() {
 
   try {
     const accessToken = await resolveProductionBatchMutationAccessToken();
-    const payload = await addOrdersToProductionBatch({
+    const payload = await runProductionBatchRequestWithSessionRefresh((requestToken) => addOrdersToProductionBatch({
       batchId,
       orderIds,
       statusFilter: databaseOrdersStatusFilterValue,
-      accessToken,
-    });
+      accessToken: requestToken,
+    }), accessToken);
     const nextCheckedOrderIds = new Set(
       [...checkedDatabaseOrderIds].filter((orderId) => !orderIds.includes(orderId)),
     );
@@ -7675,6 +7670,7 @@ async function addCheckedDatabaseOrdersToBatch() {
       "Unable to add checked orders to the production batch.",
       "Production batch session expired. Sign in again to continue adding orders.",
     );
+    showActionOperationError(error, "Unable to add checked orders to the production batch.");
   } finally {
     ordersDatabaseMutationInFlight = false;
     setBatchActionLabel(addCheckedOrdersToBatchButton, "Add Checked to Production Batch");
@@ -7702,12 +7698,12 @@ async function addSelectedDatabaseOrderToBatch() {
 
   try {
     const accessToken = await resolveProductionBatchMutationAccessToken();
-    const payload = await addOrdersToProductionBatch({
+    const payload = await runProductionBatchRequestWithSessionRefresh((requestToken) => addOrdersToProductionBatch({
       batchId,
       orderIds: [orderId],
       statusFilter: databaseOrdersStatusFilterValue,
-      accessToken,
-    });
+      accessToken: requestToken,
+    }), accessToken);
 
     applyAddedOrderItemsDelta(payload);
     selectedOrderActionsMenu?.removeAttribute("open");
@@ -7719,6 +7715,7 @@ async function addSelectedDatabaseOrderToBatch() {
       "Unable to add the selected order to the production batch.",
       "Production batch session expired. Sign in again to continue adding orders.",
     );
+    showActionOperationError(error, "Unable to add the selected order to the production batch.");
   } finally {
     ordersDatabaseMutationInFlight = false;
     if (addSelectedOrderToBatchButton) {
@@ -10662,10 +10659,10 @@ async function deleteOrder(orderId) {
         throw new Error("Authentication required.");
       }
       productionBatchAccessToken = accessToken;
-      removedRemoteSnapshot = await removeProductionBatchItem(productionBatchContext.id, orderId, {
-        accessToken,
+      removedRemoteSnapshot = await runProductionBatchRequestWithSessionRefresh((requestToken) => removeProductionBatchItem(productionBatchContext.id, orderId, {
+        accessToken: requestToken,
         activeOrderItemId: nextActiveOrderItemId,
-      });
+      }), accessToken);
     } catch (error) {
       updateWorkflowAlert(
         error instanceof Error ? error.message : "Unable to delete the design from the shared batch.",
@@ -10758,7 +10755,10 @@ async function completeCurrentProductionBatch() {
       const completeBatchId = productionBatchContext.id;
       const accessToken = productionBatchAccessToken || readProductionBatchAccessTokenOverride() || await getAccessToken();
       productionBatchAccessToken = accessToken;
-      completedRemoteSnapshot = await completeProductionBatch(completeBatchId, { accessToken });
+      completedRemoteSnapshot = await runProductionBatchRequestWithSessionRefresh(
+        (requestToken) => completeProductionBatch(completeBatchId, { accessToken: requestToken }),
+        accessToken,
+      );
     } catch (error) {
       orders.splice(0, orders.length, ...previousOrders);
       activeOrderItemId = previousActiveOrderItemId;
@@ -10775,6 +10775,10 @@ async function completeCurrentProductionBatch() {
         error instanceof Error ? error.message : "Unable to complete the production batch.",
         "error",
       );
+      if (isProductionBatchAuthenticationError(error)) {
+        handleProductionBatchAuthenticationRequired("Production batch session expired. Sign in again to continue.");
+      }
+      showActionOperationError(error, "Unable to complete the production batch.");
       return;
     }
   }
@@ -10834,12 +10838,12 @@ async function importFromClipboard({ clipboardText: providedClipboardText = null
     }
 
     const accessToken = await resolveProductionBatchMutationAccessToken();
-    const payload = await importWorkspaceOrders({
+    const payload = await runProductionBatchRequestWithSessionRefresh((requestToken) => importWorkspaceOrders({
       target: "productionBatch",
       batchId,
       items: filteredItems,
-      accessToken,
-    });
+      accessToken: requestToken,
+    }), accessToken);
     updateDatabaseOrdersFromPayload(payload);
     appendImportedItemsToProductionBatch(filteredItems, {
       maxCount: countFromPayload(payload, "addedOrderItemCount"),
@@ -10896,14 +10900,14 @@ async function importOrdersFromClipboard({ clipboardText: providedClipboardText 
     assertImportableItems(importedItems);
     const accessToken = await resolveProductionBatchMutationAccessToken();
     const batchId = getActiveProductionBatchId();
-    const payload = await importWorkspaceOrders({
+    const payload = await runProductionBatchRequestWithSessionRefresh((requestToken) => importWorkspaceOrders({
       target: "orders",
       items: importedItems,
       ...(batchId ? { batchId } : {}),
-      accessToken,
-    });
+      accessToken: requestToken,
+    }), accessToken);
 
-    await refreshOrdersAndProductionBatch({ payload, accessToken });
+    await refreshOrdersAndProductionBatch({ payload, accessToken: productionBatchAccessToken });
     updateWorkflowAlert(buildOrdersImportMessage(payload), "success");
     showPasteSummaryDialog({
       targetLabel: "Orders",

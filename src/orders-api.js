@@ -41,7 +41,7 @@ async function readOrdersResponse(response, fallbackError) {
   const payload = await readJsonOrFallback(response, {});
 
   if (!response.ok) {
-    throw new Error(payload.error || fallbackError);
+    throw Object.assign(new Error(payload.error || fallbackError), { status: response.status });
   }
 
   return payload;

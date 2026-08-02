@@ -32,6 +32,24 @@ function installSupabaseSession(page) {
   });
 }
 
+function installRefreshableSupabaseSession(page) {
+  return page.addInitScript(() => {
+    window.__APP_CONFIG__ = { supabaseUrl: "https://example.supabase.co", supabaseAnonKey: "anon-key" };
+    let session = { access_token: "expired-token", refresh_token: "refresh-1", user: { id: "user-1", email: "mark@example.com" } };
+    window.__TFU_TEST_SUPABASE_CLIENT__ = {
+      auth: {
+        getSession: async () => ({ data: { session }, error: null }),
+        refreshSession: async () => {
+          window.ordersRefreshCalls = (window.ordersRefreshCalls || 0) + 1;
+          session = { ...session, access_token: "fresh-token", refresh_token: "refresh-2" };
+          return { data: { session }, error: null };
+        },
+        onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }),
+      },
+    };
+  });
+}
+
 function installClipboardText(page, text) {
   return page.addInitScript((clipboardText) => {
     Object.defineProperty(navigator, "clipboard", {
@@ -245,11 +263,11 @@ async function installOrdersWorkspaceRoutes(page, options = {}) {
     if (request.method() === "POST") {
       const post = JSON.parse(request.postData() || "{}");
       posts.push(post);
-      onPost?.(post);
+      onPost?.(post, request);
       const delayMs = typeof postDelayMs === "function" ? postDelayMs(post) : postDelayMs;
       if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs));
       await route.fulfill({
-        status: postStatus,
+        status: typeof postStatus === "function" ? postStatus(post, request) : postStatus,
         contentType: "application/json; charset=utf-8",
         body: JSON.stringify(typeof postBody === "function" ? postBody(post) : postBody || {
           ...buildOrdersPayload(),
@@ -1321,6 +1339,38 @@ test("shows the production batch auth gate when an orders mutation requires auth
   await firstItemCard.getByRole("button", { name: "Add to Production Batch" }).click();
 
   await expect(page.getByRole("heading", { name: "Sign in to production batch" })).toBeVisible();
+  await expect(page.locator("#pasteSummaryTitle")).toHaveText("Operation Failed");
+  await expect(page.locator("#pasteSummaryDialog").getByRole("button", { name: "Close" })).toBeVisible();
+});
+
+test("silently refreshes an expired session and completes an orders mutation", async ({ page }) => {
+  await installRefreshableSupabaseSession(page);
+  await installProductionBatchRoutes(page);
+  const authorizationHeaders = [];
+  await installOrdersWorkspaceRoutes(page, {
+    onPost(_post, request) {
+      authorizationHeaders.push(request.headers().authorization);
+    },
+    postStatus(_post, request) {
+      return request.headers().authorization === "Bearer expired-token" ? 401 : 200;
+    },
+    postBody(_post) {
+      return authorizationHeaders.length === 1
+        ? { error: "Access denied." }
+        : { ...buildOrdersPayload(), addedOrderItemCount: 1, addedOrderItemIds: ["item-1"] };
+    },
+  });
+
+  await gotoAfterBatchLoads(page);
+  await page.getByRole("button", { name: "Orders", exact: true }).click();
+  const card = page.locator(".database-order-item-card").filter({ hasText: "Ada RN" });
+  await card.getByRole("button", { name: "Item actions" }).click();
+  await card.getByRole("button", { name: "Add to Production Batch" }).click();
+
+  await expect.poll(() => authorizationHeaders).toEqual(["Bearer expired-token", "Bearer fresh-token"]);
+  await expect.poll(() => page.evaluate(() => window.ordersRefreshCalls || 0)).toBe(1);
+  await expect(page.locator("#pasteSummaryTitle")).toHaveText("Order Item Added");
+  await expect(page.getByRole("heading", { name: "Sign in to production batch" })).toBeHidden();
 });
 
 test("adds checked orders to the active production batch", async ({ page }) => {

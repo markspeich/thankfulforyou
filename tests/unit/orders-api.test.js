@@ -34,6 +34,18 @@ describe("orders api client", () => {
     });
   });
 
+  it("preserves unauthorized response status for session recovery", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: false,
+      status: 401,
+      json: async () => ({ error: "Access denied." }),
+    }));
+    const { fetchWorkspaceOrders } = await import("../../src/orders-api.js");
+
+    await expect(fetchWorkspaceOrders({ accessToken: "expired-token" }))
+      .rejects.toMatchObject({ message: "Access denied.", status: 401 });
+  });
+
   it("attaches a bearer token when loading workspace orders", async () => {
     const payload = { orders: [{ id: "order:1001", items: [{ id: "item-1" }] }] };
     const fetchMock = vi.fn().mockResolvedValue({
