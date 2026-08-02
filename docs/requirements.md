@@ -341,6 +341,8 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - A ShipStation shipment should receive the `Amazon Customization Imported` tag only after its notes update and all of its app item persistence operations have succeeded or been recognized as already complete.
 - One Amazon shipment's failure must not stop other eligible shipments; failed shipments should remain untagged and retryable.
 - Amazon import completion feedback should separately report processed shipments, imported app items, existing app items, already-processed shipments, customization-needed items, and failures.
+- Automated Amazon imports must emit correlated, non-throwing structural diagnostics for customization retrieval, normalization, font enrichment, and persistence; each per-shipment failure must identify its exact safe pipeline stage.
+- Amazon import diagnostics must expose only safe structural counts, trusted product-defined customization labels, internal identifiers, and persistence outcomes. They must exclude raw payloads, customer-entered values and customer font names, buyer/contact data, customization URLs, credentials, authorization data, unsanitized messages, and stacks; logger failures must never change an import result.
 - Imported listing IDs should be usable to auto-select the app preset for each imported order.
 - Imported Etsy listing metadata should include the listing title and the 75 by 75 listing image URL when those fields are present in the Etsy order data.
 - Imported order items must persist a nullable `Ship By Date` as a calendar date without timezone-driven day shifts.
