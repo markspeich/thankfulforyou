@@ -7,7 +7,9 @@ const PRODUCTION_BATCH_REMOTE_RESTORE_TEST_TITLE = "restores the production batc
 const PRODUCTION_BATCH_CONFLICT_TEST_TITLE = "keeps shared sync enabled on revision conflict";
 const PRODUCTION_BATCH_PAGEHIDE_TEST_TITLE = "pagehide keepalive saves even while a shared autosave is in flight";
 const PRODUCTION_BATCH_AMAZON_LABEL_TEST_TITLE = "labels imported Amazon orders as Amazon in the production batch editor";
+const PRODUCTION_BATCH_AMAZON_FONT_TEST_TITLE = "shows supplied Amazon fonts on the production batch screen";
 const SAMPLE_CLIPBOARD_URL = new URL("../../docs/sample-clipboard.txt", import.meta.url);
+const AMAZON_CUSTOMIZATION_FIXTURE_URL = new URL("../fixtures/amazon-customization-166136048232641.json", import.meta.url);
 const productionBatchSnapshots = new WeakMap();
 
 function getSampleClipboardItemForBatchRow() {
@@ -665,6 +667,7 @@ test.beforeEach(async ({ page, request }, testInfo) => {
     || testInfo.title === PRODUCTION_BATCH_CONFLICT_TEST_TITLE
     || testInfo.title === PRODUCTION_BATCH_PAGEHIDE_TEST_TITLE
     || testInfo.title === PRODUCTION_BATCH_AMAZON_LABEL_TEST_TITLE
+    || testInfo.title === PRODUCTION_BATCH_AMAZON_FONT_TEST_TITLE
   ) {
     return;
   }
@@ -3252,6 +3255,67 @@ test(PRODUCTION_BATCH_AMAZON_LABEL_TEST_TITLE, async ({ page }) => {
 
   await expect(page.locator("#activeOrderMeta")).toContainText(`Amazon #${amazonOrderNumber}`);
   await expect(page.locator("#activeOrderMeta")).not.toContainText("Etsy");
+});
+
+test(PRODUCTION_BATCH_AMAZON_FONT_TEST_TITLE, async ({ page }) => {
+  const customization = JSON.parse(readFileSync(AMAZON_CUSTOMIZATION_FIXTURE_URL, "utf8"));
+  await installSupabaseSession(page);
+  await page.route("**/api/batch-session", route => route.fulfill({
+    json: {
+      operator: { id: "user-1", email: "mark@example.com" },
+      workspace: { id: "workspace-1", name: "Thankful For You" },
+      batch: { id: "batch-1", workspaceId: "workspace-1" },
+    },
+  }));
+  await page.route("**/api/production-batch**", route => route.fulfill({
+    json: {
+      batch: { id: "batch-1", workspaceId: "workspace-1" },
+      activeOrderItemId: `amazon-order-item:${customization.orderItemId}`,
+      orderItems: [{
+        id: `amazon-order-item:${customization.orderItemId}`,
+        revision: 1,
+        text: "Alicia\nRN",
+        status: "in-progress",
+        source: {
+          marketplace: "amazon",
+          orderNumber: customization.orderId,
+          buyerName: "Alicia",
+          listingTitle: customization.title,
+          quantity: customization.quantity,
+          colorName: "Glitter Blue",
+          customerFontSelections: [
+            { lineIndex: 0, name: "Skywalk" },
+            { lineIndex: 1, name: "Somekind" },
+          ],
+        },
+        settings: {
+          text: "Alicia\nRN",
+          presetId: "preset-a1f4c8e2b601",
+          backingMm: 3.1,
+          weldExportedDesign: true,
+          lines: [
+            { fontId: "skywalk", bridgeMm: 0.5, lineBridgeMm: 0.5, offsetXMm: 0, fontSizeMm: 34, horizontalScale: 1, verticalScale: 1, lockTextHeight: false },
+            { fontId: "somekind", bridgeMm: 0.5, lineBridgeMm: 0.5, offsetXMm: 0, fontSizeMm: 34, horizontalScale: 1, verticalScale: 1, lockTextHeight: false },
+          ],
+        },
+      }],
+    },
+  }));
+  await page.route("**/api/orders**", route => route.fulfill({ json: { orders: [] } }));
+  await page.route("**/api/layout-analyze", route => route.fulfill({
+    json: buildMockAnalysisResponse(),
+  }));
+
+  await page.goto("/production-batch");
+  await waitForProductionBatchStartup(page);
+
+  await expect(page.locator("#activeOrderName")).toHaveText(`#${customization.orderId}`);
+  await expect(page.locator("#customerFontSelections")).toHaveText([
+    "Line 1 Font: Skywalk",
+    "Line 2 Font: Somekind",
+  ].join(""));
+  await expect(page.locator('.line-control-card[data-line-index="0"] select[data-setting="fontId"]')).toHaveValue("skywalk");
+  await expect(page.locator('.line-control-card[data-line-index="1"] select[data-setting="fontId"]')).toHaveValue("somekind");
 });
 
 test("skips already imported Etsy line items when importing another batch", async ({ page }) => {

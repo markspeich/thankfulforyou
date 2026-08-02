@@ -51,7 +51,8 @@ function createTableMock(table) {
       supabaseMock.calls.push({ table, operation: "delete" });
       return createDeleteChain();
     },
-    select() {
+    select(columns) {
+      supabaseMock.calls.push({ table, operation: "select", columns });
       return createSelectChain(table);
     },
   };
@@ -159,6 +160,7 @@ function createSelectChain(table) {
           data: [{
             id: "order-1",
             workspace_id: "workspace-1",
+            amazon_customization_json: { private: "raw Amazon document" },
             source_json: {},
             quantity: 1,
             revision: 1,
@@ -193,6 +195,20 @@ afterEach(() => {
 });
 
 describe("production batch store", () => {
+  it("omits raw Amazon customization JSON from the production batch client snapshot", async () => {
+    // Break caught: a broad order-item select exposes the stored diagnostic document to the browser.
+    const { loadProductionBatch } = await import("../../api/_lib/production-batch-store.js");
+
+    const result = await loadProductionBatch({ batchId: "batch-1", workspaceId: "workspace-1" });
+
+    const orderItemsSelect = supabaseMock.calls.find(
+      (call) => call.table === "order_items" && call.operation === "select",
+    );
+    expect(orderItemsSelect.columns).not.toContain("amazon_customization_json");
+    expect(result.orderItems[0]).not.toHaveProperty("amazonCustomizationJson");
+    expect(result.orderItems[0]).not.toHaveProperty("amazon_customization_json");
+  });
+
   it("creates order items before saving a batch that references the active order item", async () => {
     const { saveProductionBatch } = await import("../../api/_lib/production-batch-store.js");
 

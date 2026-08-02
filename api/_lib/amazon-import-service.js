@@ -429,8 +429,12 @@ export function createAmazonImportService({
                   unknownCount: enrichmentSummary?.unknownCount ?? 0,
                   effectiveFontIds: enrichmentSummary?.effectiveFontIds ?? [],
                 });
-                normalizedItems.push(enriched);
-                itemRecords.push({ item: enriched, context: itemContext });
+                const persistenceItem = {
+                  ...enriched,
+                  amazonCustomizationJson: url ? customization : null,
+                };
+                normalizedItems.push(persistenceItem);
+                itemRecords.push({ item: persistenceItem, context: itemContext });
                 if (url) {
                   currentStage = "notes_build";
                   noteBlocks.push({

@@ -988,7 +988,9 @@ describe("Amazon import service", () => {
   });
 
   it("imports every line item and treats only exact CustomizedURL options as archives", async () => {
+    const customizationDocument = customization("Alicia", "Glitter Blue");
     const f = fixture({
+      fetchResult: customizationDocument,
       shipments: [shipment("all-items", {
         items: [
           item("customized", { customizedUrl: "https://zme-caps.amazon.com/customized.zip" }),
@@ -1023,6 +1025,11 @@ describe("Amazon import service", () => {
       false,
       true,
       true,
+    ]);
+    expect(persisted.items.map(({ amazonCustomizationJson }) => amazonCustomizationJson)).toEqual([
+      customizationDocument,
+      null,
+      null,
     ]);
     expect(result).toMatchObject({
       importedItems: 3,

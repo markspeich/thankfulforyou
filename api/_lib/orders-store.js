@@ -77,6 +77,10 @@ export function buildImportedOrderItemRow(item, { workspaceId, userId }) {
     imported_color: nullableString(source.colorName),
     ship_by_date: nullableString(source.shipByDate),
     quantity: toPositiveInteger(source.quantity, 1),
+    amazon_customization_json:
+      item?.amazonCustomizationJson && typeof item.amazonCustomizationJson === "object"
+        ? item.amazonCustomizationJson
+        : null,
     source_json: { ...source },
     revision: 1,
     updated_by: userId || null,

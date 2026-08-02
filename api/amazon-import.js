@@ -204,7 +204,7 @@ export function createAmazonImportHandler({
           (dependencies.listWorkspaceFonts || listWorkspaceFonts)({ workspaceId: auth.workspaceId }),
         ]);
         enrichItem = itemEnricherFactory({
-          presetSnapshot,
+          presetSnapshot: presetSnapshot?.snapshot ?? presetSnapshot,
           fontOptions: (fonts || []).map((font) => ({
             id: font?.id,
             displayName: font?.displayName ?? font?.display_name,
