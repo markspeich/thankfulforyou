@@ -85,7 +85,11 @@ function v3Candidates(document) {
   return v3Areas(document).map((area) => {
     const type = normalizedString(area?.customizationType).toLowerCase();
     if (type.includes("text")) {
-      return { kind: "text", ...classifyField(area?.label, firstNonBlank(area?.text, area?.displayValue)) };
+      return {
+        kind: "text",
+        fontName: normalizedString(area?.fontFamily),
+        ...classifyField(area?.label, firstNonBlank(area?.text, area?.displayValue)),
+      };
     }
     if (type.includes("option") || area?.optionValue != null) {
       return { kind: "configuration", ...classifyField(area?.label, firstNonBlank(area?.optionValue, area?.displayValue)) };
@@ -252,14 +256,20 @@ function fontFieldBase(name) {
   return match ? match[1].trim().toLowerCase() : null;
 }
 
-function customerFontData(freeTextFields, configurationFields) {
+function customerFontData(freeTextFields, configurationFields, candidates = []) {
   const textFields = freeTextFields.filter((response) => fontFieldBase(response.name) == null);
+  const textCandidates = candidates.filter(
+    (candidate) => candidate.kind === "text"
+      && candidate.response
+      && fontFieldBase(candidate.response.name) == null,
+  );
   const fontFields = [...freeTextFields, ...configurationFields]
     .map((response) => ({ response, base: fontFieldBase(response.name) }))
     .filter(({ base }) => base != null);
   const customerFontSelections = textFields.flatMap((response, lineIndex) => {
     const base = response.name.trim().toLowerCase();
-    const selection = fontFields.find((candidate) => candidate.base === base)?.response.value;
+    const selection = textCandidates[lineIndex]?.fontName
+      || fontFields.find((candidate) => candidate.base === base)?.response.value;
     return selection ? [{ lineIndex, name: selection }] : [];
   });
   return { textFields, customerFontSelections };
@@ -367,8 +377,13 @@ function orderNumber(shipment) {
 }
 
 export function normalizeShipStationItem({ shipment = {}, item = {}, customization = {} }) {
-  const { freeTextFields, configurationFields } = extractAmazonCustomizationFields(customization);
-  const { textFields, customerFontSelections } = customerFontData(freeTextFields, configurationFields);
+  const classified = classifiedCustomization(customization);
+  const { freeTextFields, configurationFields } = fieldsFromCandidates(classified.candidates);
+  const { textFields, customerFontSelections } = customerFontData(
+    freeTextFields,
+    configurationFields,
+    classified.candidates,
+  );
   const color = configurationFields.find(
     (response) => response.name.toLowerCase() === "color",
   );
