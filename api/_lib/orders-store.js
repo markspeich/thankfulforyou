@@ -286,15 +286,15 @@ async function queryBatchItems({ supabase, workspaceId, batchId }) {
   return data || [];
 }
 
-async function queryExistingOrderItemIds({ supabase, workspaceId, orderItemIds }) {
+async function queryExistingOrderItems({ supabase, workspaceId, orderItemIds }) {
   const ids = [...new Set((orderItemIds || []).filter((id) => typeof id === "string" && id))];
   if (!ids.length) {
-    return new Set();
+    return [];
   }
 
   const { data, error } = await supabase
     .from("order_items")
-    .select("id")
+    .select("id, source_json")
     .eq("workspace_id", workspaceId)
     .in("id", ids);
 
@@ -302,7 +302,7 @@ async function queryExistingOrderItemIds({ supabase, workspaceId, orderItemIds }
     throw error;
   }
 
-  return new Set((data || []).map((item) => item.id));
+  return data || [];
 }
 
 export async function listWorkspaceOrders({ workspaceId, activeBatchId = null, statusFilter = "open" }) {
@@ -731,20 +731,41 @@ export async function importWorkspaceOrderItems({
   const supabase = createSupabaseAdminClient();
   const orderRows = importItems.map((item) => buildImportedOrderItemRow(item, { workspaceId, userId }));
   const requestedOrderItemIds = orderRows.map((row) => row.id);
-  const existingOrderItemIds = await queryExistingOrderItemIds({
+  const existingOrderItems = await queryExistingOrderItems({
     supabase,
     workspaceId,
     orderItemIds: requestedOrderItemIds,
   });
-  const existingShipDateUpdates = orderRows.filter((row) => (
-    existingOrderItemIds.has(row.id) && row.ship_by_date
-  ));
-  const shipDateUpdateResults = await Promise.all(existingShipDateUpdates.map((row) => (
+  const existingOrderItemIds = new Set(existingOrderItems.map((item) => item.id));
+  const existingOrderItemById = new Map(existingOrderItems.map((item) => [item.id, item]));
+  const existingOrderItemUpdates = orderRows.flatMap((row) => {
+    const existingItem = existingOrderItemById.get(row.id);
+    const hasExpectedShipDate = Object.hasOwn(row.source_json, "expected_ship_date");
+    if (!existingItem || (!row.ship_by_date && !hasExpectedShipDate)) {
+      return [];
+    }
+    const existingSource = existingItem.source_json && typeof existingItem.source_json === "object"
+      ? existingItem.source_json
+      : {};
+    return [{
+      id: row.id,
+      payload: {
+        ...row.ship_by_date ? { ship_by_date: row.ship_by_date } : {},
+        ...hasExpectedShipDate ? {
+          source_json: {
+            ...existingSource,
+            expected_ship_date: row.source_json.expected_ship_date,
+          },
+        } : {},
+      },
+    }];
+  });
+  const shipDateUpdateResults = await Promise.all(existingOrderItemUpdates.map((update) => (
     supabase
       .from("order_items")
-      .update({ ship_by_date: row.ship_by_date })
+      .update(update.payload)
       .eq("workspace_id", workspaceId)
-      .eq("id", row.id)
+      .eq("id", update.id)
   )));
   const shipDateUpdateError = shipDateUpdateResults.find((result) => result?.error)?.error;
   if (shipDateUpdateError) {
