@@ -190,6 +190,10 @@ describe("Amazon import store", () => {
       id: "amazon-order-item:NEW",
       text: "Ada\nRN",
       presetId: "preset-1",
+      amazonCustomizationJson: {
+        orderItemId: "amazon-item-1",
+        "version3.0": { customizationInfo: { surfaces: [] } },
+      },
       source: {
         orderNumber: "114-1",
         buyerName: "Ada",
@@ -232,6 +236,7 @@ describe("Amazon import store", () => {
             order_number: "114-1",
             ship_by_date: "2026-07-28",
             quantity: 2,
+            amazon_customization_json: items[0].amazonCustomizationJson,
             source_json: items[0].source,
             updated_by: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
           }),
