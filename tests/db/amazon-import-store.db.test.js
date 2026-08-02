@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 
 import { createClient } from "@supabase/supabase-js";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -15,10 +16,25 @@ import {
   releaseAmazonImportLock,
   renewAmazonImportLock,
 } from "../../api/_lib/amazon-import-store.js";
+import { createAmazonImportService } from "../../api/_lib/amazon-import-service.js";
+import {
+  appendAmazonNoteBlocks,
+  normalizeShipStationItem,
+} from "../../api/_lib/amazon-customization-normalizer.js";
+import { createAmazonItemEnricher } from "../../api/_lib/amazon-import-enrichment.js";
+import { listWorkspaceFonts } from "../../api/_lib/font-store.js";
 import { createSupabaseAdminClient } from "../../api/_lib/supabase-admin.js";
+import { loadPresetSnapshot } from "../../api/_lib/preset-store.js";
+import { addOrderItemsToProductionBatch } from "../../api/_lib/orders-store.js";
+import { loadProductionBatch } from "../../api/_lib/production-batch-store.js";
 import { loadEnvFile } from "../../tools/env_file.mjs";
 
 const PRIMARY_WORKSPACE_ID = "11111111-1111-4111-8111-111111111111";
+const PRIMARY_BATCH_ID = "22222222-2222-4222-8222-222222222222";
+const AMAZON_CUSTOMIZATION_FIXTURE = JSON.parse(readFileSync(
+  new URL("../fixtures/amazon-customization-166136048232641.json", import.meta.url),
+  "utf8",
+));
 let importUserId;
 let nonMemberUserId;
 let secondaryWorkspaceId;
@@ -281,6 +297,122 @@ describe("Amazon import database integration", () => {
     expect(designError).toBeNull();
     expect(orderItem.amazon_customization_json).toEqual(replacement.amazonCustomizationJson);
     expect(design.design_text).toBe("Original");
+  });
+
+  it("imports the supplied Amazon customization through the real service into the production batch", async () => {
+    // Break caught: the real preset envelope, font resolver, transactional store, and batch loader disagree.
+    const previousApiKey = process.env.SHIPSTATION_API_KEY;
+    const previousStoreId = process.env.SHIPSTATION_AMAZON_STORE_ID;
+    process.env.SHIPSTATION_API_KEY = "local-test-only";
+    process.env.SHIPSTATION_AMAZON_STORE_ID = "local-test-only";
+
+    const shipment = {
+      shipment_id: "fixture-shipment-166136048232641",
+      shipment_number: AMAZON_CUSTOMIZATION_FIXTURE.orderId,
+      ship_by_date: "2026-08-05",
+      ship_to: { name: "Alicia" },
+      items: [{
+        external_order_item_id: AMAZON_CUSTOMIZATION_FIXTURE.orderItemId,
+        name: AMAZON_CUSTOMIZATION_FIXTURE.title,
+        asin: AMAZON_CUSTOMIZATION_FIXTURE.asin,
+        sku: AMAZON_CUSTOMIZATION_FIXTURE.vendorCode,
+        quantity: AMAZON_CUSTOMIZATION_FIXTURE.quantity,
+        options: [{ name: "CustomizedURL", value: "https://local.test/customization.zip" }],
+      }],
+      tags: [],
+      notes_to_buyer: "",
+    };
+    const client = {
+      async *iteratePendingShipments() { yield shipment; },
+      async updateNotesToBuyer() {},
+      async addShipmentTag() {},
+    };
+
+    try {
+      const [presetRecord, fonts] = await Promise.all([
+        loadPresetSnapshot(PRIMARY_WORKSPACE_ID),
+        listWorkspaceFonts({ workspaceId: PRIMARY_WORKSPACE_ID }),
+      ]);
+      const enrichItem = createAmazonItemEnricher({
+        presetSnapshot: presetRecord.snapshot,
+        fontOptions: fonts.map((font) => ({
+          id: font.id,
+          displayName: font.displayName ?? font.display_name,
+          label: font.label,
+        })),
+      });
+      const service = createAmazonImportService({
+        store: {
+          acquireAmazonImportLock,
+          renewAmazonImportLock,
+          releaseAmazonImportLock,
+          importAmazonOrderItemsTransactional,
+        },
+        createShipStationClient: () => client,
+        fetchCustomizationJson: async () => AMAZON_CUSTOMIZATION_FIXTURE,
+        normalizeItem: normalizeShipStationItem,
+        appendNoteBlocks: appendAmazonNoteBlocks,
+        enrichItem,
+      });
+      const prepared = await service.prepare({
+        workspaceId: PRIMARY_WORKSPACE_ID,
+        userId: importUserId,
+        onProgress() {},
+      });
+      let result;
+      try {
+        result = await prepared.run();
+      } finally {
+        await prepared.release();
+      }
+
+      const orderItemId = `amazon-order-item:${AMAZON_CUSTOMIZATION_FIXTURE.orderItemId}`;
+      expect(result).toMatchObject({ importedItems: 1, failed: 0 });
+      await expect(addOrderItemsToProductionBatch({
+        workspaceId: PRIMARY_WORKSPACE_ID,
+        userId: importUserId,
+        batchId: PRIMARY_BATCH_ID,
+        orderItemIds: [orderItemId],
+      })).resolves.toEqual({ addedOrderItemIds: [orderItemId] });
+
+      const admin = createSupabaseAdminClient();
+      const { data: stored, error: storedError } = await admin
+        .from("order_items")
+        .select("amazon_customization_json, source_json")
+        .eq("id", orderItemId)
+        .single();
+      expect(storedError).toBeNull();
+      expect(stored.amazon_customization_json).toEqual(AMAZON_CUSTOMIZATION_FIXTURE);
+      expect(stored.source_json).not.toHaveProperty("amazonCustomizationJson");
+      expect(stored.source_json).not.toHaveProperty("amazon_customization_json");
+
+      const batch = await loadProductionBatch({
+        batchId: PRIMARY_BATCH_ID,
+        workspaceId: PRIMARY_WORKSPACE_ID,
+      });
+      expect(batch.orderItems).toContainEqual(expect.objectContaining({
+        id: orderItemId,
+        text: "Alicia\nRN",
+        source: expect.objectContaining({
+          customerFontSelections: [
+            { lineIndex: 0, name: "Skywalk" },
+            { lineIndex: 1, name: "Somekind" },
+          ],
+        }),
+        settings: expect.objectContaining({
+          lines: [
+            expect.objectContaining({ fontId: "skywalk" }),
+            expect.objectContaining({ fontId: "somekind" }),
+          ],
+        }),
+      }));
+      expect(JSON.stringify(batch)).not.toContain("amazon_customization_json");
+    } finally {
+      if (previousApiKey == null) delete process.env.SHIPSTATION_API_KEY;
+      else process.env.SHIPSTATION_API_KEY = previousApiKey;
+      if (previousStoreId == null) delete process.env.SHIPSTATION_AMAZON_STORE_ID;
+      else process.env.SHIPSTATION_AMAZON_STORE_ID = previousStoreId;
+    }
   });
 
   it("fills a missing Amazon listing identity on re-import without changing the saved design", async () => {
