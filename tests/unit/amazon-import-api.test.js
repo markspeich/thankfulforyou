@@ -58,6 +58,61 @@ afterEach(() => {
 });
 
 describe("Amazon import API", () => {
+  it("creates one authenticated correlation and passes it through service enrichment without changing NDJSON", async () => {
+    // Break caught: a request creates split correlations, omits workspace scope, or exposes diagnostics publicly.
+    const diagnostics = { info: vi.fn(), error: vi.fn() };
+    const diagnosticsFactory = vi.fn(() => diagnostics);
+    const randomUUID = vi.fn(() => "run-generated-123");
+    const enrichItem = vi.fn((item) => item);
+    const itemEnricherFactory = vi.fn(() => enrichItem);
+    const serviceFactory = vi.fn(({ diagnostics: serviceDiagnostics, enrichItem: serviceEnricher }) => ({
+      prepare: async ({ onProgress }) => ({
+        run: async () => {
+          expect(serviceDiagnostics).toBe(diagnostics);
+          expect(serviceEnricher).toBe(enrichItem);
+          await onProgress({ type: "progress", stage: "processing_shipments", processed: 1, total: 2 });
+          await onProgress({
+            type: "complete",
+            processedShipments: 1,
+            importedItems: 1,
+            existingItems: 0,
+            alreadyProcessedShipments: 0,
+            customizationNeeded: 0,
+            failed: 0,
+          });
+        },
+        release: vi.fn(),
+      }),
+    }));
+    const res = response();
+
+    await createAmazonImportHandler({
+      resolveAuth: vi.fn().mockResolvedValue({ workspaceId: "workspace-authenticated", userId: "user-1" }),
+      serviceFactory,
+      dependencies: {
+        loadPresetSnapshot: vi.fn().mockResolvedValue({ defaultPresetId: null, presets: [] }),
+        listWorkspaceFonts: vi.fn().mockResolvedValue([]),
+      },
+      diagnosticsFactory,
+      itemEnricherFactory,
+      randomUUID,
+    })({ method: "POST" }, res);
+
+    expect(randomUUID).toHaveBeenCalledOnce();
+    expect(diagnosticsFactory).toHaveBeenCalledOnce();
+    expect(diagnosticsFactory).toHaveBeenCalledWith({
+      logger: console,
+      runId: "run-generated-123",
+      workspaceId: "workspace-authenticated",
+    });
+    expect(itemEnricherFactory).toHaveBeenCalledWith(expect.objectContaining({ diagnostics }));
+    expect(serviceFactory).toHaveBeenCalledWith(expect.objectContaining({ diagnostics, enrichItem }));
+    expect(res.chunks).toEqual([
+      '{"type":"progress","stage":"processing_shipments","processed":1,"total":2}\n',
+      '{"type":"complete","processedShipments":1,"importedItems":1,"existingItems":0,"alreadyProcessedShipments":0,"customizationNeeded":0,"failed":0}\n',
+    ]);
+  });
+
   it("loads workspace preset and font context for server item enrichment", async () => {
     // Break caught: the API imports Amazon items without workspace-specific preset/font data.
     const loadPresetSnapshot = vi.fn().mockResolvedValue({
@@ -245,7 +300,7 @@ describe("Amazon import API", () => {
       requestId: null,
       streaming: true,
     });
-    expect(consoleError).toHaveBeenCalledOnce();
+    expect(consoleError.mock.calls.filter(([message]) => message === "Amazon import API error")).toHaveLength(1);
     expect(JSON.stringify(consoleError.mock.calls)).not.toContain("release API key secret");
     expect(releaseAmazonImportLock).toHaveBeenCalledTimes(2);
   });
@@ -294,7 +349,7 @@ describe("Amazon import API", () => {
       requestId: null,
       streaming: true,
     });
-    expect(consoleError).toHaveBeenCalledOnce();
+    expect(consoleError.mock.calls.filter(([message]) => message === "Amazon import API error")).toHaveLength(1);
     expect(releaseAmazonImportLock).toHaveBeenCalledOnce();
   });
 

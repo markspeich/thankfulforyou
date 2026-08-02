@@ -47,17 +47,19 @@ function notifyEnriched(onEnriched, summary) {
   }
 }
 
-export function createAmazonItemEnricher({ presetSnapshot, fontOptions = [], onEnriched } = {}) {
-  return (item) => {
+export function createAmazonItemEnricher({ presetSnapshot, fontOptions = [], onEnriched, diagnostics } = {}) {
+  const enrich = (item, { onEnriched: onCallEnriched } = {}) => {
     const preset = selectedPreset(presetSnapshot, item?.source?.listingId);
     const selections = item?.source?.customerFontSelections;
     if (!preset) {
       const fontSummary = summarizeCustomerFontResolution([], selections, []);
-      notifyEnriched(onEnriched, {
+      const summary = {
         presetId: null,
         designLineCount: 0,
         ...fontSummary,
-      });
+      };
+      notifyEnriched(onEnriched, summary);
+      notifyEnriched(onCallEnriched, summary);
       return { ...item };
     }
     const lineCount = String(item?.text ?? "").split("\n").length;
@@ -68,11 +70,13 @@ export function createAmazonItemEnricher({ presetSnapshot, fontOptions = [], onE
       fontOptions,
     );
     const fontSummary = summarizeCustomerFontResolution(presetLineSettings, selections, fontOptions);
-    notifyEnriched(onEnriched, {
+    const summary = {
       presetId: preset.id,
       designLineCount: lines.length,
       ...fontSummary,
-    });
+    };
+    notifyEnriched(onEnriched, summary);
+    notifyEnriched(onCallEnriched, summary);
     return {
       ...item,
       presetId: preset.id,
@@ -84,4 +88,7 @@ export function createAmazonItemEnricher({ presetSnapshot, fontOptions = [], onE
       },
     };
   };
+  enrich.supportsPerCallEnrichmentSummary = true;
+  enrich.diagnostics = diagnostics;
+  return enrich;
 }

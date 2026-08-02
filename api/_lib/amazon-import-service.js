@@ -1,6 +1,10 @@
 import { randomUUID as uuid } from "node:crypto";
-import { buildAmazonNoteBlock } from "./amazon-customization-normalizer.js";
+import {
+  buildAmazonNoteBlock,
+  summarizeAmazonCustomization,
+} from "./amazon-customization-normalizer.js";
 import { readShipStationConfig } from "./shipstation-client.js";
+import { safeAmazonImportError } from "./amazon-import-diagnostics.js";
 
 const PROCESSED_TAG = "Amazon Customization Imported";
 const CUSTOMIZED_URL_OPTION = "CustomizedURL";
@@ -65,6 +69,32 @@ function customizationUrl(item) {
   return typeof option?.value === "string" ? option.value.trim() : "";
 }
 
+function emitDiagnostic(diagnostics, level, event, context) {
+  try {
+    Promise.resolve(diagnostics?.[level]?.(event, context)).catch(() => {});
+  } catch {
+    // Diagnostics must not affect imports.
+  }
+}
+
+function shipmentDiagnosticContext(shipment) {
+  return {
+    shipmentId: shipment?.shipment_id,
+    orderNumber: shipment?.amazon_order_id
+      ?? shipment?.shipment_number
+      ?? shipment?.external_shipment_id
+      ?? shipment?.external_order_id
+      ?? shipment?.order_number,
+  };
+}
+
+function itemDiagnosticContext(shipment, item) {
+  return {
+    ...shipmentDiagnosticContext(shipment),
+    orderItemId: item?.external_order_item_id,
+  };
+}
+
 export function createAmazonImportService({
   store,
   createShipStationClient,
@@ -72,6 +102,7 @@ export function createAmazonImportService({
   normalizeItem,
   enrichItem = (item) => item,
   appendNoteBlocks,
+  diagnostics,
   clock = () => new Date(),
   randomUUID = uuid,
   setIntervalFn = (callback, milliseconds) => setInterval(callback, milliseconds),
@@ -257,7 +288,10 @@ export function createAmazonImportService({
       runState = "running";
       startHeartbeat();
       let primaryError = null;
+      let currentStage = null;
+      let currentFailureContext = {};
       try {
+        emitDiagnostic(diagnostics, "info", "run.started");
         await awaitActive(() => onProgress({
           type: "progress",
           stage: "fetching_shipments",
@@ -275,6 +309,9 @@ export function createAmazonImportService({
           if (next.done) break;
           shipments.push(next.value);
         }
+        emitDiagnostic(diagnostics, "info", "shipments.fetched", {
+          shipmentCount: shipments.length,
+        });
         await awaitActive(() => onProgress({
           type: "progress",
           stage: "processing_shipments",
@@ -291,24 +328,70 @@ export function createAmazonImportService({
 
         for (let index = 0; index < shipments.length; index += 1) {
           const shipment = shipments[index];
+          const shipmentContext = shipmentDiagnosticContext(shipment);
           await ensureActive();
+          emitDiagnostic(diagnostics, "info", "shipment.started", shipmentContext);
           if (isProcessed(shipment)) {
             alreadyProcessedShipments += 1;
+            emitDiagnostic(diagnostics, "info", "shipment.skipped", shipmentContext);
           } else {
             try {
               const normalizedItems = [];
+              const itemRecords = [];
               const noteBlocks = [];
               for (const item of shipment.items) {
+                currentStage = "item_start";
+                currentFailureContext = itemDiagnosticContext(shipment, item);
                 await ensureActive();
                 const url = customizationUrl(item);
+                const itemContext = currentFailureContext;
+                emitDiagnostic(diagnostics, "info", "item.started", {
+                  ...itemContext,
+                  customizationUrlPresent: Boolean(url),
+                });
                 let customization = {};
                 if (url) {
+                  currentStage = "customization_fetch";
                   customization = await awaitActive(
                     () => fetchCustomizationJson({ url, signal }),
                   );
+                  emitDiagnostic(diagnostics, "info", "item.customization_fetched", {
+                    ...itemContext,
+                    summary: summarizeAmazonCustomization(customization),
+                  });
                 }
-                const normalized = enrichItem(normalizeItem({ shipment, item, customization }));
-                normalizedItems.push(normalized);
+                currentStage = "normalization";
+                const normalized = normalizeItem({ shipment, item, customization });
+                emitDiagnostic(diagnostics, "info", "item.normalized", {
+                  ...itemContext,
+                  textLineCount: normalized?.text ? String(normalized.text).split("\n").length : 0,
+                  personalizationResponseCount: Array.isArray(normalized?.source?.personalizationResponses)
+                    ? normalized.source.personalizationResponses.length
+                    : 0,
+                  fontSelectionCount: Array.isArray(normalized?.source?.customerFontSelections)
+                    ? normalized.source.customerFontSelections.length
+                    : 0,
+                  customizationNeeded: Boolean(normalized?.source?.customizationNeeded),
+                });
+                let enrichmentSummary;
+                currentStage = "enrichment";
+                const enriched = enrichItem.supportsPerCallEnrichmentSummary
+                  ? enrichItem(normalized, {
+                    onEnriched(summary) { enrichmentSummary = summary; },
+                  })
+                  : enrichItem(normalized);
+                emitDiagnostic(diagnostics, "info", "item.enriched", {
+                  ...itemContext,
+                  presetId: enrichmentSummary?.presetId ?? enriched?.presetId,
+                  designLineCount: enrichmentSummary?.designLineCount
+                    ?? (Array.isArray(enriched?.settings?.lines) ? enriched.settings.lines.length : 0),
+                  selectionCount: enrichmentSummary?.selectionCount ?? 0,
+                  recognizedCount: enrichmentSummary?.recognizedCount ?? 0,
+                  unknownCount: enrichmentSummary?.unknownCount ?? 0,
+                  effectiveFontIds: enrichmentSummary?.effectiveFontIds ?? [],
+                });
+                normalizedItems.push(enriched);
+                itemRecords.push({ item: enriched, context: itemContext });
                 if (url) {
                   noteBlocks.push({
                     itemId: item.external_order_item_id,
@@ -322,6 +405,7 @@ export function createAmazonImportService({
               }
 
               const existingNotes = shipment.notes_to_buyer ?? "";
+              currentStage = "notes_update";
               const noteResult = appendNoteBlocks({
                 existingNotes,
                 blocks: noteBlocks,
@@ -337,6 +421,7 @@ export function createAmazonImportService({
                 }));
               }
 
+              currentStage = "persistence";
               const persistence = await awaitActive(
                 () => store.importAmazonOrderItemsTransactional({
                   workspaceId,
@@ -346,22 +431,51 @@ export function createAmazonImportService({
               );
               importedItems += persistence.importedOrderItemIds.length;
               existingItems += persistence.existingOrderItemIds.length;
+              const importedIds = new Set(persistence.importedOrderItemIds);
+              const existingIds = new Set(persistence.existingOrderItemIds);
+              for (const record of itemRecords) {
+                const persistenceOutcome = importedIds.has(record.item?.id)
+                  ? "imported"
+                  : existingIds.has(record.item?.id) ? "existing" : null;
+                if (persistenceOutcome) {
+                  emitDiagnostic(diagnostics, "info", "item.persisted", {
+                    ...record.context,
+                    persistenceOutcome,
+                  });
+                }
+              }
               customizationNeeded += normalizedItems.filter(
                 (item) => item?.source?.customizationNeeded,
               ).length;
 
+              currentStage = "tag_update";
               await awaitActive(() => client.addShipmentTag({
                 shipmentId: shipment.shipment_id,
                 tagName: PROCESSED_TAG,
                 signal,
               }));
               processedShipments += 1;
+              emitDiagnostic(diagnostics, "info", "shipment.completed", {
+                ...shipmentContext,
+                importedItems: persistence.importedOrderItemIds.length,
+                existingItems: persistence.existingOrderItemIds.length,
+                notesUpdated: noteResult.notes !== existingNotes,
+                processedTagUpdated: true,
+              });
             } catch (error) {
               if (isGlobalFailure(error, signal)) throw error;
+              emitDiagnostic(diagnostics, "error", "shipment.failed", {
+                ...shipmentContext,
+                ...currentFailureContext,
+                stage: currentStage,
+                ...safeAmazonImportError(error),
+              });
               failed += 1;
             }
           }
 
+          currentStage = null;
+          currentFailureContext = {};
           await awaitActive(() => onProgress({
             type: "progress",
             stage: "processing_shipments",
@@ -380,10 +494,16 @@ export function createAmazonImportService({
           customizationNeeded,
           failed,
         };
+        emitDiagnostic(diagnostics, "info", "run.completed", result);
         await awaitActive(() => onProgress(result));
         return result;
       } catch (error) {
         primaryError = error;
+        emitDiagnostic(diagnostics, "error", "run.failed", {
+          ...currentFailureContext,
+          stage: currentStage,
+          ...safeAmazonImportError(error),
+        });
         throw error;
       } finally {
         stopHeartbeat();
@@ -394,6 +514,9 @@ export function createAmazonImportService({
           if (!primaryError) {
             primaryReleaseError = releaseError;
             hasPrimaryReleaseError = true;
+            emitDiagnostic(diagnostics, "error", "run.failed", {
+              ...safeAmazonImportError(releaseError),
+            });
             throw releaseError;
           }
         }

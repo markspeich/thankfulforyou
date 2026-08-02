@@ -8,6 +8,15 @@ const SAFE_EVENT = /^[a-z][a-z0-9_.-]{0,79}$/;
 const SAFE_ERROR_NAME = /^[A-Za-z][A-Za-z0-9_]{0,79}$/;
 const SAFE_ERROR_CODE = /^[a-z][a-z0-9_.-]{0,79}$/;
 const SAFE_REQUEST_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+const SAFE_STAGES = new Set([
+  "item_start",
+  "customization_fetch",
+  "normalization",
+  "enrichment",
+  "notes_update",
+  "persistence",
+  "tag_update",
+]);
 const SAFE_REJECTION_REASONS = new Set([
   "internal",
   "url",
@@ -25,6 +34,8 @@ const SAFE_PERSISTENCE_OUTCOMES = new Set([
   "failed",
   "persisted",
   "not_persisted",
+  "imported",
+  "existing",
 ]);
 const SUMMARY_COUNT_KEYS = [
   "surfaceCount",
@@ -99,19 +110,59 @@ export function safeAmazonImportError(error) {
 function safeContext(context) {
   const output = {};
   if (!context || typeof context !== "object" || Array.isArray(context)) return output;
-  for (const key of ["shipmentId", "orderItemId", "presetId"]) {
+  for (const key of ["shipmentId", "orderNumber", "orderItemId", "presetId"]) {
     const value = safeIdentifier(context[key]);
     if (value) output[key] = value;
   }
   const fontIds = safeStringArray(context.fontIds);
   if (fontIds) output.fontIds = fontIds;
+  const effectiveFontIds = safeStringArray(context.effectiveFontIds);
+  if (effectiveFontIds) output.effectiveFontIds = effectiveFontIds;
+  for (const key of [
+    "shipmentCount",
+    "textLineCount",
+    "personalizationResponseCount",
+    "fontSelectionCount",
+    "designLineCount",
+    "selectionCount",
+    "recognizedCount",
+    "unknownCount",
+    "processedShipments",
+    "importedItems",
+    "existingItems",
+    "alreadyProcessedShipments",
+    "failed",
+  ]) {
+    const count = safeCount(context[key]);
+    if (count != null) output[key] = count;
+  }
+  for (const key of ["customizationUrlPresent", "notesUpdated", "processedTagUpdated"]) {
+    if (typeof context[key] === "boolean") output[key] = context[key];
+  }
+  if (typeof context.customizationNeeded === "boolean") {
+    output.customizationNeeded = context.customizationNeeded;
+  } else {
+    const customizationNeeded = safeCount(context.customizationNeeded);
+    if (customizationNeeded != null) output.customizationNeeded = customizationNeeded;
+  }
   const persistenceOutcome = safeString(context.persistenceOutcome, 40);
   if (persistenceOutcome && SAFE_PERSISTENCE_OUTCOMES.has(persistenceOutcome)) {
     output.persistenceOutcome = persistenceOutcome;
   }
+  const stage = safeString(context.stage, 40);
+  if (stage && SAFE_STAGES.has(stage)) output.stage = stage;
   const summary = safeSummary(context.summary);
   if (summary) output.summary = summary;
   if (Object.hasOwn(context, "error")) Object.assign(output, safeAmazonImportError(context.error));
+  if (["errorName", "errorCode", "statusCode", "retryable", "requestId"].some((key) => Object.hasOwn(context, key))) {
+    Object.assign(output, safeAmazonImportError({
+      name: context.errorName,
+      code: context.errorCode,
+      statusCode: context.statusCode,
+      retryable: context.retryable,
+      requestId: context.requestId,
+    }));
+  }
   return output;
 }
 

@@ -1,4 +1,5 @@
 import { waitUntil as vercelWaitUntil } from "@vercel/functions";
+import { randomUUID as uuid } from "node:crypto";
 import { resolveProductionBatchAuth } from "./_lib/production-batch-auth.js";
 import * as amazonImportStore from "./_lib/amazon-import-store.js";
 import { createShipStationClient, ShipStationError } from "./_lib/shipstation-client.js";
@@ -9,6 +10,7 @@ import { isResponseWritable, writeNdjson } from "./_lib/ndjson-writer.js";
 import { loadPresetSnapshot } from "./_lib/preset-store.js";
 import { listWorkspaceFonts } from "./_lib/font-store.js";
 import { createAmazonItemEnricher } from "./_lib/amazon-import-enrichment.js";
+import { createAmazonImportDiagnostics } from "./_lib/amazon-import-diagnostics.js";
 
 const FALLBACK_ERROR = "Unable to import Amazon orders.";
 const SAFE_AMAZON_ERROR_MESSAGES = Object.freeze({
@@ -126,6 +128,9 @@ export function createAmazonImportHandler({
   serviceFactory = createAmazonImportService,
   dependencies = {},
   waitUntil = vercelWaitUntil,
+  diagnosticsFactory = createAmazonImportDiagnostics,
+  itemEnricherFactory = createAmazonItemEnricher,
+  randomUUID = uuid,
 } = {}) {
   return async (req, res) => {
     let prepared;
@@ -167,6 +172,16 @@ export function createAmazonImportHandler({
       signal = requestCancellation.signal;
 
       const auth = await resolveAuth(req);
+      let diagnostics;
+      try {
+        diagnostics = diagnosticsFactory({
+          logger: console,
+          runId: randomUUID(),
+          workspaceId: auth.workspaceId,
+        });
+      } catch {
+        diagnostics = { info() {}, error() {} };
+      }
       const needsWorkspaceContext = serviceFactory === createAmazonImportService
         || dependencies.loadPresetSnapshot
         || dependencies.listWorkspaceFonts;
@@ -176,13 +191,14 @@ export function createAmazonImportHandler({
           (dependencies.loadPresetSnapshot || loadPresetSnapshot)(auth.workspaceId),
           (dependencies.listWorkspaceFonts || listWorkspaceFonts)({ workspaceId: auth.workspaceId }),
         ]);
-        enrichItem = createAmazonItemEnricher({
+        enrichItem = itemEnricherFactory({
           presetSnapshot,
           fontOptions: (fonts || []).map((font) => ({
             id: font?.id,
             displayName: font?.displayName ?? font?.display_name,
             label: font?.label,
           })),
+          diagnostics,
         });
       }
       const service = serviceFactory({
@@ -191,6 +207,7 @@ export function createAmazonImportHandler({
         fetchCustomizationJson: dependencies.fetchCustomizationJson || fetchAmazonCustomizationJson,
         normalizeItem: dependencies.normalizeItem || normalizeShipStationItem,
         appendNoteBlocks: dependencies.appendNoteBlocks || appendAmazonNoteBlocks,
+        diagnostics,
         ...(enrichItem ? { enrichItem } : {}),
       });
       stage = "prepare";
