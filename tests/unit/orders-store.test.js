@@ -260,6 +260,63 @@ afterEach(() => {
 });
 
 describe("orders store", () => {
+  it("lists compact order summaries without lines, cached builds, previous builds, or export geometry", async () => {
+    resetDb({
+      order_items: [{
+        id: "item-1", workspace_id: "workspace-1", status: "open", order_number: "1001",
+        buyer_name: "Ada", listing_id: "listing-1", transaction_id: "txn-1", imported_color: "Pink",
+        quantity: 1, source_json: { listingTitle: "Badge Reel" },
+      }],
+      designs: [{
+        id: "design-1", workspace_id: "workspace-1", order_item_id: "item-1", design_text: "Ada\nRN",
+        production_status: "export_ready", cached_build_json: { geometry: "large" },
+        previous_completed_build_json: { geometry: "also-large" }, analysis_badge_json: { state: "ok" },
+      }],
+      design_lines: [{ design_id: "design-1", line_index: 0, text: "Ada", font_id: "skywalk" }],
+    });
+    const { listWorkspaceOrderSummaries } = await import("../../api/_lib/orders-store.js");
+
+    const result = await listWorkspaceOrderSummaries({ workspaceId: "workspace-1" });
+
+    expect(result.orders[0].items[0]).toMatchObject({
+      id: "item-1",
+      designText: "Ada\nRN",
+      designProductionStatus: "export_ready",
+    });
+    expect(result.orders[0].items[0]).not.toHaveProperty("design");
+    expect(JSON.stringify(result)).not.toContain("geometry");
+    expect(supabaseMock.calls.some((call) => call.table === "design_lines" && call.operation === "select")).toBe(false);
+  });
+
+  it("loads one complete order detail including editor lines and saved build data", async () => {
+    resetDb({
+      order_items: [{ id: "item-1", workspace_id: "workspace-1", status: "open", order_number: "1001", quantity: 1, source_json: {} }],
+      designs: [{
+        id: "design-1", workspace_id: "workspace-1", order_item_id: "item-1", design_text: "Ada",
+        cached_build_json: { geometry: "saved" }, previous_completed_build_json: { geometry: "previous" },
+      }],
+      design_lines: [{ design_id: "design-1", line_index: 0, text: "Ada", font_id: "skywalk" }],
+    });
+    const { getWorkspaceOrderDetail } = await import("../../api/_lib/orders-store.js");
+
+    const result = await getWorkspaceOrderDetail({ workspaceId: "workspace-1", orderId: "order:1001" });
+
+    expect(result.order.items[0].design).toMatchObject({
+      text: "Ada",
+      cachedBuild: { geometry: "saved" },
+      previousCompletedBuild: { geometry: "previous" },
+      lines: [{ text: "Ada", fontId: "skywalk" }],
+    });
+  });
+
+  it("returns a safe empty detail result for missing and malformed order ids", async () => {
+    resetDb({ order_items: [{ id: "item-1", workspace_id: "workspace-1", status: "open", order_number: "1001", quantity: 1, source_json: {} }] });
+    const { getWorkspaceOrderDetail } = await import("../../api/_lib/orders-store.js");
+
+    await expect(getWorkspaceOrderDetail({ workspaceId: "workspace-1", orderId: "order:missing" })).resolves.toEqual({ order: null });
+    await expect(getWorkspaceOrderDetail({ workspaceId: "workspace-1", orderId: "invalid" })).resolves.toEqual({ order: null });
+  });
+
   it("exposes generic import payload builders without persistence-only IDs", async () => {
     const {
       buildImportedDesignLineRows,

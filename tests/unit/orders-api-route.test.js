@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const addOrderGroupsToProductionBatchMock = vi.fn();
 const addOrderItemsToProductionBatchMock = vi.fn();
 const importWorkspaceOrderItemsMock = vi.fn();
+const getWorkspaceOrderDetailMock = vi.fn();
+const listWorkspaceOrderSummariesMock = vi.fn();
 const listWorkspaceOrdersMock = vi.fn();
 const updateOrderGroupStatusMock = vi.fn();
 const updateOrderGroupsStatusMock = vi.fn();
@@ -13,6 +15,8 @@ vi.mock("../../api/_lib/orders-store.js", () => ({
   addOrderGroupsToProductionBatch: addOrderGroupsToProductionBatchMock,
   addOrderItemsToProductionBatch: addOrderItemsToProductionBatchMock,
   importWorkspaceOrderItems: importWorkspaceOrderItemsMock,
+  getWorkspaceOrderDetail: getWorkspaceOrderDetailMock,
+  listWorkspaceOrderSummaries: listWorkspaceOrderSummariesMock,
   listWorkspaceOrders: listWorkspaceOrdersMock,
   updateOrderGroupStatus: updateOrderGroupStatusMock,
   updateOrderGroupsStatus: updateOrderGroupsStatusMock,
@@ -47,6 +51,8 @@ beforeEach(() => {
   addOrderGroupsToProductionBatchMock.mockReset();
   addOrderItemsToProductionBatchMock.mockReset();
   importWorkspaceOrderItemsMock.mockReset();
+  getWorkspaceOrderDetailMock.mockReset();
+  listWorkspaceOrderSummariesMock.mockReset();
   listWorkspaceOrdersMock.mockReset();
   updateOrderGroupStatusMock.mockReset();
   updateOrderGroupsStatusMock.mockReset();
@@ -59,6 +65,65 @@ afterEach(() => {
 });
 
 describe("orders api route", () => {
+  it("returns the additive compact list contract without changing the legacy GET contract", async () => {
+    resolveProductionBatchAuthMock.mockResolvedValue({ userId: "user-1", workspaceId: "workspace-1" });
+    listWorkspaceOrderSummariesMock.mockResolvedValue({
+      orders: [{ id: "order:1001", items: [{ id: "item-1", designText: "Ada\nRN" }] }],
+    });
+    const { default: handler } = await import("../../api/orders.js");
+    const response = createResponseRecorder();
+
+    await handler({
+      method: "GET",
+      headers: { authorization: "Bearer token-1" },
+      query: { view: "compact", batchId: "batch-1", status: "all" },
+    }, response);
+
+    expect(listWorkspaceOrderSummariesMock).toHaveBeenCalledWith({
+      workspaceId: "workspace-1",
+      activeBatchId: "batch-1",
+      statusFilter: "all",
+    });
+    expect(listWorkspaceOrdersMock).not.toHaveBeenCalled();
+    expect(response.statusCode).toBe(200);
+    expect(response.body.orders[0].items[0]).toEqual({ id: "item-1", designText: "Ada\nRN" });
+  });
+
+  it("returns one complete order through the additive detail contract", async () => {
+    resolveProductionBatchAuthMock.mockResolvedValue({ userId: "user-1", workspaceId: "workspace-1" });
+    getWorkspaceOrderDetailMock.mockResolvedValue({
+      order: { id: "order:1001", items: [{ id: "item-1", design: { lines: [{ text: "Ada" }] } }] },
+    });
+    const { default: handler } = await import("../../api/orders.js");
+    const response = createResponseRecorder();
+
+    await handler({
+      method: "GET",
+      headers: { authorization: "Bearer token-1" },
+      query: { view: "detail", orderId: " order:1001 ", batchId: "batch-1" },
+    }, response);
+
+    expect(getWorkspaceOrderDetailMock).toHaveBeenCalledWith({
+      workspaceId: "workspace-1",
+      activeBatchId: "batch-1",
+      orderId: "order:1001",
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.body.order.items[0].design.lines).toEqual([{ text: "Ada" }]);
+  });
+
+  it("returns 404 when the requested detail order does not exist", async () => {
+    resolveProductionBatchAuthMock.mockResolvedValue({ userId: "user-1", workspaceId: "workspace-1" });
+    getWorkspaceOrderDetailMock.mockResolvedValue({ order: null });
+    const { default: handler } = await import("../../api/orders.js");
+    const response = createResponseRecorder();
+
+    await handler({ method: "GET", headers: {}, query: { view: "detail", orderId: "item:missing" } }, response);
+
+    expect(response.statusCode).toBe(404);
+    expect(response.body).toEqual({ error: "Order not found." });
+  });
+
   it("returns workspace orders for an authenticated GET request", async () => {
     resolveProductionBatchAuthMock.mockResolvedValue({
       userId: "user-1",
