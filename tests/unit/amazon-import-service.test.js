@@ -9,6 +9,7 @@ import {
 } from "../../api/_lib/amazon-import-service.js";
 import { createAmazonImportDiagnostics } from "../../api/_lib/amazon-import-diagnostics.js";
 import { createAmazonItemEnricher } from "../../api/_lib/amazon-import-enrichment.js";
+import { ShipStationError } from "../../api/_lib/shipstation-client.js";
 
 const PROCESSED_TAG = "Amazon Customization Imported";
 const STARTED_AT = new Date("2026-07-25T15:00:00.000Z");
@@ -34,6 +35,14 @@ async function flushUntil(predicate, iterations = 100) {
     if (predicate()) return;
     await Promise.resolve();
   }
+}
+
+function flattenDiagnosticLogger(logger) {
+  const adapt = (level) => (_message, envelope = {}) => {
+    const { event, details, ...context } = envelope;
+    return logger?.[level]?.(event, { ...context, ...(details || {}) });
+  };
+  return { info: adapt("info"), error: adapt("error") };
 }
 
 function customization(name = "Jane", color = "Teal") {
@@ -199,10 +208,10 @@ describe("Amazon import service", () => {
   it("emits ordered correlated safe events for a successful customized item", async () => {
     // Break caught: production imports complete without correlated boundary diagnostics or expose customer values.
     const diagnosticEvents = [];
-    const logger = {
+    const logger = flattenDiagnosticLogger({
       info: (event, context) => diagnosticEvents.push({ level: "info", event, context }),
       error: (event, context) => diagnosticEvents.push({ level: "error", event, context }),
-    };
+    });
     const diagnostics = createAmazonImportDiagnostics({
       logger,
       runId: "run-123",
@@ -264,7 +273,7 @@ describe("Amazon import service", () => {
     expect(diagnosticEvents).toEqual([
       { level: "info", event: "amazon_import.run.started", context: { runId: "run-123", workspaceId: "workspace-1" } },
       { level: "info", event: "amazon_import.shipments.fetched", context: { runId: "run-123", workspaceId: "workspace-1", shipmentCount: 1 } },
-      { level: "info", event: "amazon_import.shipment.started", context: { runId: "run-123", workspaceId: "workspace-1", shipmentId: "shipment-safe", orderNumber: "order-shipment-safe" } },
+      { level: "info", event: "amazon_import.shipment.started", context: { runId: "run-123", workspaceId: "workspace-1", shipmentId: "shipment-safe", orderNumber: "order-shipment-safe", itemCount: 1, processedTagPresent: false } },
       { level: "info", event: "amazon_import.item.started", context: { runId: "run-123", workspaceId: "workspace-1", shipmentId: "shipment-safe", orderNumber: "order-shipment-safe", orderItemId: "item-safe", customizationUrlPresent: true } },
       { level: "info", event: "amazon_import.item.customization_fetched", context: { runId: "run-123", workspaceId: "workspace-1", shipmentId: "shipment-safe", orderNumber: "order-shipment-safe", orderItemId: "item-safe", summary: { format: "v3", surfaceCount: 1, areaCount: 3, candidateNodeCount: 3, acceptedTextCount: 1, acceptedConfigurationCount: 2, acceptedLabels: ["Name", "Name Font", "Color"], rejectedCounts: {} } } },
       { level: "info", event: "amazon_import.item.normalized", context: { runId: "run-123", workspaceId: "workspace-1", shipmentId: "shipment-safe", orderNumber: "order-shipment-safe", orderItemId: "item-safe", textLineCount: 1, personalizationResponseCount: 3, fontSelectionCount: 1, customizationNeeded: false } },
@@ -310,10 +319,10 @@ describe("Amazon import service", () => {
     // Break caught: a shipment boundary failure is unattributed, leaks an error, or stops later shipments.
     const calls = [];
     const diagnostics = createAmazonImportDiagnostics({
-      logger: {
+      logger: flattenDiagnosticLogger({
         info: (event, context) => calls.push({ level: "info", event, context }),
         error: (event, context) => calls.push({ level: "error", event, context }),
-      },
+      }),
       runId: `run-${stage}`,
       workspaceId: "workspace-1",
     });
@@ -345,13 +354,15 @@ describe("Amazon import service", () => {
         workspaceId: "workspace-1",
         shipmentId: "bad",
         orderNumber: "order-bad",
-        orderItemId: "bad-item",
+        ...(["customization_fetch", "normalization", "enrichment"].includes(stage)
+          ? { orderItemId: "bad-item" }
+          : {}),
         stage,
-        errorName: "StageFailure",
-        errorCode: "stage_failure",
+        errorName: null,
+        errorCode: null,
         statusCode: 422,
         retryable: false,
-        requestId: "request-safe",
+        requestId: null,
       },
     }]);
     expect(result).toMatchObject({ processedShipments: 1, failed: 1 });
@@ -361,23 +372,105 @@ describe("Amazon import service", () => {
     expect(JSON.stringify(calls)).not.toContain("URL-SECRET");
   });
 
+  it("attributes note construction to the failing item and clears item context for shipment-wide work", async () => {
+    // Break caught: note construction is mislabeled as enrichment, or later shipment failures name the final item.
+    const calls = [];
+    const diagnostics = createAmazonImportDiagnostics({
+      logger: flattenDiagnosticLogger({
+        info: (event, context) => calls.push({ level: "info", event, context }),
+        error: (event, context) => calls.push({ level: "error", event, context }),
+      }),
+      runId: "run-notes-build",
+      workspaceId: "workspace-1",
+    });
+    const f = fixture({
+      diagnostics,
+      shipments: [shipment("multi-item", {
+        items: [
+          item("good-item", { customizedUrl: "https://zme-caps.amazon.com/good.zip" }),
+          item("bad-title-item", { name: "", customizedUrl: "https://zme-caps.amazon.com/bad.zip" }),
+        ],
+      })],
+    });
+
+    await expect(run(f)).resolves.toMatchObject({ processedShipments: 0, failed: 1 });
+
+    expect(calls.filter(({ event }) => event === "amazon_import.shipment.failed")).toEqual([{
+      level: "error",
+      event: "amazon_import.shipment.failed",
+      context: {
+        runId: "run-notes-build",
+        workspaceId: "workspace-1",
+        shipmentId: "multi-item",
+        orderNumber: "order-multi-item",
+        orderItemId: "bad-title-item",
+        stage: "notes_build",
+        errorName: "TypeError",
+        errorCode: null,
+        statusCode: null,
+        retryable: null,
+        requestId: null,
+      },
+    }]);
+    expect(f.store.importAmazonOrderItemsTransactional).not.toHaveBeenCalled();
+  });
+
+  it("attributes a fatal shipment-listing failure to shipment fetch", async () => {
+    // Break caught: a global iterator failure has correlation but no safe pipeline stage.
+    const calls = [];
+    const diagnostics = createAmazonImportDiagnostics({
+      logger: flattenDiagnosticLogger({
+        info: (event, context) => calls.push({ level: "info", event, context }),
+        error: (event, context) => calls.push({ level: "error", event, context }),
+      }),
+      runId: "run-shipment-fetch",
+      workspaceId: "workspace-1",
+    });
+    const failure = new ShipStationError("request_failed", {
+      statusCode: 401,
+      retryable: false,
+      requestId: "shipment-fetch-request",
+    });
+    const f = fixture({ diagnostics });
+    f.client.iteratePendingShipments.mockImplementation(async function* () {
+      throw failure;
+    });
+
+    await expect(run(f)).rejects.toBe(failure);
+
+    expect(calls.filter(({ event }) => event === "amazon_import.run.failed")).toEqual([{
+      level: "error",
+      event: "amazon_import.run.failed",
+      context: {
+        runId: "run-shipment-fetch",
+        workspaceId: "workspace-1",
+        stage: "shipment_fetch",
+        errorName: "ShipStationError",
+        errorCode: "request_failed",
+        statusCode: 401,
+        retryable: false,
+        requestId: "shipment-fetch-request",
+      },
+    }]);
+  });
+
   it("emits a safe run failure without changing release behavior", async () => {
     // Break caught: globally fatal shipment errors escape without the current safe stage or disrupt lock release.
     const calls = [];
     const diagnostics = createAmazonImportDiagnostics({
-      logger: {
+      logger: flattenDiagnosticLogger({
         info: (event, context) => calls.push({ level: "info", event, context }),
         error: (event, context) => calls.push({ level: "error", event, context }),
-      },
+      }),
       runId: "run-global",
       workspaceId: "workspace-1",
     });
-    const failure = Object.assign(new Error("AUTHORIZATION SECRET"), {
-      name: "ShipStationError",
-      code: "request_failed",
+    const failure = Object.assign(new ShipStationError("request_failed", {
       statusCode: 401,
       retryable: false,
       requestId: "request-global",
+    }), {
+      message: "AUTHORIZATION SECRET",
       stack: "AUTHORIZATION STACK SECRET",
     });
     const f = fixture({
@@ -398,7 +491,6 @@ describe("Amazon import service", () => {
         workspaceId: "workspace-1",
         shipmentId: "fatal",
         orderNumber: "order-fatal",
-        orderItemId: "fatal-item",
         stage: "notes_update",
         errorName: "ShipStationError",
         errorCode: "request_failed",
@@ -416,10 +508,10 @@ describe("Amazon import service", () => {
     // Break caught: release errors thrown from run's finally bypass the global failure diagnostic.
     const calls = [];
     const diagnostics = createAmazonImportDiagnostics({
-      logger: {
+      logger: flattenDiagnosticLogger({
         info: (event, context) => calls.push({ level: "info", event, context }),
         error: (event, context) => calls.push({ level: "error", event, context }),
-      },
+      }),
       runId: "run-release",
       workspaceId: "workspace-1",
     });
@@ -442,13 +534,15 @@ describe("Amazon import service", () => {
       context: {
         runId: "run-release",
         workspaceId: "workspace-1",
-        errorName: "ReleaseFailure",
-        errorCode: "release_failed",
+        stage: "release",
+        errorName: null,
+        errorCode: null,
         statusCode: 503,
         retryable: true,
-        requestId: "request-release",
+        requestId: null,
       },
     }]);
+    expect(calls.filter(({ event }) => event === "amazon_import.run.completed")).toEqual([]);
     expect(JSON.stringify(calls)).not.toContain("RELEASE CREDENTIAL SECRET");
     expect(JSON.stringify(calls)).not.toContain("RELEASE STACK SECRET");
   });
@@ -457,10 +551,10 @@ describe("Amazon import service", () => {
     // Break caught: terminal transport failure produces contradictory run.completed and run.failed events.
     const calls = [];
     const diagnostics = createAmazonImportDiagnostics({
-      logger: {
+      logger: flattenDiagnosticLogger({
         info: (event, context) => calls.push({ level: "info", event, context }),
         error: (event, context) => calls.push({ level: "error", event, context }),
-      },
+      }),
       runId: "run-terminal-progress",
       workspaceId: "workspace-1",
     });
@@ -487,11 +581,12 @@ describe("Amazon import service", () => {
       context: {
         runId: "run-terminal-progress",
         workspaceId: "workspace-1",
-        errorName: "ProgressFailure",
-        errorCode: "progress_failed",
+        stage: "progress_delivery",
+        errorName: null,
+        errorCode: null,
         statusCode: 503,
         retryable: true,
-        requestId: "request-terminal",
+        requestId: null,
       },
     }]);
     expect(f.store.releaseAmazonImportLock).toHaveBeenCalledOnce();
@@ -514,6 +609,74 @@ describe("Amazon import service", () => {
       await flushMicrotasks();
       expect(f.store.importAmazonOrderItemsTransactional).toHaveBeenCalledOnce();
     }
+  });
+
+  it("keeps normalization and import results unchanged for deeply nested diagnostic documents", async () => {
+    // Break caught: optional empty-document diagnostics overflow before the real normalizer and persistence run.
+    let deeplyNested = {};
+    for (let depth = 0; depth < 20_000; depth += 1) {
+      deeplyNested = { customizationData: deeplyNested };
+    }
+    const f = fixture({
+      fetchResult: deeplyNested,
+      shipments: [shipment("deep-document", {
+        items: [item("deep-item", { customizedUrl: "https://zme-caps.amazon.com/deep.zip" })],
+      })],
+    });
+
+    await expect(run(f)).resolves.toMatchObject({
+      processedShipments: 1,
+      importedItems: 1,
+      customizationNeeded: 1,
+      failed: 0,
+    });
+    expect(f.store.importAmazonOrderItemsTransactional).toHaveBeenCalledOnce();
+  });
+
+  it("falls back safely when structural summary construction throws", async () => {
+    // Break caught: a diagnostics-only summary exception changes an otherwise valid import result.
+    const explosiveDocument = {};
+    Object.defineProperty(explosiveDocument, "version3.0", {
+      get() { throw new Error("diagnostic summary failed"); },
+    });
+    const diagnosticEvents = [];
+    const diagnostics = createAmazonImportDiagnostics({
+      logger: flattenDiagnosticLogger({
+        info: (event, context) => diagnosticEvents.push({ event, context }),
+        error: vi.fn(),
+      }),
+      runId: "run-summary-fallback",
+      workspaceId: "workspace-1",
+    });
+    const f = fixture({
+      diagnostics,
+      fetchResult: explosiveDocument,
+      normalizeItem: ({ item: currentItem }) => ({
+        id: `amazon-order-item:${currentItem.external_order_item_id}`,
+        text: "Safe normalized text",
+        source: {
+          amazonOrderItemId: currentItem.external_order_item_id,
+          personalizationResponses: [],
+          customizationNeeded: false,
+        },
+      }),
+      shipments: [shipment("summary-fallback", {
+        items: [item("summary-item", { customizedUrl: "https://zme-caps.amazon.com/summary.zip" })],
+      })],
+    });
+
+    await expect(run(f)).resolves.toMatchObject({ processedShipments: 1, importedItems: 1, failed: 0 });
+    const summaryEvent = diagnosticEvents.find(({ event }) => event === "amazon_import.item.customization_fetched");
+    expect(summaryEvent.context.summary).toEqual({
+      format: "unknown",
+      surfaceCount: 0,
+      areaCount: 0,
+      candidateNodeCount: 0,
+      acceptedTextCount: 0,
+      acceptedConfigurationCount: 0,
+      acceptedLabels: [],
+      rejectedCounts: {},
+    });
   });
 
   it("builds listing preset lines before overlaying recognized customer fonts", () => {
@@ -615,8 +778,8 @@ describe("Amazon import service", () => {
     expect(enriched.source).toBe(input.source);
   });
 
-  it("reports an empty safe summary when no preset is available", () => {
-    // Break caught: no-preset imports omit diagnostics or report font resolutions that were not applied.
+  it("reports persistence-compatible line and font diagnostics when no preset is available", () => {
+    // Break caught: no-preset diagnostics claim no lines exist and ignore resolvable workspace font selections.
     const onEnriched = vi.fn();
     const enrich = createAmazonItemEnricher({
       presetSnapshot: { presets: [] },
@@ -625,20 +788,27 @@ describe("Amazon import service", () => {
     });
 
     expect(enrich({
-      text: "Maria",
-      source: { customerFontSelections: [{ lineIndex: 0, name: "Skywalk" }] },
+      text: "Maria\nRN",
+      source: { customerFontSelections: [
+        { lineIndex: 0, name: "Skywalk" },
+        { lineIndex: 1, name: "PRIVATE UNKNOWN FONT" },
+      ] },
     })).toEqual({
-      text: "Maria",
-      source: { customerFontSelections: [{ lineIndex: 0, name: "Skywalk" }] },
+      text: "Maria\nRN",
+      source: { customerFontSelections: [
+        { lineIndex: 0, name: "Skywalk" },
+        { lineIndex: 1, name: "PRIVATE UNKNOWN FONT" },
+      ] },
     });
     expect(onEnriched).toHaveBeenCalledWith({
       presetId: null,
-      designLineCount: 0,
-      selectionCount: 1,
-      recognizedCount: 0,
+      designLineCount: 2,
+      selectionCount: 2,
+      recognizedCount: 1,
       unknownCount: 1,
-      effectiveFontIds: [],
+      effectiveFontIds: ["candlepin", "candlepin"],
     });
+    expect(JSON.stringify(onEnriched.mock.calls)).not.toContain("PRIVATE UNKNOWN FONT");
   });
 
   it("keeps importing when font-diagnostic callbacks throw or reject", async () => {
@@ -763,10 +933,10 @@ describe("Amazon import service", () => {
   it("skips processed tags represented by objects or validated strings", async () => {
     const diagnosticEvents = [];
     const diagnostics = createAmazonImportDiagnostics({
-      logger: {
+      logger: flattenDiagnosticLogger({
         info: (event, context) => diagnosticEvents.push({ event, context }),
         error: vi.fn(),
-      },
+      }),
       runId: "run-skipped",
       workspaceId: "workspace-1",
     });
@@ -801,6 +971,7 @@ describe("Amazon import service", () => {
           workspaceId: "workspace-1",
           shipmentId: "object-tag",
           orderNumber: "order-object-tag",
+          skipReason: "processed_tag_present",
         },
       },
       {
@@ -810,6 +981,7 @@ describe("Amazon import service", () => {
           workspaceId: "workspace-1",
           shipmentId: "string-tag",
           orderNumber: "order-string-tag",
+          skipReason: "processed_tag_present",
         },
       },
     ]);
@@ -1020,10 +1192,10 @@ describe("Amazon import service", () => {
   it("uses an existing item marker to repair app persistence and tagging without rewriting notes", async () => {
     const diagnosticEvents = [];
     const diagnostics = createAmazonImportDiagnostics({
-      logger: {
+      logger: flattenDiagnosticLogger({
         info: (event, context) => diagnosticEvents.push({ event, context }),
         error: vi.fn(),
-      },
+      }),
       runId: "run-existing",
       workspaceId: "workspace-1",
     });
@@ -1465,7 +1637,17 @@ describe("Amazon import service", () => {
   });
 
   it("makes release-before-run terminal and rejects a second run", async () => {
-    const released = fixture();
+    // Break caught: cancellation releases a prepared lease before run and the correlated terminal failure disappears.
+    const calls = [];
+    const diagnostics = createAmazonImportDiagnostics({
+      logger: flattenDiagnosticLogger({
+        info: (event, context) => calls.push({ level: "info", event, context }),
+        error: (event, context) => calls.push({ level: "error", event, context }),
+      }),
+      runId: "run-released-before-start",
+      workspaceId: "workspace-1",
+    });
+    const released = fixture({ diagnostics });
     const releasedPrepared = await released.service.prepare({
       workspaceId: "workspace-1",
       userId: "user-1",
@@ -1476,6 +1658,20 @@ describe("Amazon import service", () => {
       statusCode: 409,
     });
     expect(released.client.iteratePendingShipments).not.toHaveBeenCalled();
+    expect(calls.filter(({ event }) => event === "amazon_import.run.failed")).toEqual([{
+      level: "error",
+      event: "amazon_import.run.failed",
+      context: {
+        runId: "run-released-before-start",
+        workspaceId: "workspace-1",
+        stage: "preparation",
+        errorName: "AmazonImportError",
+        errorCode: "import_not_active",
+        statusCode: 409,
+        retryable: null,
+        requestId: null,
+      },
+    }]);
 
     const repeated = fixture();
     const repeatedPrepared = await repeated.service.prepare({

@@ -3,6 +3,8 @@ import {
   summarizeCustomerFontResolution,
 } from "../../src/amazon-customer-fonts.js";
 
+const DEFAULT_PERSISTED_FONT_ID = "candlepin";
+
 function matchesRule(match, lineIndex) {
   if (match?.type === "first") return lineIndex === 0;
   if (match?.type === "remaining") return lineIndex > 0;
@@ -52,11 +54,16 @@ export function createAmazonItemEnricher({ presetSnapshot, fontOptions = [], onE
     const preset = selectedPreset(presetSnapshot, item?.source?.listingId);
     const selections = item?.source?.customerFontSelections;
     if (!preset) {
-      const fontSummary = summarizeCustomerFontResolution([], selections, []);
+      const lineCount = String(item?.text ?? "").split(/\r?\n/).length;
+      const persistenceLines = Array.from({ length: Math.max(lineCount, 1) }, () => ({
+        fontId: DEFAULT_PERSISTED_FONT_ID,
+      }));
+      const fontSummary = summarizeCustomerFontResolution(persistenceLines, selections, fontOptions);
       const summary = {
         presetId: null,
-        designLineCount: 0,
+        designLineCount: persistenceLines.length,
         ...fontSummary,
+        effectiveFontIds: persistenceLines.map((line) => line.fontId),
       };
       notifyEnriched(onEnriched, summary);
       notifyEnriched(onCallEnriched, summary);

@@ -3,6 +3,7 @@ import {
   createAmazonImportDiagnostics,
   safeAmazonImportError,
 } from "../../api/_lib/amazon-import-diagnostics.js";
+import { ShipStationError } from "../../api/_lib/shipstation-client.js";
 
 const PRIVATE_CUSTOMIZATION_URL = "https://amazon.example/customization/private-token";
 const PRIVATE_ADDRESS = "123 Private Lane, Exampletown";
@@ -35,23 +36,26 @@ describe("Amazon import diagnostics", () => {
       },
     });
 
-    expect(logger.info).toHaveBeenCalledWith("amazon_import.item_processed", {
+    expect(logger.info).toHaveBeenCalledWith("Amazon import diagnostic", {
+      event: "amazon_import.item_processed",
       runId: "run-123",
       workspaceId: "workspace-456",
       shipmentId: "shipment-1",
       orderItemId: "order-item-2",
-      presetId: "preset-3",
-      fontIds: ["font-1", "font-2", "font-3"],
-      persistenceOutcome: "created",
-      summary: {
-        format: "v3",
-        surfaceCount: 1,
-        areaCount: 3,
-        candidateNodeCount: 3,
-        acceptedTextCount: 1,
-        acceptedConfigurationCount: 1,
-        acceptedLabels: ["Name", "Color"],
-        rejectedCounts: { internal: 1 },
+      details: {
+        presetId: "preset-3",
+        fontIds: ["font-1", "font-2", "font-3"],
+        persistenceOutcome: "created",
+        summary: {
+          format: "v3",
+          surfaceCount: 1,
+          areaCount: 3,
+          candidateNodeCount: 3,
+          acceptedTextCount: 1,
+          acceptedConfigurationCount: 1,
+          acceptedLabels: ["Name", "Color"],
+          rejectedCounts: { internal: 1 },
+        },
       },
     });
   });
@@ -82,30 +86,70 @@ describe("Amazon import diagnostics", () => {
     expect(serialized).not.toContain(PRIVATE_CUSTOMIZATION_URL);
     expect(serialized).not.toContain(PRIVATE_ADDRESS);
     expect(serialized).not.toContain(PRIVATE_CREDENTIAL);
-    expect(logger.info.mock.calls[0][1].fontIds).toHaveLength(40);
-    expect(logger.info.mock.calls[0][1].summary.acceptedLabels).toHaveLength(40);
-    expect(logger.info.mock.calls[0][1].summary.acceptedLabels[0]).toBe("Label with control");
-    expect(logger.info.mock.calls[0][1].summary.acceptedLabels[1]).toHaveLength(80);
-    expect(logger.info.mock.calls[0][1].summary.rejectedCounts).toEqual({ internal: 2 });
+    expect(logger.info.mock.calls[0][0]).toBe("Amazon import diagnostic");
+    expect(logger.info.mock.calls[0][1].event).toBe("amazon_import.item_processed");
+    expect(logger.info.mock.calls[0][1].details.fontIds).toHaveLength(40);
+    expect(logger.info.mock.calls[0][1].details.summary.acceptedLabels).toHaveLength(40);
+    expect(logger.info.mock.calls[0][1].details.summary.acceptedLabels[0]).toBe("Label with control");
+    expect(logger.info.mock.calls[0][1].details.summary.acceptedLabels[1]).toHaveLength(80);
+    expect(logger.info.mock.calls[0][1].details.summary.rejectedCounts).toEqual({ internal: 2 });
   });
 
-  it("returns only allowlisted safe error properties", () => {
-    const error = Object.assign(new Error("PRIVATE CUSTOMER TEXT"), {
-      code: "rate_limited",
+  it("returns only allowlisted safe error properties from recognized provenance", () => {
+    const error = new ShipStationError("rate_limited", {
       statusCode: 429,
       retryable: true,
       requestId: "request-123",
+    });
+    Object.assign(error, {
       stack: "PRIVATE CUSTOMER TEXT",
       authorization: PRIVATE_CREDENTIAL,
     });
 
     expect(safeAmazonImportError(error)).toEqual({
-      errorName: "Error",
+      errorName: "ShipStationError",
       errorCode: "rate_limited",
       statusCode: 429,
       retryable: true,
       requestId: "request-123",
     });
+  });
+
+  it("rejects secret-bearing and forged error identity fields", () => {
+    const secretError = Object.assign(new Error("PRIVATE CUSTOMER TEXT"), {
+      name: "SecretApiKeyError",
+      code: "secret_api_key_code",
+      statusCode: 418,
+      retryable: false,
+      requestId: "request-looking-safe",
+      stack: "PRIVATE CUSTOMER TEXT",
+      authorization: PRIVATE_CREDENTIAL,
+    });
+    const forgedShipStationError = Object.assign(new Error("PRIVATE CUSTOMER TEXT"), {
+      name: "ShipStationError",
+      code: "request_failed",
+      requestId: "forged-request-id",
+    });
+
+    expect(safeAmazonImportError(secretError)).toEqual({
+      errorName: null,
+      errorCode: null,
+      statusCode: 418,
+      retryable: false,
+      requestId: null,
+    });
+    expect(safeAmazonImportError(forgedShipStationError)).toMatchObject({
+      errorName: "ShipStationError",
+      errorCode: "request_failed",
+      requestId: null,
+    });
+    const serialized = JSON.stringify([
+      safeAmazonImportError(secretError),
+      safeAmazonImportError(forgedShipStationError),
+    ]);
+    for (const secret of ["SecretApiKeyError", "secret_api_key_code", "request-looking-safe", "forged-request-id", PRIVATE_CREDENTIAL]) {
+      expect(serialized).not.toContain(secret);
+    }
   });
 
   it("isolates logger failures from the import path", () => {

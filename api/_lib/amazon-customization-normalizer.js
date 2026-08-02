@@ -94,17 +94,6 @@ function v3Candidates(document) {
   });
 }
 
-function extractV3Fields(document) {
-  const freeTextFields = [];
-  const configurationFields = [];
-  for (const candidate of v3Candidates(document)) {
-    if (!candidate.response) continue;
-    if (candidate.kind === "text") freeTextFields.push(candidate.response);
-    if (candidate.kind === "configuration") configurationFields.push(candidate.response);
-  }
-  return { freeTextFields, configurationFields };
-}
-
 function legacyNodes(document) {
   const root = documentRoot(document);
   const containers = [
@@ -143,29 +132,63 @@ function legacyCandidates(document) {
   });
 }
 
-function appendUniqueLegacyField(fields, seenFields, kind, response) {
-  if (!response) return;
-  const key = `${kind}\u0000${response.name}\u0000${response.value}`;
-  if (seenFields.has(key)) return;
-  seenFields.add(key);
-  fields.push(response);
+function deduplicateAcceptedCandidates(candidates) {
+  const seen = new Set();
+  return candidates.filter((candidate) => {
+    if (!candidate.response) return true;
+    const key = `${candidate.kind}\u0000${candidate.response.name}\u0000${candidate.response.value}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
-function extractLegacyFields(document) {
+
+function hasV3SurfaceContainer(document) {
+  const embedded = document?.customizationData;
+  const version = document?.["version3.0"] ?? document?.version3
+    ?? embedded?.["version3.0"] ?? embedded?.version3;
+  return Array.isArray(version?.customizationInfo?.surfaces);
+}
+
+function classifiedCustomization(document) {
+  const surfaces = v3Surfaces(document);
+  const areas = v3Areas(document);
+  if (areas.length) {
+    return {
+      format: "v3",
+      surfaceCount: surfaces.length,
+      areaCount: areas.length,
+      candidates: v3Candidates(document),
+    };
+  }
+
+  const legacy = deduplicateAcceptedCandidates(legacyCandidates(document));
+  if (legacy.length) {
+    return { format: "legacy", surfaceCount: 0, areaCount: 0, candidates: legacy };
+  }
+  if (hasV3SurfaceContainer(document)) {
+    return { format: "v3", surfaceCount: surfaces.length, areaCount: 0, candidates: [] };
+  }
+  return {
+    format: isEmptyCustomizationDocument(document) ? "empty" : "unknown",
+    surfaceCount: 0,
+    areaCount: 0,
+    candidates: [],
+  };
+}
+
+function fieldsFromCandidates(candidates) {
   const freeTextFields = [];
   const configurationFields = [];
-  const seenFields = new Set();
-  for (const candidate of legacyCandidates(document)) {
-    if (candidate.kind === "text") appendUniqueLegacyField(freeTextFields, seenFields, "text", candidate.response);
-    if (candidate.kind === "configuration") appendUniqueLegacyField(configurationFields, seenFields, "option", candidate.response);
+  for (const candidate of candidates) {
+    if (candidate.kind === "text" && candidate.response) freeTextFields.push(candidate.response);
+    if (candidate.kind === "configuration" && candidate.response) configurationFields.push(candidate.response);
   }
   return { freeTextFields, configurationFields };
 }
 
 export function extractAmazonCustomizationFields(document) {
-  const observed = extractV3Fields(document);
-  return observed.freeTextFields.length || observed.configurationFields.length || v3Areas(document).length
-    ? observed
-    : extractLegacyFields(document);
+  return fieldsFromCandidates(classifiedCustomization(document).candidates);
 }
 
 function summaryLabel(name) {
@@ -190,22 +213,26 @@ function emptySummary(format) {
 }
 
 function isEmptyCustomizationDocument(document) {
-  if (document == null) return true;
-  if (typeof document !== "object" || Array.isArray(document)) return false;
-  const keys = Object.keys(document);
-  return keys.length === 0 || (keys.length === 1 && keys[0] === "customizationData" && isEmptyCustomizationDocument(document.customizationData));
+  const seen = new Set();
+  let current = document;
+  for (let depth = 0; depth < 256; depth += 1) {
+    if (current == null) return true;
+    if (typeof current !== "object" || Array.isArray(current) || seen.has(current)) return false;
+    seen.add(current);
+    const keys = Object.keys(current);
+    if (keys.length === 0) return true;
+    if (keys.length !== 1 || keys[0] !== "customizationData") return false;
+    current = current.customizationData;
+  }
+  return false;
 }
 
 export function summarizeAmazonCustomization(document) {
-  const hasV3Surfaces = v3Surfaces(document).length > 0
-    || Array.isArray((document?.["version3.0"] ?? document?.version3 ?? document?.customizationData?.["version3.0"] ?? document?.customizationData?.version3)?.customizationInfo?.surfaces);
-  const format = hasV3Surfaces ? "v3" : legacyNodes(document).length ? "legacy" : isEmptyCustomizationDocument(document) ? "empty" : "unknown";
-  const candidates = format === "v3" ? v3Candidates(document) : format === "legacy" ? legacyCandidates(document) : [];
-  const summary = emptySummary(format);
-  if (format === "v3") {
-    summary.surfaceCount = v3Surfaces(document).length;
-    summary.areaCount = v3Areas(document).length;
-  }
+  const classified = classifiedCustomization(document);
+  const summary = emptySummary(classified.format);
+  summary.surfaceCount = classified.surfaceCount;
+  summary.areaCount = classified.areaCount;
+  const candidates = classified.candidates;
   summary.candidateNodeCount = candidates.length;
   for (const candidate of candidates) {
     if (candidate.kind === "text" && candidate.response) summary.acceptedTextCount += 1;

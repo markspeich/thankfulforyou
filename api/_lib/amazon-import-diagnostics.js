@@ -1,3 +1,5 @@
+import { ShipStationError } from "./shipstation-client.js";
+
 const MAX_STRING_LENGTH = 128;
 const MAX_LABEL_LENGTH = 80;
 const MAX_ARRAY_LENGTH = 40;
@@ -5,18 +7,61 @@ const MAX_COUNT = 1_000_000;
 const CONTROL_CHARACTERS = /[\u0000-\u001F\u007F-\u009F\u2028\u2029]/g;
 const SAFE_IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const SAFE_EVENT = /^[a-z][a-z0-9_.-]{0,79}$/;
-const SAFE_ERROR_NAME = /^[A-Za-z][A-Za-z0-9_]{0,79}$/;
-const SAFE_ERROR_CODE = /^[a-z][a-z0-9_.-]{0,79}$/;
 const SAFE_REQUEST_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+const SAFE_ERROR_NAMES = new Set([
+  "Error",
+  "TypeError",
+  "RangeError",
+  "AbortError",
+  "AmazonImportError",
+  "AmazonCustomizationArchiveError",
+  "AmazonImportStoreError",
+  "ShipStationError",
+]);
+const SAFE_ERROR_CODES = new Set([
+  "import_in_progress",
+  "import_lock_lost",
+  "import_not_active",
+  "import_already_started",
+  "configuration",
+  "invalid_response",
+  "aborted",
+  "temporary",
+  "rate_limited",
+  "request_failed",
+  "untrusted_customization_url",
+  "invalid_customization_archive",
+  "customization_archive_too_large",
+  "customization_download_failed",
+  "customization_download_aborted",
+  "customization_download_timeout",
+  "amazon_import_store_error",
+  "ABORT_ERR",
+]);
+const SAFE_SHIPSTATION_ERROR_CODES = new Set([
+  "configuration",
+  "invalid_response",
+  "aborted",
+  "temporary",
+  "rate_limited",
+  "request_failed",
+]);
 const SAFE_STAGES = new Set([
+  "preparation",
+  "context_loading",
+  "shipment_fetch",
+  "progress_delivery",
+  "release",
   "item_start",
   "customization_fetch",
   "normalization",
   "enrichment",
+  "notes_build",
   "notes_update",
   "persistence",
   "tag_update",
 ]);
+const SAFE_SKIP_REASONS = new Set(["processed_tag_present"]);
 const SAFE_REJECTION_REASONS = new Set([
   "internal",
   "url",
@@ -92,34 +137,50 @@ function safeSummary(value) {
 }
 
 export function safeAmazonImportError(error) {
-  const errorName = safeString(error?.name, 80);
-  const errorCode = safeString(error?.code, 80);
-  const statusCode = Number.isInteger(error?.statusCode) && error.statusCode >= 100 && error.statusCode <= 599
-    ? error.statusCode
+  const property = (key) => {
+    try { return error?.[key]; } catch { return undefined; }
+  };
+  const errorName = typeof property("name") === "string" ? safeString(property("name"), 80) : null;
+  const errorCode = typeof property("code") === "string" ? safeString(property("code"), 80) : null;
+  const rawStatusCode = property("statusCode");
+  const statusCode = Number.isInteger(rawStatusCode) && rawStatusCode >= 100 && rawStatusCode <= 599
+    ? rawStatusCode
     : null;
-  const requestId = safeString(error?.requestId, 128);
+  const rawRequestId = property("requestId");
+  const requestId = typeof rawRequestId === "string" ? safeString(rawRequestId, 128) : null;
+  let hasShipStationProvenance = false;
+  try {
+    hasShipStationProvenance = error instanceof ShipStationError
+      && SAFE_SHIPSTATION_ERROR_CODES.has(errorCode);
+  } catch {
+    hasShipStationProvenance = false;
+  }
   return {
-    errorName: errorName && SAFE_ERROR_NAME.test(errorName) ? errorName : null,
-    errorCode: errorCode && SAFE_ERROR_CODE.test(errorCode) ? errorCode : null,
+    errorName: errorName && SAFE_ERROR_NAMES.has(errorName) ? errorName : null,
+    errorCode: errorCode && SAFE_ERROR_CODES.has(errorCode) ? errorCode : null,
     statusCode,
-    retryable: typeof error?.retryable === "boolean" ? error.retryable : null,
-    requestId: requestId && SAFE_REQUEST_ID.test(requestId) ? requestId : null,
+    retryable: typeof property("retryable") === "boolean" ? property("retryable") : null,
+    requestId: hasShipStationProvenance && requestId && SAFE_REQUEST_ID.test(requestId) ? requestId : null,
   };
 }
 
 function safeContext(context) {
-  const output = {};
-  if (!context || typeof context !== "object" || Array.isArray(context)) return output;
-  for (const key of ["shipmentId", "orderNumber", "orderItemId", "presetId"]) {
+  const envelope = {};
+  const details = {};
+  if (!context || typeof context !== "object" || Array.isArray(context)) return envelope;
+  for (const key of ["shipmentId", "orderNumber", "orderItemId"]) {
     const value = safeIdentifier(context[key]);
-    if (value) output[key] = value;
+    if (value) envelope[key] = value;
   }
+  const presetId = safeIdentifier(context.presetId);
+  if (presetId) details.presetId = presetId;
   const fontIds = safeStringArray(context.fontIds);
-  if (fontIds) output.fontIds = fontIds;
+  if (fontIds) details.fontIds = fontIds;
   const effectiveFontIds = safeStringArray(context.effectiveFontIds);
-  if (effectiveFontIds) output.effectiveFontIds = effectiveFontIds;
+  if (effectiveFontIds) details.effectiveFontIds = effectiveFontIds;
   for (const key of [
     "shipmentCount",
+    "itemCount",
     "textLineCount",
     "personalizationResponseCount",
     "fontSelectionCount",
@@ -134,28 +195,30 @@ function safeContext(context) {
     "failed",
   ]) {
     const count = safeCount(context[key]);
-    if (count != null) output[key] = count;
+    if (count != null) details[key] = count;
   }
-  for (const key of ["customizationUrlPresent", "notesUpdated", "processedTagUpdated"]) {
-    if (typeof context[key] === "boolean") output[key] = context[key];
+  for (const key of ["customizationUrlPresent", "notesUpdated", "processedTagUpdated", "processedTagPresent"]) {
+    if (typeof context[key] === "boolean") details[key] = context[key];
   }
   if (typeof context.customizationNeeded === "boolean") {
-    output.customizationNeeded = context.customizationNeeded;
+    details.customizationNeeded = context.customizationNeeded;
   } else {
     const customizationNeeded = safeCount(context.customizationNeeded);
-    if (customizationNeeded != null) output.customizationNeeded = customizationNeeded;
+    if (customizationNeeded != null) details.customizationNeeded = customizationNeeded;
   }
   const persistenceOutcome = safeString(context.persistenceOutcome, 40);
   if (persistenceOutcome && SAFE_PERSISTENCE_OUTCOMES.has(persistenceOutcome)) {
-    output.persistenceOutcome = persistenceOutcome;
+    details.persistenceOutcome = persistenceOutcome;
   }
+  const skipReason = safeString(context.skipReason, 40);
+  if (skipReason && SAFE_SKIP_REASONS.has(skipReason)) details.skipReason = skipReason;
   const stage = safeString(context.stage, 40);
-  if (stage && SAFE_STAGES.has(stage)) output.stage = stage;
+  if (stage && SAFE_STAGES.has(stage)) envelope.stage = stage;
   const summary = safeSummary(context.summary);
-  if (summary) output.summary = summary;
-  if (Object.hasOwn(context, "error")) Object.assign(output, safeAmazonImportError(context.error));
+  if (summary) details.summary = summary;
+  if (Object.hasOwn(context, "error")) Object.assign(details, safeAmazonImportError(context.error));
   if (["errorName", "errorCode", "statusCode", "retryable", "requestId"].some((key) => Object.hasOwn(context, key))) {
-    Object.assign(output, safeAmazonImportError({
+    Object.assign(details, safeAmazonImportError({
       name: context.errorName,
       code: context.errorCode,
       statusCode: context.statusCode,
@@ -163,13 +226,14 @@ function safeContext(context) {
       requestId: context.requestId,
     }));
   }
-  return output;
+  if (Object.keys(details).length) envelope.details = details;
+  return envelope;
 }
 
 function emit(logger, level, event, envelope) {
   try {
     const write = typeof logger?.[level] === "function" ? logger[level].bind(logger) : console[level].bind(console);
-    const result = write(`amazon_import.${event}`, envelope);
+    const result = write("Amazon import diagnostic", { event, ...envelope });
     Promise.resolve(result).catch(() => {});
   } catch {}
 }
@@ -183,7 +247,8 @@ export function createAmazonImportDiagnostics({ logger = console, runId, workspa
 
   function log(level, event, context) {
     const safeEvent = safeString(event, 80);
-    emit(logger, level, safeEvent && SAFE_EVENT.test(safeEvent) ? safeEvent : "unknown", {
+    const fullEvent = safeEvent?.startsWith("amazon_import.") ? safeEvent : `amazon_import.${safeEvent ?? "unknown"}`;
+    emit(logger, level, SAFE_EVENT.test(fullEvent) ? fullEvent : "amazon_import.unknown", {
       ...correlation,
       ...safeContext(context),
     });

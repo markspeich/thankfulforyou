@@ -4,7 +4,6 @@ import {
   summarizeAmazonCustomization,
 } from "./amazon-customization-normalizer.js";
 import { readShipStationConfig } from "./shipstation-client.js";
-import { safeAmazonImportError } from "./amazon-import-diagnostics.js";
 
 const PROCESSED_TAG = "Amazon Customization Imported";
 const CUSTOMIZED_URL_OPTION = "CustomizedURL";
@@ -74,6 +73,23 @@ function emitDiagnostic(diagnostics, level, event, context) {
     Promise.resolve(diagnostics?.[level]?.(event, context)).catch(() => {});
   } catch {
     // Diagnostics must not affect imports.
+  }
+}
+
+function safeCustomizationSummary(customization) {
+  try {
+    return summarizeAmazonCustomization(customization);
+  } catch {
+    return {
+      format: "unknown",
+      surfaceCount: 0,
+      areaCount: 0,
+      candidateNodeCount: 0,
+      acceptedTextCount: 0,
+      acceptedConfigurationCount: 0,
+      acceptedLabels: [],
+      rejectedCounts: {},
+    };
   }
 }
 
@@ -283,15 +299,25 @@ export function createAmazonImportService({
 
     const run = async () => {
       if (hasRun) throw alreadyStartedError();
-      if (runState !== "prepared" || releaseState !== "held") throw inactiveError();
+      if (runState !== "prepared" || releaseState !== "held") {
+        const error = inactiveError();
+        emitDiagnostic(diagnostics, "error", "run.failed", {
+          stage: "preparation",
+          error,
+        });
+        throw error;
+      }
       hasRun = true;
       runState = "running";
       startHeartbeat();
       let primaryError = null;
+      let result = null;
       let currentStage = null;
+      let currentShipmentContext = {};
       let currentFailureContext = {};
       try {
         emitDiagnostic(diagnostics, "info", "run.started");
+        currentStage = "progress_delivery";
         await awaitActive(() => onProgress({
           type: "progress",
           stage: "fetching_shipments",
@@ -300,6 +326,7 @@ export function createAmazonImportService({
         }));
 
         const shipments = [];
+        currentStage = "shipment_fetch";
         const shipmentIterator = client.iteratePendingShipments({
           storeId: amazonStoreId,
           signal,
@@ -312,6 +339,7 @@ export function createAmazonImportService({
         emitDiagnostic(diagnostics, "info", "shipments.fetched", {
           shipmentCount: shipments.length,
         });
+        currentStage = "progress_delivery";
         await awaitActive(() => onProgress({
           type: "progress",
           stage: "processing_shipments",
@@ -329,11 +357,22 @@ export function createAmazonImportService({
         for (let index = 0; index < shipments.length; index += 1) {
           const shipment = shipments[index];
           const shipmentContext = shipmentDiagnosticContext(shipment);
+          const processedTagPresent = isProcessed(shipment);
+          currentShipmentContext = shipmentContext;
+          currentStage = null;
+          currentFailureContext = {};
           await ensureActive();
-          emitDiagnostic(diagnostics, "info", "shipment.started", shipmentContext);
-          if (isProcessed(shipment)) {
+          emitDiagnostic(diagnostics, "info", "shipment.started", {
+            ...shipmentContext,
+            itemCount: Array.isArray(shipment?.items) ? shipment.items.length : 0,
+            processedTagPresent,
+          });
+          if (processedTagPresent) {
             alreadyProcessedShipments += 1;
-            emitDiagnostic(diagnostics, "info", "shipment.skipped", shipmentContext);
+            emitDiagnostic(diagnostics, "info", "shipment.skipped", {
+              ...shipmentContext,
+              skipReason: "processed_tag_present",
+            });
           } else {
             try {
               const normalizedItems = [];
@@ -357,7 +396,7 @@ export function createAmazonImportService({
                   );
                   emitDiagnostic(diagnostics, "info", "item.customization_fetched", {
                     ...itemContext,
-                    summary: summarizeAmazonCustomization(customization),
+                    summary: safeCustomizationSummary(customization),
                   });
                 }
                 currentStage = "normalization";
@@ -393,6 +432,7 @@ export function createAmazonImportService({
                 normalizedItems.push(enriched);
                 itemRecords.push({ item: enriched, context: itemContext });
                 if (url) {
+                  currentStage = "notes_build";
                   noteBlocks.push({
                     itemId: item.external_order_item_id,
                     block: buildAmazonNoteBlock({
@@ -404,6 +444,7 @@ export function createAmazonImportService({
                 }
               }
 
+              currentFailureContext = {};
               const existingNotes = shipment.notes_to_buyer ?? "";
               currentStage = "notes_update";
               const noteResult = appendNoteBlocks({
@@ -468,7 +509,7 @@ export function createAmazonImportService({
                 ...shipmentContext,
                 ...currentFailureContext,
                 stage: currentStage,
-                ...safeAmazonImportError(error),
+                error,
               });
               failed += 1;
             }
@@ -476,16 +517,21 @@ export function createAmazonImportService({
 
           currentStage = null;
           currentFailureContext = {};
+          currentStage = "progress_delivery";
           await awaitActive(() => onProgress({
             type: "progress",
             stage: "processing_shipments",
             processed: index + 1,
             total: shipments.length,
           }));
+          currentShipmentContext = {};
         }
 
+        currentStage = "progress_delivery";
+        currentShipmentContext = {};
+        currentFailureContext = {};
         await ensureActive();
-        const result = {
+        result = {
           type: "complete",
           processedShipments,
           importedItems,
@@ -495,14 +541,14 @@ export function createAmazonImportService({
           failed,
         };
         await awaitActive(() => onProgress(result));
-        emitDiagnostic(diagnostics, "info", "run.completed", result);
-        return result;
+        currentStage = null;
       } catch (error) {
         primaryError = error;
         emitDiagnostic(diagnostics, "error", "run.failed", {
+          ...currentShipmentContext,
           ...currentFailureContext,
           stage: currentStage,
-          ...safeAmazonImportError(error),
+          error,
         });
         throw error;
       } finally {
@@ -515,18 +561,22 @@ export function createAmazonImportService({
             primaryReleaseError = releaseError;
             hasPrimaryReleaseError = true;
             emitDiagnostic(diagnostics, "error", "run.failed", {
-              ...safeAmazonImportError(releaseError),
+              stage: "release",
+              error: releaseError,
             });
             throw releaseError;
           }
         }
       }
+      emitDiagnostic(diagnostics, "info", "run.completed", result);
+      return result;
     };
 
     return {
       run,
       release,
       lockToken,
+      reportsRunFailures: true,
       stageForError(error) {
         return hasPrimaryReleaseError && error === primaryReleaseError ? "release" : null;
       },

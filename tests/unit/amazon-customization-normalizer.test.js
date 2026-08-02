@@ -128,6 +128,77 @@ describe("Amazon customization normalizer", () => {
     });
   });
 
+  it("bounds empty-document inspection for deeply nested customization data", () => {
+    // Break caught: optional structural diagnostics overflow the stack before normalization can run.
+    let customization = {};
+    for (let depth = 0; depth < 20_000; depth += 1) {
+      customization = { customizationData: customization };
+    }
+
+    expect(summarizeAmazonCustomization(customization)).toEqual({
+      format: "unknown",
+      surfaceCount: 0,
+      areaCount: 0,
+      candidateNodeCount: 0,
+      acceptedTextCount: 0,
+      acceptedConfigurationCount: 0,
+      acceptedLabels: [],
+      rejectedCounts: {},
+    });
+  });
+
+  it("deduplicates legacy fields in both extraction and structural summaries", () => {
+    // Break caught: diagnostics double-count fields that normalization emits only once.
+    const customization = { customizationData: { nodes: [
+      { type: "text", label: "Name", value: "Morgan" },
+      { type: "text", label: "Name", value: "Morgan" },
+      { type: "option", label: "Color", optionValue: "Teal" },
+      { type: "option", label: "Color", optionValue: "Teal" },
+    ] } };
+
+    expect(extractAmazonCustomizationFields(customization)).toEqual({
+      freeTextFields: [{ name: "Name", value: "Morgan" }],
+      configurationFields: [{ name: "Color", value: "Teal" }],
+    });
+    expect(summarizeAmazonCustomization(customization)).toEqual({
+      format: "legacy",
+      surfaceCount: 0,
+      areaCount: 0,
+      candidateNodeCount: 2,
+      acceptedTextCount: 1,
+      acceptedConfigurationCount: 1,
+      acceptedLabels: ["Name", "Color"],
+      rejectedCounts: {},
+    });
+  });
+
+  it("classifies empty V3 surfaces with usable legacy nodes as legacy everywhere", () => {
+    // Break caught: extraction falls back to legacy while diagnostics claim the empty V3 container won.
+    const customization = {
+      "version3.0": { customizationInfo: { surfaces: [] } },
+      customizationData: { nodes: [
+        { type: "text", label: "Unknown product label", value: "PRIVATE CUSTOMER TEXT" },
+      ] },
+    };
+
+    expect(extractAmazonCustomizationFields(customization)).toEqual({
+      freeTextFields: [{ name: "Unknown product label", value: "PRIVATE CUSTOMER TEXT" }],
+      configurationFields: [],
+    });
+    const summary = summarizeAmazonCustomization(customization);
+    expect(summary).toEqual({
+      format: "legacy",
+      surfaceCount: 0,
+      areaCount: 0,
+      candidateNodeCount: 1,
+      acceptedTextCount: 1,
+      acceptedConfigurationCount: 0,
+      acceptedLabels: ["Unknown product label"],
+      rejectedCounts: {},
+    });
+    expect(JSON.stringify(summary)).not.toContain("PRIVATE CUSTOMER TEXT");
+  });
+
   it("treats malformed field labels as rejected structural candidates", () => {
     expect(summarizeAmazonCustomization({ "version3.0": { customizationInfo: { surfaces: [{ areas: [
       { customizationType: "text", label: { private: "PRIVATE CUSTOMER TEXT" }, text: "private" },

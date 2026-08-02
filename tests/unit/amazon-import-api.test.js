@@ -5,6 +5,7 @@ import {
   AmazonImportError,
   createAmazonImportService,
 } from "../../api/_lib/amazon-import-service.js";
+import { createAmazonImportDiagnostics } from "../../api/_lib/amazon-import-diagnostics.js";
 import { ShipStationError } from "../../api/_lib/shipstation-client.js";
 
 function deferred() {
@@ -50,6 +51,17 @@ function realServiceDependencies({ client, releaseAmazonImportLock }) {
     loadPresetSnapshot: vi.fn().mockResolvedValue({ defaultPresetId: null, presets: [] }),
     listWorkspaceFonts: vi.fn().mockResolvedValue([]),
   };
+}
+
+function recordingDiagnosticsFactory(events) {
+  return vi.fn(({ runId, workspaceId }) => createAmazonImportDiagnostics({
+    logger: {
+      info: (message, envelope) => events.push({ level: "info", message, envelope }),
+      error: (message, envelope) => events.push({ level: "error", message, envelope }),
+    },
+    runId,
+    workspaceId,
+  }));
 }
 
 afterEach(() => {
@@ -140,6 +152,107 @@ describe("Amazon import API", () => {
     });
     expect(enriched.settings.lines[0].fontId).toBe("skywalk");
   });
+
+  it.each([
+    {
+      label: "workspace context loading",
+      stage: "context_loading",
+      buildOptions(error) {
+        return {
+          serviceFactory: vi.fn(() => ({ prepare: vi.fn() })),
+          dependencies: {
+            loadPresetSnapshot: vi.fn().mockRejectedValue(error),
+            listWorkspaceFonts: vi.fn().mockResolvedValue([]),
+          },
+        };
+      },
+    },
+    {
+      label: "service construction",
+      stage: "preparation",
+      buildOptions(error) {
+        return { serviceFactory: vi.fn(() => { throw error; }) };
+      },
+    },
+    {
+      label: "service preparation",
+      stage: "preparation",
+      buildOptions(error) {
+        return { serviceFactory: vi.fn(() => ({ prepare: vi.fn().mockRejectedValue(error) })) };
+      },
+    },
+  ])("emits one correlated safe run failure for $label failures", async ({ stage, buildOptions }) => {
+    // Break caught: failures before run starts have no run correlation or safe global stage.
+    const events = [];
+    const diagnosticsFactory = recordingDiagnosticsFactory(events);
+    const error = Object.assign(new Error("API KEY SECRET"), {
+      name: "SecretFailureType",
+      code: "secret_failure_code",
+      requestId: "secret-request-id",
+      stack: "API KEY SECRET STACK",
+    });
+
+    await createAmazonImportHandler({
+      resolveAuth: vi.fn().mockResolvedValue({ workspaceId: "workspace-early", userId: "user-1" }),
+      diagnosticsFactory,
+      randomUUID: vi.fn(() => "run-early"),
+      ...buildOptions(error),
+    })({ method: "POST" }, response());
+
+    expect(events.filter(({ envelope }) => envelope?.event === "amazon_import.run.failed")).toEqual([{
+      level: "error",
+      message: "Amazon import diagnostic",
+      envelope: {
+        event: "amazon_import.run.failed",
+        runId: "run-early",
+        workspaceId: "workspace-early",
+        stage,
+        details: {
+          errorName: null,
+          errorCode: null,
+          statusCode: null,
+          retryable: null,
+          requestId: null,
+        },
+      },
+    }]);
+    expect(JSON.stringify(events)).not.toContain("API KEY SECRET");
+    expect(JSON.stringify(events)).not.toContain("secret_failure_code");
+    expect(JSON.stringify(events)).not.toContain("secret-request-id");
+  });
+
+  it("attributes real configuration/client preparation failures to one correlated run", async () => {
+    // Break caught: client construction fails after acquiring a lock but before the service can emit run.started.
+    const events = [];
+    const diagnosticsFactory = recordingDiagnosticsFactory(events);
+    const releaseAmazonImportLock = vi.fn().mockResolvedValue(undefined);
+    const dependencies = realServiceDependencies({
+      client: { iteratePendingShipments: vi.fn(async function* () {}) },
+      releaseAmazonImportLock,
+    });
+    dependencies.createShipStationClient.mockImplementation(() => {
+      throw new Error("CLIENT CREDENTIAL SECRET");
+    });
+
+    await createAmazonImportHandler({
+      resolveAuth: vi.fn().mockResolvedValue({ workspaceId: "workspace-client", userId: "user-1" }),
+      serviceFactory: createAmazonImportService,
+      dependencies,
+      diagnosticsFactory,
+      randomUUID: vi.fn(() => "run-client"),
+    })({ method: "POST" }, response());
+
+    const failures = events.filter(({ envelope }) => envelope?.event === "amazon_import.run.failed");
+    expect(failures).toHaveLength(1);
+    expect(failures[0].envelope).toMatchObject({
+      runId: "run-client",
+      workspaceId: "workspace-client",
+      stage: "preparation",
+    });
+    expect(releaseAmazonImportLock).toHaveBeenCalledOnce();
+    expect(JSON.stringify(events)).not.toContain("CLIENT CREDENTIAL SECRET");
+  });
+
   it("authenticates and prepares before flushing headers, then writes ordered NDJSON", async () => {
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
     const calls = [];
@@ -204,7 +317,7 @@ describe("Amazon import API", () => {
       requestId: "req-safe",
       streaming: false,
     });
-    expect(consoleError).toHaveBeenCalledOnce();
+    expect(consoleError.mock.calls.filter(([message]) => message === "Amazon import API error")).toHaveLength(1);
     expect(JSON.stringify(consoleError.mock.calls)).not.toContain("secret body");
     expect(JSON.stringify(consoleError.mock.calls)).not.toContain("secret stack");
     consoleError.mockRestore();
@@ -231,7 +344,7 @@ describe("Amazon import API", () => {
       requestId: null,
       streaming: true,
     });
-    expect(consoleError).toHaveBeenCalledOnce();
+    expect(consoleError.mock.calls.filter(([message]) => message === "Amazon import API error")).toHaveLength(1);
     expect(JSON.stringify(consoleError.mock.calls)).not.toContain("secret body");
     expect(JSON.stringify(consoleError.mock.calls)).not.toContain("secret stack");
     expect(JSON.stringify(consoleError.mock.calls)).not.toContain("secret request id");
@@ -244,7 +357,7 @@ describe("Amazon import API", () => {
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
     await createAmazonImportHandler({ resolveAuth: vi.fn().mockResolvedValue({ workspaceId: "workspace-1", userId: "user-1" }), serviceFactory: () => ({ prepare: async () => { throw error; } }) })({ method: "POST" }, response());
     expect(consoleError).toHaveBeenCalledWith("Amazon import API error", { stage: "prepare", errorName: null, errorCode: null, statusCode: 418, retryable: true, requestId: null, streaming: false });
-    expect(consoleError).toHaveBeenCalledOnce();
+    expect(consoleError.mock.calls.filter(([message]) => message === "Amazon import API error")).toHaveLength(1);
     for (const secret of Object.values(secrets)) expect(JSON.stringify(consoleError.mock.calls)).not.toContain(secret);
     consoleError.mockRestore();
   });
@@ -268,11 +381,13 @@ describe("Amazon import API", () => {
       requestId: null,
       streaming: false,
     });
-    expect(consoleError).toHaveBeenCalledOnce();
+    expect(consoleError.mock.calls.filter(([message]) => message === "Amazon import API error")).toHaveLength(1);
   });
 
   it("attributes a real service primary release failure to release", async () => {
     const releaseError = new Error("release API key secret");
+    const diagnosticEvents = [];
+    const diagnosticsFactory = recordingDiagnosticsFactory(diagnosticEvents);
     const releaseAmazonImportLock = vi.fn()
       .mockRejectedValueOnce(releaseError)
       .mockResolvedValueOnce(undefined);
@@ -289,6 +404,8 @@ describe("Amazon import API", () => {
       serviceFactory: createAmazonImportService,
       dependencies,
       waitUntil: vi.fn(),
+      diagnosticsFactory,
+      randomUUID: vi.fn(() => "run-release"),
     })({ method: "POST" }, response());
 
     expect(consoleError).toHaveBeenCalledWith("Amazon import API error", {
@@ -303,6 +420,16 @@ describe("Amazon import API", () => {
     expect(consoleError.mock.calls.filter(([message]) => message === "Amazon import API error")).toHaveLength(1);
     expect(JSON.stringify(consoleError.mock.calls)).not.toContain("release API key secret");
     expect(releaseAmazonImportLock).toHaveBeenCalledTimes(2);
+    const terminalEvents = diagnosticEvents.filter(({ envelope }) => (
+      envelope?.event === "amazon_import.run.completed" || envelope?.event === "amazon_import.run.failed"
+    ));
+    expect(terminalEvents).toHaveLength(1);
+    expect(terminalEvents[0].envelope).toMatchObject({
+      event: "amazon_import.run.failed",
+      runId: "run-release",
+      workspaceId: "workspace-1",
+      stage: "release",
+    });
   });
 
   it("keeps a real service cancellation failure attributed to run while release is pending", async () => {
