@@ -494,8 +494,8 @@ export function createAmazonImportService({
           customizationNeeded,
           failed,
         };
-        emitDiagnostic(diagnostics, "info", "run.completed", result);
         await awaitActive(() => onProgress(result));
+        emitDiagnostic(diagnostics, "info", "run.completed", result);
         return result;
       } catch (error) {
         primaryError = error;

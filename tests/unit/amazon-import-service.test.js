@@ -453,6 +453,52 @@ describe("Amazon import service", () => {
     expect(JSON.stringify(calls)).not.toContain("RELEASE STACK SECRET");
   });
 
+  it("does not emit run completion when the final progress callback fails", async () => {
+    // Break caught: terminal transport failure produces contradictory run.completed and run.failed events.
+    const calls = [];
+    const diagnostics = createAmazonImportDiagnostics({
+      logger: {
+        info: (event, context) => calls.push({ level: "info", event, context }),
+        error: (event, context) => calls.push({ level: "error", event, context }),
+      },
+      runId: "run-terminal-progress",
+      workspaceId: "workspace-1",
+    });
+    const failure = Object.assign(new Error("TERMINAL TRANSPORT SECRET"), {
+      name: "ProgressFailure",
+      code: "progress_failed",
+      statusCode: 503,
+      retryable: true,
+      requestId: "request-terminal",
+      stack: "TERMINAL STACK SECRET",
+    });
+    const f = fixture({ diagnostics });
+
+    await expect(run(f, {
+      onProgress(event) {
+        if (event.type === "complete") throw failure;
+      },
+    })).rejects.toBe(failure);
+
+    expect(calls.filter(({ event }) => event === "amazon_import.run.completed")).toEqual([]);
+    expect(calls.filter(({ event }) => event === "amazon_import.run.failed")).toEqual([{
+      level: "error",
+      event: "amazon_import.run.failed",
+      context: {
+        runId: "run-terminal-progress",
+        workspaceId: "workspace-1",
+        errorName: "ProgressFailure",
+        errorCode: "progress_failed",
+        statusCode: 503,
+        retryable: true,
+        requestId: "request-terminal",
+      },
+    }]);
+    expect(f.store.releaseAmazonImportLock).toHaveBeenCalledOnce();
+    expect(JSON.stringify(calls)).not.toContain("TERMINAL TRANSPORT SECRET");
+    expect(JSON.stringify(calls)).not.toContain("TERMINAL STACK SECRET");
+  });
+
   it("keeps import results unchanged when injected diagnostics throw or reject", async () => {
     // Break caught: optional production logging changes the transactional import outcome.
     for (const diagnostics of [
@@ -715,7 +761,17 @@ describe("Amazon import service", () => {
   });
 
   it("skips processed tags represented by objects or validated strings", async () => {
+    const diagnosticEvents = [];
+    const diagnostics = createAmazonImportDiagnostics({
+      logger: {
+        info: (event, context) => diagnosticEvents.push({ event, context }),
+        error: vi.fn(),
+      },
+      runId: "run-skipped",
+      workspaceId: "workspace-1",
+    });
     const f = fixture({
+      diagnostics,
       shipments: [
         shipment("object-tag", { tags: [{ name: PROCESSED_TAG }] }),
         shipment("string-tag", { tags: [PROCESSED_TAG] }),
@@ -737,6 +793,26 @@ describe("Amazon import service", () => {
       tagName: PROCESSED_TAG,
       signal: undefined,
     });
+    expect(diagnosticEvents.filter(({ event }) => event === "amazon_import.shipment.skipped")).toEqual([
+      {
+        event: "amazon_import.shipment.skipped",
+        context: {
+          runId: "run-skipped",
+          workspaceId: "workspace-1",
+          shipmentId: "object-tag",
+          orderNumber: "order-object-tag",
+        },
+      },
+      {
+        event: "amazon_import.shipment.skipped",
+        context: {
+          runId: "run-skipped",
+          workspaceId: "workspace-1",
+          shipmentId: "string-tag",
+          orderNumber: "order-string-tag",
+        },
+      },
+    ]);
   });
 
   it("imports every line item and treats only exact CustomizedURL options as archives", async () => {
@@ -942,6 +1018,15 @@ describe("Amazon import service", () => {
   });
 
   it("uses an existing item marker to repair app persistence and tagging without rewriting notes", async () => {
+    const diagnosticEvents = [];
+    const diagnostics = createAmazonImportDiagnostics({
+      logger: {
+        info: (event, context) => diagnosticEvents.push({ event, context }),
+        error: vi.fn(),
+      },
+      runId: "run-existing",
+      workspaceId: "workspace-1",
+    });
     const existingBlock = [
       "Amazon Customization -- Retry Reel",
       "Name: Jane",
@@ -949,6 +1034,7 @@ describe("Amazon import service", () => {
       "Amazon Order Item: retry-item",
     ].join("\n");
     const f = fixture({
+      diagnostics,
       shipments: [shipment("retry", {
         notes: existingBlock,
         items: [item("retry-item", {
@@ -976,6 +1062,17 @@ describe("Amazon import service", () => {
       importedItems: 0,
       existingItems: 1,
     });
+    expect(diagnosticEvents.filter(({ event }) => event === "amazon_import.item.persisted")).toEqual([{
+      event: "amazon_import.item.persisted",
+      context: {
+        runId: "run-existing",
+        workspaceId: "workspace-1",
+        shipmentId: "retry",
+        orderNumber: "order-retry",
+        orderItemId: "retry-item",
+        persistenceOutcome: "existing",
+      },
+    }]);
   });
 
   it("keeps successful persistence counts when the final tag fails", async () => {
