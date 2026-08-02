@@ -235,6 +235,54 @@ describe("Amazon import database integration", () => {
     expect(design.design_text).toBe("Original");
   });
 
+  it("stores the raw Amazon customization document and refreshes it on re-import", async () => {
+    // Break caught: the atomic RPC drops the diagnostic document on insert or existing-item imports.
+    const id = `amazon-order-item:${randomUUID()}`;
+    const original = item(id, "Original");
+    original.amazonCustomizationJson = {
+      orderItemId: "amazon-item-raw",
+      "version3.0": { customizationInfo: { surfaces: [{ areas: [
+        { customizationType: "TextPrinting", label: "Name", text: "Alicia", fontFamily: "Skywalk" },
+      ] }] } },
+    };
+    await importAmazonOrderItemsTransactional({
+      workspaceId: PRIMARY_WORKSPACE_ID,
+      userId: importUserId,
+      items: [original],
+    });
+
+    const replacement = item(id, "Replacement");
+    replacement.amazonCustomizationJson = {
+      orderItemId: "amazon-item-raw",
+      "version3.0": { customizationInfo: { surfaces: [{ areas: [
+        { customizationType: "TextPrinting", label: "Name", text: "Alicia", fontFamily: "Somekind" },
+      ] }] } },
+    };
+    await importAmazonOrderItemsTransactional({
+      workspaceId: PRIMARY_WORKSPACE_ID,
+      userId: importUserId,
+      items: [replacement],
+    });
+
+    const admin = createSupabaseAdminClient();
+    const [{ data: orderItem, error: orderError }, { data: design, error: designError }] = await Promise.all([
+      admin
+        .from("order_items")
+        .select("amazon_customization_json")
+        .eq("id", id)
+        .maybeSingle(),
+      admin
+        .from("designs")
+        .select("design_text")
+        .eq("order_item_id", id)
+        .maybeSingle(),
+    ]);
+    expect(orderError).toBeNull();
+    expect(designError).toBeNull();
+    expect(orderItem.amazon_customization_json).toEqual(replacement.amazonCustomizationJson);
+    expect(design.design_text).toBe("Original");
+  });
+
   it("fills a missing Amazon listing identity on re-import without changing the saved design", async () => {
     // Break caught: existing Amazon rows remain permanently unable to assign presets.
     const id = `amazon-order-item:${randomUUID()}`;
