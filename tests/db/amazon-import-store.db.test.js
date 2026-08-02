@@ -305,6 +305,13 @@ describe("Amazon import database integration", () => {
     const previousStoreId = process.env.SHIPSTATION_AMAZON_STORE_ID;
     process.env.SHIPSTATION_API_KEY = "local-test-only";
     process.env.SHIPSTATION_AMAZON_STORE_ID = "local-test-only";
+    const orderItemId = `amazon-order-item:${AMAZON_CUSTOMIZATION_FIXTURE.orderItemId}`;
+    const cleanupAdmin = createSupabaseAdminClient();
+    await cleanupAdmin
+      .from("order_items")
+      .delete()
+      .eq("id", orderItemId)
+      .eq("workspace_id", PRIMARY_WORKSPACE_ID);
 
     const shipment = {
       shipment_id: "fixture-shipment-166136048232641",
@@ -366,7 +373,6 @@ describe("Amazon import database integration", () => {
         await prepared.release();
       }
 
-      const orderItemId = `amazon-order-item:${AMAZON_CUSTOMIZATION_FIXTURE.orderItemId}`;
       expect(result).toMatchObject({ importedItems: 1, failed: 0 });
       await expect(addOrderItemsToProductionBatch({
         workspaceId: PRIMARY_WORKSPACE_ID,
@@ -408,6 +414,11 @@ describe("Amazon import database integration", () => {
       }));
       expect(JSON.stringify(batch)).not.toContain("amazon_customization_json");
     } finally {
+      await cleanupAdmin
+        .from("order_items")
+        .delete()
+        .eq("id", orderItemId)
+        .eq("workspace_id", PRIMARY_WORKSPACE_ID);
       if (previousApiKey == null) delete process.env.SHIPSTATION_API_KEY;
       else process.env.SHIPSTATION_API_KEY = previousApiKey;
       if (previousStoreId == null) delete process.env.SHIPSTATION_AMAZON_STORE_ID;
