@@ -44,21 +44,23 @@ function decodedValue(value) {
 }
 
 
-function acceptedField(name, value) {
-  const decoded = decodedValue(value);
-  return Boolean(name && value && !name.startsWith("^")
-    && !EXCLUDED_LABEL_PATTERN.test(name)
-    && !URL_PATTERN.test(value)
-    && !DATA_URL_PATTERN.test(value)
-    && !DATA_URL_PATTERN.test(decoded)
-    && !ASSET_VALUE_PATTERN.test(decoded)
-    && !SVG_PATTERN.test(decoded));
+function classifyField(name, value) {
+  const normalizedName = normalizedString(name);
+  const normalizedValue = normalizedString(value);
+  const decoded = decodedValue(normalizedValue);
+  if (!normalizedName || !normalizedValue) return { response: null, rejected: "blank" };
+  if (normalizedName.startsWith("^")) return { response: null, rejected: "internal" };
+  if (EXCLUDED_LABEL_PATTERN.test(normalizedName)) return { response: null, rejected: "metadata_label" };
+  if (URL_PATTERN.test(normalizedValue) || DATA_URL_PATTERN.test(normalizedValue) || DATA_URL_PATTERN.test(decoded)) {
+    return { response: null, rejected: "url" };
+  }
+  if (ASSET_VALUE_PATTERN.test(decoded)) return { response: null, rejected: "asset" };
+  if (SVG_PATTERN.test(decoded)) return { response: null, rejected: "markup" };
+  return { response: { name: normalizedName, value: normalizedValue }, rejected: null };
 }
 
 function field(name, value) {
-  const normalizedName = normalizedString(name);
-  const normalizedValue = normalizedString(value);
-  return acceptedField(normalizedName, normalizedValue) ? { name: normalizedName, value: normalizedValue } : null;
+  return classifyField(name, value).response;
 }
 
 function documentRoot(document) {
@@ -67,30 +69,29 @@ function documentRoot(document) {
     : document;
 }
 
-function v3Areas(document) {
+function v3Surfaces(document) {
   const embedded = document?.customizationData;
   const version = document?.["version3.0"] ?? document?.version3
     ?? embedded?.["version3.0"] ?? embedded?.version3;
   const surfaces = version?.customizationInfo?.surfaces;
-  return Array.isArray(surfaces) ? surfaces.flatMap((surface) => Array.isArray(surface?.areas) ? surface.areas : []) : [];
+  return Array.isArray(surfaces) ? surfaces : [];
 }
 
-function extractV3Fields(document) {
-  const freeTextFields = [];
-  const configurationFields = [];
-  for (const area of v3Areas(document)) {
+function v3Areas(document) {
+  return v3Surfaces(document).flatMap((surface) => Array.isArray(surface?.areas) ? surface.areas : []);
+}
+
+function v3Candidates(document) {
+  return v3Areas(document).map((area) => {
     const type = normalizedString(area?.customizationType).toLowerCase();
     if (type.includes("text")) {
-      const response = field(area?.label, firstNonBlank(area?.text, area?.displayValue));
-      if (response) freeTextFields.push(response);
-      continue;
+      return { kind: "text", ...classifyField(area?.label, firstNonBlank(area?.text, area?.displayValue)) };
     }
     if (type.includes("option") || area?.optionValue != null) {
-      const response = field(area?.label, firstNonBlank(area?.optionValue, area?.displayValue));
-      if (response) configurationFields.push(response);
+      return { kind: "configuration", ...classifyField(area?.label, firstNonBlank(area?.optionValue, area?.displayValue)) };
     }
-  }
-  return { freeTextFields, configurationFields };
+    return { kind: "unsupported", response: null, rejected: "unsupported" };
+  });
 }
 
 function legacyNodes(document) {
@@ -117,38 +118,133 @@ function legacyNodes(document) {
   return nodes;
 }
 
-function appendUniqueLegacyField(fields, seenFields, kind, response) {
-  if (!response) return;
-  const key = `${kind}\u0000${response.name}\u0000${response.value}`;
-  if (seenFields.has(key)) return;
-  seenFields.add(key);
-  fields.push(response);
-}
-function extractLegacyFields(document) {
-  const freeTextFields = [];
-  const configurationFields = [];
-  const seenFields = new Set();
+function legacyCandidates(document) {
   const root = documentRoot(document);
-  for (const node of legacyNodes(root)) {
+  return legacyNodes(root).map((node) => {
     const type = normalizedString(node.type).toLowerCase();
     if (type.includes("text")) {
-      const response = field(node.label, firstNonBlank(node.text, node.value, node.displayValue));
-      appendUniqueLegacyField(freeTextFields, seenFields, "text", response);
-      continue;
+      return { kind: "text", ...classifyField(node.label, firstNonBlank(node.text, node.value, node.displayValue)) };
     }
     if (type.includes("option")) {
-      const response = field(node.label, firstNonBlank(node.optionSelection?.label, node.optionValue, node.displayValue));
-      appendUniqueLegacyField(configurationFields, seenFields, "option", response);
+      return { kind: "configuration", ...classifyField(node.label, firstNonBlank(node.optionSelection?.label, node.optionValue, node.displayValue)) };
     }
+    return { kind: "unsupported", response: null, rejected: "unsupported" };
+  });
+}
+
+function deduplicateAcceptedCandidates(candidates) {
+  const seen = new Set();
+  return candidates.filter((candidate) => {
+    if (!candidate.response) return true;
+    const key = `${candidate.kind}\u0000${candidate.response.name}\u0000${candidate.response.value}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function hasV3SurfaceContainer(document) {
+  const embedded = document?.customizationData;
+  const version = document?.["version3.0"] ?? document?.version3
+    ?? embedded?.["version3.0"] ?? embedded?.version3;
+  return Array.isArray(version?.customizationInfo?.surfaces);
+}
+
+function classifiedCustomization(document) {
+  const surfaces = v3Surfaces(document);
+  const areas = v3Areas(document);
+  if (areas.length) {
+    return {
+      format: "v3",
+      surfaceCount: surfaces.length,
+      areaCount: areas.length,
+      candidates: v3Candidates(document),
+    };
+  }
+
+  const legacy = deduplicateAcceptedCandidates(legacyCandidates(document));
+  if (legacy.length) {
+    return { format: "legacy", surfaceCount: 0, areaCount: 0, candidates: legacy };
+  }
+  if (hasV3SurfaceContainer(document)) {
+    return { format: "v3", surfaceCount: surfaces.length, areaCount: 0, candidates: [] };
+  }
+  return {
+    format: isEmptyCustomizationDocument(document) ? "empty" : "unknown",
+    surfaceCount: 0,
+    areaCount: 0,
+    candidates: [],
+  };
+}
+
+function fieldsFromCandidates(candidates) {
+  const freeTextFields = [];
+  const configurationFields = [];
+  for (const candidate of candidates) {
+    if (candidate.kind === "text" && candidate.response) freeTextFields.push(candidate.response);
+    if (candidate.kind === "configuration" && candidate.response) configurationFields.push(candidate.response);
   }
   return { freeTextFields, configurationFields };
 }
 
 export function extractAmazonCustomizationFields(document) {
-  const observed = extractV3Fields(document);
-  return observed.freeTextFields.length || observed.configurationFields.length || v3Areas(document).length
-    ? observed
-    : extractLegacyFields(document);
+  return fieldsFromCandidates(classifiedCustomization(document).candidates);
+}
+
+function summaryLabel(name) {
+  return normalizedString(name)
+    .replace(NOTE_CONTROL_PATTERN, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 80);
+}
+
+function emptySummary(format) {
+  return {
+    format,
+    surfaceCount: 0,
+    areaCount: 0,
+    candidateNodeCount: 0,
+    acceptedTextCount: 0,
+    acceptedConfigurationCount: 0,
+    acceptedLabels: [],
+    rejectedCounts: {},
+  };
+}
+
+function isEmptyCustomizationDocument(document) {
+  const seen = new Set();
+  let current = document;
+  for (let depth = 0; depth < 256; depth += 1) {
+    if (current == null) return true;
+    if (typeof current !== "object" || Array.isArray(current) || seen.has(current)) return false;
+    seen.add(current);
+    const keys = Object.keys(current);
+    if (keys.length === 0) return true;
+    if (keys.length !== 1 || keys[0] !== "customizationData") return false;
+    current = current.customizationData;
+  }
+  return false;
+}
+
+export function summarizeAmazonCustomization(document) {
+  const classified = classifiedCustomization(document);
+  const summary = emptySummary(classified.format);
+  summary.surfaceCount = classified.surfaceCount;
+  summary.areaCount = classified.areaCount;
+  const candidates = classified.candidates;
+  summary.candidateNodeCount = candidates.length;
+  for (const candidate of candidates) {
+    if (candidate.kind === "text" && candidate.response) summary.acceptedTextCount += 1;
+    if (candidate.kind === "configuration" && candidate.response) summary.acceptedConfigurationCount += 1;
+    if (candidate.response) {
+      const label = summaryLabel(candidate.response.name);
+      if (label && summary.acceptedLabels.length < 40) summary.acceptedLabels.push(label);
+    } else if (candidate.rejected) {
+      summary.rejectedCounts[candidate.rejected] = (summary.rejectedCounts[candidate.rejected] ?? 0) + 1;
+    }
+  }
+  return summary;
 }
 
 function fontFieldBase(name) {

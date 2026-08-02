@@ -44,6 +44,22 @@ export function overlayCustomerFontsOnLines(lines, selections, fontOptions) {
   });
 }
 
+export function summarizeCustomerFontResolution(lines, selections, fontOptions) {
+  const normalized = normalizeCustomerFontSelections(selections);
+  const recognizedCount = normalized.filter((selection) => (
+    resolveCustomerFontId(selection.name, fontOptions) !== null
+  )).length;
+  const effectiveFontIds = overlayCustomerFontsOnLines(lines, normalized, fontOptions)
+    .map((line) => clean(line?.fontId))
+    .filter(Boolean);
+  return {
+    selectionCount: normalized.length,
+    recognizedCount,
+    unknownCount: normalized.length - recognizedCount,
+    effectiveFontIds,
+  };
+}
+
 export function formatCustomerFontSelection(selection) {
   const [normalized] = normalizeCustomerFontSelections([selection]);
   return normalized ? `Line ${normalized.lineIndex + 1} Font: ${normalized.name}` : "";

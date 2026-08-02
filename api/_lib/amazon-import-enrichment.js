@@ -1,4 +1,9 @@
-import { overlayCustomerFontsOnLines } from "../../src/amazon-customer-fonts.js";
+import {
+  overlayCustomerFontsOnLines,
+  summarizeCustomerFontResolution,
+} from "../../src/amazon-customer-fonts.js";
+
+const DEFAULT_PERSISTED_FONT_ID = "candlepin";
 
 function matchesRule(match, lineIndex) {
   if (match?.type === "first") return lineIndex === 0;
@@ -35,16 +40,50 @@ function presetLines(preset, listingId, lineCount) {
   });
 }
 
-export function createAmazonItemEnricher({ presetSnapshot, fontOptions = [] } = {}) {
-  return (item) => {
+function notifyEnriched(onEnriched, summary) {
+  if (typeof onEnriched !== "function") return;
+  try {
+    Promise.resolve(onEnriched(summary)).catch(() => {});
+  } catch {
+    // Diagnostics must not affect imports.
+  }
+}
+
+export function createAmazonItemEnricher({ presetSnapshot, fontOptions = [], onEnriched, diagnostics } = {}) {
+  const enrich = (item, { onEnriched: onCallEnriched } = {}) => {
     const preset = selectedPreset(presetSnapshot, item?.source?.listingId);
-    if (!preset) return { ...item };
+    const selections = item?.source?.customerFontSelections;
+    if (!preset) {
+      const lineCount = String(item?.text ?? "").split(/\r?\n/).length;
+      const persistenceLines = Array.from({ length: Math.max(lineCount, 1) }, () => ({
+        fontId: DEFAULT_PERSISTED_FONT_ID,
+      }));
+      const fontSummary = summarizeCustomerFontResolution(persistenceLines, selections, fontOptions);
+      const summary = {
+        presetId: null,
+        designLineCount: persistenceLines.length,
+        ...fontSummary,
+        effectiveFontIds: persistenceLines.map((line) => line.fontId),
+      };
+      notifyEnriched(onEnriched, summary);
+      notifyEnriched(onCallEnriched, summary);
+      return { ...item };
+    }
     const lineCount = String(item?.text ?? "").split("\n").length;
+    const presetLineSettings = presetLines(preset, item?.source?.listingId, lineCount);
     const lines = overlayCustomerFontsOnLines(
-      presetLines(preset, item?.source?.listingId, lineCount),
-      item?.source?.customerFontSelections,
+      presetLineSettings,
+      selections,
       fontOptions,
     );
+    const fontSummary = summarizeCustomerFontResolution(presetLineSettings, selections, fontOptions);
+    const summary = {
+      presetId: preset.id,
+      designLineCount: lines.length,
+      ...fontSummary,
+    };
+    notifyEnriched(onEnriched, summary);
+    notifyEnriched(onCallEnriched, summary);
     return {
       ...item,
       presetId: preset.id,
@@ -56,4 +95,7 @@ export function createAmazonItemEnricher({ presetSnapshot, fontOptions = [] } = 
       },
     };
   };
+  enrich.supportsPerCallEnrichmentSummary = true;
+  enrich.diagnostics = diagnostics;
+  return enrich;
 }

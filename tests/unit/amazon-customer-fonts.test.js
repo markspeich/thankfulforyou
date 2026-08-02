@@ -4,6 +4,7 @@ import {
   normalizeCustomerFontSelections,
   overlayCustomerFontsOnLines,
   resolveCustomerFontId,
+  summarizeCustomerFontResolution,
 } from "../../src/amazon-customer-fonts.js";
 
 const fonts = [
@@ -44,5 +45,26 @@ describe("Amazon customer fonts", () => {
       { fontId: "somekind", offsetXMm: 2, horizontalScale: 1.2 },
     ]);
     expect(lines[0].fontId).toBe("candlepin");
+  });
+
+  it("summarizes resolved fonts without retaining customer-facing font values", () => {
+    // Break caught: diagnostics reveal customer values or disagree with the effective line fonts.
+    const summary = summarizeCustomerFontResolution(
+      [{ fontId: "candlepin" }, { fontId: "somekind" }],
+      [
+        { lineIndex: 0, name: "Skywalk" },
+        { lineIndex: 1, name: "TOP SECRET FONT VALUE" },
+      ],
+      fonts,
+    );
+
+    expect(summary).toEqual({
+      selectionCount: 2,
+      recognizedCount: 1,
+      unknownCount: 1,
+      effectiveFontIds: ["skywalk", "somekind"],
+    });
+    expect(JSON.stringify(summary)).not.toContain("Skywalk");
+    expect(JSON.stringify(summary)).not.toContain("TOP SECRET FONT VALUE");
   });
 });

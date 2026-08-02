@@ -1,4 +1,5 @@
 import { waitUntil as vercelWaitUntil } from "@vercel/functions";
+import { randomUUID as uuid } from "node:crypto";
 import { resolveProductionBatchAuth } from "./_lib/production-batch-auth.js";
 import * as amazonImportStore from "./_lib/amazon-import-store.js";
 import { createShipStationClient, ShipStationError } from "./_lib/shipstation-client.js";
@@ -9,6 +10,7 @@ import { isResponseWritable, writeNdjson } from "./_lib/ndjson-writer.js";
 import { loadPresetSnapshot } from "./_lib/preset-store.js";
 import { listWorkspaceFonts } from "./_lib/font-store.js";
 import { createAmazonItemEnricher } from "./_lib/amazon-import-enrichment.js";
+import { createAmazonImportDiagnostics } from "./_lib/amazon-import-diagnostics.js";
 
 const FALLBACK_ERROR = "Unable to import Amazon orders.";
 const SAFE_AMAZON_ERROR_MESSAGES = Object.freeze({
@@ -84,6 +86,14 @@ function failureStage(prepared, error, fallback) {
   }
 }
 
+function emitRunFailure(diagnostics, stage, error) {
+  try {
+    Promise.resolve(diagnostics?.error?.("run.failed", { stage, error })).catch(() => {});
+  } catch {
+    // Diagnostics must not affect imports or public responses.
+  }
+}
+
 function streamedErrorFrame(error) {
   return {
     type: "error",
@@ -126,6 +136,9 @@ export function createAmazonImportHandler({
   serviceFactory = createAmazonImportService,
   dependencies = {},
   waitUntil = vercelWaitUntil,
+  diagnosticsFactory = createAmazonImportDiagnostics,
+  itemEnricherFactory = createAmazonItemEnricher,
+  randomUUID = uuid,
 } = {}) {
   return async (req, res) => {
     let prepared;
@@ -136,6 +149,9 @@ export function createAmazonImportHandler({
     let releasePromise;
     let signal;
     let stage = "auth";
+    let diagnosticStage = null;
+    let diagnostics;
+    let runAttempted = false;
     const protectLifecycle = (promise) => {
       try {
         waitUntil(Promise.resolve(promise).catch(() => {}));
@@ -167,33 +183,47 @@ export function createAmazonImportHandler({
       signal = requestCancellation.signal;
 
       const auth = await resolveAuth(req);
+      try {
+        diagnostics = diagnosticsFactory({
+          logger: console,
+          runId: randomUUID(),
+          workspaceId: auth.workspaceId,
+        });
+      } catch {
+        diagnostics = { info() {}, error() {} };
+      }
       const needsWorkspaceContext = serviceFactory === createAmazonImportService
         || dependencies.loadPresetSnapshot
         || dependencies.listWorkspaceFonts;
       let enrichItem = dependencies.enrichItem;
       if (!enrichItem && needsWorkspaceContext) {
+        stage = "context_loading";
+        diagnosticStage = "context_loading";
         const [presetSnapshot, fonts] = await Promise.all([
           (dependencies.loadPresetSnapshot || loadPresetSnapshot)(auth.workspaceId),
           (dependencies.listWorkspaceFonts || listWorkspaceFonts)({ workspaceId: auth.workspaceId }),
         ]);
-        enrichItem = createAmazonItemEnricher({
+        enrichItem = itemEnricherFactory({
           presetSnapshot,
           fontOptions: (fonts || []).map((font) => ({
             id: font?.id,
             displayName: font?.displayName ?? font?.display_name,
             label: font?.label,
           })),
+          diagnostics,
         });
       }
+      stage = "prepare";
+      diagnosticStage = "preparation";
       const service = serviceFactory({
         store: dependencies.store || amazonImportStore,
         createShipStationClient: dependencies.createShipStationClient || createShipStationClient,
         fetchCustomizationJson: dependencies.fetchCustomizationJson || fetchAmazonCustomizationJson,
         normalizeItem: dependencies.normalizeItem || normalizeShipStationItem,
         appendNoteBlocks: dependencies.appendNoteBlocks || appendAmazonNoteBlocks,
+        diagnostics,
         ...(enrichItem ? { enrichItem } : {}),
       });
-      stage = "prepare";
       preparePromise = service.prepare({
         ...auth,
         signal,
@@ -209,17 +239,26 @@ export function createAmazonImportHandler({
       });
       prepared = await preparePromise;
 
+      diagnosticStage = "progress_delivery";
       res.status(200);
       res.setHeader("Content-Type", "application/x-ndjson; charset=utf-8");
       res.flushHeaders?.();
       streaming = true;
       stage = "run";
+      diagnosticStage = null;
+      runAttempted = true;
       await prepared.run();
       stage = "release";
+      diagnosticStage = "release";
       await release();
+      diagnosticStage = null;
       if (isResponseWritable(res)) res.end();
     } catch (error) {
       console.error("Amazon import API error", errorLogMetadata(error, { stage: failureStage(prepared, error, stage), streaming }));
+      const serviceReportedRunFailure = runAttempted && prepared?.reportsRunFailures === true;
+      if (diagnosticStage && !serviceReportedRunFailure) {
+        emitRunFailure(diagnostics, diagnosticStage, error);
+      }
       try { await release(); } catch { /* The original run or response failure remains primary. */ }
       if (!streaming) {
         const response = publicError(error);
