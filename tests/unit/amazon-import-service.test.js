@@ -220,6 +220,106 @@ describe("Amazon import service", () => {
       },
     });
   });
+
+  it("reports a safe font-resolution summary without changing the enriched item shape", () => {
+    // Break caught: enrichment diagnostics expose customer font values or become persisted item data.
+    const onEnriched = vi.fn();
+    const enrich = createAmazonItemEnricher({
+      presetSnapshot: {
+        presets: [{
+          id: "preset-amazon",
+          globalDefaults: { backingMm: 4.2 },
+          lineDefaults: { fontId: "candlepin", bridgeMm: 0.6 },
+          lineRules: [],
+          listingAssignments: [],
+        }],
+      },
+      fontOptions: [{ id: "skywalk", displayName: "Skywalk" }],
+      onEnriched,
+    });
+    const input = {
+      text: "Maria\nRN",
+      source: {
+        customerFontSelections: [
+          { lineIndex: 0, name: "Skywalk" },
+          { lineIndex: 1, name: "TOP SECRET FONT VALUE" },
+        ],
+      },
+    };
+
+    const enriched = enrich(input);
+
+    expect(enriched).toEqual({
+      ...input,
+      presetId: "preset-amazon",
+      settings: {
+        backingMm: 4.2,
+        presetId: "preset-amazon",
+        lines: [
+          { fontId: "skywalk", bridgeMm: 0.6 },
+          { fontId: "candlepin", bridgeMm: 0.6 },
+        ],
+      },
+    });
+    expect(onEnriched).toHaveBeenCalledWith({
+      presetId: "preset-amazon",
+      designLineCount: 2,
+      selectionCount: 2,
+      recognizedCount: 1,
+      unknownCount: 1,
+      effectiveFontIds: ["skywalk", "candlepin"],
+    });
+    const [summary] = onEnriched.mock.calls[0];
+    expect(JSON.stringify(summary)).not.toContain("Skywalk");
+    expect(JSON.stringify(summary)).not.toContain("TOP SECRET FONT VALUE");
+    expect(enriched).not.toHaveProperty("diagnostics");
+    expect(enriched.source).toBe(input.source);
+  });
+
+  it("reports an empty safe summary when no preset is available", () => {
+    // Break caught: no-preset imports omit diagnostics or report font resolutions that were not applied.
+    const onEnriched = vi.fn();
+    const enrich = createAmazonItemEnricher({
+      presetSnapshot: { presets: [] },
+      fontOptions: [{ id: "skywalk", displayName: "Skywalk" }],
+      onEnriched,
+    });
+
+    expect(enrich({
+      text: "Maria",
+      source: { customerFontSelections: [{ lineIndex: 0, name: "Skywalk" }] },
+    })).toEqual({
+      text: "Maria",
+      source: { customerFontSelections: [{ lineIndex: 0, name: "Skywalk" }] },
+    });
+    expect(onEnriched).toHaveBeenCalledWith({
+      presetId: null,
+      designLineCount: 0,
+      selectionCount: 1,
+      recognizedCount: 0,
+      unknownCount: 1,
+      effectiveFontIds: [],
+    });
+  });
+
+  it("keeps importing when font-diagnostic callbacks throw or reject", async () => {
+    // Break caught: optional diagnostics turn callback failures into failed imports or unhandled rejections.
+    for (const onEnriched of [
+      () => { throw new Error("diagnostic callback failed"); },
+      () => Promise.reject(new Error("diagnostic callback rejected")),
+    ]) {
+      const enrichItem = createAmazonItemEnricher({
+        presetSnapshot: { presets: [] },
+        fontOptions: [],
+        onEnriched,
+      });
+      const f = fixture({ enrichItem });
+
+      await expect(run(f)).resolves.toMatchObject({ importedItems: 1 });
+      await flushMicrotasks();
+      expect(f.store.importAmazonOrderItemsTransactional).toHaveBeenCalledOnce();
+    }
+  });
   it("enriches normalized items before transactional persistence", async () => {
     // Break caught: server preset/font settings are computed but never reach persistence.
     const enrichItem = vi.fn((normalized) => ({

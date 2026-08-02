@@ -1,4 +1,7 @@
-import { overlayCustomerFontsOnLines } from "../../src/amazon-customer-fonts.js";
+import {
+  overlayCustomerFontsOnLines,
+  summarizeCustomerFontResolution,
+} from "../../src/amazon-customer-fonts.js";
 
 function matchesRule(match, lineIndex) {
   if (match?.type === "first") return lineIndex === 0;
@@ -35,16 +38,41 @@ function presetLines(preset, listingId, lineCount) {
   });
 }
 
-export function createAmazonItemEnricher({ presetSnapshot, fontOptions = [] } = {}) {
+function notifyEnriched(onEnriched, summary) {
+  if (typeof onEnriched !== "function") return;
+  try {
+    Promise.resolve(onEnriched(summary)).catch(() => {});
+  } catch {
+    // Diagnostics must not affect imports.
+  }
+}
+
+export function createAmazonItemEnricher({ presetSnapshot, fontOptions = [], onEnriched } = {}) {
   return (item) => {
     const preset = selectedPreset(presetSnapshot, item?.source?.listingId);
-    if (!preset) return { ...item };
+    const selections = item?.source?.customerFontSelections;
+    if (!preset) {
+      const fontSummary = summarizeCustomerFontResolution([], selections, []);
+      notifyEnriched(onEnriched, {
+        presetId: null,
+        designLineCount: 0,
+        ...fontSummary,
+      });
+      return { ...item };
+    }
     const lineCount = String(item?.text ?? "").split("\n").length;
+    const presetLineSettings = presetLines(preset, item?.source?.listingId, lineCount);
     const lines = overlayCustomerFontsOnLines(
-      presetLines(preset, item?.source?.listingId, lineCount),
-      item?.source?.customerFontSelections,
+      presetLineSettings,
+      selections,
       fontOptions,
     );
+    const fontSummary = summarizeCustomerFontResolution(presetLineSettings, selections, fontOptions);
+    notifyEnriched(onEnriched, {
+      presetId: preset.id,
+      designLineCount: lines.length,
+      ...fontSummary,
+    });
     return {
       ...item,
       presetId: preset.id,
