@@ -4,6 +4,7 @@ import {
   buildAmazonNoteBlock,
   extractAmazonCustomizationFields,
   normalizeShipStationItem,
+  summarizeAmazonCustomization,
 } from "../../api/_lib/amazon-customization-normalizer.js";
 
 const observedCustomization = {
@@ -30,6 +31,113 @@ const observedCustomization = {
 };
 
 describe("Amazon customization normalizer", () => {
+  it("summarizes v3 customization structure without retaining values", () => {
+    const privateUrl = "https://amazon.example/customization/private-token";
+    const customization = { "version3.0": { customizationInfo: { surfaces: [
+      { areas: [
+        { customizationType: "text", label: "Name\u0000 Label", text: "PRIVATE CUSTOMER TEXT" },
+        { customizationType: "option", label: "Color", optionValue: "Teal" },
+        { customizationType: "text", label: "^Internal Font", text: "Candlepin" },
+        { customizationType: "text", label: "Link", text: privateUrl },
+        { customizationType: "text", label: "Artwork", text: "asset.png" },
+        { customizationType: "text", label: "Artwork markup", text: "<svg><path /></svg>" },
+        { customizationType: "text", label: "Placement", text: "centered" },
+        { customizationType: "text", label: "Blank", text: " " },
+        { customizationType: "image", label: "Artwork", displayValue: "logo" },
+      ] },
+      { areas: [] },
+    ] } } };
+
+    const summary = summarizeAmazonCustomization(customization);
+    expect(summary).toEqual({
+      format: "v3",
+      surfaceCount: 2,
+      areaCount: 9,
+      candidateNodeCount: 9,
+      acceptedTextCount: 1,
+      acceptedConfigurationCount: 1,
+      acceptedLabels: ["Name Label", "Color"],
+      rejectedCounts: {
+        internal: 1,
+        url: 1,
+        asset: 1,
+        markup: 1,
+        metadata_label: 1,
+        blank: 1,
+        unsupported: 1,
+      },
+    });
+    const serialized = JSON.stringify(summary);
+    for (const value of ["PRIVATE CUSTOMER TEXT", privateUrl, "Teal", "Candlepin", "asset.png", "centered"]) {
+      expect(serialized).not.toContain(value);
+    }
+  });
+
+  it("summarizes legacy customization candidates using extraction rules", () => {
+    const legacy = { customizationData: { nodes: [
+      { type: "text", label: "Name", value: "Morgan" },
+      { type: "option", label: "Style", optionSelection: { label: "Skywalk" } },
+      { type: "text", label: "^Internal", value: "hidden" },
+      { type: "text", label: "Link", value: "https://amazon.example/private" },
+      { type: "option", label: "Artwork", optionValue: "art.png" },
+      { type: "text", label: "Markup", value: "<path d='private' />" },
+      { type: "text", label: "Preview Image", value: "private preview" },
+      { type: "text", label: "Blank", value: " " },
+      { type: "image", label: "Artwork", displayValue: "private image" },
+      { type: "preview", children: [{ type: "text", label: "Ignored", value: "private preview" }] },
+    ] } };
+
+    expect(summarizeAmazonCustomization(legacy)).toEqual({
+      format: "legacy",
+      surfaceCount: 0,
+      areaCount: 0,
+      candidateNodeCount: 8,
+      acceptedTextCount: 1,
+      acceptedConfigurationCount: 1,
+      acceptedLabels: ["Name", "Style"],
+      rejectedCounts: {
+        internal: 1,
+        url: 1,
+        asset: 1,
+        markup: 1,
+        metadata_label: 1,
+        blank: 1,
+      },
+    });
+  });
+
+  it("reports empty and unknown customization documents structurally", () => {
+    const empty = {
+      surfaceCount: 0,
+      areaCount: 0,
+      candidateNodeCount: 0,
+      acceptedTextCount: 0,
+      acceptedConfigurationCount: 0,
+      acceptedLabels: [],
+      rejectedCounts: {},
+    };
+    expect(summarizeAmazonCustomization({})).toEqual({ format: "empty", ...empty });
+    expect(summarizeAmazonCustomization({ unexpected: { private: "PRIVATE CUSTOMER TEXT" } })).toEqual({
+      format: "unknown",
+      ...empty,
+    });
+  });
+
+  it("treats malformed field labels as rejected structural candidates", () => {
+    expect(summarizeAmazonCustomization({ "version3.0": { customizationInfo: { surfaces: [{ areas: [
+      { customizationType: "text", label: { private: "PRIVATE CUSTOMER TEXT" }, text: "private" },
+    ] }] } } })).toEqual({
+      format: "v3",
+      surfaceCount: 1,
+      areaCount: 1,
+      candidateNodeCount: 1,
+      acceptedTextCount: 0,
+      acceptedConfigurationCount: 0,
+      acceptedLabels: [],
+      rejectedCounts: { blank: 1 },
+    });
+  });
+
   it("pairs Amazon Custom font fields with their emitted text lines", () => {
     // Break caught: font configuration fields become design text or lose their line association.
     const customization = { "version3.0": { customizationInfo: { surfaces: [{ areas: [
