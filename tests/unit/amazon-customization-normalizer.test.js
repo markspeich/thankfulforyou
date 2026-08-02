@@ -68,7 +68,7 @@ describe("Amazon customization normalizer", () => {
       },
     });
     const serialized = JSON.stringify(summary);
-    for (const value of ["PRIVATE CUSTOMER TEXT", privateUrl, "Teal", "Candlepin", "asset.png", "centered"]) {
+    for (const value of ["PRIVATE CUSTOMER TEXT", privateUrl, "Teal", "Candlepin", "asset.png", "<svg><path /></svg>", "centered", "logo"]) {
       expect(serialized).not.toContain(value);
     }
   });
@@ -87,7 +87,8 @@ describe("Amazon customization normalizer", () => {
       { type: "preview", children: [{ type: "text", label: "Ignored", value: "private preview" }] },
     ] } };
 
-    expect(summarizeAmazonCustomization(legacy)).toEqual({
+    const summary = summarizeAmazonCustomization(legacy);
+    expect(summary).toEqual({
       format: "legacy",
       surfaceCount: 0,
       areaCount: 0,
@@ -104,6 +105,10 @@ describe("Amazon customization normalizer", () => {
         blank: 1,
       },
     });
+    const serialized = JSON.stringify(summary);
+    for (const value of ["Morgan", "Skywalk", "hidden", "https://amazon.example/private", "art.png", "<path d='private' />", "private preview", "private image"]) {
+      expect(serialized).not.toContain(value);
+    }
   });
 
   it("reports empty and unknown customization documents structurally", () => {
