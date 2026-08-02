@@ -128,8 +128,11 @@ describe("Amazon import API", () => {
   it("loads workspace preset and font context for server item enrichment", async () => {
     // Break caught: the API imports Amazon items without workspace-specific preset/font data.
     const loadPresetSnapshot = vi.fn().mockResolvedValue({
-      defaultPresetId: "preset-1",
-      presets: [{ id: "preset-1", globalDefaults: {}, lineDefaults: { fontId: "candlepin" }, lineRules: [], listingAssignments: [] }],
+      workspaceKey: "workspace-1",
+      snapshot: {
+        defaultPresetId: "preset-1",
+        presets: [{ id: "preset-1", globalDefaults: {}, lineDefaults: { fontId: "candlepin" }, lineRules: [], listingAssignments: [] }],
+      },
     });
     const listWorkspaceFonts = vi.fn().mockResolvedValue([
       { id: "skywalk", display_name: "Skywalk" },
