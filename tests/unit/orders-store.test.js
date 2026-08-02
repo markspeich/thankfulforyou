@@ -100,8 +100,8 @@ function createMutationResult(table, payload) {
   };
 }
 
-function createSelectChain(table) {
-  supabaseMock.calls.push({ table, operation: "select" });
+function createSelectChain(table, columns) {
+  supabaseMock.calls.push({ table, operation: "select", columns });
   const filters = [];
   const state = { orderColumn: null, ascending: true };
   const chain = {
@@ -369,6 +369,7 @@ describe("orders store", () => {
           transaction_id: "txn-1",
           imported_color: "Pink",
           quantity: 1,
+          amazon_customization_json: { private: "raw Amazon document" },
           source_json: { listingTitle: "Badge Reel" },
           revision: 1,
           updated_at: "2026-06-01T10:00:00.000Z",
@@ -475,6 +476,12 @@ describe("orders store", () => {
         lines: [{ lineIndex: 0, text: "Ada", fontId: "skywalk" }],
       },
     });
+    expect(result.orders[0].items[0]).not.toHaveProperty("amazonCustomizationJson");
+    expect(result.orders[0].items[0]).not.toHaveProperty("amazon_customization_json");
+    const orderItemsSelect = supabaseMock.calls.find(
+      (call) => call.table === "order_items" && call.operation === "select",
+    );
+    expect(orderItemsSelect.columns).not.toContain("amazon_customization_json");
     expect(result.orders[0].items[1]).toMatchObject({
       id: "item-2",
       isInActiveBatch: true,

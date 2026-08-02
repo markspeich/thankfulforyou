@@ -237,6 +237,30 @@ describe("Amazon customization normalizer", () => {
       },
     });
   });
+
+  it("uses each Amazon v3 text area's fontFamily for its emitted text line", () => {
+    // Break caught: v3 text is imported while its directly attached customer font is discarded.
+    const customization = { "version3.0": { customizationInfo: { surfaces: [{ areas: [
+      { customizationType: "Options", label: "Color", optionValue: "Glitter Blue" },
+      { customizationType: "TextPrinting", label: "Name", text: "Alicia", fontFamily: "Skywalk" },
+      { customizationType: "TextPrinting", label: "Title", text: "RN", fontFamily: "Somekind" },
+      { customizationType: "Options", label: "Badge Reel Type", optionValue: "Swivel Alligator Clip" },
+    ] }] } } };
+
+    expect(normalizeShipStationItem({
+      shipment: { external_order_id: "111-4206633-6254602" },
+      item: { external_order_item_id: "166136048232641", asin: "ASIN-1" },
+      customization,
+    })).toMatchObject({
+      text: "Alicia\nRN",
+      source: {
+        customerFontSelections: [
+          { lineIndex: 0, name: "Skywalk" },
+          { lineIndex: 1, name: "Somekind" },
+        ],
+      },
+    });
+  });
   it("preserves observed v3 source order while excluding non-production fields", () => {
     // Break caught: accepting archive metadata or losing ordered text/configuration fields.
     expect(extractAmazonCustomizationFields(observedCustomization)).toEqual({

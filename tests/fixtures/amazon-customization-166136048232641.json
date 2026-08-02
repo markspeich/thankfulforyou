@@ -1,0 +1,267 @@
+{
+  "orderId" : "111-4206633-6254602",
+  "orderItemId" : "166136048232641",
+  "merchantId" : "A3EOW54T19ETBV",
+  "marketplaceId" : "ATVPDKIKX0DER",
+  "asin" : "B0H6ND1TL3",
+  "title" : "Personalized Nurse Badge Reel, Custom Badge ID Holder, Great Gift for Nurse, Multiple Color and Badge Reel Options",
+  "quantity" : 1,
+  "vendorCode" : null,
+  "customizationData" : {
+    "type" : "PageContainerCustomization",
+    "children" : [ {
+      "type" : "PreviewContainerCustomization",
+      "name" : "Surface 1",
+      "label" : "Surface 1",
+      "children" : [ {
+        "type" : "FlatContainerCustomization",
+        "children" : [ {
+          "type" : "OptionCustomization",
+          "name" : "Color 1",
+          "label" : "Color",
+          "optionSelection" : {
+            "name" : "Glitter Blue",
+            "label" : "Glitter Blue",
+            "additionalCost" : {
+              "amount" : 0
+            },
+            "thumbnailImage" : {
+              "imageUrl" : "https://m.media-amazon.com/images/S/gestalt-seller-images-prod-us-east-1/ATVPDKIKX0DER/A3EOW54T19ETBV/e9abbc77d1beee09a03345d3ce571927.jpg",
+              "dimension" : {
+                "width" : 1000,
+                "height" : 1000
+              },
+              "originalImageUrl" : "https://m.media-amazon.com/images/S/gestalt-seller-images-prod-us-east-1/ATVPDKIKX0DER/A3EOW54T19ETBV/e9abbc77d1beee09a03345d3ce571927.jpg",
+              "originalImageDimensions" : {
+                "width" : 1000,
+                "height" : 1000
+              }
+            },
+            "overlayImage" : {
+              "imageUrl" : "https://m.media-amazon.com/images/S/gestalt-seller-images-prod-us-east-1/ATVPDKIKX0DER/A3EOW54T19ETBV/e9abbc77d1beee09a03345d3ce571927.jpg",
+              "dimension" : {
+                "width" : 1000,
+                "height" : 1000
+              },
+              "originalImageUrl" : "https://m.media-amazon.com/images/S/gestalt-seller-images-prod-us-east-1/ATVPDKIKX0DER/A3EOW54T19ETBV/e9abbc77d1beee09a03345d3ce571927.jpg",
+              "originalImageDimensions" : {
+                "width" : 1000,
+                "height" : 1000
+              }
+            }
+          },
+          "displayValue" : "Glitter Blue"
+        }, {
+          "type" : "ContainerCustomization",
+          "name" : "Text 1",
+          "label" : "Text 1",
+          "children" : [ {
+            "type" : "FontCustomization",
+            "name" : "",
+            "label" : "Name Font",
+            "fontSelection" : {
+              "family" : "Skywalk",
+              "fontUrl" : "https://m.media-amazon.com/images/S/gestalt-fonts-na-prod-us-east-1/custom-fonts/ATVPDKIKX0DER/A3EOW54T19ETBV/b6d285b1-c61b-458b-a0db-3d004e2cb905.ttf"
+            }
+          }, {
+            "type" : "ColorCustomization",
+            "name" : "",
+            "label" : "^Name Color",
+            "colorSelection" : {
+              "name" : "White",
+              "value" : "#ffffff",
+              "colorModel" : "rgb"
+            }
+          }, {
+            "type" : "ContainerCustomization",
+            "children" : [ {
+              "type" : "PlacementContainerCustomization",
+              "name" : "Name",
+              "label" : "Text Input 1",
+              "children" : [ {
+                "type" : "FlatRatePriceDeltaContainerCustomization",
+                "children" : [ {
+                  "type" : "TextCustomization",
+                  "name" : "",
+                  "label" : "Name",
+                  "inputValue" : "Alicia"
+                } ],
+                "priceDelta" : {
+                  "amount" : 0
+                }
+              } ],
+              "dimension" : {
+                "width" : 400,
+                "height" : 113
+              },
+              "position" : {
+                "x" : 0,
+                "y" : 90
+              }
+            } ]
+          } ]
+        }, {
+          "type" : "ContainerCustomization",
+          "name" : "Title",
+          "label" : "Text 2",
+          "children" : [ {
+            "type" : "FontCustomization",
+            "name" : "",
+            "label" : "Title Font",
+            "fontSelection" : {
+              "family" : "Somekind",
+              "fontUrl" : "https://m.media-amazon.com/images/S/gestalt-fonts-na-prod-us-east-1/custom-fonts/ATVPDKIKX0DER/A3EOW54T19ETBV/a1bdf58a-1801-4970-bf8e-3497c49c1bce.ttf"
+            }
+          }, {
+            "type" : "ColorCustomization",
+            "name" : "",
+            "label" : "Title Color",
+            "colorSelection" : {
+              "name" : "White",
+              "value" : "#ffffff",
+              "colorModel" : "rgb"
+            }
+          }, {
+            "type" : "ContainerCustomization",
+            "children" : [ {
+              "type" : "PlacementContainerCustomization",
+              "name" : "Title",
+              "label" : "Text Input 1",
+              "children" : [ {
+                "type" : "FlatRatePriceDeltaContainerCustomization",
+                "children" : [ {
+                  "type" : "TextCustomization",
+                  "name" : "",
+                  "label" : "Title",
+                  "inputValue" : "RN"
+                } ],
+                "priceDelta" : {
+                  "amount" : 0
+                }
+              } ],
+              "dimension" : {
+                "width" : 328,
+                "height" : 74
+              },
+              "position" : {
+                "x" : 36,
+                "y" : 172
+              }
+            } ]
+          } ]
+        }, {
+          "type" : "OptionCustomization",
+          "name" : "Option Dropdown 1",
+          "label" : "Badge Reel Type",
+          "optionSelection" : {
+            "name" : "Swivel Alligator Clip",
+            "label" : "Swivel Alligator Clip",
+            "additionalCost" : {
+              "amount" : 3
+            },
+            "thumbnailImage" : {
+              "imageUrl" : "https://m.media-amazon.com/images/S/gestalt-seller-images-prod-us-east-1/ATVPDKIKX0DER/A3EOW54T19ETBV/5a7e8d637fa9bf6389fa7d5cc0c7cfeb.png",
+              "dimension" : {
+                "width" : 252,
+                "height" : 252
+              },
+              "originalImageUrl" : "https://m.media-amazon.com/images/S/gestalt-seller-images-prod-us-east-1/ATVPDKIKX0DER/A3EOW54T19ETBV/0d71a6f5acbe0726b09b16969ae37166.png",
+              "originalImageDimensions" : {
+                "width" : 177,
+                "height" : 252
+              }
+            }
+          },
+          "displayValue" : "Swivel Alligator Clip"
+        } ]
+      } ],
+      "baseImage" : {
+        "imageUrl" : "https://m.media-amazon.com/images/S/gestalt-seller-images-prod-us-east-1/ATVPDKIKX0DER/A3EOW54T19ETBV/c62efdedc417bcae918a758a5f5bc293.png",
+        "dimension" : {
+          "width" : 2000,
+          "height" : 2000
+        },
+        "originalImageUrl" : "https://m.media-amazon.com/images/S/gestalt-seller-images-prod-us-east-1/ATVPDKIKX0DER/A3EOW54T19ETBV/c62efdedc417bcae918a758a5f5bc293.png",
+        "originalImageDimensions" : {
+          "width" : 2000,
+          "height" : 2000
+        }
+      },
+      "snapshot" : {
+        "imageName" : "465c168c-fedd-f9f8-d2fd-c8093ea592b9.jpg",
+        "dimension" : {
+          "width" : 400,
+          "height" : 400
+        }
+      },
+      "svg" : "9fd4a150-080e-2bfc-3aa4-3012a0d63cc2.svg"
+    } ]
+  },
+  "version3.0" : {
+    "customizationInfo" : {
+      "surfaces" : [ {
+        "name" : "Surface 1",
+        "areas" : [ {
+          "customizationType" : "Options",
+          "name" : "Color 1",
+          "label" : "Color",
+          "optionValue" : "Glitter Blue",
+          "priceDelta" : {
+            "value" : 0.0
+          },
+          "optionImage" : "https://m.media-amazon.com/images/S/gestalt-seller-images-prod-us-east-1/ATVPDKIKX0DER/A3EOW54T19ETBV/e9abbc77d1beee09a03345d3ce571927.jpg"
+        }, {
+          "customizationType" : "TextPrinting",
+          "colorName" : "White",
+          "fill" : "#ffffff",
+          "fontFamily" : "Skywalk",
+          "fontUrl" : "https://m.media-amazon.com/images/S/gestalt-fonts-na-prod-us-east-1/custom-fonts/ATVPDKIKX0DER/A3EOW54T19ETBV/b6d285b1-c61b-458b-a0db-3d004e2cb905.ttf",
+          "Dimensions" : {
+            "width" : 400,
+            "height" : 113
+          },
+          "Position" : {
+            "x" : 0,
+            "y" : 90
+          },
+          "priceDelta" : {
+            "value" : 0.0
+          },
+          "name" : "Name",
+          "label" : "Name",
+          "text" : "Alicia"
+        }, {
+          "customizationType" : "TextPrinting",
+          "colorName" : "White",
+          "fill" : "#ffffff",
+          "fontFamily" : "Somekind",
+          "fontUrl" : "https://m.media-amazon.com/images/S/gestalt-fonts-na-prod-us-east-1/custom-fonts/ATVPDKIKX0DER/A3EOW54T19ETBV/a1bdf58a-1801-4970-bf8e-3497c49c1bce.ttf",
+          "Dimensions" : {
+            "width" : 328,
+            "height" : 74
+          },
+          "Position" : {
+            "x" : 36,
+            "y" : 172
+          },
+          "priceDelta" : {
+            "value" : 0.0
+          },
+          "name" : "Title",
+          "label" : "Title",
+          "text" : "RN"
+        }, {
+          "customizationType" : "Options",
+          "name" : "Option Dropdown 1",
+          "label" : "Badge Reel Type",
+          "optionValue" : "Swivel Alligator Clip",
+          "priceDelta" : {
+            "value" : 3.0
+          },
+          "optionImage" : ""
+        } ]
+      } ]
+    }
+  }
+}
+
