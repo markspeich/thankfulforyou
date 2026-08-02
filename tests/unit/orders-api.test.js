@@ -10,6 +10,30 @@ afterEach(() => {
 });
 
 describe("orders api client", () => {
+  it("loads compact order summaries through the additive list contract", async () => {
+    const payload = { orders: [{ id: "order:1001", items: [{ id: "item-1", designText: "Ada" }] }] };
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => payload });
+    vi.stubGlobal("fetch", fetchMock);
+    const { fetchWorkspaceOrderSummaries } = await import("../../src/orders-api.js");
+
+    await expect(fetchWorkspaceOrderSummaries({ batchId: "batch-1", statusFilter: "all", accessToken: "token-1" })).resolves.toEqual(payload);
+    expect(fetchMock).toHaveBeenCalledWith("/api/orders?batchId=batch-1&status=all&view=compact", {
+      headers: { Accept: "application/json", Authorization: "Bearer token-1" },
+    });
+  });
+
+  it("loads encoded order detail through the additive detail contract", async () => {
+    const payload = { order: { id: "order:1001", items: [{ id: "item-1", design: { lines: [] } }] } };
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => payload });
+    vi.stubGlobal("fetch", fetchMock);
+    const { fetchWorkspaceOrderDetail } = await import("../../src/orders-api.js");
+
+    await expect(fetchWorkspaceOrderDetail({ orderId: "order:1001", batchId: "batch 1" })).resolves.toEqual(payload);
+    expect(fetchMock).toHaveBeenCalledWith("/api/orders?batchId=batch+1&view=detail&orderId=order%3A1001", {
+      headers: { Accept: "application/json" },
+    });
+  });
+
   it("attaches a bearer token when loading workspace orders", async () => {
     const payload = { orders: [{ id: "order:1001", items: [{ id: "item-1" }] }] };
     const fetchMock = vi.fn().mockResolvedValue({

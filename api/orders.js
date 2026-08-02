@@ -3,7 +3,9 @@ import { resolveProductionBatchAuth } from "./_lib/production-batch-auth.js";
 import {
   addOrderGroupsToProductionBatch,
   addOrderItemsToProductionBatch,
+  getWorkspaceOrderDetail,
   importWorkspaceOrderItems,
+  listWorkspaceOrderSummaries,
   listWorkspaceOrders,
   updateOrderGroupStatus,
   updateOrderGroupsStatus,
@@ -264,6 +266,34 @@ export default async function handler(req, res) {
     if (req.method === "GET") {
       const batchId = normalizeString(req.query?.batchId);
       const statusFilter = normalizeStatusFilter(req.query?.status);
+      const view = normalizeString(req.query?.view);
+      if (view === "compact") {
+        const ordersPayload = await listWorkspaceOrderSummaries({
+          workspaceId: auth.workspaceId,
+          activeBatchId: batchId || null,
+          statusFilter,
+        });
+        res.status(200).json(ordersPayload);
+        return;
+      }
+      if (view === "detail") {
+        const orderId = normalizeString(req.query?.orderId);
+        if (!orderId) {
+          sendBadRequest(res, "orderId is required for the detail view.");
+          return;
+        }
+        const detailPayload = await getWorkspaceOrderDetail({
+          workspaceId: auth.workspaceId,
+          activeBatchId: batchId || null,
+          orderId,
+        });
+        if (!detailPayload.order) {
+          res.status(404).json({ error: "Order not found." });
+          return;
+        }
+        res.status(200).json(detailPayload);
+        return;
+      }
       const ordersPayload = await loadOrdersResponse({
         workspaceId: auth.workspaceId,
         batchId,

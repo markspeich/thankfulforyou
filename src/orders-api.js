@@ -17,7 +17,7 @@ function normalizeString(value) {
   return typeof value === "string" ? value.trim() : "";
 }
 
-function buildOrdersUrl(batchId, statusFilter = null) {
+function buildOrdersUrl(batchId, statusFilter = null, { view = null, orderId = null } = {}) {
   const normalizedBatchId = normalizeString(batchId);
   const normalizedStatusFilter = normalizeString(statusFilter);
   const params = new URLSearchParams();
@@ -26,6 +26,12 @@ function buildOrdersUrl(batchId, statusFilter = null) {
   }
   if (normalizedStatusFilter) {
     params.set("status", normalizedStatusFilter);
+  }
+  if (normalizeString(view)) {
+    params.set("view", normalizeString(view));
+  }
+  if (normalizeString(orderId)) {
+    params.set("orderId", normalizeString(orderId));
   }
   const query = params.toString();
   return query ? `/api/orders?${query}` : "/api/orders";
@@ -49,6 +55,20 @@ export async function fetchWorkspaceOrders({ batchId = null, statusFilter = null
   });
 
   return readOrdersResponse(response, "Unable to load workspace orders.");
+}
+
+export async function fetchWorkspaceOrderSummaries({ batchId = null, statusFilter = null, accessToken = null } = {}) {
+  const response = await fetch(buildOrdersUrl(batchId, statusFilter, { view: "compact" }), {
+    headers: buildAuthHeaders(accessToken, { Accept: "application/json" }),
+  });
+  return readOrdersResponse(response, "Unable to load workspace order summaries.");
+}
+
+export async function fetchWorkspaceOrderDetail({ orderId, batchId = null, accessToken = null } = {}) {
+  const response = await fetch(buildOrdersUrl(batchId, null, { view: "detail", orderId }), {
+    headers: buildAuthHeaders(accessToken, { Accept: "application/json" }),
+  });
+  return readOrdersResponse(response, "Unable to load workspace order detail.");
 }
 
 export async function importWorkspaceOrders({

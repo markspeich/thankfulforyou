@@ -237,6 +237,30 @@ function normalizeOrderItem(row, { design, lines, activeBatchItemIds }) {
   };
 }
 
+function normalizeCompactOrderItem(row, { design, activeBatchItemIds }) {
+  const source = row.source_json && typeof row.source_json === "object" ? row.source_json : {};
+
+  return {
+    id: row.id,
+    status: row.status ?? "active",
+    orderNumber: row.order_number ?? null,
+    buyerName: row.buyer_name ?? null,
+    listingId: row.listing_id ?? null,
+    transactionId: row.transaction_id ?? null,
+    importedColor: row.imported_color ?? null,
+    shipByDate: row.ship_by_date ?? null,
+    quantity: toPositiveInteger(row.quantity, 1),
+    source,
+    revision: Number.isInteger(row.revision) ? row.revision : null,
+    updatedAt: row.updated_at ?? null,
+    updatedBy: row.updated_by ?? null,
+    isInActiveBatch: activeBatchItemIds.has(row.id),
+    designId: design?.id ?? null,
+    designText: design?.design_text ?? "",
+    designProductionStatus: design?.production_status ?? null,
+  };
+}
+
 function getOrderGroupId(orderItem) {
   return orderItem.orderNumber ? `order:${orderItem.orderNumber}` : `item:${orderItem.id}`;
 }
@@ -392,6 +416,107 @@ export async function listWorkspaceOrders({ workspaceId, activeBatchId = null, s
   }
 
   return { orders: Array.from(groups.values()) };
+}
+
+export async function listWorkspaceOrderSummaries({ workspaceId, activeBatchId = null, statusFilter = "open" }) {
+  const supabase = createSupabaseAdminClient();
+  let orderItemsQuery = supabase
+    .from("order_items")
+    .select("id, workspace_id, status, order_number, buyer_name, listing_id, transaction_id, imported_color, ship_by_date, quantity, source_json, revision, updated_at, updated_by")
+    .eq("workspace_id", workspaceId);
+  if (statusFilter === "complete") {
+    orderItemsQuery = orderItemsQuery.eq("status", "complete");
+  } else if (statusFilter === "skipped") {
+    orderItemsQuery = orderItemsQuery.eq("status", "skipped");
+  } else if (statusFilter !== "all") {
+    orderItemsQuery = orderItemsQuery.neq("status", "complete").neq("status", "skipped").neq("status", "archived");
+  }
+  const { data: orderItems, error: orderItemsError } = await orderItemsQuery
+    .order("order_number", { ascending: true })
+    .order("created_at", { ascending: true });
+  if (orderItemsError) throw orderItemsError;
+
+  const itemRows = orderItems || [];
+  if (!itemRows.length) return { orders: [] };
+
+  const [{ data: designs, error: designsError }, batchItems] = await Promise.all([
+    supabase
+      .from("designs")
+      .select("id, order_item_id, design_text, production_status")
+      .eq("workspace_id", workspaceId)
+      .in("order_item_id", itemRows.map((item) => item.id)),
+    queryBatchItems({ supabase, workspaceId, batchId: activeBatchId }),
+  ]);
+  if (designsError) throw designsError;
+
+  const activeBatchItemIds = new Set(batchItems.filter((item) => item.status === "active").map((item) => item.order_item_id));
+  const designsByOrderItemId = new Map((designs || []).map((design) => [design.order_item_id, design]));
+  const groups = new Map();
+  for (const row of itemRows) {
+    appendOrderItemToGroups(groups, normalizeCompactOrderItem(row, {
+      design: designsByOrderItemId.get(row.id) || null,
+      activeBatchItemIds,
+    }));
+  }
+  return { orders: Array.from(groups.values()) };
+}
+
+export async function getWorkspaceOrderDetail({ workspaceId, orderId, activeBatchId = null }) {
+  const normalizedOrderId = normalizeString(orderId);
+  const separatorIndex = normalizedOrderId.indexOf(":");
+  const kind = separatorIndex > 0 ? normalizedOrderId.slice(0, separatorIndex) : "";
+  const value = separatorIndex > 0 ? normalizedOrderId.slice(separatorIndex + 1) : "";
+  if (!value || (kind !== "order" && kind !== "item")) return { order: null };
+
+  const supabase = createSupabaseAdminClient();
+  let query = supabase
+    .from("order_items")
+    .select("id, workspace_id, status, order_number, buyer_name, listing_id, transaction_id, imported_color, ship_by_date, quantity, source_json, revision, updated_at, updated_by")
+    .eq("workspace_id", workspaceId);
+  query = kind === "order" ? query.eq("order_number", value) : query.eq("id", value);
+  const { data: itemRows, error: orderItemsError } = await query.order("created_at", { ascending: true });
+  if (orderItemsError) throw orderItemsError;
+  if (!(itemRows || []).length) return { order: null };
+
+  const orderItemIds = itemRows.map((item) => item.id);
+  const [{ data: designs, error: designsError }, batchItems] = await Promise.all([
+    supabase
+      .from("designs")
+      .select("id, workspace_id, order_item_id, design_text, preset_id, size_guide_id, backing_border_mm, weld_exported_design, global_horizontal_scale, global_vertical_scale, production_status, cached_build_json, previous_completed_build_json, saved_settings_signature, completed_settings_signature, analysis_badge_json, revision, updated_at, updated_by")
+      .eq("workspace_id", workspaceId)
+      .in("order_item_id", orderItemIds),
+    queryBatchItems({ supabase, workspaceId, batchId: activeBatchId }),
+  ]);
+  if (designsError) throw designsError;
+
+  const designRows = designs || [];
+  const designIds = designRows.map((design) => design.id);
+  const { data: designLines, error: designLinesError } = designIds.length
+    ? await supabase.from("design_lines")
+      .select("design_id, line_index, item_kind, text, font_id, letter_bridge_mm, line_bridge_mm, offset_x_mm, offset_y_mm, text_height_mm, horizontal_scale, vertical_scale, lock_text_height, fixed_design_id, fixed_design_version, svg_size_mm, fixed_svg_backing_border")
+      .in("design_id", designIds)
+      .order("line_index", { ascending: true })
+    : { data: [], error: null };
+  if (designLinesError) throw designLinesError;
+
+  const activeBatchItemIds = new Set(batchItems.filter((item) => item.status === "active").map((item) => item.order_item_id));
+  const designsByOrderItemId = new Map(designRows.map((design) => [design.order_item_id, design]));
+  const linesByDesignId = new Map();
+  for (const line of designLines || []) {
+    const lines = linesByDesignId.get(line.design_id) || [];
+    lines.push(normalizeDesignLine(line));
+    linesByDesignId.set(line.design_id, lines);
+  }
+  const groups = new Map();
+  for (const row of itemRows) {
+    const design = designsByOrderItemId.get(row.id) || null;
+    appendOrderItemToGroups(groups, normalizeOrderItem(row, {
+      design,
+      lines: design ? linesByDesignId.get(design.id) || [] : [],
+      activeBatchItemIds,
+    }));
+  }
+  return { order: groups.get(normalizedOrderId) || null };
 }
 
 export async function addOrderItemsToProductionBatch({
