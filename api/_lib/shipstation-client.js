@@ -3,10 +3,15 @@ const TIMEOUT_MS = 15_000;
 const MAX_ATTEMPTS = 3;
 const MAX_RETRY_AFTER_MS = 10_000;
 const RETRY_BACKOFF_MS = 250;
+const SAFE_REQUEST_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const SAFE_VALIDATIONS = [
   { reasonCode: "required_field", field: "package_weight", summary: "Package weight is required." },
   { reasonCode: "invalid_field_value", field: "shipping_service", summary: "The selected shipping service is invalid." },
 ];
+
+function normalizeRequestId(value) {
+  return typeof value === "string" && SAFE_REQUEST_ID.test(value) ? value : null;
+}
 
 function safeValidation(value) {
   const matched = SAFE_VALIDATIONS.find((candidate) => value
@@ -29,7 +34,7 @@ export class ShipStationError extends Error {
     this.code = code;
     this.statusCode = statusCode;
     this.retryable = retryable;
-    this.requestId = typeof requestId === "string" && requestId ? requestId : null;
+    this.requestId = normalizeRequestId(requestId);
     this.validation = safeValidation(validation);
   }
 }
@@ -121,7 +126,7 @@ async function readErrorDetails(response) {
   try {
     const payload = await response.json();
     return {
-      requestId: typeof payload?.request_id === "string" && payload.request_id ? payload.request_id : null,
+      requestId: normalizeRequestId(payload?.request_id),
       validation: validationFromPayload(payload),
     };
   } catch {

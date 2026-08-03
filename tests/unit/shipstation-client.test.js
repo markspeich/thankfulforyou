@@ -83,6 +83,25 @@ describe("ShipStation V2 client", () => {
     expect(JSON.stringify(error)).not.toContain("secret body");
   });
 
+  it("retains only bounded request IDs matching the safe identifier allowlist", async () => {
+    const cases = [
+      { requestId: "req-safe_123.abc", expected: "req-safe_123.abc" },
+      { requestId: "req unsafe buyer@example.test", expected: null },
+      { requestId: "https://example.test/private-request", expected: null },
+      { requestId: "r".repeat(129), expected: null },
+    ];
+
+    for (const { requestId, expected } of cases) {
+      const client = createShipStationClient({
+        apiKey: "secret",
+        fetchImpl: vi.fn().mockResolvedValue(response({ request_id: requestId, errors: [] }, 400)),
+      });
+      const error = await client.updateNotesToBuyer({ shipmentId: "se-1", notesToBuyer: "ok" }).catch((caught) => caught);
+      expect(error.requestId).toBe(expected);
+      if (expected === null) expect(JSON.stringify(error)).not.toContain(requestId);
+    }
+  });
+
   it("extracts an allowlisted required package weight validation without retaining the response body", async () => {
     const client = createShipStationClient({
       apiKey: "secret",
