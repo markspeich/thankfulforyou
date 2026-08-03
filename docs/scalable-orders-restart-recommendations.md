@@ -104,7 +104,7 @@ Add new read contracts without switching the browser to them yet:
 
 ### Task 2: Adopt compact list and detail hydration in the Orders browser
 
-**Status:** `Not started`
+**Status:** `Complete`
 
 Switch the Orders workspace to the new contracts while still loading all order groups:
 

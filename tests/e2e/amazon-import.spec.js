@@ -66,6 +66,10 @@ async function routes(page, orderHandler = null) {
     json: { batch: { id: "b", workspaceId: "w" }, activeOrderItemId: null, orderItems: [] },
   }));
   await page.route("**/api/orders**", async route => {
+    const url = new URL(route.request().url());
+    if (url.searchParams.get("view") === "detail") {
+      return route.fulfill({ json: { order: order() } });
+    }
     gets += 1;
     if (orderHandler) return orderHandler(route, gets);
     return route.fulfill({ json: { orders: [order()] } });

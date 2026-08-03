@@ -75,7 +75,8 @@ import {
 import {
   addOrderItemToProductionBatch,
   addOrdersToProductionBatch,
-  fetchWorkspaceOrders,
+  fetchWorkspaceOrderDetail,
+  fetchWorkspaceOrderSummaries,
   importWorkspaceOrders,
   updateOrderItemLifecycleStatus,
 } from "./orders-api.js";
@@ -534,6 +535,7 @@ let amazonSessionRequest = null;
 let databaseOrdersImporting = false;
 let ordersDatabaseMutationInFlight = false;
 let databaseOrdersMutationVersion = 0;
+let databaseOrderDetailRequestVersion = 0;
 let loadedDatabaseOrdersKey = null;
 let databaseOrdersSearchTerm = "";
 let databaseOrdersStatusFilterValue = "open";
@@ -5799,7 +5801,8 @@ function getDatabaseOrderItemDesignText(item) {
     : typeof item?.text === "string" && item.text.trim()
       ? item.text.trim()
       : "";
-  return directText || "No design text";
+  const compactText = typeof item?.designText === "string" ? item.designText.trim() : "";
+  return directText || compactText || "No design text";
 }
 
 function getDatabaseOrderItemColorText(item) {
@@ -5827,6 +5830,37 @@ function getDatabaseOrderItemFlattenedLines(item) {
     .map((line) => (typeof line?.text === "string" ? line.text.trim() : ""))
     .filter(Boolean);
   return lineText.length ? lineText.join(" / ") : getDatabaseOrderItemDesignText(item);
+}
+
+async function hydrateSelectedDatabaseOrder(orderId) {
+  const normalizedOrderId = typeof orderId === "string" ? orderId.trim() : "";
+  if (!normalizedOrderId || !productionBatchAccessToken) return false;
+
+  const requestVersion = ++databaseOrderDetailRequestVersion;
+  try {
+    const payload = await fetchWorkspaceOrderDetail({
+      orderId: normalizedOrderId,
+      batchId: getActiveProductionBatchId() || null,
+      accessToken: productionBatchAccessToken,
+    });
+    if (requestVersion !== databaseOrderDetailRequestVersion || selectedDatabaseOrderId !== normalizedOrderId) {
+      return false;
+    }
+    if (!payload?.order) {
+      selectedDatabaseOrderId = null;
+      writeAppRoute({ replace: true, workspace: "databaseOrders", itemId: null });
+      renderDatabaseOrdersWorkspace();
+      return false;
+    }
+    databaseOrders = databaseOrders.map((order) => order.id === normalizedOrderId ? payload.order : order);
+    renderSelectedDatabaseOrderItems();
+    return true;
+  } catch (error) {
+    if (requestVersion === databaseOrderDetailRequestVersion && selectedDatabaseOrderId === normalizedOrderId) {
+      updateWorkflowAlert(error instanceof Error ? error.message : "Unable to load order detail.", "error");
+    }
+    return false;
+  }
 }
 
 function createDatabaseOrderRowImageStack(order) {
@@ -6150,73 +6184,10 @@ function updateDatabaseOrdersFromPayload(payload, options = {}) {
   return true;
 }
 
-
-function getDatabaseOrderItemsById(orderItemIds) {
-  const requestedIds = new Set((orderItemIds || []).filter((id) => typeof id === "string" && id));
-  return databaseOrders.flatMap((order) => order.items || []).filter((item) => requestedIds.has(item.id));
-}
-
-function mapDatabaseDesignStatusToBatchStatus(status) {
-  if (status === "exported") return "exported";
-  if (status === "saved" || status === "export_ready") return "captured";
-  if (status === "draft") return "not-started";
-  return "in-progress";
-}
-
-function createBatchItemFromDatabaseOrderItem(item) {
-  const design = item?.design || {};
-  const source = {
-    ...(item?.source && typeof item.source === "object" ? structuredClone(item.source) : {}),
-    orderNumber: item?.orderNumber ?? item?.source?.orderNumber ?? null,
-    buyerName: item?.buyerName ?? item?.source?.buyerName ?? null,
-    listingId: item?.listingId ?? item?.source?.listingId ?? null,
-    transactionId: item?.transactionId ?? item?.source?.transactionId ?? null,
-    colorName: item?.importedColor ?? item?.source?.colorName ?? null,
-    quantity: String(item?.quantity || item?.source?.quantity || 1),
-    shipByDate: item?.shipByDate ?? item?.source?.shipByDate ?? null,
-  };
-  return hydrateStoredOrder({
-    id: item.id,
-    revision: design.revision ?? item.revision,
-    updatedAt: design.updatedAt ?? item.updatedAt,
-    updatedBy: design.updatedBy ?? item.updatedBy,
-    text: design.text || "",
-    status: mapDatabaseDesignStatusToBatchStatus(design.productionStatus),
-    source,
-    settings: {
-      text: design.text || "",
-      presetId: design.presetId,
-      boundingSizePresetId: design.sizeGuideId,
-      backingMm: design.backingBorderMm,
-      weldExportedDesign: design.weldExportedDesign,
-      globalHorizontalScale: design.globalHorizontalScale,
-      globalVerticalScale: design.globalVerticalScale,
-      lines: design.lines || [],
-    },
-    cachedBuild: design.cachedBuild,
-    previousCompletedBuild: design.previousCompletedBuild,
-    savedSettingsSignature: design.savedSettingsSignature,
-    completedSettingsSignature: design.completedSettingsSignature,
-    analysisBadge: design.analysisBadge,
-  }, orders.length);
-}
-
 function applyAddedOrderItemsDelta(payload) {
   const addedIds = Array.isArray(payload?.addedOrderItemIds) ? payload.addedOrderItemIds : [];
   const addedIdSet = new Set(addedIds);
   if (!addedIdSet.size) return 0;
-
-  saveActiveOrderDraft();
-  const existingIds = new Set(orders.map((order) => order.id));
-  const appended = getDatabaseOrderItemsById(addedIds)
-    .filter((item) => !existingIds.has(item.id))
-    .map(createBatchItemFromDatabaseOrderItem)
-    .filter(Boolean);
-  orders.push(...appended);
-  if (!activeOrderItemId && appended.length > 0) {
-    activeOrderItemId = appended[0].id;
-    applySettings(appended[0].settings);
-  }
 
   databaseOrders = databaseOrders.map((order) => {
     const items = (order.items || []).map((item) => (
@@ -6233,14 +6204,30 @@ function applyAddedOrderItemsDelta(payload) {
   });
 
   databaseOrdersMutationVersion += 1;
+  databaseOrderDetailRequestVersion += 1;
   loadedDatabaseOrdersKey = (getActiveProductionBatchId() || "") + "|" + databaseOrdersStatusFilterValue;
-  lastProductionBatchSaveKey = buildProductionBatchSaveKey(buildProductionBatchSnapshot());
-  suppressBatchSyncLocalNotice = true;
-  persistBatchState({ skipRemoteSave: true });
-  suppressBatchSyncLocalNotice = false;
-  renderOrderList();
   renderDatabaseOrdersWorkspace();
-  return appended.length;
+  return addedIdSet.size;
+}
+
+async function persistPendingProductionBatchEdits() {
+  const shouldPersist = batchPersistenceTimeoutId != null
+    || productionBatchAutosavePending
+    || productionBatchAutosaveInFlight
+    || orders.some((order) => typeof order?.saveErrorMessage === "string" && order.saveErrorMessage);
+  saveActiveOrderDraft();
+  clearProductionBatchAutosaveTimeout();
+  await waitForProductionBatchAutosaveIdle();
+  const snapshotKey = buildProductionBatchSaveKey(buildProductionBatchSnapshot());
+  if (!snapshotKey || snapshotKey === lastProductionBatchSaveKey) return true;
+  if (!isProductionBatchSyncEnabled()) {
+    throw new Error("Unable to save pending Production Batch edits.");
+  }
+  if (!shouldPersist) return true;
+  productionBatchAutosavePending = false;
+  const saved = await saveBatchSnapshotToRemote({ degradeOnFailure: false });
+  if (!saved) throw new Error("Unable to save pending Production Batch edits.");
+  return true;
 }
 
 function applyOrderItemsStatusDelta(payload) {
@@ -6279,6 +6266,7 @@ function applyOrderItemsStatusDelta(payload) {
   }
 
   databaseOrdersMutationVersion += 1;
+  databaseOrderDetailRequestVersion += 1;
   loadedDatabaseOrdersKey = `${getActiveProductionBatchId() || ""}|${databaseOrdersStatusFilterValue}`;
   updateDatabaseOrdersState(normalizeOrdersWorkspaceState({
     orders: databaseOrders,
@@ -6676,7 +6664,7 @@ async function performDatabaseOrdersLoad({ force = false } = {}) {
   updateWorkflowAlert("Loading orders...", "pending", { autoHideMs: 0 });
 
   try {
-    const payload = await runProductionBatchRequestWithSessionRefresh((accessToken) => fetchWorkspaceOrders({
+    const payload = await runProductionBatchRequestWithSessionRefresh((accessToken) => fetchWorkspaceOrderSummaries({
       batchId,
       statusFilter: databaseOrdersStatusFilterValue,
       accessToken,
@@ -6690,6 +6678,9 @@ async function performDatabaseOrdersLoad({ force = false } = {}) {
       checkedOrderIds: checkedDatabaseOrderIds,
     }));
     loadedDatabaseOrdersKey = loadKey;
+    if (selectedDatabaseOrderId) {
+      void hydrateSelectedDatabaseOrder(selectedDatabaseOrderId);
+    }
     if (databaseOrders.length === 0) {
       updateWorkflowAlert("No orders found in the workspace.", "pending");
     } else {
@@ -6723,6 +6714,7 @@ function selectDatabaseOrder(orderId, options = {}) {
   }
 
   selectedDatabaseOrderId = order.id;
+  databaseOrderDetailRequestVersion += 1;
   updateDatabaseOrderSelectionRows();
   renderSelectedDatabaseOrderItems();
   if (updateRoute) {
@@ -6732,6 +6724,7 @@ function selectDatabaseOrder(orderId, options = {}) {
       itemId: selectedDatabaseOrderId,
     });
   }
+  void hydrateSelectedDatabaseOrder(selectedDatabaseOrderId);
   return true;
 }
 
@@ -7279,6 +7272,7 @@ async function addDatabaseOrderItemToBatch(item, button = null) {
   render();
 
   try {
+    await persistPendingProductionBatchEdits();
     const accessToken = await resolveProductionBatchMutationAccessToken();
     const payload = await runProductionBatchRequestWithSessionRefresh((requestToken) => addOrderItemToProductionBatch({
       batchId,
@@ -7287,6 +7281,7 @@ async function addDatabaseOrderItemToBatch(item, button = null) {
       accessToken: requestToken,
     }), accessToken);
 
+    await refreshProductionBatchSnapshot(accessToken);
     applyAddedOrderItemsDelta(payload);
     updateWorkflowAlert(buildAddedToBatchMessage(payload), "success");
     completeOperationDialog({ title: "Order Item Added", description: buildAddedToBatchMessage(payload), metrics: [{ label: "Selected", value: 1 }, { label: "Added", value: countFromPayload(payload, "addedOrderItemCount") }, { label: "Already in batch", value: Math.max(0, 1 - countFromPayload(payload, "addedOrderItemCount")) }] });
@@ -7331,6 +7326,7 @@ async function updateDatabaseOrderItemStatus({
   render();
 
   try {
+    await persistPendingProductionBatchEdits();
     const accessToken = await resolveProductionBatchMutationAccessToken();
     const payload = await runProductionBatchRequestWithSessionRefresh((requestToken) => updateOrderItemLifecycleStatus({
       action,
@@ -7432,6 +7428,7 @@ async function updateDatabaseOrderStatus({
   render();
 
   try {
+    await persistPendingProductionBatchEdits();
     const accessToken = await resolveProductionBatchMutationAccessToken();
     const payload = await runProductionBatchRequestWithSessionRefresh((requestToken) => updateOrderItemLifecycleStatus({
       action,
@@ -7540,6 +7537,7 @@ async function updateCheckedDatabaseOrdersStatus({
   render();
 
   try {
+    await persistPendingProductionBatchEdits();
     const accessToken = await resolveProductionBatchMutationAccessToken();
     const payload = await runProductionBatchRequestWithSessionRefresh((requestToken) => updateOrderItemLifecycleStatus({
       action,
@@ -7648,6 +7646,7 @@ async function addCheckedDatabaseOrdersToBatch() {
   render();
 
   try {
+    await persistPendingProductionBatchEdits();
     const accessToken = await resolveProductionBatchMutationAccessToken();
     const payload = await runProductionBatchRequestWithSessionRefresh((requestToken) => addOrdersToProductionBatch({
       batchId,
@@ -7659,6 +7658,7 @@ async function addCheckedDatabaseOrdersToBatch() {
       [...checkedDatabaseOrderIds].filter((orderId) => !orderIds.includes(orderId)),
     );
 
+    await refreshProductionBatchSnapshot(accessToken);
     applyAddedOrderItemsDelta(payload);
     checkedDatabaseOrderIds = nextCheckedOrderIds;
     renderDatabaseOrdersWorkspace();
@@ -7697,6 +7697,7 @@ async function addSelectedDatabaseOrderToBatch() {
   render();
 
   try {
+    await persistPendingProductionBatchEdits();
     const accessToken = await resolveProductionBatchMutationAccessToken();
     const payload = await runProductionBatchRequestWithSessionRefresh((requestToken) => addOrdersToProductionBatch({
       batchId,
@@ -7705,6 +7706,7 @@ async function addSelectedDatabaseOrderToBatch() {
       accessToken: requestToken,
     }), accessToken);
 
+    await refreshProductionBatchSnapshot(accessToken);
     applyAddedOrderItemsDelta(payload);
     selectedOrderActionsMenu?.removeAttribute("open");
     updateWorkflowAlert(buildAddedToBatchMessage(payload), "success");
