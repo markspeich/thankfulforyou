@@ -104,7 +104,7 @@ describe("ShipStation V2 client", () => {
     ])).rejects.toMatchObject({ code: "temporary", retryable: true });
   });
 
-  it("includes ShipStation's required routing context when updating buyer notes", async () => {
+  it("preserves mutable shipping configuration when updating buyer notes", async () => {
     const fetchImpl = vi.fn().mockResolvedValue(response(shipment({ notes_to_buyer: "Existing\nImported" })));
     const client = createShipStationClient({ apiKey: "secret", fetchImpl });
 
@@ -113,6 +113,20 @@ describe("ShipStation V2 client", () => {
       notesToBuyer: "Existing\nImported",
       shipTo: { name: "Buyer" },
       warehouseId: "se-warehouse",
+      carrierId: "se-carrier",
+      serviceCode: "usps_ground_advantage",
+      requestedShipmentService: "USPS Ground Advantage",
+      shippingRuleId: "se-rule",
+      packages: [{
+        shipment_package_id: "se-read-only",
+        package_id: "se-3",
+        package_code: "package",
+        package_name: "Package",
+        weight: { value: 1.1, unit: "ounce" },
+        dimensions: { unit: "inch", length: 8, width: 6, height: 1 },
+        insured_value: { currency: "usd", amount: 0 },
+        external_package_id: "external-package",
+      }],
     })).resolves.toMatchObject({ shipment_id: "se-1" });
     expect(fetchImpl).toHaveBeenCalledWith(
       "https://api.shipstation.com/v2/shipments/se%2F1",
@@ -122,6 +136,18 @@ describe("ShipStation V2 client", () => {
           notes_to_buyer: "Existing\nImported",
           ship_to: { name: "Buyer" },
           warehouse_id: "se-warehouse",
+          carrier_id: "se-carrier",
+          service_code: "usps_ground_advantage",
+          requested_shipment_service: "USPS Ground Advantage",
+          shipping_rule_id: "se-rule",
+          packages: [{
+            package_id: "se-3",
+            package_code: "package",
+            weight: { value: 1.1, unit: "ounce" },
+            dimensions: { unit: "inch", length: 8, width: 6, height: 1 },
+            insured_value: { currency: "usd", amount: 0 },
+            external_package_id: "external-package",
+          }],
         }),
         headers: expect.objectContaining({ "API-Key": "secret", Accept: "application/json", "Content-Type": "application/json" }),
       }),

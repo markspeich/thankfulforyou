@@ -57,6 +57,28 @@ function retryAfterMilliseconds(value, now) {
   return Math.min(Math.max(Math.round(delay), 0), MAX_RETRY_AFTER_MS);
 }
 
+const MUTABLE_PACKAGE_FIELDS = [
+  "package_id",
+  "package_code",
+  "weight",
+  "dimensions",
+  "insured_value",
+  "label_messages",
+  "external_package_id",
+  "content_description",
+  "products",
+  "dangerous_goods_package_info",
+];
+
+function mutablePackage(packageDetails) {
+  if (!packageDetails || typeof packageDetails !== "object" || Array.isArray(packageDetails)) {
+    throw new ShipStationError("invalid_response");
+  }
+  return Object.fromEntries(MUTABLE_PACKAGE_FIELDS
+    .filter((field) => packageDetails[field] !== undefined && packageDetails[field] !== null)
+    .map((field) => [field, packageDetails[field]]));
+}
+
 async function readRequestId(response) {
   try {
     const payload = await response.json();
@@ -193,7 +215,19 @@ export function createShipStationClient({
     }
   }
 
-  function updateNotesToBuyer({ shipmentId, notesToBuyer, shipTo, shipFrom, warehouseId, signal } = {}) {
+  function updateNotesToBuyer({
+    shipmentId,
+    notesToBuyer,
+    shipTo,
+    shipFrom,
+    warehouseId,
+    carrierId,
+    serviceCode,
+    requestedShipmentService,
+    shippingRuleId,
+    packages,
+    signal,
+  } = {}) {
     const hasShipTo = shipTo && typeof shipTo === "object" && !Array.isArray(shipTo);
     const hasShipFrom = shipFrom && typeof shipFrom === "object" && !Array.isArray(shipFrom);
     const hasWarehouse = typeof warehouseId === "string" && warehouseId;
@@ -208,6 +242,12 @@ export function createShipStationClient({
         ...(hasShipTo ? { ship_to: shipTo } : {}),
         ...(hasWarehouse ? { warehouse_id: warehouseId }
           : hasShipFrom ? { ship_from: shipFrom } : {}),
+        ...(typeof carrierId === "string" && carrierId ? { carrier_id: carrierId } : {}),
+        ...(typeof serviceCode === "string" && serviceCode ? { service_code: serviceCode } : {}),
+        ...(typeof requestedShipmentService === "string" && requestedShipmentService
+          ? { requested_shipment_service: requestedShipmentService } : {}),
+        ...(typeof shippingRuleId === "string" && shippingRuleId ? { shipping_rule_id: shippingRuleId } : {}),
+        ...(Array.isArray(packages) ? { packages: packages.map(mutablePackage) } : {}),
       },
       signal,
       validate: assertShipment,

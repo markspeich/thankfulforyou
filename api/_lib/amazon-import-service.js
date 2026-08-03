@@ -462,6 +462,11 @@ export function createAmazonImportService({
                   shipTo: shipment.ship_to,
                   shipFrom: shipment.ship_from,
                   warehouseId: shipment.warehouse_id,
+                  carrierId: shipment.carrier_id,
+                  serviceCode: shipment.service_code,
+                  requestedShipmentService: shipment.requested_shipment_service,
+                  shippingRuleId: shipment.shipping_rule_id,
+                  packages: shipment.packages,
                   signal,
                 }));
               }

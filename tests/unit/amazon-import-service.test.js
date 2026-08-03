@@ -80,6 +80,7 @@ function shipment(id, {
   items = [item(`${id}-item`)],
   tags = [],
   notes = "",
+  ...overrides
 } = {}) {
   return {
     shipment_id: id,
@@ -88,6 +89,7 @@ function shipment(id, {
     items,
     tags,
     notes_to_buyer: notes,
+    ...overrides,
   };
 }
 
@@ -1143,6 +1145,13 @@ describe("Amazon import service", () => {
     const f = fixture({
       shipments: [shipment("ordered", {
         notes: "Original buyer note",
+        ship_to: { name: "Buyer" },
+        warehouse_id: "se-warehouse",
+        carrier_id: "se-carrier",
+        service_code: "usps_ground_advantage",
+        requested_shipment_service: "USPS Ground Advantage",
+        shipping_rule_id: "se-rule",
+        packages: [{ package_code: "package", weight: { value: 1.1, unit: "ounce" } }],
         items: [
           item("first", {
             name: "First Reel",
@@ -1180,6 +1189,14 @@ describe("Amazon import service", () => {
         "Color: Purple",
         "Amazon Order Item: second",
       ].join("\n"),
+      shipTo: { name: "Buyer" },
+      shipFrom: undefined,
+      warehouseId: "se-warehouse",
+      carrierId: "se-carrier",
+      serviceCode: "usps_ground_advantage",
+      requestedShipmentService: "USPS Ground Advantage",
+      shippingRuleId: "se-rule",
+      packages: [{ package_code: "package", weight: { value: 1.1, unit: "ounce" } }],
       signal: undefined,
     });
     expect(f.sequence.indexOf("notes:ordered"))
