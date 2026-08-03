@@ -26,9 +26,52 @@ const SAFE_AUTH_ERROR_MESSAGES = Object.freeze({
 });
 const SAFE_SHIPSTATION_ERROR_CODES = new Set(["configuration", "invalid_response", "aborted", "temporary", "rate_limited", "request_failed"]);
 const SAFE_SHIPSTATION_REQUEST_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+const MAX_PUBLIC_FAILURES = 10;
+const SAFE_ORDER_NUMBER = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+const SAFE_FAILURE_STAGES = new Set([
+  "item_start",
+  "customization_fetch",
+  "normalization",
+  "enrichment",
+  "notes_build",
+  "notes_update",
+  "persistence",
+  "tag_update",
+]);
+const SAFE_FAILURE_VALIDATIONS = [
+  { reasonCode: "required_field", summary: "Package weight is required." },
+  { reasonCode: "invalid_field_value", summary: "The selected shipping service is invalid." },
+];
 
 
 const PROGRESS_STAGES = new Set(["fetching_shipments", "processing_shipments"]);
+
+function safeFailures(value) {
+  if (!Array.isArray(value)) return undefined;
+  const failures = [];
+  for (const failure of value) {
+    if (failures.length >= MAX_PUBLIC_FAILURES) break;
+    const validation = SAFE_FAILURE_VALIDATIONS.find((candidate) => (
+      failure
+      && typeof failure === "object"
+      && failure.reasonCode === candidate.reasonCode
+      && failure.summary === candidate.summary
+    ));
+    if (
+      !validation
+      || typeof failure.orderNumber !== "string"
+      || !SAFE_ORDER_NUMBER.test(failure.orderNumber)
+      || !SAFE_FAILURE_STAGES.has(failure.stage)
+    ) continue;
+    failures.push({
+      orderNumber: failure.orderNumber,
+      stage: failure.stage,
+      reasonCode: validation.reasonCode,
+      summary: validation.summary,
+    });
+  }
+  return failures;
+}
 
 function safeProgressFrame(event) {
   const numericFields = event?.type === "progress"
@@ -44,6 +87,8 @@ function safeProgressFrame(event) {
     const value = event[field];
     if (typeof value === "number" || value === null) frame[field] = value;
   }
+  const failures = event.type === "complete" ? safeFailures(event.failures) : undefined;
+  if (failures) frame.failures = failures;
   return frame;
 }
 

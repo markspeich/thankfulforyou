@@ -374,6 +374,77 @@ describe("Amazon import service", () => {
     expect(JSON.stringify(calls)).not.toContain("URL-SECRET");
   });
 
+  it("reports a trusted notes update validation failure without exposing arbitrary error data", async () => {
+    // Break caught: a safe ShipStation validation failure is lost from the import completion or leaks upstream error content.
+    const failure = new ShipStationError("invalid_response", {
+      validation: {
+        reasonCode: "required_field",
+        field: "package_weight",
+        summary: "Package weight is required.",
+      },
+    });
+    Object.assign(failure, {
+      message: "PRIVATE CUSTOMER ERROR MESSAGE",
+      response: { body: "PRIVATE UPSTREAM RESPONSE" },
+      arbitraryProperty: "PRIVATE ARBITRARY PROPERTY",
+    });
+    const f = fixture({
+      shipments: [shipment("invalid-notes", {
+        items: [item("invalid-notes-item", { customizedUrl: "https://amazon.example/customization" })],
+      })],
+    });
+    f.client.updateNotesToBuyer.mockRejectedValueOnce(failure);
+
+    const result = await run(f);
+
+    expect(result).toMatchObject({
+      processedShipments: 0,
+      importedItems: 0,
+      existingItems: 0,
+      alreadyProcessedShipments: 0,
+      customizationNeeded: 0,
+      failed: 1,
+      failures: [{
+        orderNumber: "order-invalid-notes",
+        stage: "notes_update",
+        reasonCode: "required_field",
+        summary: "Package weight is required.",
+      }],
+    });
+    const serialized = JSON.stringify(result);
+    for (const secret of ["PRIVATE CUSTOMER ERROR MESSAGE", "PRIVATE UPSTREAM RESPONSE", "PRIVATE ARBITRARY PROPERTY"]) {
+      expect(serialized).not.toContain(secret);
+    }
+  });
+
+  it("caps public validation failure records at ten while retaining the total failed count", async () => {
+    // Break caught: a large failing batch can grow a public completion payload without bound or undercount failures.
+    const failure = new ShipStationError("invalid_response", {
+      validation: {
+        reasonCode: "invalid_field_value",
+        field: "shipping_service",
+        summary: "The selected shipping service is invalid.",
+      },
+    });
+    const f = fixture({
+      shipments: Array.from({ length: 11 }, (_, index) => shipment(`invalid-${index + 1}`, {
+        items: [item(`invalid-item-${index + 1}`, { customizedUrl: "https://amazon.example/customization" })],
+      })),
+    });
+    f.client.updateNotesToBuyer.mockRejectedValue(failure);
+
+    const result = await run(f);
+
+    expect(result.failed).toBe(11);
+    expect(result.failures).toHaveLength(10);
+    expect(result.failures).toEqual(Array.from({ length: 10 }, (_, index) => ({
+      orderNumber: `order-invalid-${index + 1}`,
+      stage: "notes_update",
+      reasonCode: "invalid_field_value",
+      summary: "The selected shipping service is invalid.",
+    })));
+  });
+
   it("attributes note construction to the failing item and clears item context for shipment-wide work", async () => {
     // Break caught: note construction is mislabeled as enrichment, or later shipment failures name the final item.
     const calls = [];
@@ -1210,6 +1281,7 @@ describe("Amazon import service", () => {
       existingItems: 1,
       customizationNeeded: 0,
       failed: 0,
+      failures: [],
     });
   });
 
@@ -1471,6 +1543,7 @@ describe("Amazon import service", () => {
       alreadyProcessedShipments: 0,
       customizationNeeded: 0,
       failed: 0,
+      failures: [],
     });
     expect(f.events.at(-1)).toEqual(result);
     const serialized = JSON.stringify(f.events);

@@ -125,6 +125,42 @@ describe("Amazon import API", () => {
     ]);
   });
 
+  it("streams trusted bounded completion failures without arbitrary error response content", async () => {
+    // Break caught: the NDJSON boundary drops trusted validation records or forwards arbitrary upstream error response data.
+    const res = response();
+    await createAmazonImportHandler({
+      resolveAuth: vi.fn().mockResolvedValue({ workspaceId: "workspace-1", userId: "user-1" }),
+      serviceFactory: () => ({
+        prepare: async ({ onProgress }) => ({
+          run: async () => onProgress({
+            type: "complete",
+            processedShipments: 0,
+            importedItems: 0,
+            existingItems: 0,
+            alreadyProcessedShipments: 0,
+            customizationNeeded: 0,
+            failed: 1,
+            failures: [{
+              orderNumber: "order-invalid-notes",
+              stage: "notes_update",
+              reasonCode: "required_field",
+              summary: "Package weight is required.",
+              response: "PRIVATE UPSTREAM ERROR RESPONSE",
+            }],
+            response: "PRIVATE TOP LEVEL ERROR RESPONSE",
+          }),
+          release: vi.fn(),
+        }),
+      }),
+    })({ method: "POST" }, res);
+
+    expect(res.chunks).toEqual([
+      '{"type":"complete","processedShipments":0,"importedItems":0,"existingItems":0,"alreadyProcessedShipments":0,"customizationNeeded":0,"failed":1,"failures":[{"orderNumber":"order-invalid-notes","stage":"notes_update","reasonCode":"required_field","summary":"Package weight is required."}]}\n',
+    ]);
+    expect(res.chunks.join("")).not.toContain("PRIVATE UPSTREAM ERROR RESPONSE");
+    expect(res.chunks.join("")).not.toContain("PRIVATE TOP LEVEL ERROR RESPONSE");
+  });
+
   it("loads workspace preset and font context for server item enrichment", async () => {
     // Break caught: the API imports Amazon items without workspace-specific preset/font data.
     const loadPresetSnapshot = vi.fn().mockResolvedValue({
