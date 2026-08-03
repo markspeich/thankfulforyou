@@ -118,6 +118,7 @@ describe("Amazon API browser client", () => {
       "not-an-array",
       Array.from({ length: 11 }, () => safeFailure),
       [{ ...safeFailure, orderNumber: "Buyer Daphne Private https://example.test/customization" }],
+      [{ ...safeFailure, orderNumber: "Buyer_Daphne_Private" }],
       [{ ...safeFailure, stage: "private_stage" }],
       [{ ...safeFailure, reasonCode: "private_reason" }],
       [{ ...safeFailure, summary: "Package weight is required for Buyer Daphne Private." }],

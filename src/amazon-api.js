@@ -23,7 +23,7 @@ const PROGRESS_KEYS = ["processed", "stage", "total", "type"];
 const ERROR_KEYS = ["code", "message", "type"];
 const FAILURE_KEYS = ["orderNumber", "reasonCode", "stage", "summary"];
 const MAX_FAILURES = 10;
-const SAFE_ORDER_NUMBER = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+const SAFE_ORDER_NUMBER = /^\d{3}-\d{7}-\d{7}$/;
 const SAFE_FAILURE_STAGES = new Set([
   "item_start",
   "customization_fetch",

@@ -276,7 +276,7 @@ function normalizeAmazonCount(value) {
 }
 
 const AMAZON_IMPORT_FAILURE_FALLBACK = "One or more Amazon orders could not be imported. Please retry or check the production logs.";
-const SAFE_AMAZON_ORDER_NUMBER = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+const SAFE_AMAZON_ORDER_NUMBER = /^\d{3}-\d{7}-\d{7}$/;
 const AMAZON_IMPORT_FAILURE_STAGE_DESCRIPTIONS = Object.freeze({
   item_start: "while starting an Amazon order item",
   customization_fetch: "while fetching Amazon customization details",

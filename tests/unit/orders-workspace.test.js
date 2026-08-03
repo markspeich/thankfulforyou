@@ -458,10 +458,12 @@ describe("Amazon workspace descriptors", () => {
       "notes_update<script>alert('private')</script>",
       "PRIVATE_UPSTREAM_REASON",
       "Package weight is required. Buyer address: 1 Private Way",
+      "Buyer_Daphne_Private",
     ];
     const invalidFailures = [
       undefined,
       { orderNumber: hostileValues[0], stage: "notes_update", reasonCode: "required_field", summary: "Package weight is required." },
+      { orderNumber: hostileValues[4], stage: "notes_update", reasonCode: "required_field", summary: "Package weight is required." },
       { orderNumber: "111-0318024-9415409", stage: hostileValues[1], reasonCode: "required_field", summary: "Package weight is required." },
       { orderNumber: "111-0318024-9415409", stage: "toString", reasonCode: "required_field", summary: "Package weight is required." },
       { orderNumber: "111-0318024-9415409", stage: "notes_update", reasonCode: hostileValues[2], summary: "Package weight is required." },
