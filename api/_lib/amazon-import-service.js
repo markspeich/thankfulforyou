@@ -20,7 +20,7 @@ const SAFE_PUBLIC_FAILURE_STAGES = new Set([
   "persistence",
   "tag_update",
 ]);
-const SAFE_ORDER_NUMBER = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+const SAFE_ORDER_NUMBER = /^\d{3}-\d{7}-\d{7}$/;
 
 export class AmazonImportError extends Error {
   constructor(code, message, statusCode = 500) {

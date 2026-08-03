@@ -108,15 +108,12 @@ function validationFromPayload(payload) {
     return null;
   }
   for (const error of payload.errors) {
-    if (!error || typeof error !== "object" || Array.isArray(error) || !Array.isArray(error.fields) || error.fields.length > 10) continue;
-    for (const field of error.fields) {
-      if (!field || typeof field !== "object" || Array.isArray(field)) continue;
-      if (error.error_code === "required_field" && field.field === "packages[0].weight") {
-        return { reasonCode: "required_field", field: "package_weight", summary: "Package weight is required." };
-      }
-      if (error.error_code === "invalid_field_value" && field.field === "service_code") {
-        return { reasonCode: "invalid_field_value", field: "shipping_service", summary: "The selected shipping service is invalid." };
-      }
+    if (!error || typeof error !== "object" || Array.isArray(error)) continue;
+    if (error.error_code === "field_value_required" && error.field_name === "packages[0].weight") {
+      return { reasonCode: "required_field", field: "package_weight", summary: "Package weight is required." };
+    }
+    if (error.error_code === "invalid_field_value" && error.field_name === "service_code") {
+      return { reasonCode: "invalid_field_value", field: "shipping_service", summary: "The selected shipping service is invalid." };
     }
   }
   return null;

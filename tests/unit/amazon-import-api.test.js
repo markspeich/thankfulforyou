@@ -7,6 +7,7 @@ import {
 } from "../../api/_lib/amazon-import-service.js";
 import { createAmazonImportDiagnostics } from "../../api/_lib/amazon-import-diagnostics.js";
 import { ShipStationError } from "../../api/_lib/shipstation-client.js";
+import { importAmazonOrders } from "../../src/amazon-api.js";
 
 function deferred() {
   let resolve;
@@ -141,7 +142,7 @@ describe("Amazon import API", () => {
             customizationNeeded: 0,
             failed: 1,
             failures: [{
-              orderNumber: "order-invalid-notes",
+              orderNumber: "111-0318024-9415409",
               stage: "notes_update",
               reasonCode: "required_field",
               summary: "Package weight is required.",
@@ -155,10 +156,67 @@ describe("Amazon import API", () => {
     })({ method: "POST" }, res);
 
     expect(res.chunks).toEqual([
-      '{"type":"complete","processedShipments":0,"importedItems":0,"existingItems":0,"alreadyProcessedShipments":0,"customizationNeeded":0,"failed":1,"failures":[{"orderNumber":"order-invalid-notes","stage":"notes_update","reasonCode":"required_field","summary":"Package weight is required."}]}\n',
+      '{"type":"complete","processedShipments":0,"importedItems":0,"existingItems":0,"alreadyProcessedShipments":0,"customizationNeeded":0,"failed":1,"failures":[{"orderNumber":"111-0318024-9415409","stage":"notes_update","reasonCode":"required_field","summary":"Package weight is required."}]}\n',
     ]);
     expect(res.chunks.join("")).not.toContain("PRIVATE UPSTREAM ERROR RESPONSE");
     expect(res.chunks.join("")).not.toContain("PRIVATE TOP LEVEL ERROR RESPONSE");
+  });
+
+  it("emits completion frames that preserve valid details through the browser parser and omit fallback IDs", async () => {
+    // Break caught: the server accepts an identifier grammar that makes its own completion frame fail browser parsing.
+    const completion = {
+      type: "complete",
+      processedShipments: 0,
+      importedItems: 0,
+      existingItems: 0,
+      alreadyProcessedShipments: 0,
+      customizationNeeded: 0,
+      failed: 1,
+    };
+    const cases = [
+      {
+        failure: {
+          orderNumber: "111-0318024-9415409",
+          stage: "notes_update",
+          reasonCode: "required_field",
+          summary: "Package weight is required.",
+        },
+        expectedFailures: [{
+          orderNumber: "111-0318024-9415409",
+          stage: "notes_update",
+          reasonCode: "required_field",
+          summary: "Package weight is required.",
+        }],
+      },
+      {
+        failure: {
+          orderNumber: "order-fallback-id",
+          stage: "notes_update",
+          reasonCode: "required_field",
+          summary: "Package weight is required.",
+        },
+        expectedFailures: [],
+      },
+    ];
+
+    for (const { failure, expectedFailures } of cases) {
+      const res = response();
+      await createAmazonImportHandler({
+        resolveAuth: vi.fn().mockResolvedValue({ workspaceId: "workspace-1", userId: "user-1" }),
+        serviceFactory: () => ({
+          prepare: async ({ onProgress }) => ({
+            run: async () => onProgress({ ...completion, failures: [failure] }),
+            release: vi.fn(),
+          }),
+        }),
+      })({ method: "POST" }, res);
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(res.chunks.join(""))));
+      const events = [];
+
+      await importAmazonOrders({ onEvent: (event) => events.push(event) });
+
+      expect(events).toEqual([{ ...completion, failures: expectedFailures }]);
+    }
   });
 
   it("loads workspace preset and font context for server item enrichment", async () => {

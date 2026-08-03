@@ -108,9 +108,10 @@ describe("ShipStation V2 client", () => {
       fetchImpl: vi.fn().mockResolvedValue(response({
         request_id: "req-package-weight",
         errors: [{
-          error_code: "required_field",
-          message: "Package weight is required.",
-          fields: [{ field: "packages[0].weight", message: "Package weight is required.", value: "buyer-provided-weight" }],
+          error_code: "field_value_required",
+          field_name: "packages[0].weight",
+          field_value: "buyer-provided-weight",
+          message: "PRIVATE UPSTREAM PACKAGE MESSAGE",
         }],
       }, 400)),
     });
@@ -129,6 +130,7 @@ describe("ShipStation V2 client", () => {
     });
     expect(Object.isFrozen(error.validation)).toBe(true);
     expect(JSON.stringify(error)).not.toContain("buyer-provided-weight");
+    expect(JSON.stringify(error)).not.toContain("PRIVATE UPSTREAM PACKAGE MESSAGE");
   });
 
   it("maps only documented validation combinations and leaves generic 400 errors unclassified", async () => {
@@ -138,8 +140,9 @@ describe("ShipStation V2 client", () => {
           request_id: "req-service",
           errors: [{
             error_code: "invalid_field_value",
-            message: "The selected shipping service is invalid.",
-            fields: [{ field: "service_code", message: "The selected shipping service is invalid.", value: "buyer-chosen-service" }],
+            field_name: "service_code",
+            field_value: "buyer-chosen-service",
+            message: "PRIVATE UPSTREAM SERVICE MESSAGE",
           }],
         },
         expected: {
@@ -148,6 +151,27 @@ describe("ShipStation V2 client", () => {
           summary: "The selected shipping service is invalid.",
         },
       },
+      {
+        payload: {
+          request_id: "req-legacy-shape",
+          errors: [{
+            error_code: "field_value_required",
+            fields: [{ field: "packages[0].weight", value: "PRIVATE LEGACY FIELD VALUE" }],
+          }],
+        },
+        expected: null,
+      },
+      {
+        payload: {
+          request_id: "req-wrong-pair",
+          errors: [{
+            error_code: "field_value_required",
+            field_name: "service_code",
+            field_value: "PRIVATE WRONG-PAIR VALUE",
+          }],
+        },
+        expected: null,
+      },
       { payload: { request_id: "req-generic", errors: [] }, expected: null },
     ];
 
@@ -155,6 +179,7 @@ describe("ShipStation V2 client", () => {
       const client = createShipStationClient({ apiKey: "secret", fetchImpl: vi.fn().mockResolvedValue(response(payload, 400)) });
       const error = await client.updateNotesToBuyer({ shipmentId: "se-1", notesToBuyer: "ok" }).catch((caught) => caught);
       expect(error).toMatchObject({ requestId: payload.request_id, validation: expected });
+      expect(JSON.stringify(error)).not.toMatch(/buyer-chosen-service|PRIVATE UPSTREAM SERVICE MESSAGE|PRIVATE LEGACY FIELD VALUE|PRIVATE WRONG-PAIR VALUE/);
     }
   });
 
@@ -170,7 +195,7 @@ describe("ShipStation V2 client", () => {
       apiKey: "secret",
       fetchImpl: vi.fn().mockResolvedValue(response({
         request_id: "req-safe-only",
-        errors: [{ error_code: "unknown_code", message: privateValues[4], fields: [{ field: "buyer.email", value: privateValues[0] }] }],
+        errors: [{ error_code: "unknown_code", field_name: "buyer.email", field_value: privateValues[0], message: privateValues[4] }],
         buyer: { name: privateValues[0], address: privateValues[1] },
         notes_to_buyer: privateValues[2],
         customization_url: privateValues[3],
