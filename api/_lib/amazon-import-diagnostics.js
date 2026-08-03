@@ -169,13 +169,16 @@ export function safeAmazonImportError(error) {
   };
   if (hasShipStationProvenance) {
     const validation = property("validation");
-    const matchedValidation = SAFE_SHIPSTATION_VALIDATIONS.find((candidate) => (
-      validation
-      && typeof validation === "object"
-      && validation.reasonCode === candidate.reasonCode
-      && validation.field === candidate.field
-      && safeString(validation.summary, MAX_VALIDATION_SUMMARY_LENGTH) === candidate.summary
-    ));
+    let matchedValidation;
+    try {
+      matchedValidation = SAFE_SHIPSTATION_VALIDATIONS.find((candidate) => (
+        validation
+        && typeof validation === "object"
+        && validation.reasonCode === candidate.reasonCode
+        && validation.field === candidate.field
+        && safeString(validation.summary, MAX_VALIDATION_SUMMARY_LENGTH) === candidate.summary
+      ));
+    } catch {}
     if (matchedValidation) {
       safeError.validationReasonCode = matchedValidation.reasonCode;
       safeError.validationField = matchedValidation.field;

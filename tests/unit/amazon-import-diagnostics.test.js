@@ -167,6 +167,21 @@ describe("Amazon import diagnostics", () => {
     });
   });
 
+  it("omits validation metadata when a nested ShipStation validation getter throws", () => {
+    // Break caught: a hostile nested validation getter turns a shipment failure into a run-level failure.
+    const error = new ShipStationError("invalid_response");
+    error.validation = {
+      get reasonCode() { throw new Error("PRIVATE VALIDATION GETTER"); },
+      field: "package_weight",
+      summary: "Package weight is required.",
+    };
+
+    expect(() => safeAmazonImportError(error)).not.toThrow();
+    expect(safeAmazonImportError(error)).not.toHaveProperty("validationReasonCode");
+    expect(safeAmazonImportError(error)).not.toHaveProperty("validationField");
+    expect(safeAmazonImportError(error)).not.toHaveProperty("validationSummary");
+  });
+
   it("rejects secret-bearing and forged error identity fields", () => {
     const secretError = Object.assign(new Error("PRIVATE CUSTOMER TEXT"), {
       name: "SecretApiKeyError",
