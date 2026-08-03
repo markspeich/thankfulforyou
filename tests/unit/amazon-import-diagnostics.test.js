@@ -115,6 +115,73 @@ describe("Amazon import diagnostics", () => {
     });
   });
 
+  it("emits trusted ShipStation validation metadata and omits forged validation values", () => {
+    // Break caught: shipment diagnostics cannot distinguish a trusted validation failure from unsafe upstream data.
+    const trusted = new ShipStationError("invalid_response", {
+      validation: {
+        reasonCode: "required_field",
+        field: "package_weight",
+        summary: "Package weight is required.",
+      },
+    });
+    const forged = Object.assign(new Error("PRIVATE CUSTOMER TEXT"), {
+      name: "ShipStationError",
+      code: "invalid_response",
+      validation: {
+        reasonCode: "required_field",
+        field: "package_weight",
+        summary: "PRIVATE CUSTOMER TEXT",
+      },
+    });
+    const unsafe = new ShipStationError("invalid_response", {
+      validation: {
+        reasonCode: "required_field",
+        field: "package_weight",
+        summary: "Package weight is required.",
+      },
+    });
+    unsafe.validation = {
+      reasonCode: "required_field",
+      field: "package_weight",
+      summary: "PRIVATE CUSTOMER TEXT",
+    };
+
+    expect(safeAmazonImportError(trusted)).toMatchObject({
+      validationReasonCode: "required_field",
+      validationField: "package_weight",
+      validationSummary: "Package weight is required.",
+    });
+    expect(safeAmazonImportError(forged)).not.toHaveProperty("validationReasonCode");
+    expect(safeAmazonImportError(forged)).not.toHaveProperty("validationField");
+    expect(safeAmazonImportError(forged)).not.toHaveProperty("validationSummary");
+    expect(safeAmazonImportError(unsafe)).not.toHaveProperty("validationReasonCode");
+    expect(safeAmazonImportError(unsafe)).not.toHaveProperty("validationField");
+    expect(safeAmazonImportError(unsafe)).not.toHaveProperty("validationSummary");
+
+    const logger = { error: vi.fn() };
+    createAmazonImportDiagnostics({ logger }).error("shipment.failed", { error: trusted });
+    expect(logger.error.mock.calls[0][1].details).toMatchObject({
+      validationReasonCode: "required_field",
+      validationField: "package_weight",
+      validationSummary: "Package weight is required.",
+    });
+  });
+
+  it("omits validation metadata when a nested ShipStation validation getter throws", () => {
+    // Break caught: a hostile nested validation getter turns a shipment failure into a run-level failure.
+    const error = new ShipStationError("invalid_response");
+    error.validation = {
+      get reasonCode() { throw new Error("PRIVATE VALIDATION GETTER"); },
+      field: "package_weight",
+      summary: "Package weight is required.",
+    };
+
+    expect(() => safeAmazonImportError(error)).not.toThrow();
+    expect(safeAmazonImportError(error)).not.toHaveProperty("validationReasonCode");
+    expect(safeAmazonImportError(error)).not.toHaveProperty("validationField");
+    expect(safeAmazonImportError(error)).not.toHaveProperty("validationSummary");
+  });
+
   it("rejects secret-bearing and forged error identity fields", () => {
     const secretError = Object.assign(new Error("PRIVATE CUSTOMER TEXT"), {
       name: "SecretApiKeyError",

@@ -4,10 +4,23 @@ import {
   summarizeAmazonCustomization,
 } from "./amazon-customization-normalizer.js";
 import { readShipStationConfig } from "./shipstation-client.js";
+import { safeAmazonImportError } from "./amazon-import-diagnostics.js";
 
 const PROCESSED_TAG = "Amazon Customization Imported";
 const CUSTOMIZED_URL_OPTION = "CustomizedURL";
 const HEARTBEAT_INTERVAL_MS = 5 * 60 * 1000;
+const MAX_PUBLIC_FAILURES = 10;
+const SAFE_PUBLIC_FAILURE_STAGES = new Set([
+  "item_start",
+  "customization_fetch",
+  "normalization",
+  "enrichment",
+  "notes_build",
+  "notes_update",
+  "persistence",
+  "tag_update",
+]);
+const SAFE_ORDER_NUMBER = /^\d{3}-\d{7}-\d{7}$/;
 
 export class AmazonImportError extends Error {
   constructor(code, message, statusCode = 500) {
@@ -108,6 +121,23 @@ function itemDiagnosticContext(shipment, item) {
   return {
     ...shipmentDiagnosticContext(shipment),
     orderItemId: item?.external_order_item_id,
+  };
+}
+
+function publicShipmentFailure({ orderNumber, stage, error }) {
+  const safeError = safeAmazonImportError(error);
+  if (
+    typeof orderNumber !== "string"
+    || !SAFE_ORDER_NUMBER.test(orderNumber)
+    || !SAFE_PUBLIC_FAILURE_STAGES.has(stage)
+    || !safeError.validationReasonCode
+    || !safeError.validationSummary
+  ) return null;
+  return {
+    orderNumber,
+    stage,
+    reasonCode: safeError.validationReasonCode,
+    summary: safeError.validationSummary,
   };
 }
 
@@ -353,6 +383,7 @@ export function createAmazonImportService({
         let alreadyProcessedShipments = 0;
         let customizationNeeded = 0;
         let failed = 0;
+        const failures = [];
 
         for (let index = 0; index < shipments.length; index += 1) {
           const shipment = shipments[index];
@@ -520,6 +551,12 @@ export function createAmazonImportService({
                 stage: currentStage,
                 error,
               });
+              const publicFailure = publicShipmentFailure({
+                orderNumber: shipmentContext.orderNumber,
+                stage: currentStage,
+                error,
+              });
+              if (publicFailure && failures.length < MAX_PUBLIC_FAILURES) failures.push(publicFailure);
               failed += 1;
             }
           }
@@ -548,6 +585,7 @@ export function createAmazonImportService({
           alreadyProcessedShipments,
           customizationNeeded,
           failed,
+          failures,
         };
         await awaitActive(() => onProgress(result));
         currentStage = null;

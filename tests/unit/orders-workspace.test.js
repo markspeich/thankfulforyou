@@ -6,6 +6,7 @@ import {
   getEtsyConnectionActionDescriptor,
   getEtsyImportProgressDescriptor,
   getEtsyImportSummary,
+  getAmazonImportFailureDescription,
   getAmazonImportSummary,
   getOrderItemCustomizationWarning,
   getCopyableSavedBuild,
@@ -432,6 +433,51 @@ describe("Etsy workspace descriptors", () => {
 });
 
 describe("Amazon workspace descriptors", () => {
+  it("formats the first safe Amazon import failure and counts remaining failures", () => {
+    // Break caught: the operator sees only aggregate counts instead of the safe order-specific failure reason.
+    const failure = {
+      orderNumber: "111-0318024-9415409",
+      stage: "notes_update",
+      reasonCode: "required_field",
+      summary: "Package weight is required.",
+    };
+
+    expect(getAmazonImportFailureDescription({ failed: 1, failures: [failure] })).toBe(
+      "Amazon order 111-0318024-9415409 failed while updating ShipStation notes: Package weight is required.",
+    );
+    expect(getAmazonImportFailureDescription({ failed: 2, failures: [failure, failure] })).toBe(
+      "Amazon order 111-0318024-9415409 failed while updating ShipStation notes: Package weight is required. One additional Amazon order failed.",
+    );
+  });
+
+  it("uses a generic failure description for absent or untrusted Amazon failure details", () => {
+    // Break caught: malformed completion fields can inject customer or upstream content into the operation dialog.
+    const fallback = "One or more Amazon orders could not be imported. Please retry or check the production logs.";
+    const hostileValues = [
+      "Buyer Daphne Private https://example.test/customization",
+      "notes_update<script>alert('private')</script>",
+      "PRIVATE_UPSTREAM_REASON",
+      "Package weight is required. Buyer address: 1 Private Way",
+      "Buyer_Daphne_Private",
+    ];
+    const invalidFailures = [
+      undefined,
+      { orderNumber: hostileValues[0], stage: "notes_update", reasonCode: "required_field", summary: "Package weight is required." },
+      { orderNumber: hostileValues[4], stage: "notes_update", reasonCode: "required_field", summary: "Package weight is required." },
+      { orderNumber: "111-0318024-9415409", stage: hostileValues[1], reasonCode: "required_field", summary: "Package weight is required." },
+      { orderNumber: "111-0318024-9415409", stage: "toString", reasonCode: "required_field", summary: "Package weight is required." },
+      { orderNumber: "111-0318024-9415409", stage: "notes_update", reasonCode: hostileValues[2], summary: "Package weight is required." },
+      { orderNumber: "111-0318024-9415409", stage: "notes_update", reasonCode: "required_field", summary: hostileValues[3] },
+    ];
+
+    for (const failure of invalidFailures) {
+      const description = getAmazonImportFailureDescription({ failed: 1, failures: failure ? [failure] : [] });
+      expect(description).toBe(fallback);
+      for (const hostileValue of hostileValues) expect(description).not.toContain(hostileValue);
+    }
+    expect(getAmazonImportFailureDescription({ failed: 0, failures: invalidFailures })).toBeNull();
+  });
+
   it("summarizes the six approved Amazon import outcomes", () => {
     expect(getAmazonImportSummary({
       processedShipments: 3,

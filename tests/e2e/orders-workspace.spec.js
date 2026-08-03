@@ -408,6 +408,56 @@ test("opens the Orders workspace shell by default", async ({ page }) => {
   await expect(ordersWorkspace.getByLabel("Selected order items")).toBeVisible();
 });
 
+test("Amazon import failure details remain actionable in the operation dialog", async ({ page }) => {
+  // Break caught: a partial Amazon import failure is presented as a successful aggregate-only completion.
+  await installSupabaseSession(page);
+  await installProductionBatchRoutes(page);
+  await installOrdersWorkspaceRoutes(page);
+  await page.route("**/api/amazon-import", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/x-ndjson",
+      body: `${JSON.stringify({
+        type: "complete",
+        processedShipments: 3,
+        importedItems: 4,
+        existingItems: 2,
+        alreadyProcessedShipments: 1,
+        customizationNeeded: 2,
+        failed: 1,
+        failures: [{
+          orderNumber: "111-0318024-9415409",
+          stage: "notes_update",
+          reasonCode: "required_field",
+          summary: "Package weight is required.",
+        }],
+      })}\n`,
+    });
+  });
+
+  await gotoAfterBatchLoads(page);
+  await expect(page.getByRole("region", { name: "Orders workspace" })).toBeVisible();
+  await page.locator("#ordersToolsMenu summary").click();
+  await page.getByRole("button", { name: "Import Amazon" }).click();
+
+  const dialog = page.locator("#pasteSummaryDialog");
+  await expect(dialog).toBeVisible();
+  await expect(dialog.locator("#pasteSummaryTitle")).toHaveText("Operation Failed");
+  await expect(dialog.locator("#pasteSummaryDescription")).toHaveText(
+    "Amazon order 111-0318024-9415409 failed while updating ShipStation notes: Package weight is required.",
+  );
+  await expect(dialog.locator("#pasteSummaryCounts dt")).toHaveText([
+    "Shipments processed",
+    "Items imported",
+    "Existing items",
+    "Already processed",
+    "Needs review",
+    "Failed",
+  ]);
+  await expect(dialog.locator("#pasteSummaryCounts dd")).toHaveText(["3", "4", "2", "1", "2", "1"]);
+  await expect(dialog.getByRole("button", { name: "Close paste summary" })).toBeVisible();
+});
+
 test("updates the URL when switching top-level workspaces", async ({ page }) => {
   await installSupabaseSession(page);
   await installProductionBatchRoutes(page);

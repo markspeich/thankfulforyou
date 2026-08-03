@@ -132,7 +132,7 @@ const completion = {
   existingItems: 2,
   alreadyProcessedShipments: 1,
   customizationNeeded: 2,
-  failed: 1,
+  failed: 0,
 };
 
 test("Orders imports are ordered inside the tools menu and import once with mutual exclusion", async ({ page }) => {
@@ -220,7 +220,7 @@ test("Amazon progress and all six completion metrics use the operation dialog", 
     "Needs review",
     "Failed",
   ]);
-  await expect(dialog.locator("#pasteSummaryCounts dd")).toHaveText(["3", "4", "2", "1", "2", "1"]);
+  await expect(dialog.locator("#pasteSummaryCounts dd")).toHaveText(["3", "4", "2", "1", "2", "0"]);
   await expect.poll(gets).toBeGreaterThan(1);
   await expect(page.locator(".database-order-row.is-selected")).toContainText("Order 1001");
   await expect(page.locator(".amazon-import-button")).toHaveText("Import Amazon");

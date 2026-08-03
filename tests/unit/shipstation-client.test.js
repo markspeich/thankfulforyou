@@ -83,6 +83,150 @@ describe("ShipStation V2 client", () => {
     expect(JSON.stringify(error)).not.toContain("secret body");
   });
 
+  it("retains only bounded request IDs matching the safe identifier allowlist", async () => {
+    const cases = [
+      { requestId: "req-safe_123.abc", expected: "req-safe_123.abc" },
+      { requestId: "req unsafe buyer@example.test", expected: null },
+      { requestId: "https://example.test/private-request", expected: null },
+      { requestId: "r".repeat(129), expected: null },
+    ];
+
+    for (const { requestId, expected } of cases) {
+      const client = createShipStationClient({
+        apiKey: "secret",
+        fetchImpl: vi.fn().mockResolvedValue(response({ request_id: requestId, errors: [] }, 400)),
+      });
+      const error = await client.updateNotesToBuyer({ shipmentId: "se-1", notesToBuyer: "ok" }).catch((caught) => caught);
+      expect(error.requestId).toBe(expected);
+      if (expected === null) expect(JSON.stringify(error)).not.toContain(requestId);
+    }
+  });
+
+  it("extracts an allowlisted required package weight validation without retaining the response body", async () => {
+    const client = createShipStationClient({
+      apiKey: "secret",
+      fetchImpl: vi.fn().mockResolvedValue(response({
+        request_id: "req-package-weight",
+        errors: [{
+          error_code: "field_value_required",
+          field_name: "packages[0].weight",
+          field_value: "buyer-provided-weight",
+          message: "PRIVATE UPSTREAM PACKAGE MESSAGE",
+        }],
+      }, 400)),
+    });
+
+    const error = await client.updateNotesToBuyer({ shipmentId: "se-1", notesToBuyer: "ok" }).catch((caught) => caught);
+
+    expect(error).toMatchObject({
+      code: "request_failed",
+      statusCode: 400,
+      requestId: "req-package-weight",
+      validation: {
+        reasonCode: "required_field",
+        field: "package_weight",
+        summary: "Package weight is required.",
+      },
+    });
+    expect(Object.isFrozen(error.validation)).toBe(true);
+    expect(JSON.stringify(error)).not.toContain("buyer-provided-weight");
+    expect(JSON.stringify(error)).not.toContain("PRIVATE UPSTREAM PACKAGE MESSAGE");
+  });
+
+  it("maps only documented validation combinations and leaves generic 400 errors unclassified", async () => {
+    const cases = [
+      {
+        payload: {
+          request_id: "req-service",
+          errors: [{
+            error_code: "invalid_field_value",
+            field_name: "service_code",
+            field_value: "buyer-chosen-service",
+            message: "PRIVATE UPSTREAM SERVICE MESSAGE",
+          }],
+        },
+        expected: {
+          reasonCode: "invalid_field_value",
+          field: "shipping_service",
+          summary: "The selected shipping service is invalid.",
+        },
+      },
+      {
+        payload: {
+          request_id: "req-legacy-shape",
+          errors: [{
+            error_code: "field_value_required",
+            fields: [{ field: "packages[0].weight", value: "PRIVATE LEGACY FIELD VALUE" }],
+          }],
+        },
+        expected: null,
+      },
+      {
+        payload: {
+          request_id: "req-wrong-pair",
+          errors: [{
+            error_code: "field_value_required",
+            field_name: "service_code",
+            field_value: "PRIVATE WRONG-PAIR VALUE",
+          }],
+        },
+        expected: null,
+      },
+      { payload: { request_id: "req-generic", errors: [] }, expected: null },
+    ];
+
+    for (const { payload, expected } of cases) {
+      const client = createShipStationClient({ apiKey: "secret", fetchImpl: vi.fn().mockResolvedValue(response(payload, 400)) });
+      const error = await client.updateNotesToBuyer({ shipmentId: "se-1", notesToBuyer: "ok" }).catch((caught) => caught);
+      expect(error).toMatchObject({ requestId: payload.request_id, validation: expected });
+      expect(JSON.stringify(error)).not.toMatch(/buyer-chosen-service|PRIVATE UPSTREAM SERVICE MESSAGE|PRIVATE LEGACY FIELD VALUE|PRIVATE WRONG-PAIR VALUE/);
+    }
+  });
+
+  it("omits untrusted error values and preserves only a parseable safe request ID", async () => {
+    const privateValues = [
+      "Buyer Daphne Private",
+      "15 Secret Lane, Exampleville",
+      "Private note for the seller",
+      "https://example.test/customization?credential=private",
+      "arbitrary-upstream-message-".repeat(100),
+    ];
+    const client = createShipStationClient({
+      apiKey: "secret",
+      fetchImpl: vi.fn().mockResolvedValue(response({
+        request_id: "req-safe-only",
+        errors: [{ error_code: "unknown_code", field_name: "buyer.email", field_value: privateValues[0], message: privateValues[4] }],
+        buyer: { name: privateValues[0], address: privateValues[1] },
+        notes_to_buyer: privateValues[2],
+        customization_url: privateValues[3],
+      }, 400)),
+    });
+
+    const error = await client.updateNotesToBuyer({ shipmentId: "se-1", notesToBuyer: "ok" }).catch((caught) => caught);
+
+    expect(error).toMatchObject({ requestId: "req-safe-only", validation: null });
+    for (const value of privateValues) expect(JSON.stringify(error)).not.toContain(value);
+
+    const malformed = createShipStationClient({
+      apiKey: "secret",
+      fetchImpl: vi.fn().mockResolvedValue({ ok: false, status: 400, json: async () => { throw new SyntaxError("malformed body"); } }),
+    });
+    await expect(malformed.updateNotesToBuyer({ shipmentId: "se-1", notesToBuyer: "ok" })).rejects.toMatchObject({ requestId: null, validation: null });
+  });
+
+  it("rejects caller-supplied validation metadata outside the same safe allowlist", () => {
+    const error = new ShipStationError("request_failed", {
+      validation: {
+        reasonCode: "unknown_code",
+        field: "buyer_email",
+        summary: "Buyer Daphne Private selected https://example.test/customization.",
+      },
+    });
+
+    expect(error.validation).toBeNull();
+    expect(JSON.stringify(error)).not.toContain("Buyer Daphne Private");
+  });
+
   it("keeps the timeout active while parsing a terminal error response", async () => {
     const timeout = new AbortController();
     const fetchImpl = vi.fn((_url, options) => Promise.resolve({
