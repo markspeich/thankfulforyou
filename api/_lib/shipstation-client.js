@@ -3,15 +3,34 @@ const TIMEOUT_MS = 15_000;
 const MAX_ATTEMPTS = 3;
 const MAX_RETRY_AFTER_MS = 10_000;
 const RETRY_BACKOFF_MS = 250;
+const SAFE_VALIDATIONS = [
+  { reasonCode: "required_field", field: "package_weight", summary: "Package weight is required." },
+  { reasonCode: "invalid_field_value", field: "shipping_service", summary: "The selected shipping service is invalid." },
+];
+
+function safeValidation(value) {
+  const matched = SAFE_VALIDATIONS.find((candidate) => value
+    && typeof value === "object"
+    && value.reasonCode === candidate.reasonCode
+    && value.field === candidate.field
+    && value.summary === candidate.summary);
+  return matched ? Object.freeze({ ...matched }) : null;
+}
 
 export class ShipStationError extends Error {
-  constructor(code, { statusCode = null, retryable = false, requestId = null } = {}) {
+  constructor(code, {
+    statusCode = null,
+    retryable = false,
+    requestId = null,
+    validation = null,
+  } = {}) {
     super("Unable to communicate with ShipStation.");
     this.name = "ShipStationError";
     this.code = code;
     this.statusCode = statusCode;
     this.retryable = retryable;
     this.requestId = typeof requestId === "string" && requestId ? requestId : null;
+    this.validation = safeValidation(validation);
   }
 }
 
@@ -79,12 +98,34 @@ function mutablePackage(packageDetails) {
     .map((field) => [field, packageDetails[field]]));
 }
 
-async function readRequestId(response) {
+function validationFromPayload(payload) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload) || !Array.isArray(payload.errors) || payload.errors.length > 10) {
+    return null;
+  }
+  for (const error of payload.errors) {
+    if (!error || typeof error !== "object" || Array.isArray(error) || !Array.isArray(error.fields) || error.fields.length > 10) continue;
+    for (const field of error.fields) {
+      if (!field || typeof field !== "object" || Array.isArray(field)) continue;
+      if (error.error_code === "required_field" && field.field === "packages[0].weight") {
+        return { reasonCode: "required_field", field: "package_weight", summary: "Package weight is required." };
+      }
+      if (error.error_code === "invalid_field_value" && field.field === "service_code") {
+        return { reasonCode: "invalid_field_value", field: "shipping_service", summary: "The selected shipping service is invalid." };
+      }
+    }
+  }
+  return null;
+}
+
+async function readErrorDetails(response) {
   try {
     const payload = await response.json();
-    return typeof payload?.request_id === "string" && payload.request_id ? payload.request_id : null;
+    return {
+      requestId: typeof payload?.request_id === "string" && payload.request_id ? payload.request_id : null,
+      validation: validationFromPayload(payload),
+    };
   } catch {
-    return null;
+    return { requestId: null, validation: null };
   }
 }
 
@@ -188,9 +229,9 @@ export function createShipStationClient({
       const retryable = statusCode === 429 || (statusCode >= 500 && statusCode <= 599);
       if (!retryable || attempt === MAX_ATTEMPTS - 1) {
         try {
-          const requestId = await readRequestId(response);
+          const { requestId, validation } = await readErrorDetails(response);
           if (signal?.aborted || combined.signal?.aborted) throw new ShipStationError(signal?.aborted ? "aborted" : "temporary", { retryable: !signal?.aborted });
-          throw new ShipStationError(retryable ? (statusCode === 429 ? "rate_limited" : "temporary") : "request_failed", { statusCode, retryable, requestId });
+          throw new ShipStationError(retryable ? (statusCode === 429 ? "rate_limited" : "temporary") : "request_failed", { statusCode, retryable, requestId, validation });
         } finally {
           combined.cleanup();
         }

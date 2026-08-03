@@ -83,6 +83,106 @@ describe("ShipStation V2 client", () => {
     expect(JSON.stringify(error)).not.toContain("secret body");
   });
 
+  it("extracts an allowlisted required package weight validation without retaining the response body", async () => {
+    const client = createShipStationClient({
+      apiKey: "secret",
+      fetchImpl: vi.fn().mockResolvedValue(response({
+        request_id: "req-package-weight",
+        errors: [{
+          error_code: "required_field",
+          message: "Package weight is required.",
+          fields: [{ field: "packages[0].weight", message: "Package weight is required.", value: "buyer-provided-weight" }],
+        }],
+      }, 400)),
+    });
+
+    const error = await client.updateNotesToBuyer({ shipmentId: "se-1", notesToBuyer: "ok" }).catch((caught) => caught);
+
+    expect(error).toMatchObject({
+      code: "request_failed",
+      statusCode: 400,
+      requestId: "req-package-weight",
+      validation: {
+        reasonCode: "required_field",
+        field: "package_weight",
+        summary: "Package weight is required.",
+      },
+    });
+    expect(Object.isFrozen(error.validation)).toBe(true);
+    expect(JSON.stringify(error)).not.toContain("buyer-provided-weight");
+  });
+
+  it("maps only documented validation combinations and leaves generic 400 errors unclassified", async () => {
+    const cases = [
+      {
+        payload: {
+          request_id: "req-service",
+          errors: [{
+            error_code: "invalid_field_value",
+            message: "The selected shipping service is invalid.",
+            fields: [{ field: "service_code", message: "The selected shipping service is invalid.", value: "buyer-chosen-service" }],
+          }],
+        },
+        expected: {
+          reasonCode: "invalid_field_value",
+          field: "shipping_service",
+          summary: "The selected shipping service is invalid.",
+        },
+      },
+      { payload: { request_id: "req-generic", errors: [] }, expected: null },
+    ];
+
+    for (const { payload, expected } of cases) {
+      const client = createShipStationClient({ apiKey: "secret", fetchImpl: vi.fn().mockResolvedValue(response(payload, 400)) });
+      const error = await client.updateNotesToBuyer({ shipmentId: "se-1", notesToBuyer: "ok" }).catch((caught) => caught);
+      expect(error).toMatchObject({ requestId: payload.request_id, validation: expected });
+    }
+  });
+
+  it("omits untrusted error values and preserves only a parseable safe request ID", async () => {
+    const privateValues = [
+      "Buyer Daphne Private",
+      "15 Secret Lane, Exampleville",
+      "Private note for the seller",
+      "https://example.test/customization?credential=private",
+      "arbitrary-upstream-message-".repeat(100),
+    ];
+    const client = createShipStationClient({
+      apiKey: "secret",
+      fetchImpl: vi.fn().mockResolvedValue(response({
+        request_id: "req-safe-only",
+        errors: [{ error_code: "unknown_code", message: privateValues[4], fields: [{ field: "buyer.email", value: privateValues[0] }] }],
+        buyer: { name: privateValues[0], address: privateValues[1] },
+        notes_to_buyer: privateValues[2],
+        customization_url: privateValues[3],
+      }, 400)),
+    });
+
+    const error = await client.updateNotesToBuyer({ shipmentId: "se-1", notesToBuyer: "ok" }).catch((caught) => caught);
+
+    expect(error).toMatchObject({ requestId: "req-safe-only", validation: null });
+    for (const value of privateValues) expect(JSON.stringify(error)).not.toContain(value);
+
+    const malformed = createShipStationClient({
+      apiKey: "secret",
+      fetchImpl: vi.fn().mockResolvedValue({ ok: false, status: 400, json: async () => { throw new SyntaxError("malformed body"); } }),
+    });
+    await expect(malformed.updateNotesToBuyer({ shipmentId: "se-1", notesToBuyer: "ok" })).rejects.toMatchObject({ requestId: null, validation: null });
+  });
+
+  it("rejects caller-supplied validation metadata outside the same safe allowlist", () => {
+    const error = new ShipStationError("request_failed", {
+      validation: {
+        reasonCode: "unknown_code",
+        field: "buyer_email",
+        summary: "Buyer Daphne Private selected https://example.test/customization.",
+      },
+    });
+
+    expect(error.validation).toBeNull();
+    expect(JSON.stringify(error)).not.toContain("Buyer Daphne Private");
+  });
+
   it("keeps the timeout active while parsing a terminal error response", async () => {
     const timeout = new AbortController();
     const fetchImpl = vi.fn((_url, options) => Promise.resolve({
