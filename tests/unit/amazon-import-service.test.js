@@ -1372,6 +1372,35 @@ describe("Amazon import service", () => {
     });
   });
 
+  it("includes Amazon v3 text-area fonts in Notes to Buyer", async () => {
+    // Break caught: parsed customer fonts reach design enrichment but disappear before ShipStation note generation.
+    const f = fixture({
+      shipments: [shipment("font-notes", {
+        items: [item("font-item", {
+          customizedUrl: "https://zme-caps.amazon.com/font-item.zip",
+        })],
+      })],
+      fetchResult: {
+        "version3.0": {
+          customizationInfo: {
+            surfaces: [{
+              areas: [
+                { customizationType: "text", label: "Name", text: "Jane", fontFamily: "Skywalk" },
+                { customizationType: "text", label: "Title", text: "RN", fontFamily: "Somekind" },
+              ],
+            }],
+          },
+        },
+      },
+    });
+
+    await run(f);
+
+    const updatedNotes = f.client.updateNotesToBuyer.mock.calls[0][0].notesToBuyer;
+    expect(updatedNotes).toContain("Name Font: Skywalk");
+    expect(updatedNotes).toContain("Title Font: Somekind");
+  });
+
   it("uses an existing item marker to repair app persistence and tagging without rewriting notes", async () => {
     const diagnosticEvents = [];
     const diagnostics = createAmazonImportDiagnostics({

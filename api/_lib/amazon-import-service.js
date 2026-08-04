@@ -81,6 +81,24 @@ function customizationUrl(item) {
   return typeof option?.value === "string" ? option.value.trim() : "";
 }
 
+function noteFieldsWithFonts(normalized) {
+  const fields = normalized?.source?.personalizationResponses ?? [];
+  const selections = normalized?.source?.customerFontSelections ?? [];
+  const lineCount = normalized?.text ? String(normalized.text).split("\n").length : 0;
+  const textFields = fields
+    .filter((response) => !/\s+font$/i.test(String(response?.name ?? "")))
+    .slice(0, lineCount);
+  const existingNames = new Set(fields.map((response) => String(response?.name ?? "").toLowerCase()));
+  const fontFields = selections.flatMap((selection) => {
+    const label = textFields[selection?.lineIndex]?.name;
+    const name = label ? `${label} Font` : "";
+    return name && selection?.name && !existingNames.has(name.toLowerCase())
+      ? [{ name, value: selection.name }]
+      : [];
+  });
+  return [...fields, ...fontFields];
+}
+
 function emitDiagnostic(diagnostics, level, event, context) {
   try {
     Promise.resolve(diagnostics?.[level]?.(event, context)).catch(() => {});
@@ -476,7 +494,7 @@ export function createAmazonImportService({
                     block: buildAmazonNoteBlock({
                       productTitle: item.name,
                       orderItemId: item.external_order_item_id,
-                      fields: normalized?.source?.personalizationResponses ?? [],
+                      fields: noteFieldsWithFonts(normalized),
                     }),
                   });
                 }

@@ -63,6 +63,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Authentication expiry must not leave an operation progress dialog spinning indefinitely. Every action must settle its dialog into either a completion state or a dismissible error state.
 
 - Amazon imports must preserve each customer's per-line font selection from Seller Central clipboard customizations and Amazon Custom/ShipStation data.
+- Amazon imports must include each parsed per-line font selection in ShipStation Notes to Buyer using the corresponding text label, such as `Name Font: Skywalk` and `Title Font: Somekind`.
 - For Amazon version 3 customization documents, each text area's non-empty `fontFamily` is the authoritative customer font selection for that corresponding imported text line; separate labeled fields such as `Name Font` and `Title Font` remain the fallback when an area-level font is unavailable.
 - Amazon imports from a ShipStation `CustomizationURL` must retain the complete parsed customization JSON in a dedicated server-side diagnostic field on the order item, including when an existing order item is re-imported. The latest successfully imported document may replace the previously retained document without replacing the saved design.
 - Raw Amazon customization JSON must not be copied into normalized `source_json`, ordinary browser-facing order or production-batch responses, ShipStation notes, application logs, or client telemetry. Trusted server/database diagnostics must request the raw field explicitly.
