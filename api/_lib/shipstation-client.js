@@ -125,25 +125,26 @@ function validationFromPayload(payload) {
 }
 
 async function readErrorDetails(response) {
-  let rawResponseBody;
+  let responseBody;
   try {
-    const responseBody = await response.text();
-    rawResponseBody = responseBody.length > MAX_ERROR_RESPONSE_BODY_CHARACTERS
-      ? responseBody.slice(0, MAX_ERROR_RESPONSE_BODY_CHARACTERS) + ERROR_RESPONSE_BODY_TRUNCATION_MARKER
-      : responseBody;
-    const payload = JSON.parse(rawResponseBody);
-    return {
-      requestId: normalizeRequestId(payload?.request_id),
-      validation: validationFromPayload(payload),
-      rawResponseBody,
-    };
+    responseBody = await response.text();
   } catch {
     return {
       requestId: null,
       validation: null,
-      rawResponseBody: rawResponseBody ?? UNREADABLE_ERROR_RESPONSE_BODY,
+      rawResponseBody: UNREADABLE_ERROR_RESPONSE_BODY,
     };
   }
+  const rawResponseBody = responseBody.length > MAX_ERROR_RESPONSE_BODY_CHARACTERS
+    ? responseBody.slice(0, MAX_ERROR_RESPONSE_BODY_CHARACTERS) + ERROR_RESPONSE_BODY_TRUNCATION_MARKER
+    : responseBody;
+  let payload = null;
+  try { payload = JSON.parse(responseBody); } catch {}
+  return {
+    requestId: normalizeRequestId(payload?.request_id),
+    validation: validationFromPayload(payload),
+    rawResponseBody,
+  };
 }
 
 function combineSignals(callerSignal, timeoutSignal) {
@@ -247,7 +248,12 @@ export function createShipStationClient({
       if (!retryable || attempt === MAX_ATTEMPTS - 1) {
         try {
           const { requestId, validation, rawResponseBody } = await readErrorDetails(response);
-          if (signal?.aborted || combined.signal?.aborted) throw new ShipStationError(signal?.aborted ? "aborted" : "temporary", { retryable: !signal?.aborted });
+          if (signal?.aborted || combined.signal?.aborted) {
+            throw new ShipStationError(signal?.aborted ? "aborted" : "temporary", {
+              retryable: !signal?.aborted,
+              rawResponseBody,
+            });
+          }
           throw new ShipStationError(retryable ? (statusCode === 429 ? "rate_limited" : "temporary") : "request_failed", { statusCode, retryable, requestId, validation, rawResponseBody });
         } finally {
           combined.cleanup();

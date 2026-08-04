@@ -122,6 +122,27 @@ describe("ShipStation V2 client", () => {
     expect(error.rawResponseBody).toBe(`${"x".repeat(16384)}\n[truncated after 16384 characters]`);
   });
 
+  it("extracts metadata from oversized valid JSON before truncating its logged body", async () => {
+    // Break caught: parsing the capped log copy discards metadata positioned beyond the cap.
+    const body = JSON.stringify({
+      padding: "x".repeat(16384),
+      request_id: "req-oversized-json",
+      errors: [{ error_code: "field_value_required", field_name: "packages[0].weight" }],
+    });
+    const client = createShipStationClient({
+      apiKey: "secret",
+      fetchImpl: vi.fn().mockResolvedValue({ ok: false, status: 400, headers: new Headers(), text: async () => body }),
+    });
+
+    const error = await client.updateNotesToBuyer({ shipmentId: "se-1", notesToBuyer: "ok" }).catch((caught) => caught);
+
+    expect(error).toMatchObject({
+      requestId: "req-oversized-json",
+      validation: { reasonCode: "required_field", field: "package_weight", summary: "Package weight is required." },
+      rawResponseBody: `${body.slice(0, 16384)}\n[truncated after 16384 characters]`,
+    });
+  });
+
   it("extracts existing error metadata from the raw JSON text", async () => {
     const body = JSON.stringify({
       request_id: "req-raw-json",
@@ -322,7 +343,34 @@ describe("ShipStation V2 client", () => {
     await expect(Promise.race([
       pending,
       new Promise((_resolve, reject) => setTimeout(() => reject(new Error("request did not respect the timeout")), 50)),
-    ])).rejects.toMatchObject({ code: "temporary", retryable: true });
+    ])).rejects.toMatchObject({
+      code: "temporary",
+      retryable: true,
+      rawResponseBody: "[ShipStation response body could not be read]",
+    });
+  });
+
+  it("preserves the unreadable-body marker when the caller aborts a terminal error body read", async () => {
+    // Break caught: the caller-abort error replaces the body-read diagnostic with a null raw body.
+    const controller = new AbortController();
+    const fetchImpl = vi.fn((_url, options) => Promise.resolve({
+      ok: false,
+      status: 401,
+      text: () => new Promise((_resolve, reject) => {
+        options.signal.addEventListener("abort", () => reject(new DOMException("secret body", "AbortError")), { once: true });
+      }),
+    }));
+    const pending = createShipStationClient({ apiKey: "secret", fetchImpl })
+      .iteratePendingShipments({ storeId: "se-4461867", signal: controller.signal }).next();
+
+    await vi.waitFor(() => expect(fetchImpl).toHaveBeenCalledOnce());
+    controller.abort();
+
+    await expect(pending).rejects.toMatchObject({
+      code: "aborted",
+      retryable: false,
+      rawResponseBody: "[ShipStation response body could not be read]",
+    });
   });
 
   it("preserves mutable shipping configuration when updating buyer notes", async () => {
