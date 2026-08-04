@@ -106,6 +106,38 @@ describe("Amazon API browser client", () => {
     expect(seen).toEqual([completion]);
   });
 
+  it("rejects a raw ShipStation response field before notifying browser listeners", async () => {
+    // Break caught: a raw server diagnostic field is accepted as part of a public browser completion record.
+    const rawResponseBody = '{"message":"PRIVATE SHIPSTATION ERROR","field_value":"PRIVATE VALUE"}';
+    const completion = {
+      ...complete,
+      failed: 1,
+      failures: [{
+        orderNumber: "111-0318024-9415409",
+        stage: "notes_update",
+        reasonCode: "required_field",
+        summary: "Package weight is required.",
+        rawShipStationResponse: rawResponseBody,
+      }],
+    };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(stream([
+      `${JSON.stringify(completion)}\n`,
+    ]))));
+    const onEvent = vi.fn();
+
+    let caught;
+    try {
+      await importAmazonOrders({ onEvent });
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toMatchObject({ message: "Unable to import Amazon orders." });
+    expect(JSON.stringify(caught)).not.toContain("PRIVATE SHIPSTATION ERROR");
+    expect(JSON.stringify(caught)).not.toContain("PRIVATE VALUE");
+    expect(onEvent).not.toHaveBeenCalled();
+  });
+
   it("rejects malformed, unsafe, or oversized Amazon completion failure arrays", async () => {
     // Break caught: customer data, upstream text, or an unbounded failure list crosses the browser parsing boundary.
     const safeFailure = {

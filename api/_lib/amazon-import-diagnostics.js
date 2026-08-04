@@ -188,6 +188,20 @@ export function safeAmazonImportError(error) {
   return safeError;
 }
 
+function rawShipStationResponse(error) {
+  try {
+    if (!(error instanceof ShipStationError)) return undefined;
+  } catch {
+    return undefined;
+  }
+  try {
+    const rawResponseBody = error.rawResponseBody;
+    return typeof rawResponseBody === "string" ? rawResponseBody : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function safeContext(context) {
   const envelope = {};
   const details = {};
@@ -240,7 +254,11 @@ function safeContext(context) {
   if (stage && SAFE_STAGES.has(stage)) envelope.stage = stage;
   const summary = safeSummary(context.summary);
   if (summary) details.summary = summary;
-  if (Object.hasOwn(context, "error")) Object.assign(details, safeAmazonImportError(context.error));
+  if (Object.hasOwn(context, "error")) {
+    Object.assign(details, safeAmazonImportError(context.error));
+    const rawResponse = rawShipStationResponse(context.error);
+    if (rawResponse !== undefined) details.rawShipStationResponse = rawResponse;
+  }
   if (["errorName", "errorCode", "statusCode", "retryable", "requestId"].some((key) => Object.hasOwn(context, key))) {
     Object.assign(details, safeAmazonImportError({
       name: context.errorName,

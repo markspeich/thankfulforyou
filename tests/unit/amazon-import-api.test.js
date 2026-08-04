@@ -128,6 +128,7 @@ describe("Amazon import API", () => {
 
   it("streams trusted bounded completion failures without arbitrary error response content", async () => {
     // Break caught: the NDJSON boundary drops trusted validation records or forwards arbitrary upstream error response data.
+    const rawResponseBody = '{"message":"PRIVATE SHIPSTATION ERROR","field_value":"PRIVATE VALUE"}';
     const res = response();
     await createAmazonImportHandler({
       resolveAuth: vi.fn().mockResolvedValue({ workspaceId: "workspace-1", userId: "user-1" }),
@@ -146,6 +147,7 @@ describe("Amazon import API", () => {
               stage: "notes_update",
               reasonCode: "required_field",
               summary: "Package weight is required.",
+              rawShipStationResponse: rawResponseBody,
               response: "PRIVATE UPSTREAM ERROR RESPONSE",
             }],
             response: "PRIVATE TOP LEVEL ERROR RESPONSE",
@@ -160,6 +162,8 @@ describe("Amazon import API", () => {
     ]);
     expect(res.chunks.join("")).not.toContain("PRIVATE UPSTREAM ERROR RESPONSE");
     expect(res.chunks.join("")).not.toContain("PRIVATE TOP LEVEL ERROR RESPONSE");
+    expect(res.chunks.join("")).not.toContain("PRIVATE SHIPSTATION ERROR");
+    expect(res.chunks.join("")).not.toContain("PRIVATE VALUE");
   });
 
   it("emits completion frames that preserve valid details through the browser parser and omit fallback IDs", async () => {
@@ -180,6 +184,7 @@ describe("Amazon import API", () => {
           stage: "notes_update",
           reasonCode: "required_field",
           summary: "Package weight is required.",
+          rawShipStationResponse: '{"message":"PRIVATE SHIPSTATION ERROR","field_value":"PRIVATE VALUE"}',
         },
         expectedFailures: [{
           orderNumber: "111-0318024-9415409",
@@ -216,6 +221,8 @@ describe("Amazon import API", () => {
       await importAmazonOrders({ onEvent: (event) => events.push(event) });
 
       expect(events).toEqual([{ ...completion, failures: expectedFailures }]);
+      expect(JSON.stringify(events)).not.toContain("PRIVATE SHIPSTATION ERROR");
+      expect(JSON.stringify(events)).not.toContain("PRIVATE VALUE");
     }
   });
 
