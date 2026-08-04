@@ -4,6 +4,7 @@ const MAX_STRING_LENGTH = 128;
 const MAX_LABEL_LENGTH = 80;
 const MAX_ARRAY_LENGTH = 40;
 const MAX_COUNT = 1_000_000;
+const MAX_VALIDATION_SUMMARY_LENGTH = 160;
 const CONTROL_CHARACTERS = /[\u0000-\u001F\u007F-\u009F\u2028\u2029]/g;
 const SAFE_IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const SAFE_EVENT = /^[a-z][a-z0-9_.-]{0,79}$/;
@@ -46,6 +47,10 @@ const SAFE_SHIPSTATION_ERROR_CODES = new Set([
   "rate_limited",
   "request_failed",
 ]);
+const SAFE_SHIPSTATION_VALIDATIONS = [
+  { reasonCode: "required_field", field: "package_weight", summary: "Package weight is required." },
+  { reasonCode: "invalid_field_value", field: "shipping_service", summary: "The selected shipping service is invalid." },
+];
 const SAFE_STAGES = new Set([
   "preparation",
   "context_loading",
@@ -155,13 +160,46 @@ export function safeAmazonImportError(error) {
   } catch {
     hasShipStationProvenance = false;
   }
-  return {
+  const safeError = {
     errorName: errorName && SAFE_ERROR_NAMES.has(errorName) ? errorName : null,
     errorCode: errorCode && SAFE_ERROR_CODES.has(errorCode) ? errorCode : null,
     statusCode,
     retryable: typeof property("retryable") === "boolean" ? property("retryable") : null,
     requestId: hasShipStationProvenance && requestId && SAFE_REQUEST_ID.test(requestId) ? requestId : null,
   };
+  if (hasShipStationProvenance) {
+    const validation = property("validation");
+    let matchedValidation;
+    try {
+      matchedValidation = SAFE_SHIPSTATION_VALIDATIONS.find((candidate) => (
+        validation
+        && typeof validation === "object"
+        && validation.reasonCode === candidate.reasonCode
+        && validation.field === candidate.field
+        && safeString(validation.summary, MAX_VALIDATION_SUMMARY_LENGTH) === candidate.summary
+      ));
+    } catch {}
+    if (matchedValidation) {
+      safeError.validationReasonCode = matchedValidation.reasonCode;
+      safeError.validationField = matchedValidation.field;
+      safeError.validationSummary = matchedValidation.summary;
+    }
+  }
+  return safeError;
+}
+
+function rawShipStationResponse(error) {
+  try {
+    if (!(error instanceof ShipStationError)) return undefined;
+  } catch {
+    return undefined;
+  }
+  try {
+    const rawResponseBody = error.rawResponseBody;
+    return typeof rawResponseBody === "string" ? rawResponseBody : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function safeContext(context) {
@@ -216,7 +254,11 @@ function safeContext(context) {
   if (stage && SAFE_STAGES.has(stage)) envelope.stage = stage;
   const summary = safeSummary(context.summary);
   if (summary) details.summary = summary;
-  if (Object.hasOwn(context, "error")) Object.assign(details, safeAmazonImportError(context.error));
+  if (Object.hasOwn(context, "error")) {
+    Object.assign(details, safeAmazonImportError(context.error));
+    const rawResponse = rawShipStationResponse(context.error);
+    if (rawResponse !== undefined) details.rawShipStationResponse = rawResponse;
+  }
   if (["errorName", "errorCode", "statusCode", "retryable", "requestId"].some((key) => Object.hasOwn(context, key))) {
     Object.assign(details, safeAmazonImportError({
       name: context.errorName,

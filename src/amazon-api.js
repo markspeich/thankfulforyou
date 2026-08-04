@@ -9,8 +9,35 @@ const COMPLETE_KEYS = [
   "processedShipments",
   "type",
 ];
+const COMPLETE_WITH_FAILURES_KEYS = [
+  "alreadyProcessedShipments",
+  "customizationNeeded",
+  "existingItems",
+  "failed",
+  "failures",
+  "importedItems",
+  "processedShipments",
+  "type",
+];
 const PROGRESS_KEYS = ["processed", "stage", "total", "type"];
 const ERROR_KEYS = ["code", "message", "type"];
+const FAILURE_KEYS = ["orderNumber", "reasonCode", "stage", "summary"];
+const MAX_FAILURES = 10;
+const SAFE_ORDER_NUMBER = /^\d{3}-\d{7}-\d{7}$/;
+const SAFE_FAILURE_STAGES = new Set([
+  "item_start",
+  "customization_fetch",
+  "normalization",
+  "enrichment",
+  "notes_build",
+  "notes_update",
+  "persistence",
+  "tag_update",
+]);
+const SAFE_FAILURE_VALIDATIONS = [
+  { reasonCode: "required_field", summary: "Package weight is required." },
+  { reasonCode: "invalid_field_value", summary: "The selected shipping service is invalid." },
+];
 
 function publicImportError(code = "") {
   const error = new Error(IMPORT_ERROR);
@@ -24,6 +51,32 @@ function hasExactKeys(value, keys) {
 
 function isCount(value) {
   return Number.isInteger(value) && value >= 0 && Number.isFinite(value);
+}
+
+function parseFailures(value, failed) {
+  if (!Array.isArray(value) || value.length > MAX_FAILURES || value.length > failed) return null;
+  const failures = [];
+  for (const failure of value) {
+    if (!failure || typeof failure !== "object" || Array.isArray(failure) || !hasExactKeys(failure, FAILURE_KEYS)) {
+      return null;
+    }
+    const validation = SAFE_FAILURE_VALIDATIONS.find((candidate) => (
+      failure.reasonCode === candidate.reasonCode && failure.summary === candidate.summary
+    ));
+    if (
+      typeof failure.orderNumber !== "string"
+      || !SAFE_ORDER_NUMBER.test(failure.orderNumber)
+      || !SAFE_FAILURE_STAGES.has(failure.stage)
+      || !validation
+    ) return null;
+    failures.push({
+      orderNumber: failure.orderNumber,
+      stage: failure.stage,
+      reasonCode: validation.reasonCode,
+      summary: validation.summary,
+    });
+  }
+  return failures;
 }
 
 function parseEvent(record) {
@@ -62,10 +115,13 @@ function parseEvent(record) {
     throw publicImportError();
   }
 
-  if (event.type === "complete" && hasExactKeys(event, COMPLETE_KEYS)) {
+  const hasFailures = event.type === "complete" && hasExactKeys(event, COMPLETE_WITH_FAILURES_KEYS);
+  if (event.type === "complete" && (hasExactKeys(event, COMPLETE_KEYS) || hasFailures)) {
     if (!COMPLETE_KEYS.slice(0, -1).every((key) => isCount(event[key]))) {
       throw publicImportError();
     }
+    const failures = hasFailures ? parseFailures(event.failures, event.failed) : undefined;
+    if (hasFailures && !failures) throw publicImportError();
     return {
       type: "complete",
       processedShipments: event.processedShipments,
@@ -74,6 +130,7 @@ function parseEvent(record) {
       alreadyProcessedShipments: event.alreadyProcessedShipments,
       customizationNeeded: event.customizationNeeded,
       failed: event.failed,
+      ...(hasFailures ? { failures } : {}),
     };
   }
 

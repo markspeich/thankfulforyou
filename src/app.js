@@ -94,6 +94,7 @@ import {
   filterGroupedOrders,
   getEtsyConnectionActionDescriptor,
   getEtsyImportSummary,
+  getAmazonImportFailureDescription,
   getAmazonImportSummary,
   getOrderItemCustomizationWarning,
   getCheckedOrderIdsForBulkAction,
@@ -6605,9 +6606,12 @@ async function startAmazonImport() {
       amazonImporting = false;
       renderEtsyImportUi();
       if (amazonImportResult) {
+        const amazonImportFailed = amazonImportResult.failed > 0;
         completeOperationDialog({
-          title: "Amazon Import Complete",
-          description: getAmazonImportSummary(amazonImportResult),
+          title: amazonImportFailed ? "Operation Failed" : "Amazon Import Complete",
+          description: amazonImportFailed
+            ? getAmazonImportFailureDescription(amazonImportResult)
+            : getAmazonImportSummary(amazonImportResult),
           metrics: [
             { label: "Shipments processed", value: amazonImportResult.processedShipments },
             { label: "Items imported", value: amazonImportResult.importedItems },

@@ -7,6 +7,7 @@ import {
 } from "../../api/_lib/amazon-import-service.js";
 import { createAmazonImportDiagnostics } from "../../api/_lib/amazon-import-diagnostics.js";
 import { ShipStationError } from "../../api/_lib/shipstation-client.js";
+import { importAmazonOrders } from "../../src/amazon-api.js";
 
 function deferred() {
   let resolve;
@@ -123,6 +124,106 @@ describe("Amazon import API", () => {
       '{"type":"progress","stage":"processing_shipments","processed":1,"total":2}\n',
       '{"type":"complete","processedShipments":1,"importedItems":1,"existingItems":0,"alreadyProcessedShipments":0,"customizationNeeded":0,"failed":0}\n',
     ]);
+  });
+
+  it("streams trusted bounded completion failures without arbitrary error response content", async () => {
+    // Break caught: the NDJSON boundary drops trusted validation records or forwards arbitrary upstream error response data.
+    const rawResponseBody = '{"message":"PRIVATE SHIPSTATION ERROR","field_value":"PRIVATE VALUE"}';
+    const res = response();
+    await createAmazonImportHandler({
+      resolveAuth: vi.fn().mockResolvedValue({ workspaceId: "workspace-1", userId: "user-1" }),
+      serviceFactory: () => ({
+        prepare: async ({ onProgress }) => ({
+          run: async () => onProgress({
+            type: "complete",
+            processedShipments: 0,
+            importedItems: 0,
+            existingItems: 0,
+            alreadyProcessedShipments: 0,
+            customizationNeeded: 0,
+            failed: 1,
+            failures: [{
+              orderNumber: "111-0318024-9415409",
+              stage: "notes_update",
+              reasonCode: "required_field",
+              summary: "Package weight is required.",
+              rawShipStationResponse: rawResponseBody,
+              response: "PRIVATE UPSTREAM ERROR RESPONSE",
+            }],
+            response: "PRIVATE TOP LEVEL ERROR RESPONSE",
+          }),
+          release: vi.fn(),
+        }),
+      }),
+    })({ method: "POST" }, res);
+
+    expect(res.chunks).toEqual([
+      '{"type":"complete","processedShipments":0,"importedItems":0,"existingItems":0,"alreadyProcessedShipments":0,"customizationNeeded":0,"failed":1,"failures":[{"orderNumber":"111-0318024-9415409","stage":"notes_update","reasonCode":"required_field","summary":"Package weight is required."}]}\n',
+    ]);
+    expect(res.chunks.join("")).not.toContain("PRIVATE UPSTREAM ERROR RESPONSE");
+    expect(res.chunks.join("")).not.toContain("PRIVATE TOP LEVEL ERROR RESPONSE");
+    expect(res.chunks.join("")).not.toContain("PRIVATE SHIPSTATION ERROR");
+    expect(res.chunks.join("")).not.toContain("PRIVATE VALUE");
+  });
+
+  it("emits completion frames that preserve valid details through the browser parser and omit fallback IDs", async () => {
+    // Break caught: the server accepts an identifier grammar that makes its own completion frame fail browser parsing.
+    const completion = {
+      type: "complete",
+      processedShipments: 0,
+      importedItems: 0,
+      existingItems: 0,
+      alreadyProcessedShipments: 0,
+      customizationNeeded: 0,
+      failed: 1,
+    };
+    const cases = [
+      {
+        failure: {
+          orderNumber: "111-0318024-9415409",
+          stage: "notes_update",
+          reasonCode: "required_field",
+          summary: "Package weight is required.",
+          rawShipStationResponse: '{"message":"PRIVATE SHIPSTATION ERROR","field_value":"PRIVATE VALUE"}',
+        },
+        expectedFailures: [{
+          orderNumber: "111-0318024-9415409",
+          stage: "notes_update",
+          reasonCode: "required_field",
+          summary: "Package weight is required.",
+        }],
+      },
+      {
+        failure: {
+          orderNumber: "order-fallback-id",
+          stage: "notes_update",
+          reasonCode: "required_field",
+          summary: "Package weight is required.",
+        },
+        expectedFailures: [],
+      },
+    ];
+
+    for (const { failure, expectedFailures } of cases) {
+      const res = response();
+      await createAmazonImportHandler({
+        resolveAuth: vi.fn().mockResolvedValue({ workspaceId: "workspace-1", userId: "user-1" }),
+        serviceFactory: () => ({
+          prepare: async ({ onProgress }) => ({
+            run: async () => onProgress({ ...completion, failures: [failure] }),
+            release: vi.fn(),
+          }),
+        }),
+      })({ method: "POST" }, res);
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(res.chunks.join(""))));
+      const events = [];
+
+      await importAmazonOrders({ onEvent: (event) => events.push(event) });
+
+      expect(events).toEqual([{ ...completion, failures: expectedFailures }]);
+      expect(JSON.stringify(events)).not.toContain("PRIVATE SHIPSTATION ERROR");
+      expect(JSON.stringify(events)).not.toContain("PRIVATE VALUE");
+    }
   });
 
   it("loads workspace preset and font context for server item enrichment", async () => {
