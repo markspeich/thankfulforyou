@@ -119,7 +119,7 @@ Switch the Orders workspace to the new contracts while still loading all order g
 
 ### Task 3: Add cursor pagination and simple server-side search
 
-**Status:** `Not started`
+**Status:** `Complete`
 
 Add the database and API paging behavior without specialized search infrastructure:
 
