@@ -89,14 +89,19 @@ function noteFieldsWithFonts(normalized) {
     .filter((response) => !/\s+font$/i.test(String(response?.name ?? "")))
     .slice(0, lineCount);
   const existingNames = new Set(fields.map((response) => String(response?.name ?? "").toLowerCase()));
-  const fontFields = selections.flatMap((selection) => {
+  const fontFieldsByTextField = new Map();
+  for (const selection of selections) {
     const label = textFields[selection?.lineIndex]?.name;
     const name = label ? `${label} Font` : "";
-    return name && selection?.name && !existingNames.has(name.toLowerCase())
-      ? [{ name, value: selection.name }]
-      : [];
-  });
-  return [...fields, ...fontFields];
+    if (name && selection?.name && !existingNames.has(name.toLowerCase())) {
+      fontFieldsByTextField.set(textFields[selection.lineIndex], { name, value: selection.name });
+    }
+  }
+  return fields.flatMap((response) => (
+    fontFieldsByTextField.has(response)
+      ? [response, fontFieldsByTextField.get(response)]
+      : [response]
+  ));
 }
 
 function emitDiagnostic(diagnostics, level, event, context) {

@@ -1397,8 +1397,12 @@ describe("Amazon import service", () => {
     await run(f);
 
     const updatedNotes = f.client.updateNotesToBuyer.mock.calls[0][0].notesToBuyer;
-    expect(updatedNotes).toContain("Name Font: Skywalk");
-    expect(updatedNotes).toContain("Title Font: Somekind");
+    expect(updatedNotes).toContain([
+      "Name: Jane",
+      "Name Font: Skywalk",
+      "Title: RN",
+      "Title Font: Somekind",
+    ].join("\n"));
   });
 
   it("uses an existing item marker to repair app persistence and tagging without rewriting notes", async () => {
