@@ -1298,6 +1298,16 @@ describe("Amazon import service", () => {
   });
 
   it("appends customized item blocks in shipment order, then persists once, then tags last", async () => {
+    const shipmentItems = [
+      item("first", {
+        name: "First Reel",
+        customizedUrl: "https://zme-caps.amazon.com/first.zip",
+      }),
+      item("second", {
+        name: "Second Reel",
+        customizedUrl: "https://zme-caps.amazon.com/second.zip",
+      }),
+    ];
     const f = fixture({
       shipments: [shipment("ordered", {
         notes: "Original buyer note",
@@ -1308,16 +1318,7 @@ describe("Amazon import service", () => {
         requested_shipment_service: "USPS Ground Advantage",
         shipping_rule_id: "se-rule",
         packages: [{ package_code: "package", weight: { value: 1.1, unit: "ounce" } }],
-        items: [
-          item("first", {
-            name: "First Reel",
-            customizedUrl: "https://zme-caps.amazon.com/first.zip",
-          }),
-          item("second", {
-            name: "Second Reel",
-            customizedUrl: "https://zme-caps.amazon.com/second.zip",
-          }),
-        ],
+        items: shipmentItems,
       })],
       persistenceResult: {
         importedOrderItemIds: ["amazon-order-item:first"],
@@ -1353,6 +1354,7 @@ describe("Amazon import service", () => {
       requestedShipmentService: "USPS Ground Advantage",
       shippingRuleId: "se-rule",
       packages: [{ package_code: "package", weight: { value: 1.1, unit: "ounce" } }],
+      items: shipmentItems,
       signal: undefined,
     });
     expect(f.sequence.indexOf("notes:ordered"))
@@ -1368,6 +1370,39 @@ describe("Amazon import service", () => {
       failed: 0,
       failures: [],
     });
+  });
+
+  it("includes Amazon v3 text-area fonts in Notes to Buyer", async () => {
+    // Break caught: parsed customer fonts reach design enrichment but disappear before ShipStation note generation.
+    const f = fixture({
+      shipments: [shipment("font-notes", {
+        items: [item("font-item", {
+          customizedUrl: "https://zme-caps.amazon.com/font-item.zip",
+        })],
+      })],
+      fetchResult: {
+        "version3.0": {
+          customizationInfo: {
+            surfaces: [{
+              areas: [
+                { customizationType: "text", label: "Name", text: "Jane", fontFamily: "Skywalk" },
+                { customizationType: "text", label: "Title", text: "RN", fontFamily: "Somekind" },
+              ],
+            }],
+          },
+        },
+      },
+    });
+
+    await run(f);
+
+    const updatedNotes = f.client.updateNotesToBuyer.mock.calls[0][0].notesToBuyer;
+    expect(updatedNotes).toContain([
+      "Name: Jane",
+      "Name Font: Skywalk",
+      "Title: RN",
+      "Title Font: Somekind",
+    ].join("\n"));
   });
 
   it("uses an existing item marker to repair app persistence and tagging without rewriting notes", async () => {

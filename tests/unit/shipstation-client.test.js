@@ -376,6 +376,12 @@ describe("ShipStation V2 client", () => {
   it("preserves mutable shipping configuration when updating buyer notes", async () => {
     const fetchImpl = vi.fn().mockResolvedValue(response(shipment({ notes_to_buyer: "Existing\nImported" })));
     const client = createShipStationClient({ apiKey: "secret", fetchImpl });
+    const items = [{
+      line_item_id: "amazon-item-1",
+      name: "Custom badge reel",
+      quantity: 1,
+      sku: "BR-1",
+    }];
 
     await expect(client.updateNotesToBuyer({
       shipmentId: "se/1",
@@ -386,6 +392,7 @@ describe("ShipStation V2 client", () => {
       serviceCode: "usps_ground_advantage",
       requestedShipmentService: "USPS Ground Advantage",
       shippingRuleId: "se-rule",
+      items,
       packages: [{
         shipment_package_id: "se-read-only",
         package_id: "se-3",
@@ -409,6 +416,7 @@ describe("ShipStation V2 client", () => {
           service_code: "usps_ground_advantage",
           requested_shipment_service: "USPS Ground Advantage",
           shipping_rule_id: "se-rule",
+          items,
           packages: [{
             package_id: "se-3",
             package_code: "package",
@@ -424,6 +432,19 @@ describe("ShipStation V2 client", () => {
 
     const malformed = createShipStationClient({ apiKey: "secret", fetchImpl: vi.fn().mockResolvedValue(response({ shipment_id: "se-1" })) });
     await expect(malformed.updateNotesToBuyer({ shipmentId: "se-1", notesToBuyer: "x" })).rejects.toMatchObject({ code: "invalid_response" });
+  });
+
+  it("omits non-array items when updating buyer notes", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(response(shipment()));
+    const client = createShipStationClient({ apiKey: "secret", fetchImpl });
+
+    await client.updateNotesToBuyer({
+      shipmentId: "se-1",
+      notesToBuyer: "Imported",
+      items: { line_item_id: "not-an-array" },
+    });
+
+    expect(JSON.parse(fetchImpl.mock.calls[0][1].body)).not.toHaveProperty("items");
   });
 
   it("posts an encoded tag path and validates its documented JSON success response", async () => {
