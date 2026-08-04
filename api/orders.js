@@ -272,6 +272,9 @@ export default async function handler(req, res) {
           workspaceId: auth.workspaceId,
           activeBatchId: batchId || null,
           statusFilter,
+          search: normalizeString(req.query?.search),
+          cursor: normalizeString(req.query?.cursor) || null,
+          limit: 50,
         });
         res.status(200).json(ordersPayload);
         return;
