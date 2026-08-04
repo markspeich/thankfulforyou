@@ -14,6 +14,7 @@ const response = (payload, status = 200, headers = new Headers()) => ({
   status,
   headers,
   json: async () => payload,
+  text: async () => JSON.stringify(payload),
 });
 
 describe("ShipStation V2 client", () => {
@@ -62,7 +63,7 @@ describe("ShipStation V2 client", () => {
     }
   });
 
-  it("preserves a ShipStation request ID without retaining error details", async () => {
+  it("preserves a ShipStation request ID alongside the server-only raw error body", async () => {
     const client = createShipStationClient({
       apiKey: "secret",
       fetchImpl: vi.fn().mockResolvedValue(response({
@@ -80,7 +81,79 @@ describe("ShipStation V2 client", () => {
       requestId: "req-safe",
     });
     expect(String(error)).not.toContain("secret body");
-    expect(JSON.stringify(error)).not.toContain("secret body");
+    expect(error.rawResponseBody).toContain("secret body");
+  });
+
+  it("preserves the exact terminal JSON error body after reading it once", async () => {
+    const body = '{\n  "request_id": "req-exact",\n  "errors": []\n}';
+    const text = vi.fn().mockResolvedValue(body);
+    const client = createShipStationClient({
+      apiKey: "secret",
+      fetchImpl: vi.fn().mockResolvedValue({ ok: false, status: 400, headers: new Headers(), text }),
+    });
+
+    const error = await client.updateNotesToBuyer({ shipmentId: "se-1", notesToBuyer: "ok" }).catch((caught) => caught);
+
+    expect(error).toMatchObject({ requestId: "req-exact", rawResponseBody: body });
+    expect(text).toHaveBeenCalledTimes(1);
+  });
+
+  it("preserves a plain-text terminal 400 response", async () => {
+    const body = "ShipStation rejected this shipment.";
+    const client = createShipStationClient({
+      apiKey: "secret",
+      fetchImpl: vi.fn().mockResolvedValue({ ok: false, status: 400, headers: new Headers(), text: async () => body }),
+    });
+
+    const error = await client.updateNotesToBuyer({ shipmentId: "se-1", notesToBuyer: "ok" }).catch((caught) => caught);
+
+    expect(error).toMatchObject({ requestId: null, validation: null, rawResponseBody: body });
+  });
+
+  it("truncates terminal response bodies beyond 16384 characters", async () => {
+    const body = "x".repeat(16385);
+    const client = createShipStationClient({
+      apiKey: "secret",
+      fetchImpl: vi.fn().mockResolvedValue({ ok: false, status: 400, headers: new Headers(), text: async () => body }),
+    });
+
+    const error = await client.updateNotesToBuyer({ shipmentId: "se-1", notesToBuyer: "ok" }).catch((caught) => caught);
+
+    expect(error.rawResponseBody).toBe(`${"x".repeat(16384)}\n[truncated after 16384 characters]`);
+  });
+
+  it("extracts existing error metadata from the raw JSON text", async () => {
+    const body = JSON.stringify({
+      request_id: "req-raw-json",
+      errors: [{ error_code: "field_value_required", field_name: "packages[0].weight" }],
+    });
+    const client = createShipStationClient({
+      apiKey: "secret",
+      fetchImpl: vi.fn().mockResolvedValue({ ok: false, status: 400, headers: new Headers(), text: async () => body }),
+    });
+
+    const error = await client.updateNotesToBuyer({ shipmentId: "se-1", notesToBuyer: "ok" }).catch((caught) => caught);
+
+    expect(error).toMatchObject({
+      requestId: "req-raw-json",
+      validation: { reasonCode: "required_field", field: "package_weight", summary: "Package weight is required." },
+      rawResponseBody: body,
+    });
+  });
+
+  it("uses a marker when a terminal response body cannot be read", async () => {
+    const client = createShipStationClient({
+      apiKey: "secret",
+      fetchImpl: vi.fn().mockResolvedValue({ ok: false, status: 400, headers: new Headers(), text: async () => { throw new Error("unreadable"); } }),
+    });
+
+    const error = await client.updateNotesToBuyer({ shipmentId: "se-1", notesToBuyer: "ok" }).catch((caught) => caught);
+
+    expect(error).toMatchObject({
+      requestId: null,
+      validation: null,
+      rawResponseBody: "[ShipStation response body could not be read]",
+    });
   });
 
   it("retains only bounded request IDs matching the safe identifier allowlist", async () => {
@@ -98,11 +171,11 @@ describe("ShipStation V2 client", () => {
       });
       const error = await client.updateNotesToBuyer({ shipmentId: "se-1", notesToBuyer: "ok" }).catch((caught) => caught);
       expect(error.requestId).toBe(expected);
-      if (expected === null) expect(JSON.stringify(error)).not.toContain(requestId);
+      expect(error.rawResponseBody).toContain(requestId);
     }
   });
 
-  it("extracts an allowlisted required package weight validation without retaining the response body", async () => {
+  it("extracts an allowlisted required package weight validation alongside the raw response body", async () => {
     const client = createShipStationClient({
       apiKey: "secret",
       fetchImpl: vi.fn().mockResolvedValue(response({
@@ -129,8 +202,8 @@ describe("ShipStation V2 client", () => {
       },
     });
     expect(Object.isFrozen(error.validation)).toBe(true);
-    expect(JSON.stringify(error)).not.toContain("buyer-provided-weight");
-    expect(JSON.stringify(error)).not.toContain("PRIVATE UPSTREAM PACKAGE MESSAGE");
+    expect(error.rawResponseBody).toContain("buyer-provided-weight");
+    expect(error.rawResponseBody).toContain("PRIVATE UPSTREAM PACKAGE MESSAGE");
   });
 
   it("maps only documented validation combinations and leaves generic 400 errors unclassified", async () => {
@@ -179,11 +252,11 @@ describe("ShipStation V2 client", () => {
       const client = createShipStationClient({ apiKey: "secret", fetchImpl: vi.fn().mockResolvedValue(response(payload, 400)) });
       const error = await client.updateNotesToBuyer({ shipmentId: "se-1", notesToBuyer: "ok" }).catch((caught) => caught);
       expect(error).toMatchObject({ requestId: payload.request_id, validation: expected });
-      expect(JSON.stringify(error)).not.toMatch(/buyer-chosen-service|PRIVATE UPSTREAM SERVICE MESSAGE|PRIVATE LEGACY FIELD VALUE|PRIVATE WRONG-PAIR VALUE/);
+      expect(error.rawResponseBody).toBe(JSON.stringify(payload));
     }
   });
 
-  it("omits untrusted error values and preserves only a parseable safe request ID", async () => {
+  it("preserves untrusted error values only in the server-only raw response body", async () => {
     const privateValues = [
       "Buyer Daphne Private",
       "15 Secret Lane, Exampleville",
@@ -205,13 +278,17 @@ describe("ShipStation V2 client", () => {
     const error = await client.updateNotesToBuyer({ shipmentId: "se-1", notesToBuyer: "ok" }).catch((caught) => caught);
 
     expect(error).toMatchObject({ requestId: "req-safe-only", validation: null });
-    for (const value of privateValues) expect(JSON.stringify(error)).not.toContain(value);
+    for (const value of privateValues) expect(error.rawResponseBody).toContain(value);
 
     const malformed = createShipStationClient({
       apiKey: "secret",
-      fetchImpl: vi.fn().mockResolvedValue({ ok: false, status: 400, json: async () => { throw new SyntaxError("malformed body"); } }),
+      fetchImpl: vi.fn().mockResolvedValue({ ok: false, status: 400, text: async () => { throw new SyntaxError("malformed body"); } }),
     });
-    await expect(malformed.updateNotesToBuyer({ shipmentId: "se-1", notesToBuyer: "ok" })).rejects.toMatchObject({ requestId: null, validation: null });
+    await expect(malformed.updateNotesToBuyer({ shipmentId: "se-1", notesToBuyer: "ok" })).rejects.toMatchObject({
+      requestId: null,
+      validation: null,
+      rawResponseBody: "[ShipStation response body could not be read]",
+    });
   });
 
   it("rejects caller-supplied validation metadata outside the same safe allowlist", () => {
@@ -232,7 +309,7 @@ describe("ShipStation V2 client", () => {
     const fetchImpl = vi.fn((_url, options) => Promise.resolve({
       ok: false,
       status: 401,
-      json: () => new Promise((_resolve, reject) => {
+      text: () => new Promise((_resolve, reject) => {
         options.signal.addEventListener("abort", () => reject(new DOMException("secret body", "AbortError")), { once: true });
       }),
     }));

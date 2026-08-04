@@ -3,6 +3,9 @@ const TIMEOUT_MS = 15_000;
 const MAX_ATTEMPTS = 3;
 const MAX_RETRY_AFTER_MS = 10_000;
 const RETRY_BACKOFF_MS = 250;
+const MAX_ERROR_RESPONSE_BODY_CHARACTERS = 16_384;
+const ERROR_RESPONSE_BODY_TRUNCATION_MARKER = "\n[truncated after 16384 characters]";
+const UNREADABLE_ERROR_RESPONSE_BODY = "[ShipStation response body could not be read]";
 const SAFE_REQUEST_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const SAFE_VALIDATIONS = [
   { reasonCode: "required_field", field: "package_weight", summary: "Package weight is required." },
@@ -28,6 +31,7 @@ export class ShipStationError extends Error {
     retryable = false,
     requestId = null,
     validation = null,
+    rawResponseBody = null,
   } = {}) {
     super("Unable to communicate with ShipStation.");
     this.name = "ShipStationError";
@@ -36,6 +40,7 @@ export class ShipStationError extends Error {
     this.retryable = retryable;
     this.requestId = normalizeRequestId(requestId);
     this.validation = safeValidation(validation);
+    this.rawResponseBody = rawResponseBody;
   }
 }
 
@@ -120,14 +125,24 @@ function validationFromPayload(payload) {
 }
 
 async function readErrorDetails(response) {
+  let rawResponseBody;
   try {
-    const payload = await response.json();
+    const responseBody = await response.text();
+    rawResponseBody = responseBody.length > MAX_ERROR_RESPONSE_BODY_CHARACTERS
+      ? responseBody.slice(0, MAX_ERROR_RESPONSE_BODY_CHARACTERS) + ERROR_RESPONSE_BODY_TRUNCATION_MARKER
+      : responseBody;
+    const payload = JSON.parse(rawResponseBody);
     return {
       requestId: normalizeRequestId(payload?.request_id),
       validation: validationFromPayload(payload),
+      rawResponseBody,
     };
   } catch {
-    return { requestId: null, validation: null };
+    return {
+      requestId: null,
+      validation: null,
+      rawResponseBody: rawResponseBody ?? UNREADABLE_ERROR_RESPONSE_BODY,
+    };
   }
 }
 
@@ -231,9 +246,9 @@ export function createShipStationClient({
       const retryable = statusCode === 429 || (statusCode >= 500 && statusCode <= 599);
       if (!retryable || attempt === MAX_ATTEMPTS - 1) {
         try {
-          const { requestId, validation } = await readErrorDetails(response);
+          const { requestId, validation, rawResponseBody } = await readErrorDetails(response);
           if (signal?.aborted || combined.signal?.aborted) throw new ShipStationError(signal?.aborted ? "aborted" : "temporary", { retryable: !signal?.aborted });
-          throw new ShipStationError(retryable ? (statusCode === 429 ? "rate_limited" : "temporary") : "request_failed", { statusCode, retryable, requestId, validation });
+          throw new ShipStationError(retryable ? (statusCode === 429 ? "rate_limited" : "temporary") : "request_failed", { statusCode, retryable, requestId, validation, rawResponseBody });
         } finally {
           combined.cleanup();
         }
