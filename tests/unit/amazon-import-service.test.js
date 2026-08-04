@@ -376,7 +376,15 @@ describe("Amazon import service", () => {
 
   it("reports a trusted notes update validation failure without exposing arbitrary error data", async () => {
     // Break caught: a safe ShipStation validation failure is lost from the import completion or leaks upstream error content.
+    const rawResponseBody = '{"message":"PRIVATE SHIPSTATION ERROR","field_value":"PRIVATE VALUE"}';
+    const diagnosticEvents = [];
+    const diagnostics = createAmazonImportDiagnostics({
+      logger: flattenDiagnosticLogger({
+        error: (event, context) => diagnosticEvents.push({ event, context }),
+      }),
+    });
     const failure = new ShipStationError("invalid_response", {
+      rawResponseBody,
       validation: {
         reasonCode: "required_field",
         field: "package_weight",
@@ -389,6 +397,7 @@ describe("Amazon import service", () => {
       arbitraryProperty: "PRIVATE ARBITRARY PROPERTY",
     });
     const f = fixture({
+      diagnostics,
       shipments: [shipment("invalid-notes", {
         external_order_id: "111-0318024-9415409",
         items: [item("invalid-notes-item", { customizedUrl: "https://amazon.example/customization" })],
@@ -413,9 +422,61 @@ describe("Amazon import service", () => {
       }],
     });
     const serialized = JSON.stringify(result);
-    for (const secret of ["PRIVATE CUSTOMER ERROR MESSAGE", "PRIVATE UPSTREAM RESPONSE", "PRIVATE ARBITRARY PROPERTY"]) {
+    expect(diagnosticEvents.find(({ event }) => event === "amazon_import.shipment.failed")?.context)
+      .toMatchObject({ rawShipStationResponse: rawResponseBody });
+    expect(Object.keys(result.failures[0]).sort()).toEqual(["orderNumber", "reasonCode", "stage", "summary"]);
+    for (const secret of [
+      "PRIVATE CUSTOMER ERROR MESSAGE",
+      "PRIVATE UPSTREAM RESPONSE",
+      "PRIVATE ARBITRARY PROPERTY",
+      "PRIVATE SHIPSTATION ERROR",
+      "PRIVATE VALUE",
+    ]) {
       expect(serialized).not.toContain(secret);
     }
+  });
+
+  it("keeps a raw-response shipment failure unchanged when the server logger throws", async () => {
+    // Break caught: emitting the trusted raw response changes a shipment-level failure into a run-level failure.
+    const rawResponseBody = '{"message":"PRIVATE SHIPSTATION ERROR","field_value":"PRIVATE VALUE"}';
+    const diagnostics = createAmazonImportDiagnostics({
+      logger: {
+        info() {},
+        error(_message, envelope) {
+          if (envelope?.details?.rawShipStationResponse === rawResponseBody) {
+            throw new Error("logger unavailable");
+          }
+        },
+      },
+    });
+    const failure = new ShipStationError("invalid_response", {
+      rawResponseBody,
+      validation: {
+        reasonCode: "required_field",
+        field: "package_weight",
+        summary: "Package weight is required.",
+      },
+    });
+    const f = fixture({
+      diagnostics,
+      shipments: [shipment("logger-failure", {
+        external_order_id: "111-0318024-9415409",
+        items: [item("logger-failure-item", { customizedUrl: "https://amazon.example/customization" })],
+      })],
+    });
+    f.client.updateNotesToBuyer.mockRejectedValueOnce(failure);
+
+    const result = await run(f);
+
+    expect(result).toMatchObject({ processedShipments: 0, failed: 1 });
+    expect(result.failures).toEqual([{
+      orderNumber: "111-0318024-9415409",
+      stage: "notes_update",
+      reasonCode: "required_field",
+      summary: "Package weight is required.",
+    }]);
+    expect(JSON.stringify(result)).not.toContain("PRIVATE SHIPSTATION ERROR");
+    expect(f.store.releaseAmazonImportLock).toHaveBeenCalledOnce();
   });
 
   it("caps public validation failure records at ten while retaining the total failed count", async () => {

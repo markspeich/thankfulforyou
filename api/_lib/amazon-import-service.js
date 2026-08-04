@@ -125,19 +125,22 @@ function itemDiagnosticContext(shipment, item) {
 }
 
 function publicShipmentFailure({ orderNumber, stage, error }) {
-  const safeError = safeAmazonImportError(error);
+  const {
+    validationReasonCode: reasonCode,
+    validationSummary: summary,
+  } = safeAmazonImportError(error);
   if (
     typeof orderNumber !== "string"
     || !SAFE_ORDER_NUMBER.test(orderNumber)
     || !SAFE_PUBLIC_FAILURE_STAGES.has(stage)
-    || !safeError.validationReasonCode
-    || !safeError.validationSummary
+    || !reasonCode
+    || !summary
   ) return null;
   return {
     orderNumber,
     stage,
-    reasonCode: safeError.validationReasonCode,
-    summary: safeError.validationSummary,
+    reasonCode,
+    summary,
   };
 }
 
