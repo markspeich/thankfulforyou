@@ -501,6 +501,7 @@ export function createAmazonImportService({
                   requestedShipmentService: shipment.requested_shipment_service,
                   shippingRuleId: shipment.shipping_rule_id,
                   packages: shipment.packages,
+                  items: shipment.items,
                   signal,
                 }));
               }

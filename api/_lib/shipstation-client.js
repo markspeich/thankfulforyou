@@ -289,6 +289,7 @@ export function createShipStationClient({
     serviceCode,
     requestedShipmentService,
     shippingRuleId,
+    items,
     packages,
     signal,
   } = {}) {
@@ -311,6 +312,7 @@ export function createShipStationClient({
         ...(typeof requestedShipmentService === "string" && requestedShipmentService
           ? { requested_shipment_service: requestedShipmentService } : {}),
         ...(typeof shippingRuleId === "string" && shippingRuleId ? { shipping_rule_id: shippingRuleId } : {}),
+        ...(Array.isArray(items) ? { items } : {}),
         ...(Array.isArray(packages) ? { packages: packages.map(mutablePackage) } : {}),
       },
       signal,

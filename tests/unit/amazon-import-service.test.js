@@ -1298,6 +1298,16 @@ describe("Amazon import service", () => {
   });
 
   it("appends customized item blocks in shipment order, then persists once, then tags last", async () => {
+    const shipmentItems = [
+      item("first", {
+        name: "First Reel",
+        customizedUrl: "https://zme-caps.amazon.com/first.zip",
+      }),
+      item("second", {
+        name: "Second Reel",
+        customizedUrl: "https://zme-caps.amazon.com/second.zip",
+      }),
+    ];
     const f = fixture({
       shipments: [shipment("ordered", {
         notes: "Original buyer note",
@@ -1308,16 +1318,7 @@ describe("Amazon import service", () => {
         requested_shipment_service: "USPS Ground Advantage",
         shipping_rule_id: "se-rule",
         packages: [{ package_code: "package", weight: { value: 1.1, unit: "ounce" } }],
-        items: [
-          item("first", {
-            name: "First Reel",
-            customizedUrl: "https://zme-caps.amazon.com/first.zip",
-          }),
-          item("second", {
-            name: "Second Reel",
-            customizedUrl: "https://zme-caps.amazon.com/second.zip",
-          }),
-        ],
+        items: shipmentItems,
       })],
       persistenceResult: {
         importedOrderItemIds: ["amazon-order-item:first"],
@@ -1353,6 +1354,7 @@ describe("Amazon import service", () => {
       requestedShipmentService: "USPS Ground Advantage",
       shippingRuleId: "se-rule",
       packages: [{ package_code: "package", weight: { value: 1.1, unit: "ounce" } }],
+      items: shipmentItems,
       signal: undefined,
     });
     expect(f.sequence.indexOf("notes:ordered"))
