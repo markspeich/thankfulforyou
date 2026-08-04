@@ -29,6 +29,28 @@ async function createTestBatch(name = "Orders Store DB Test Batch") {
   return batchId;
 }
 
+async function listSummaryPage(supabase, overrides = {}) {
+  return supabase.rpc("list_workspace_order_summaries_page", {
+    p_workspace_id: PRIMARY_WORKSPACE_ID,
+    p_status: "open",
+    p_search: "",
+    p_active_batch_id: null,
+    p_limit: 50,
+    p_after_group_rank: null,
+    p_after_order_key: null,
+    p_after_group_id: null,
+    ...overrides,
+  });
+}
+
+async function deleteOrderItemsByPrefix(supabase, prefix) {
+  const { error } = await supabase
+    .from("order_items")
+    .delete()
+    .like("id", `${prefix}%`);
+  expect(error).toBeNull();
+}
+
 beforeAll(() => {
   loadEnvFile();
 
@@ -42,6 +64,179 @@ beforeAll(() => {
 });
 
 describe("orders store database integration", () => {
+  it("returns at most 50 whole order groups per compact page", async () => {
+    const suffix = randomUUID().slice(0, 8);
+    const supabase = createSupabaseAdminClient();
+    const orderItems = Array.from({ length: 51 }, (_, index) => ({
+      id: `page-${suffix}-${String(index).padStart(2, "0")}-a`,
+      workspace_id: PRIMARY_WORKSPACE_ID,
+      status: "open",
+      order_number: `PAGE-${suffix}-${String(index).padStart(2, "0")}`,
+      buyer_name: `Buyer ${index}`,
+    }));
+    orderItems.push({
+      id: `page-${suffix}-25-b`,
+      workspace_id: PRIMARY_WORKSPACE_ID,
+      status: "open",
+      order_number: `PAGE-${suffix}-25`,
+      buyer_name: "Second item buyer",
+    });
+
+    const { error: orderItemsError } = await supabase.from("order_items").insert(orderItems);
+    expect(orderItemsError).toBeNull();
+
+    const { data, error } = await listSummaryPage(supabase, { p_search: suffix });
+
+    expect(error).toBeNull();
+    const groupIds = [...new Set(data.map((row) => row.group_id))];
+    expect(groupIds).toHaveLength(50);
+    expect(data.filter((row) => row.group_id === `order:PAGE-${suffix}-25`))
+      .toHaveLength(2);
+    expect(data.every((row) => row.has_more === true)).toBe(true);
+    await deleteOrderItemsByPrefix(supabase, `page-${suffix}-`);
+  });
+
+  it("uses stable cursor boundaries for equal normalized keys and manual orders", async () => {
+    const suffix = randomUUID().slice(0, 8);
+    const supabase = createSupabaseAdminClient();
+    const items = [
+      { id: `boundary-${suffix}-upper`, order_number: `BOUNDARY-${suffix}` },
+      { id: `boundary-${suffix}-lower`, order_number: `boundary-${suffix}` },
+      { id: `boundary-${suffix}-manual-a`, order_number: null },
+      { id: `boundary-${suffix}-manual-b`, order_number: null },
+    ].map((item) => ({
+      ...item,
+      workspace_id: PRIMARY_WORKSPACE_ID,
+      status: "open",
+      buyer_name: `Boundary ${suffix}`,
+    }));
+    const { error: insertError } = await supabase.from("order_items").insert(items);
+    expect(insertError).toBeNull();
+
+    const first = await listSummaryPage(supabase, { p_search: `Boundary ${suffix}`, p_limit: 1 });
+    expect(first.error).toBeNull();
+    expect(first.data.map((row) => row.group_id)).toEqual([`order:boundary-${suffix}`]);
+
+    const boundary = first.data.at(-1);
+    const second = await listSummaryPage(supabase, {
+      p_search: `Boundary ${suffix}`,
+      p_limit: 1,
+      p_after_group_rank: boundary.group_rank,
+      p_after_order_key: boundary.order_key,
+      p_after_group_id: boundary.group_id,
+    });
+    expect(second.error).toBeNull();
+    expect(second.data.map((row) => row.group_id)).toEqual([`order:BOUNDARY-${suffix}`]);
+
+    const collected = [...first.data, ...second.data];
+    let cursor = second.data.at(-1);
+    while (cursor?.has_more) {
+      const page = await listSummaryPage(supabase, {
+        p_search: `Boundary ${suffix}`,
+        p_limit: 1,
+        p_after_group_rank: cursor.group_rank,
+        p_after_order_key: cursor.order_key,
+        p_after_group_id: cursor.group_id,
+      });
+      expect(page.error).toBeNull();
+      collected.push(...page.data);
+      cursor = page.data.at(-1);
+    }
+
+    expect(collected.map((row) => row.group_id)).toEqual([
+      `order:boundary-${suffix}`,
+      `order:BOUNDARY-${suffix}`,
+      `item:boundary-${suffix}-manual-a`,
+      `item:boundary-${suffix}-manual-b`,
+    ]);
+    await deleteOrderItemsByPrefix(supabase, `boundary-${suffix}-`);
+  });
+
+  it("searches the entire workspace across compact order fields and design text", async () => {
+    const suffix = randomUUID().slice(0, 8);
+    const supabase = createSupabaseAdminClient();
+    const fillerItems = Array.from({ length: 55 }, (_, index) => ({
+      id: `search-${suffix}-filler-${String(index).padStart(2, "0")}`,
+      workspace_id: PRIMARY_WORKSPACE_ID,
+      status: "open",
+      order_number: `A-${suffix}-${String(index).padStart(2, "0")}`,
+      buyer_name: "Unrelated buyer",
+    }));
+    const targetId = `search-${suffix}-target`;
+    const targetOrderNumber = `Z-${suffix}-rare-order`;
+    const { error: itemsError } = await supabase.from("order_items").insert([
+      ...fillerItems,
+      {
+        id: targetId,
+        workspace_id: PRIMARY_WORKSPACE_ID,
+        status: "open",
+        order_number: targetOrderNumber,
+        buyer_name: `Rare Buyer ${suffix}`,
+        listing_id: `rare-listing-${suffix}`,
+        transaction_id: `rare-transaction-${suffix}`,
+        imported_color: `Rare Color ${suffix}`,
+      },
+    ]);
+    expect(itemsError).toBeNull();
+    const { error: designError } = await supabase.from("designs").insert({
+      workspace_id: PRIMARY_WORKSPACE_ID,
+      order_item_id: targetId,
+      design_text: `Rare Credentials ${suffix}`,
+    });
+    expect(designError).toBeNull();
+
+    const searches = [
+      targetOrderNumber,
+      `Rare Buyer ${suffix}`,
+      `rare-listing-${suffix}`,
+      `rare-transaction-${suffix}`,
+      `Rare Color ${suffix}`,
+      `Rare Credentials ${suffix}`,
+    ];
+    for (const search of searches) {
+      const { data, error } = await listSummaryPage(supabase, { p_search: search });
+      expect(error).toBeNull();
+      expect([...new Set(data.map((row) => row.group_id))]).toEqual([`order:${targetOrderNumber}`]);
+    }
+    await deleteOrderItemsByPrefix(supabase, `search-${suffix}-`);
+  });
+
+  it("traverses every matching group without skips or duplicates", async () => {
+    const suffix = randomUUID().slice(0, 8);
+    const supabase = createSupabaseAdminClient();
+    const expectedGroupIds = Array.from({ length: 73 }, (_, index) =>
+      `order:TRAVERSE-${suffix}-${String(index).padStart(2, "0")}`);
+    const { error: insertError } = await supabase.from("order_items").insert(
+      expectedGroupIds.map((groupId, index) => ({
+        id: `traverse-${suffix}-${String(index).padStart(2, "0")}`,
+        workspace_id: PRIMARY_WORKSPACE_ID,
+        status: "open",
+        order_number: groupId.slice("order:".length),
+        buyer_name: `Traversal ${suffix}`,
+      })),
+    );
+    expect(insertError).toBeNull();
+
+    const traversed = [];
+    let cursor = null;
+    do {
+      const page = await listSummaryPage(supabase, {
+        p_search: `Traversal ${suffix}`,
+        p_limit: 7,
+        p_after_group_rank: cursor?.group_rank ?? null,
+        p_after_order_key: cursor?.order_key ?? null,
+        p_after_group_id: cursor?.group_id ?? null,
+      });
+      expect(page.error).toBeNull();
+      traversed.push(...new Set(page.data.map((row) => row.group_id)));
+      cursor = page.data.at(-1) || null;
+    } while (cursor?.has_more);
+
+    expect(traversed).toEqual(expectedGroupIds);
+    expect(new Set(traversed).size).toBe(traversed.length);
+    await deleteOrderItemsByPrefix(supabase, `traverse-${suffix}-`);
+  });
+
   it("imports order items to Orders without adding them to the production batch", async () => {
     const suffix = Date.now().toString(36);
     const orderNumber = `ORDERS-${suffix}`;

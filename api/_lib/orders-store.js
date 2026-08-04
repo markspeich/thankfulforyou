@@ -418,47 +418,99 @@ export async function listWorkspaceOrders({ workspaceId, activeBatchId = null, s
   return { orders: Array.from(groups.values()) };
 }
 
-export async function listWorkspaceOrderSummaries({ workspaceId, activeBatchId = null, statusFilter = "open" }) {
-  const supabase = createSupabaseAdminClient();
-  let orderItemsQuery = supabase
-    .from("order_items")
-    .select("id, workspace_id, status, order_number, buyer_name, listing_id, transaction_id, imported_color, ship_by_date, quantity, source_json, revision, updated_at, updated_by")
-    .eq("workspace_id", workspaceId);
-  if (statusFilter === "complete") {
-    orderItemsQuery = orderItemsQuery.eq("status", "complete");
-  } else if (statusFilter === "skipped") {
-    orderItemsQuery = orderItemsQuery.eq("status", "skipped");
-  } else if (statusFilter !== "all") {
-    orderItemsQuery = orderItemsQuery.neq("status", "complete").neq("status", "skipped").neq("status", "archived");
+function decodeOrderSummaryCursor(cursor) {
+  const normalized = normalizeString(cursor);
+  if (!normalized) {
+    return null;
   }
-  const { data: orderItems, error: orderItemsError } = await orderItemsQuery
-    .order("order_number", { ascending: true })
-    .order("created_at", { ascending: true });
-  if (orderItemsError) throw orderItemsError;
 
-  const itemRows = orderItems || [];
-  if (!itemRows.length) return { orders: [] };
+  try {
+    const parsed = JSON.parse(Buffer.from(normalized, "base64url").toString("utf8"));
+    if (
+      !parsed
+      || !Number.isInteger(parsed.groupRank)
+      || (parsed.groupRank !== 0 && parsed.groupRank !== 1)
+      || typeof parsed.orderKey !== "string"
+      || typeof parsed.groupId !== "string"
+      || !parsed.groupId
+    ) {
+      throw new Error("Invalid cursor shape.");
+    }
+    return parsed;
+  } catch {
+    throw Object.assign(new Error("Invalid orders cursor."), {
+      statusCode: 400,
+      expose: true,
+    });
+  }
+}
 
-  const [{ data: designs, error: designsError }, batchItems] = await Promise.all([
-    supabase
-      .from("designs")
-      .select("id, order_item_id, design_text, production_status")
-      .eq("workspace_id", workspaceId)
-      .in("order_item_id", itemRows.map((item) => item.id)),
-    queryBatchItems({ supabase, workspaceId, batchId: activeBatchId }),
-  ]);
-  if (designsError) throw designsError;
+function encodeOrderSummaryCursor(row) {
+  return Buffer.from(JSON.stringify({
+    groupRank: row.group_rank,
+    orderKey: row.order_key,
+    groupId: row.group_id,
+  })).toString("base64url");
+}
 
-  const activeBatchItemIds = new Set(batchItems.filter((item) => item.status === "active").map((item) => item.order_item_id));
-  const designsByOrderItemId = new Map((designs || []).map((design) => [design.order_item_id, design]));
+export async function listWorkspaceOrderSummaries({
+  workspaceId,
+  activeBatchId = null,
+  statusFilter = "open",
+  search = "",
+  cursor = null,
+  limit = 50,
+}) {
+  const supabase = createSupabaseAdminClient();
+  const decodedCursor = decodeOrderSummaryCursor(cursor);
+  const parsedLimit = Number.parseInt(limit, 10);
+  const pageLimit = Number.isInteger(parsedLimit) ? Math.min(Math.max(parsedLimit, 1), 50) : 50;
+  const { data, error } = await supabase.rpc("list_workspace_order_summaries_page", {
+    p_workspace_id: workspaceId,
+    p_status: statusFilter,
+    p_search: normalizeString(search),
+    p_active_batch_id: activeBatchId,
+    p_limit: pageLimit,
+    p_after_group_rank: decodedCursor?.groupRank ?? null,
+    p_after_order_key: decodedCursor?.orderKey ?? null,
+    p_after_group_id: decodedCursor?.groupId ?? null,
+  });
+  if (error) throw error;
+
+  const rows = data || [];
   const groups = new Map();
-  for (const row of itemRows) {
-    appendOrderItemToGroups(groups, normalizeCompactOrderItem(row, {
-      design: designsByOrderItemId.get(row.id) || null,
+  for (const row of rows) {
+    const activeBatchItemIds = new Set(row.is_in_active_batch ? [row.item_id] : []);
+    const design = row.design_id ? {
+      id: row.design_id,
+      design_text: row.design_text,
+      production_status: row.design_production_status,
+    } : null;
+    appendOrderItemToGroups(groups, normalizeCompactOrderItem({
+      id: row.item_id,
+      status: row.item_status,
+      order_number: row.order_number,
+      buyer_name: row.buyer_name,
+      listing_id: row.listing_id,
+      transaction_id: row.transaction_id,
+      imported_color: row.imported_color,
+      ship_by_date: row.ship_by_date,
+      quantity: row.quantity,
+      source_json: row.source_json,
+      revision: row.item_revision,
+      updated_at: row.item_updated_at,
+      updated_by: row.item_updated_by,
+    }, {
+      design,
       activeBatchItemIds,
     }));
   }
-  return { orders: Array.from(groups.values()) };
+  const orders = Array.from(groups.values());
+  const lastRow = rows.at(-1);
+  return {
+    orders,
+    nextCursor: lastRow?.has_more ? encodeOrderSummaryCursor(lastRow) : null,
+  };
 }
 
 export async function getWorkspaceOrderDetail({ workspaceId, orderId, activeBatchId = null }) {
