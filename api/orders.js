@@ -92,6 +92,18 @@ function decodeCompactCursor(value) {
 }
 
 function parseCompactQuery(query) {
+  for (const [name, value] of Object.entries({
+    batchId: query?.batchId,
+    status: query?.status,
+    batch: query?.batch,
+    search: query?.search,
+    limit: query?.limit,
+    cursor: query?.cursor,
+  })) {
+    if (value != null && typeof value !== "string") {
+      return { error: `${name} must be a single query value.` };
+    }
+  }
   const statusFilter = parseCompactStatusFilter(query?.status);
   if (statusFilter.error) return statusFilter;
   const batchFilter = parseCompactBatchFilter(query?.batch);

@@ -134,6 +134,10 @@ describe("orders api route", () => {
     ["a limit above 50", { limit: "51" }],
     ["an unknown status", { status: "pending" }],
     ["an unknown batch filter", { batch: "archived" }],
+    ["a repeated cursor", { cursor: ["cursor-1", "cursor-2"] }],
+    ["a repeated limit", { limit: ["25", "50"] }],
+    ["a repeated status", { status: ["open", "all"] }],
+    ["a repeated batch filter", { batch: ["all", "notInBatch"] }],
   ])("rejects compact requests with %s before loading the store", async (_label, invalidQuery) => {
     resolveProductionBatchAuthMock.mockResolvedValue({ userId: "user-1", workspaceId: "workspace-1" });
     const { default: handler } = await import("../../api/orders.js");
