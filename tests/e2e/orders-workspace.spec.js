@@ -284,10 +284,24 @@ async function installOrdersWorkspaceRoutes(page, options = {}) {
       await new Promise((resolve) => setTimeout(resolve, getDelayMs));
     }
     onGet?.(request);
+    const url = new URL(request.url());
+    const status = url.searchParams.get("status") || "open";
+    const batch = url.searchParams.get("batch") || "all";
+    const search = (url.searchParams.get("search") || "").toLowerCase();
+    const filteredPayload = {
+      ...ordersPayload,
+      orders: (ordersPayload.orders || []).filter((order) => {
+        const orderStatus = order.status || "open";
+        if (status !== "all" && orderStatus !== status) return false;
+        if (batch === "inBatch" && !order.isInActiveBatch) return false;
+        if (batch === "notInBatch" && order.isInActiveBatch) return false;
+        return !search || JSON.stringify(order).toLowerCase().includes(search);
+      }),
+    };
     await route.fulfill({
       status: 200,
       contentType: "application/json; charset=utf-8",
-      body: JSON.stringify(ordersPayload),
+      body: JSON.stringify(filteredPayload),
     });
   });
 }
@@ -688,63 +702,79 @@ test("refreshes Orders after saving a new manual production batch design", async
 
   await expect(ordersWorkspace.getByText("Manual Order: Manual Bob")).toBeVisible();
 });
-test("filters database orders by search text, batch membership, and status", async ({ page }) => {
+test("debounces server-filtered order searches and ignores an older response", async ({ page }) => {
   await installSupabaseSession(page);
   await installProductionBatchRoutes(page);
-  const requestedOrderUrls = [];
-  const ordersPayload = {
-    orders: [
-      ...buildOrdersPayload().orders.map((order) => ({ ...order, status: "open" })),
-      {
-        id: "order:1003",
-        orderNumber: "1003",
-        buyerName: "Katherine Johnson",
-        status: "complete",
-        isInActiveBatch: false,
-        items: [{
-          id: "item-1003",
-          listingTitle: "Retired badge reel",
-          status: "complete",
-          isInActiveBatch: false,
-          design: {
-            text: "Katherine RN",
-            lines: [{ lineIndex: 0, text: "Katherine RN", fontId: "candlepin" }],
-          },
-        }],
-      },
-    ],
+  const initialPayload = {
+    orders: [{
+      id: "order:initial",
+      orderNumber: "1000",
+      buyerName: "Initial order",
+      status: "open",
+      isInActiveBatch: false,
+      items: [],
+    }],
+    nextCursor: "initial-cursor",
+    hasMore: true,
   };
-  await installOrdersWorkspaceRoutes(page, { ordersPayload });
+  const responseFor = (id, buyerName) => ({
+    orders: [{
+      id,
+      orderNumber: id.replace("order:", ""),
+      buyerName,
+      status: "open",
+      isInActiveBatch: false,
+      items: [],
+    }],
+    nextCursor: null,
+    hasMore: false,
+  });
+  const requestedSearches = [];
+  const requestedFilters = [];
+  let resolveAdaResponse;
+  let resolveGraceResponse;
   await page.route("**/api/orders**", async (route) => {
-    requestedOrderUrls.push(route.request().url());
-    await route.fallback();
+    const url = new URL(route.request().url());
+    const search = url.searchParams.get("search");
+    const status = url.searchParams.get("status");
+    const batch = url.searchParams.get("batch");
+    if (!search && status === "open" && batch === "all") {
+      await route.fulfill({ status: 200, contentType: "application/json; charset=utf-8", body: JSON.stringify(initialPayload) });
+      return;
+    }
+    requestedSearches.push({ search, cursor: url.searchParams.get("cursor") });
+    requestedFilters.push({ status, batch, search, cursor: url.searchParams.get("cursor") });
+    await new Promise((resolve) => {
+      if (search === "ada") resolveAdaResponse = () => resolve(route.fulfill({ status: 200, contentType: "application/json; charset=utf-8", body: JSON.stringify(responseFor("order:ada", "Ada Lovelace")) }));
+      if (search === "grace") resolveGraceResponse = () => resolve(route.fulfill({ status: 200, contentType: "application/json; charset=utf-8", body: JSON.stringify(responseFor("order:grace", "Grace Hopper")) }));
+      if (search !== "ada" && search !== "grace") resolve(route.fulfill({ status: 200, contentType: "application/json; charset=utf-8", body: JSON.stringify({ orders: [], nextCursor: null, hasMore: false }) }));
+    });
   });
 
   await page.goto("/");
 
   const ordersWorkspace = page.locator("#databaseOrdersWorkspace");
-  await expect(ordersWorkspace.locator(".database-order-row")).toHaveCount(2);
-  const openStatus = ordersWorkspace.locator(".database-order-row .database-order-status").first();
-  await expect(openStatus).toHaveText("Open");
-  await expect(openStatus).toHaveCSS("color", "rgb(30, 64, 175)");
-  await expect(openStatus).toHaveCSS("background-color", "rgb(239, 246, 255)");
+  await expect(ordersWorkspace.locator(".database-order-row")).toContainText("Initial order");
 
+  await page.locator("#databaseOrdersSearchInput").fill("ada");
+  await expect.poll(() => requestedSearches.map(({ search }) => search)).toEqual(["ada"]);
   await page.locator("#databaseOrdersSearchInput").fill("grace");
-  await expect(ordersWorkspace.locator(".database-order-row")).toHaveCount(1);
-  await expect(ordersWorkspace.locator(".database-order-row")).toContainText("Order 1002");
+  await expect.poll(() => requestedSearches.map(({ search }) => search)).toEqual(["ada", "grace"]);
+  expect(requestedSearches).toEqual([
+    { search: "ada", cursor: null },
+    { search: "grace", cursor: null },
+  ]);
 
-  await page.locator("#databaseOrdersSearchInput").fill("");
+  resolveGraceResponse();
+  await expect(ordersWorkspace.locator(".database-order-row")).toContainText("Grace Hopper");
+  resolveAdaResponse();
+  await expect(ordersWorkspace.locator(".database-order-row")).toContainText("Grace Hopper");
+  await expect(ordersWorkspace.locator(".database-order-row")).not.toContainText("Ada Lovelace");
+
   await page.locator("#databaseOrdersBatchFilter").selectOption("notInBatch");
-  await expect(ordersWorkspace.locator(".database-order-row")).toHaveCount(1);
-  await expect(ordersWorkspace.locator(".database-order-row")).not.toContainText("Order 1002");
-
+  await expect.poll(() => requestedFilters.some((query) => query.batch === "notInBatch" && query.cursor === null)).toBe(true);
   await page.locator("#databaseOrdersStatusFilter").selectOption("complete");
-  await expect.poll(() => requestedOrderUrls.some((url) => url.includes("status=complete"))).toBe(true);
-  await expect(ordersWorkspace.locator(".database-order-row")).toContainText("Order 1003");
-  const completeStatus = ordersWorkspace.locator(".database-order-row .database-order-status");
-  await expect(completeStatus).toHaveText("Complete");
-  await expect(completeStatus).toHaveCSS("color", "rgb(39, 103, 73)");
-  await expect(completeStatus).toHaveCSS("background-color", "rgb(237, 249, 242)");
+  await expect.poll(() => requestedFilters.some((query) => query.status === "complete" && query.cursor === null)).toBe(true);
 });
 
 test("skips and reopens an order item from the Orders screen", async ({ page }) => {
@@ -1400,13 +1430,13 @@ test("adds checked orders to the active production batch", async ({ page }) => {
   await expect(ordersWorkspace.getByLabel("Select order 1002")).toBeChecked();
 
   await page.locator("#databaseOrdersSearchInput").fill("ada");
+  await expect(ordersWorkspace.locator(".database-order-row")).toHaveCount(1);
   await ordersWorkspace.getByLabel("Select all visible").uncheck();
   await expect(ordersWorkspace.getByLabel("Select order 1001")).not.toBeChecked();
   await page.locator("#databaseOrdersSearchInput").fill("");
-  await expect(ordersWorkspace.getByLabel("Select order 1002")).toBeChecked();
-  await expect.poll(() => (
-    ordersWorkspace.getByLabel("Select all visible").evaluate((input) => input.indeterminate)
-  )).toBe(true);
+  await expect(ordersWorkspace.locator(".database-order-row")).toHaveCount(2);
+  await expect(ordersWorkspace.getByLabel("Select order 1002")).not.toBeChecked();
+  await expect(ordersWorkspace.getByLabel("Select all visible")).not.toBeChecked();
 
   await ordersWorkspace.getByLabel("Select all visible").check();
   await ordersWorkspace.getByLabel("Orders tools").click();
@@ -1420,6 +1450,7 @@ test("adds checked orders to the active production batch", async ({ page }) => {
     statusFilter: "open",
   });
 
+  await page.locator("#pasteSummaryDoneButton").click();
   await page.getByRole("button", { name: "Production Batch", exact: true }).click();
   const productionWorkspace = page.getByRole("region", { name: "Order items workspace" });
   await expect(productionWorkspace.locator(".order-row.active")).toContainText("Personalization: Ada RN");

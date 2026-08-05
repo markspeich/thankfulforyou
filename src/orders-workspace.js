@@ -208,6 +208,39 @@ export function normalizeOrdersWorkspaceState({
   };
 }
 
+export function mergeOrdersPageState({
+  currentOrders,
+  incomingOrders,
+  selectedOrderId,
+  checkedOrderIds,
+  nextCursor = null,
+  hasMore = false,
+  reset = false,
+} = {}) {
+  const incoming = (Array.isArray(incomingOrders) ? incomingOrders : [])
+    .filter((order) => order && isNonEmptyString(order.id));
+  const current = (Array.isArray(currentOrders) ? currentOrders : [])
+    .filter((order) => order && isNonEmptyString(order.id));
+  const currentOrderIds = new Set(current.map((order) => order.id));
+  const orders = reset
+    ? incoming
+    : [
+      ...current,
+      ...incoming.filter((order) => !currentOrderIds.has(order.id)),
+    ];
+
+  const normalized = normalizeOrdersWorkspaceState({
+    orders,
+    selectedOrderId,
+    checkedOrderIds,
+  });
+  return {
+    ...normalized,
+    nextCursor: isNonEmptyString(nextCursor) ? nextCursor : null,
+    hasMore: Boolean(hasMore),
+  };
+}
+
 export function getCopyableSavedBuild(item) {
   const design = item?.design && typeof item.design === "object"
     ? item.design

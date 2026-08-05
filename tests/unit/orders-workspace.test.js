@@ -14,10 +14,62 @@ import {
   getOrderItemListingText,
   getSelectedGroupedOrder,
   getVisibleOrderSelectionState,
+  mergeOrdersPageState,
   normalizeOrdersWorkspaceState,
 } from "../../src/orders-workspace.js";
 
 describe("orders workspace helpers", () => {
+  it("replaces a reset page, clears stale checks, and merges later pages without duplicate groups", () => {
+    const resetState = mergeOrdersPageState({
+      currentOrders: [
+        { id: "order:old", buyerName: "Old" },
+        { id: "order:kept", buyerName: "Kept" },
+      ],
+      incomingOrders: [
+        { id: "order:kept", buyerName: "Kept (fresh)" },
+        { id: "order:new", buyerName: "New" },
+      ],
+      selectedOrderId: "order:kept",
+      checkedOrderIds: new Set(["order:old", "order:kept"]),
+      nextCursor: "page-2",
+      hasMore: true,
+      reset: true,
+    });
+
+    expect(resetState).toMatchObject({
+      orders: [
+        { id: "order:kept", buyerName: "Kept (fresh)" },
+        { id: "order:new", buyerName: "New" },
+      ],
+      selectedOrderId: "order:kept",
+      nextCursor: "page-2",
+      hasMore: true,
+    });
+    expect([...resetState.checkedOrderIds]).toEqual(["order:kept"]);
+
+    const appendState = mergeOrdersPageState({
+      currentOrders: resetState.orders,
+      incomingOrders: [
+        { id: "order:new", buyerName: "Duplicate stale page" },
+        { id: "order:later", buyerName: "Later" },
+      ],
+      selectedOrderId: resetState.selectedOrderId,
+      checkedOrderIds: resetState.checkedOrderIds,
+      nextCursor: null,
+      hasMore: false,
+      reset: false,
+    });
+
+    expect(appendState.orders).toEqual([
+      { id: "order:kept", buyerName: "Kept (fresh)" },
+      { id: "order:new", buyerName: "New" },
+      { id: "order:later", buyerName: "Later" },
+    ]);
+    expect(appendState.selectedOrderId).toBe("order:kept");
+    expect([...appendState.checkedOrderIds]).toEqual(["order:kept"]);
+    expect(appendState).toMatchObject({ nextCursor: null, hasMore: false });
+  });
+
   it("normalizes grouped order payloads and preserves selected and checked ids when possible", () => {
     const selectedOrder = { id: "order:1002", buyerName: "Grace" };
     const result = normalizeOrdersWorkspaceState({

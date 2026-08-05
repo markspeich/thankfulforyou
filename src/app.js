@@ -75,7 +75,7 @@ import {
 import {
   addOrderItemToProductionBatch,
   addOrdersToProductionBatch,
-  fetchWorkspaceOrders,
+  fetchWorkspaceOrderSummaries,
   importWorkspaceOrders,
   updateOrderItemLifecycleStatus,
 } from "./orders-api.js";
@@ -90,7 +90,6 @@ import {
   runAuthenticatedRequest,
 } from "./authenticated-request.js";
 import {
-  filterGroupedOrders,
   getEtsyConnectionActionDescriptor,
   getEtsyImportSummary,
   getAmazonImportSummary,
@@ -102,6 +101,7 @@ import {
   getOrderItemListingText as getDatabaseOrderItemListingText,
   getSelectedGroupedOrder,
   getVisibleOrderSelectionState,
+  mergeOrdersPageState,
   normalizeOrdersWorkspaceState,
 } from "./orders-workspace.js";
 import {
@@ -518,8 +518,14 @@ let databaseOrders = [];
 let selectedDatabaseOrderId = initialAppRoute.workspace === "databaseOrders" ? initialAppRoute.itemId : null;
 let checkedDatabaseOrderIds = new Set();
 let databaseOrdersLoading = false;
+let databaseOrdersLoadingMode = "idle";
+let databaseOrdersLoadError = null;
+let databaseOrdersNextCursor = null;
+let databaseOrdersHasMore = false;
+let databaseOrdersRequestGeneration = 0;
+let databaseOrdersLoadController = null;
+let databaseOrdersSearchDebounceId = null;
 let etsyConnection = null;
-let databaseOrdersForceReloadRequested = false;
 let databaseOrdersLoadPromise = null;
 let etsyConnectionLoading = false;
 let etsyImporting = false;
@@ -6263,7 +6269,7 @@ function applyOrderItemsStatusDelta(payload) {
       status: orderStatus,
       isInActiveBatch: items.some((item) => item.isInActiveBatch),
     };
-  });
+  }).filter(shouldRetainDatabaseOrderAfterKnownMutation);
 
   if (status === "skipped") {
     saveActiveOrderDraft();
@@ -6639,67 +6645,131 @@ async function startAmazonImport() {
   }
 }
 
-function loadDatabaseOrders({ force = false } = {}) {
-  if (databaseOrdersLoading) {
-    if (force) databaseOrdersForceReloadRequested = true;
-    return databaseOrdersLoadPromise || Promise.resolve();
-  }
-  const loadPromise = performDatabaseOrdersLoad({ force });
-  databaseOrdersLoadPromise = loadPromise.finally(async () => {
-    databaseOrdersLoadPromise = null;
-    if (databaseOrdersForceReloadRequested && productionBatchAccessToken && activeWorkspace === "databaseOrders") {
-      databaseOrdersForceReloadRequested = false;
-      await loadDatabaseOrders({ force: true });
-    }
-  });
-  return databaseOrdersLoadPromise;
+function getDatabaseOrdersQueryKey() {
+  return [
+    getActiveProductionBatchId(),
+    databaseOrdersStatusFilterValue,
+    databaseOrdersBatchFilterValue,
+    databaseOrdersSearchTerm.trim(),
+  ].join("|");
 }
 
-async function performDatabaseOrdersLoad({ force = false } = {}) {
+function resetDatabaseOrdersQuery({ debounce = false } = {}) {
+  if (databaseOrdersSearchDebounceId) {
+    window.clearTimeout(databaseOrdersSearchDebounceId);
+    databaseOrdersSearchDebounceId = null;
+  }
+  databaseOrdersNextCursor = null;
+  databaseOrdersHasMore = false;
+  databaseOrdersLoadError = null;
+  databaseOrdersRequestGeneration += 1;
+  databaseOrdersLoadController?.abort();
+  if (debounce) {
+    databaseOrdersSearchDebounceId = window.setTimeout(() => {
+      databaseOrdersSearchDebounceId = null;
+      void loadDatabaseOrders({ reset: true });
+    }, 250);
+    return;
+  }
+  void loadDatabaseOrders({ reset: true });
+}
+
+function retryDatabaseOrdersLoad() {
+  return loadDatabaseOrders({ reset: databaseOrders.length === 0, append: databaseOrders.length > 0 && databaseOrdersLoadingMode === "append" });
+}
+
+function loadDatabaseOrders({ force = false, reset = false, append = false } = {}) {
+  const shouldReset = Boolean(force || reset || (!append && loadedDatabaseOrdersKey !== getDatabaseOrdersQueryKey()));
+  const shouldAppend = Boolean(append && !shouldReset);
+  if (!productionBatchAccessToken) {
+    return Promise.resolve();
+  }
+  if (!shouldReset && !shouldAppend && loadedDatabaseOrdersKey === getDatabaseOrdersQueryKey()) {
+    return databaseOrdersLoadPromise || Promise.resolve();
+  }
+  if (shouldAppend && (!databaseOrdersHasMore || !databaseOrdersNextCursor || databaseOrdersLoading)) {
+    return databaseOrdersLoadPromise || Promise.resolve();
+  }
+  if (shouldReset) {
+    databaseOrdersLoadController?.abort();
+  } else if (databaseOrdersLoading) {
+    return databaseOrdersLoadPromise || Promise.resolve();
+  }
+
+  const loadPromise = performDatabaseOrdersLoad({ reset: shouldReset, append: shouldAppend });
+  const trackedLoadPromise = loadPromise.finally(() => {
+    if (databaseOrdersLoadPromise === trackedLoadPromise) {
+      databaseOrdersLoadPromise = null;
+    }
+  });
+  databaseOrdersLoadPromise = trackedLoadPromise;
+  return trackedLoadPromise;
+}
+
+async function performDatabaseOrdersLoad({ reset, append }) {
   if (!productionBatchAccessToken) {
     return;
   }
 
   const batchId = productionBatchContext?.id || null;
-  const loadKey = `${batchId || ""}|${databaseOrdersStatusFilterValue}`;
-  if (!force && loadedDatabaseOrdersKey === loadKey) {
-    return;
-  }
-
-  if (force) {
-    invalidateDatabaseOrders();
-  }
-
+  const loadKey = getDatabaseOrdersQueryKey();
+  const controller = new AbortController();
+  const requestGeneration = databaseOrdersRequestGeneration + 1;
+  databaseOrdersRequestGeneration = requestGeneration;
+  databaseOrdersLoadController = controller;
   databaseOrdersLoading = true;
+  databaseOrdersLoadingMode = append ? "append" : "reset";
+  databaseOrdersLoadError = null;
   const loadMutationVersion = databaseOrdersMutationVersion;
   renderDatabaseOrdersWorkspace();
   updateWorkflowAlert("Loading orders...", "pending", { autoHideMs: 0 });
 
   try {
-    const payload = await runProductionBatchRequestWithSessionRefresh((accessToken) => fetchWorkspaceOrders({
+    const payload = await runProductionBatchRequestWithSessionRefresh((accessToken) => fetchWorkspaceOrderSummaries({
       batchId,
       statusFilter: databaseOrdersStatusFilterValue,
+      batchFilter: databaseOrdersBatchFilterValue,
+      searchTerm: databaseOrdersSearchTerm,
+      limit: 50,
+      cursor: append ? databaseOrdersNextCursor : null,
       accessToken,
+      signal: controller.signal,
     }));
-    if (loadMutationVersion !== databaseOrdersMutationVersion) {
+    if (requestGeneration !== databaseOrdersRequestGeneration || loadMutationVersion !== databaseOrdersMutationVersion) {
       return;
     }
-    updateDatabaseOrdersState(normalizeOrdersWorkspaceState({
-      payload,
+    const nextState = mergeOrdersPageState({
+      currentOrders: databaseOrders,
+      incomingOrders: payload?.orders,
       selectedOrderId: selectedDatabaseOrderId,
       checkedOrderIds: checkedDatabaseOrderIds,
-    }));
+      nextCursor: payload?.nextCursor,
+      hasMore: payload?.hasMore,
+      reset,
+    });
+    updateDatabaseOrdersState(nextState);
+    databaseOrdersNextCursor = nextState.nextCursor;
+    databaseOrdersHasMore = nextState.hasMore;
     loadedDatabaseOrdersKey = loadKey;
     if (databaseOrders.length === 0) {
-      updateWorkflowAlert("No orders found in the workspace.", "pending");
+      updateWorkflowAlert("No orders match the current search and filters.", "pending");
     } else {
       updateWorkflowAlert("", "pending", { autoHideMs: 0 });
     }
   } catch (error) {
-    updateWorkflowAlert(error instanceof Error ? error.message : "Unable to load workspace orders.", "error");
+    if (requestGeneration === databaseOrdersRequestGeneration && error?.name !== "AbortError") {
+      databaseOrdersLoadError = error instanceof Error ? error : new Error("Unable to load workspace orders.");
+      updateWorkflowAlert(databaseOrdersLoadError.message, "error");
+    }
   } finally {
-    databaseOrdersLoading = false;
-    renderDatabaseOrdersWorkspace();
+    if (requestGeneration === databaseOrdersRequestGeneration) {
+      databaseOrdersLoading = false;
+      databaseOrdersLoadingMode = "idle";
+      if (databaseOrdersLoadController === controller) {
+        databaseOrdersLoadController = null;
+      }
+      renderDatabaseOrdersWorkspace();
+    }
   }
 }
 
@@ -6736,11 +6806,24 @@ function selectDatabaseOrder(orderId, options = {}) {
 }
 
 function getVisibleDatabaseOrders() {
-  return filterGroupedOrders(databaseOrders, {
-    searchTerm: databaseOrdersSearchTerm,
-    statusFilter: databaseOrdersStatusFilterValue,
-    batchFilter: databaseOrdersBatchFilterValue,
-  });
+  // Search and filter membership are determined by the compact Orders API.
+  return databaseOrders;
+}
+
+function shouldRetainDatabaseOrderAfterKnownMutation(order) {
+  const status = getOrderLifecycleStatusDescriptor(order).status;
+  if (databaseOrdersStatusFilterValue !== "all" && status !== databaseOrdersStatusFilterValue) {
+    return false;
+  }
+  if (databaseOrdersBatchFilterValue === "inBatch" && !order?.isInActiveBatch) {
+    return false;
+  }
+  if (databaseOrdersBatchFilterValue === "notInBatch" && order?.isInActiveBatch) {
+    return false;
+  }
+  // A status/batch mutation cannot change an order's search text, so its
+  // server-side search membership remains unchanged until the next reset.
+  return true;
 }
 
 function isDatabaseOrderItemSkipped(item) {
@@ -12938,7 +13021,7 @@ importClipboardButton.addEventListener("click", importFromClipboard);
 clearBatchButton.addEventListener("click", completeCurrentProductionBatch);
 databaseOrdersSearchInput?.addEventListener("input", () => {
   databaseOrdersSearchTerm = databaseOrdersSearchInput.value;
-  renderDatabaseOrdersWorkspace();
+  resetDatabaseOrdersQuery({ debounce: true });
 });
 presetSearchInput?.addEventListener("input", () => {
   presetLibrarySearchTerm = presetSearchInput.value;
@@ -12952,12 +13035,14 @@ databaseOrdersStatusFilter?.addEventListener("change", () => {
   selectedDatabaseOrderId = null;
   checkedDatabaseOrderIds.clear();
   invalidateDatabaseOrders();
-  renderDatabaseOrdersWorkspace();
-  void loadDatabaseOrders({ force: true });
+  resetDatabaseOrdersQuery();
 });
 databaseOrdersBatchFilter?.addEventListener("change", () => {
   databaseOrdersBatchFilterValue = databaseOrdersBatchFilter.value;
-  renderDatabaseOrdersWorkspace();
+  selectedDatabaseOrderId = null;
+  checkedDatabaseOrderIds.clear();
+  invalidateDatabaseOrders();
+  resetDatabaseOrdersQuery();
 });
 addSelectedOrderToBatchButton?.addEventListener("click", () => {
   void addSelectedDatabaseOrderToBatch();
