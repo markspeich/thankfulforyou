@@ -46,6 +46,10 @@ function createResponseRecorder() {
   };
 }
 
+function encodeCursor(cursor) {
+  return Buffer.from(JSON.stringify(cursor)).toString("base64url");
+}
+
 beforeEach(() => {
   vi.resetModules();
   addOrderGroupsToProductionBatchMock.mockReset();
@@ -65,10 +69,12 @@ afterEach(() => {
 });
 
 describe("orders api route", () => {
-  it("returns the additive compact list contract without changing the legacy GET contract", async () => {
+  it("passes validated compact pagination parameters to the summaries store", async () => {
     resolveProductionBatchAuthMock.mockResolvedValue({ userId: "user-1", workspaceId: "workspace-1" });
     listWorkspaceOrderSummariesMock.mockResolvedValue({
       orders: [{ id: "order:1001", items: [{ id: "item-1", designText: "Ada\nRN" }] }],
+      nextCursor: null,
+      hasMore: false,
     });
     const { default: handler } = await import("../../api/orders.js");
     const response = createResponseRecorder();
@@ -76,17 +82,67 @@ describe("orders api route", () => {
     await handler({
       method: "GET",
       headers: { authorization: "Bearer token-1" },
-      query: { view: "compact", batchId: "batch-1", status: "all" },
+      query: {
+        view: "compact",
+        batchId: " batch-1 ",
+        status: " all ",
+        batch: " notInBatch ",
+        search: " 4118855809 ",
+        limit: "50",
+        cursor: encodeCursor({ version: 1, sortKey: "2026-08-05T00:00:00.000Z", groupId: "order:1001" }),
+      },
     }, response);
 
     expect(listWorkspaceOrderSummariesMock).toHaveBeenCalledWith({
       workspaceId: "workspace-1",
       activeBatchId: "batch-1",
       statusFilter: "all",
+      batchFilter: "notInBatch",
+      searchTerm: "4118855809",
+      limit: 50,
+      cursor: { version: 1, sortKey: "2026-08-05T00:00:00.000Z", groupId: "order:1001" },
     });
     expect(listWorkspaceOrdersMock).not.toHaveBeenCalled();
     expect(response.statusCode).toBe(200);
     expect(response.body.orders[0].items[0]).toEqual({ id: "item-1", designText: "Ada\nRN" });
+  });
+
+  it("uses compact pagination defaults", async () => {
+    resolveProductionBatchAuthMock.mockResolvedValue({ userId: "user-1", workspaceId: "workspace-1" });
+    listWorkspaceOrderSummariesMock.mockResolvedValue({ orders: [], nextCursor: null, hasMore: false });
+    const { default: handler } = await import("../../api/orders.js");
+    const response = createResponseRecorder();
+
+    await handler({ method: "GET", headers: {}, query: { view: "compact" } }, response);
+
+    expect(listWorkspaceOrderSummariesMock).toHaveBeenCalledWith({
+      workspaceId: "workspace-1",
+      activeBatchId: null,
+      statusFilter: "open",
+      batchFilter: "all",
+      searchTerm: "",
+      limit: 50,
+      cursor: null,
+    });
+    expect(response.body).toEqual({ orders: [], nextCursor: null, hasMore: false });
+  });
+
+  it.each([
+    ["a malformed cursor", { cursor: "not-base64url" }],
+    ["a cursor with unexpected fields", { cursor: encodeCursor({ version: 1, sortKey: "2026-08-05", groupId: "order:1001", extra: true }) }],
+    ["limit zero", { limit: "0" }],
+    ["a limit above 50", { limit: "51" }],
+    ["an unknown status", { status: "pending" }],
+    ["an unknown batch filter", { batch: "archived" }],
+  ])("rejects compact requests with %s before loading the store", async (_label, invalidQuery) => {
+    resolveProductionBatchAuthMock.mockResolvedValue({ userId: "user-1", workspaceId: "workspace-1" });
+    const { default: handler } = await import("../../api/orders.js");
+    const response = createResponseRecorder();
+
+    await handler({ method: "GET", headers: {}, query: { view: "compact", ...invalidQuery } }, response);
+
+    expect(response.statusCode).toBe(400);
+    expect(listWorkspaceOrderSummariesMock).not.toHaveBeenCalled();
   });
 
   it("returns one complete order through the additive detail contract", async () => {

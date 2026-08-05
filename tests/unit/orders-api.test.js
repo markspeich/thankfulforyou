@@ -11,14 +11,48 @@ afterEach(() => {
 
 describe("orders api client", () => {
   it("loads compact order summaries through the additive list contract", async () => {
-    const payload = { orders: [{ id: "order:1001", items: [{ id: "item-1", designText: "Ada" }] }] };
+    const payload = {
+      orders: [{ id: "order:1001", items: [{ id: "item-1", designText: "Ada" }] }],
+      nextCursor: "cursor-2",
+      hasMore: true,
+    };
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => payload });
+    vi.stubGlobal("fetch", fetchMock);
+    const { fetchWorkspaceOrderSummaries } = await import("../../src/orders-api.js");
+    const controller = new AbortController();
+
+    await expect(fetchWorkspaceOrderSummaries({
+      batchId: " batch-1 ",
+      statusFilter: " all ",
+      batchFilter: " notInBatch ",
+      searchTerm: " 4118855809 ",
+      limit: 50,
+      cursor: " cursor-1 ",
+      accessToken: "token-1",
+      signal: controller.signal,
+    })).resolves.toEqual(payload);
+    expect(fetchMock).toHaveBeenCalledWith("/api/orders?batchId=batch-1&status=all&view=compact&batch=notInBatch&search=4118855809&limit=50&cursor=cursor-1", {
+      headers: { Accept: "application/json", Authorization: "Bearer token-1" },
+      signal: controller.signal,
+    });
+  });
+
+  it("omits empty compact pagination parameters", async () => {
+    const payload = { orders: [], nextCursor: null, hasMore: false };
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => payload });
     vi.stubGlobal("fetch", fetchMock);
     const { fetchWorkspaceOrderSummaries } = await import("../../src/orders-api.js");
 
-    await expect(fetchWorkspaceOrderSummaries({ batchId: "batch-1", statusFilter: "all", accessToken: "token-1" })).resolves.toEqual(payload);
-    expect(fetchMock).toHaveBeenCalledWith("/api/orders?batchId=batch-1&status=all&view=compact", {
-      headers: { Accept: "application/json", Authorization: "Bearer token-1" },
+    await expect(fetchWorkspaceOrderSummaries({
+      batchId: " ",
+      statusFilter: " ",
+      batchFilter: " ",
+      searchTerm: " ",
+      cursor: " ",
+    })).resolves.toEqual(payload);
+
+    expect(fetchMock).toHaveBeenCalledWith("/api/orders?view=compact", {
+      headers: { Accept: "application/json" },
     });
   });
 

@@ -40,6 +40,77 @@ function normalizeStatusFilter(value) {
   return ["open", "skipped", "complete", "all"].includes(normalized) ? normalized : "open";
 }
 
+function parseCompactStatusFilter(value) {
+  const normalized = normalizeString(value);
+  if (!normalized) return { value: "open" };
+  if (["open", "skipped", "complete", "all"].includes(normalized)) return { value: normalized };
+  return { error: "status must be open, skipped, complete, or all." };
+}
+
+function parseCompactBatchFilter(value) {
+  const normalized = normalizeString(value);
+  if (!normalized) return { value: "all" };
+  if (["all", "inBatch", "notInBatch"].includes(normalized)) return { value: normalized };
+  return { error: "batch must be all, inBatch, or notInBatch." };
+}
+
+function parseCompactLimit(value) {
+  const normalized = normalizeString(value);
+  if (!normalized) return { value: 50 };
+  if (!/^\d+$/.test(normalized)) return { error: "limit must be an integer from 1 to 50." };
+  const limit = Number(normalized);
+  if (limit < 1 || limit > 50) return { error: "limit must be an integer from 1 to 50." };
+  return { value: limit };
+}
+
+function encodeCompactCursor({ sortKey, groupId }) {
+  return Buffer.from(JSON.stringify({ version: 1, sortKey, groupId })).toString("base64url");
+}
+
+function decodeCompactCursor(value) {
+  const normalized = normalizeString(value);
+  if (!normalized) return { value: null };
+
+  try {
+    const json = Buffer.from(normalized, "base64url").toString("utf8");
+    if (Buffer.from(json, "utf8").toString("base64url") !== normalized) {
+      throw new Error("Invalid cursor encoding.");
+    }
+    const cursor = JSON.parse(json);
+    const expectedKeys = ["groupId", "sortKey", "version"];
+    if (!isJsonObject(cursor)
+      || Object.keys(cursor).sort().join(",") !== expectedKeys.join(",")
+      || cursor.version !== 1
+      || typeof cursor.sortKey !== "string"
+      || typeof cursor.groupId !== "string") {
+      throw new Error("Invalid cursor values.");
+    }
+    return { value: cursor };
+  } catch {
+    return { error: "cursor is invalid." };
+  }
+}
+
+function parseCompactQuery(query) {
+  const statusFilter = parseCompactStatusFilter(query?.status);
+  if (statusFilter.error) return statusFilter;
+  const batchFilter = parseCompactBatchFilter(query?.batch);
+  if (batchFilter.error) return batchFilter;
+  const limit = parseCompactLimit(query?.limit);
+  if (limit.error) return limit;
+  const cursor = decodeCompactCursor(query?.cursor);
+  if (cursor.error) return cursor;
+  return {
+    value: {
+      statusFilter: statusFilter.value,
+      batchFilter: batchFilter.value,
+      searchTerm: normalizeString(query?.search),
+      limit: limit.value,
+      cursor: cursor.value,
+    },
+  };
+}
+
 function isJsonObject(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
@@ -268,12 +339,21 @@ export default async function handler(req, res) {
       const statusFilter = normalizeStatusFilter(req.query?.status);
       const view = normalizeString(req.query?.view);
       if (view === "compact") {
+        const compactQuery = parseCompactQuery(req.query);
+        if (compactQuery.error) {
+          sendBadRequest(res, compactQuery.error);
+          return;
+        }
         const ordersPayload = await listWorkspaceOrderSummaries({
           workspaceId: auth.workspaceId,
           activeBatchId: batchId || null,
-          statusFilter,
+          ...compactQuery.value,
         });
-        res.status(200).json(ordersPayload);
+        res.status(200).json({
+          orders: Array.isArray(ordersPayload?.orders) ? ordersPayload.orders : [],
+          nextCursor: typeof ordersPayload?.nextCursor === "string" ? ordersPayload.nextCursor : null,
+          hasMore: Boolean(ordersPayload?.hasMore),
+        });
         return;
       }
       if (view === "detail") {

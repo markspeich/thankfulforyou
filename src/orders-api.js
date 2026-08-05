@@ -17,7 +17,14 @@ function normalizeString(value) {
   return typeof value === "string" ? value.trim() : "";
 }
 
-function buildOrdersUrl(batchId, statusFilter = null, { view = null, orderId = null } = {}) {
+function buildOrdersUrl(batchId, statusFilter = null, {
+  view = null,
+  orderId = null,
+  batchFilter = null,
+  searchTerm = null,
+  limit = null,
+  cursor = null,
+} = {}) {
   const normalizedBatchId = normalizeString(batchId);
   const normalizedStatusFilter = normalizeString(statusFilter);
   const params = new URLSearchParams();
@@ -32,6 +39,18 @@ function buildOrdersUrl(batchId, statusFilter = null, { view = null, orderId = n
   }
   if (normalizeString(orderId)) {
     params.set("orderId", normalizeString(orderId));
+  }
+  if (normalizeString(batchFilter)) {
+    params.set("batch", normalizeString(batchFilter));
+  }
+  if (normalizeString(searchTerm)) {
+    params.set("search", normalizeString(searchTerm));
+  }
+  if (Number.isInteger(limit)) {
+    params.set("limit", String(limit));
+  }
+  if (normalizeString(cursor)) {
+    params.set("cursor", normalizeString(cursor));
   }
   const query = params.toString();
   return query ? `/api/orders?${query}` : "/api/orders";
@@ -57,9 +76,25 @@ export async function fetchWorkspaceOrders({ batchId = null, statusFilter = null
   return readOrdersResponse(response, "Unable to load workspace orders.");
 }
 
-export async function fetchWorkspaceOrderSummaries({ batchId = null, statusFilter = null, accessToken = null } = {}) {
-  const response = await fetch(buildOrdersUrl(batchId, statusFilter, { view: "compact" }), {
+export async function fetchWorkspaceOrderSummaries({
+  batchId = null,
+  statusFilter = null,
+  batchFilter = null,
+  searchTerm = null,
+  limit = null,
+  cursor = null,
+  accessToken = null,
+  signal = null,
+} = {}) {
+  const response = await fetch(buildOrdersUrl(batchId, statusFilter, {
+    view: "compact",
+    batchFilter,
+    searchTerm,
+    limit,
+    cursor,
+  }), {
     headers: buildAuthHeaders(accessToken, { Accept: "application/json" }),
+    ...(signal ? { signal } : {}),
   });
   return readOrdersResponse(response, "Unable to load workspace order summaries.");
 }
