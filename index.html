@@ -657,7 +657,17 @@
               </label>
               <section class="database-orders-list-shell" aria-label="Orders list">
                 <div class="section-heading">Orders list</div>
-                <p class="batch-tools-note">No orders loaded.</p>
+                <div id="databaseOrdersListState" class="database-orders-list-state" aria-live="polite">
+                  <p id="databaseOrdersListStatus" class="batch-tools-note" role="status">No orders loaded.</p>
+                  <div class="database-orders-list-actions">
+                    <button id="databaseOrdersLoadMoreButton" class="batch-tool-button database-orders-list-action" type="button" hidden>
+                      <span class="batch-tool-label">Load more orders</span>
+                    </button>
+                    <button id="databaseOrdersRetryButton" class="batch-tool-button database-orders-list-action" type="button" hidden>
+                      <span class="batch-tool-label">Retry loading orders</span>
+                    </button>
+                  </div>
+                </div>
               </section>
             </aside>
             <section class="editor-panel database-order-items-panel" aria-label="Selected order items">

@@ -777,6 +777,98 @@ test("debounces server-filtered order searches and ignores an older response", a
   await expect.poll(() => requestedFilters.some((query) => query.status === "complete" && query.cursor === null)).toBe(true);
 });
 
+test("appends another Orders page without losing the current rows, selection, checks, or scroll position", async ({ page }) => {
+  await installSupabaseSession(page);
+  await installProductionBatchRoutes(page);
+  const createOrders = (start, count) => Array.from({ length: count }, (_, index) => {
+    const orderNumber = String(start + index);
+    return {
+      id: `order:${orderNumber}`,
+      orderNumber,
+      buyerName: `Buyer ${orderNumber}`,
+      status: "open",
+      isInActiveBatch: false,
+      items: [{ id: `item:${orderNumber}`, isInActiveBatch: false }],
+    };
+  });
+  const firstPage = createOrders(1001, 50);
+  const secondPage = createOrders(1051, 3);
+  await page.route("**/api/orders**", async (route) => {
+    const cursor = new URL(route.request().url()).searchParams.get("cursor");
+    const response = cursor === "page-1"
+      ? { orders: secondPage, nextCursor: null, hasMore: false }
+      : { orders: firstPage, nextCursor: "page-1", hasMore: true };
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify(response),
+    });
+  });
+
+  await page.goto("/");
+
+  const ordersWorkspace = page.getByRole("region", { name: "Orders workspace" });
+  const ordersList = ordersWorkspace.getByLabel("Orders list");
+  await expect(ordersList.locator(".database-order-row")).toHaveCount(50);
+  await ordersWorkspace.getByLabel("Select order 1001").check();
+  await ordersWorkspace.getByRole("button", { name: "Order 1002" }).click();
+  const scrollTopBeforeAppend = await ordersList.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+    return element.scrollTop;
+  });
+  expect(scrollTopBeforeAppend).toBeGreaterThan(0);
+
+  await ordersWorkspace.getByRole("button", { name: "Load more orders" }).click();
+
+  await expect(ordersList.locator(".database-order-row")).toHaveCount(53);
+  await expect(ordersWorkspace.getByRole("button", { name: "Order 1001" })).toBeVisible();
+  await expect(ordersWorkspace.getByRole("button", { name: "Order 1053" })).toBeVisible();
+  await expect(ordersWorkspace.getByLabel("Select order 1001")).toBeChecked();
+  await expect(ordersWorkspace.getByRole("button", { name: "Order 1002" })).toHaveAttribute("aria-pressed", "true");
+  await expect.poll(() => ordersList.evaluate((element) => element.scrollTop)).toBe(scrollTopBeforeAppend);
+  await expect(ordersWorkspace.getByRole("button", { name: "Load more orders" })).toHaveCount(0);
+});
+
+test("keeps the loaded Orders page visible and offers retry when appending fails", async ({ page }) => {
+  await installSupabaseSession(page);
+  await installProductionBatchRoutes(page);
+  const firstPage = Array.from({ length: 50 }, (_, index) => ({
+    id: `order:${1001 + index}`,
+    orderNumber: String(1001 + index),
+    buyerName: `Buyer ${1001 + index}`,
+    status: "open",
+    isInActiveBatch: false,
+    items: [{ id: `item:${1001 + index}`, isInActiveBatch: false }],
+  }));
+  let appendAttempts = 0;
+  await page.route("**/api/orders**", async (route) => {
+    const cursor = new URL(route.request().url()).searchParams.get("cursor");
+    if (cursor === "page-1") {
+      appendAttempts += 1;
+      if (appendAttempts === 1) {
+        await route.fulfill({ status: 500, contentType: "application/json; charset=utf-8", body: JSON.stringify({ error: "Page two failed." }) });
+        return;
+      }
+      await route.fulfill({ status: 200, contentType: "application/json; charset=utf-8", body: JSON.stringify({ orders: [{ id: "order:1051", orderNumber: "1051", buyerName: "Buyer 1051", status: "open", isInActiveBatch: false, items: [{ id: "item:1051", isInActiveBatch: false }] }], nextCursor: null, hasMore: false }) });
+      return;
+    }
+    await route.fulfill({ status: 200, contentType: "application/json; charset=utf-8", body: JSON.stringify({ orders: firstPage, nextCursor: "page-1", hasMore: true }) });
+  });
+
+  await page.goto("/");
+
+  const ordersWorkspace = page.getByRole("region", { name: "Orders workspace" });
+  const ordersList = ordersWorkspace.getByLabel("Orders list");
+  await expect(ordersList.locator(".database-order-row")).toHaveCount(50);
+  await ordersWorkspace.getByRole("button", { name: "Load more orders" }).click();
+  await expect(ordersList.locator(".database-order-row")).toHaveCount(50);
+  await expect(ordersWorkspace.getByRole("button", { name: "Retry loading more orders" })).toBeVisible();
+
+  await ordersWorkspace.getByRole("button", { name: "Retry loading more orders" }).click();
+  await expect(ordersList.locator(".database-order-row")).toHaveCount(51);
+  await expect(ordersWorkspace.getByRole("button", { name: "Retry loading more orders" })).toHaveCount(0);
+});
+
 test("skips and reopens an order item from the Orders screen", async ({ page }) => {
   await installSupabaseSession(page);
   await installProductionBatchRoutes(page);

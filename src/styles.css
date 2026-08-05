@@ -2733,6 +2733,33 @@ button:disabled {
   padding: 0;
 }
 
+.database-orders-list-state {
+  display: grid;
+  gap: 8px;
+  padding: 4px 0 12px;
+}
+
+.database-orders-list-state:has(.batch-tools-note[hidden]) {
+  padding-top: 0;
+}
+
+.database-orders-list-state .batch-tools-note[hidden],
+.database-orders-list-action[hidden] {
+  display: none;
+}
+
+.database-orders-list-actions {
+  display: flex;
+  justify-content: flex-start;
+  gap: 8px;
+}
+
+.database-orders-list-action {
+  min-height: 34px;
+  padding: 7px 12px;
+  font-size: 0.8rem;
+}
+
 .database-order-row {
   display: grid;
   grid-template-columns: 28px minmax(0, 1fr);

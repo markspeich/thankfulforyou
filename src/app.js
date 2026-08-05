@@ -310,6 +310,10 @@ const databaseOrdersStatusFilter = document.querySelector("#databaseOrdersStatus
 const databaseOrdersBatchFilter = document.querySelector("#databaseOrdersBatchFilter");
 const selectVisibleOrdersInput = document.querySelector("#selectVisibleOrdersInput");
 const databaseOrdersListShell = document.querySelector(".database-orders-list-shell");
+const databaseOrdersListState = document.querySelector("#databaseOrdersListState");
+const databaseOrdersListStatus = document.querySelector("#databaseOrdersListStatus");
+const databaseOrdersLoadMoreButton = document.querySelector("#databaseOrdersLoadMoreButton");
+const databaseOrdersRetryButton = document.querySelector("#databaseOrdersRetryButton");
 const databaseOrderItemsShell = document.querySelector(".database-order-items-shell");
 const selectedDatabaseOrderTitle = document.querySelector(".database-order-items-panel .editor-header h2");
 const selectedDatabaseOrderMeta = document.querySelector(".database-order-items-panel .editor-meta");
@@ -6866,6 +6870,47 @@ function canReopenDatabaseOrder(order) {
   return isDatabaseOrderFullySkipped(order);
 }
 
+function getDatabaseOrdersEmptyMessage() {
+  if (databaseOrdersSearchTerm.trim()) {
+    return "No orders match your search.";
+  }
+  if (databaseOrdersStatusFilterValue !== "open" || databaseOrdersBatchFilterValue !== "all") {
+    return "No orders match the current filters.";
+  }
+  return "No orders loaded.";
+}
+
+function renderDatabaseOrdersListState() {
+  if (!databaseOrdersListState || !databaseOrdersListStatus || !databaseOrdersLoadMoreButton || !databaseOrdersRetryButton) {
+    return;
+  }
+
+  const isAppending = databaseOrdersLoading && databaseOrdersLoadingMode === "append";
+  const hasLoadedOrders = databaseOrders.length > 0;
+  const isAppendFailure = Boolean(databaseOrdersLoadError && databaseOrdersFailedLoadingMode === "append" && hasLoadedOrders);
+  let statusMessage = "";
+
+  if (databaseOrdersLoading) {
+    statusMessage = isAppending ? "Loading more orders..." : "Loading orders...";
+  } else if (databaseOrdersLoadError) {
+    statusMessage = isAppendFailure
+      ? `Unable to load more orders. ${databaseOrdersLoadError.message}`
+      : `Unable to load orders. ${databaseOrdersLoadError.message}`;
+  } else if (!hasLoadedOrders) {
+    statusMessage = getDatabaseOrdersEmptyMessage();
+  }
+
+  databaseOrdersListStatus.textContent = statusMessage;
+  databaseOrdersListStatus.hidden = !statusMessage;
+  databaseOrdersLoadMoreButton.hidden = !hasLoadedOrders || !databaseOrdersHasMore || Boolean(databaseOrdersLoadError);
+  databaseOrdersLoadMoreButton.disabled = isAppending;
+  databaseOrdersRetryButton.hidden = !databaseOrdersLoadError;
+  databaseOrdersRetryButton.disabled = databaseOrdersLoading;
+  databaseOrdersRetryButton.querySelector(".batch-tool-label").textContent = isAppendFailure
+    ? "Retry loading more orders"
+    : "Retry loading orders";
+}
+
 function getVisibleCheckedDatabaseOrders() {
   const visibleOrderIds = new Set(getVisibleDatabaseOrders().map((order) => order.id));
   return databaseOrders.filter((order) => (
@@ -6914,31 +6959,18 @@ function renderDatabaseOrdersWorkspace() {
     selectVisibleOrdersInput.disabled = databaseOrdersLoading || selectionState.visibleOrderCount === 0;
   }
 
-  if (databaseOrdersLoading) {
-    const loading = document.createElement("p");
-    loading.className = "batch-tools-note";
-    loading.textContent = "Loading orders...";
-    databaseOrdersListShell.append(loading);
-    restoreElementScrollState(databaseOrdersListShell, listScrollState);
-    renderSelectedDatabaseOrderItems();
-    return;
-  }
-
-  if (!databaseOrders.length) {
-    const empty = document.createElement("p");
-    empty.className = "batch-tools-note";
-    empty.textContent = "No orders loaded.";
-    databaseOrdersListShell.append(empty);
+  if ((databaseOrdersLoading && databaseOrdersLoadingMode !== "append")
+    || (databaseOrdersLoadError && databaseOrdersFailedLoadingMode !== "append")) {
+    renderDatabaseOrdersListState();
+    databaseOrdersListShell.append(databaseOrdersListState);
     restoreElementScrollState(databaseOrdersListShell, listScrollState);
     renderSelectedDatabaseOrderItems();
     return;
   }
 
   if (!visibleOrders.length) {
-    const empty = document.createElement("p");
-    empty.className = "batch-tools-note";
-    empty.textContent = "No orders match the current filters.";
-    databaseOrdersListShell.append(empty);
+    renderDatabaseOrdersListState();
+    databaseOrdersListShell.append(databaseOrdersListState);
     restoreElementScrollState(databaseOrdersListShell, listScrollState);
     renderSelectedDatabaseOrderItems();
     return;
@@ -7020,6 +7052,8 @@ function renderDatabaseOrdersWorkspace() {
     databaseOrdersListShell.append(row);
   });
 
+  renderDatabaseOrdersListState();
+  databaseOrdersListShell.append(databaseOrdersListState);
   restoreElementScrollState(databaseOrdersListShell, listScrollState);
   renderSelectedDatabaseOrderItems();
 }
@@ -13029,6 +13063,12 @@ clearBatchButton.addEventListener("click", completeCurrentProductionBatch);
 databaseOrdersSearchInput?.addEventListener("input", () => {
   databaseOrdersSearchTerm = databaseOrdersSearchInput.value;
   resetDatabaseOrdersQuery({ debounce: true });
+});
+databaseOrdersLoadMoreButton?.addEventListener("click", () => {
+  void loadDatabaseOrders({ append: true });
+});
+databaseOrdersRetryButton?.addEventListener("click", () => {
+  void retryDatabaseOrdersLoad();
 });
 presetSearchInput?.addEventListener("input", () => {
   presetLibrarySearchTerm = presetSearchInput.value;
