@@ -237,8 +237,8 @@ function normalizeOrderItem(row, { design, lines, activeBatchItemIds }) {
   };
 }
 
-function normalizeCompactOrderItem(row, { design, activeBatchItemIds }) {
-  const source = row.source_json && typeof row.source_json === "object" ? row.source_json : {};
+function normalizeCompactRpcOrderItem(row) {
+  const source = row?.source_json && typeof row.source_json === "object" ? row.source_json : {};
 
   return {
     id: row.id,
@@ -254,10 +254,22 @@ function normalizeCompactOrderItem(row, { design, activeBatchItemIds }) {
     revision: Number.isInteger(row.revision) ? row.revision : null,
     updatedAt: row.updated_at ?? null,
     updatedBy: row.updated_by ?? null,
-    isInActiveBatch: activeBatchItemIds.has(row.id),
-    designId: design?.id ?? null,
-    designText: design?.design_text ?? "",
-    designProductionStatus: design?.production_status ?? null,
+    isInActiveBatch: Boolean(row.is_in_active_batch),
+    designId: row.design_id ?? null,
+    designText: row.design_text ?? "",
+    designProductionStatus: row.design_production_status ?? null,
+  };
+}
+
+function normalizeCompactRpcGroup(row) {
+  return {
+    id: row.group_id,
+    orderNumber: row.order_number ?? null,
+    buyerName: row.buyer_name ?? null,
+    status: row.group_status ?? "open",
+    isInActiveBatch: Boolean(row.is_in_active_batch),
+    shipByDate: row.ship_by_date ?? null,
+    items: Array.isArray(row.items) ? row.items.map(normalizeCompactRpcOrderItem) : [],
   };
 }
 
@@ -418,47 +430,46 @@ export async function listWorkspaceOrders({ workspaceId, activeBatchId = null, s
   return { orders: Array.from(groups.values()) };
 }
 
-export async function listWorkspaceOrderSummaries({ workspaceId, activeBatchId = null, statusFilter = "open" }) {
+export async function listWorkspaceOrderSummaries({
+  workspaceId,
+  activeBatchId = null,
+  statusFilter = "open",
+  batchFilter = "all",
+  searchTerm = "",
+  limit = 50,
+  cursor = null,
+}) {
   const supabase = createSupabaseAdminClient();
-  let orderItemsQuery = supabase
-    .from("order_items")
-    .select("id, workspace_id, status, order_number, buyer_name, listing_id, transaction_id, imported_color, ship_by_date, quantity, source_json, revision, updated_at, updated_by")
-    .eq("workspace_id", workspaceId);
-  if (statusFilter === "complete") {
-    orderItemsQuery = orderItemsQuery.eq("status", "complete");
-  } else if (statusFilter === "skipped") {
-    orderItemsQuery = orderItemsQuery.eq("status", "skipped");
-  } else if (statusFilter !== "all") {
-    orderItemsQuery = orderItemsQuery.neq("status", "complete").neq("status", "skipped").neq("status", "archived");
-  }
-  const { data: orderItems, error: orderItemsError } = await orderItemsQuery
-    .order("order_number", { ascending: true })
-    .order("created_at", { ascending: true });
-  if (orderItemsError) throw orderItemsError;
+  const normalizedStatusFilter = ["open", "complete", "skipped", "all"].includes(statusFilter)
+    ? statusFilter
+    : "open";
+  const normalizedBatchFilter = ["all", "inBatch", "notInBatch"].includes(batchFilter)
+    ? batchFilter
+    : "all";
+  const requestedLimit = Math.min(toPositiveInteger(limit, 50), 50);
+  const { data, error } = await supabase.rpc("list_workspace_order_summaries", {
+    p_workspace_id: normalizeString(workspaceId),
+    p_active_batch_id: nullableString(activeBatchId),
+    p_status_filter: normalizedStatusFilter,
+    p_batch_filter: normalizedBatchFilter,
+    p_search_term: normalizeString(searchTerm),
+    p_requested_limit: requestedLimit,
+    p_cursor_sort_key: cursor && typeof cursor.sortKey === "string" ? cursor.sortKey : null,
+    p_cursor_group_id: cursor && typeof cursor.groupId === "string" ? cursor.groupId : null,
+  });
+  if (error) throw error;
 
-  const itemRows = orderItems || [];
-  if (!itemRows.length) return { orders: [] };
-
-  const [{ data: designs, error: designsError }, batchItems] = await Promise.all([
-    supabase
-      .from("designs")
-      .select("id, order_item_id, design_text, production_status")
-      .eq("workspace_id", workspaceId)
-      .in("order_item_id", itemRows.map((item) => item.id)),
-    queryBatchItems({ supabase, workspaceId, batchId: activeBatchId }),
-  ]);
-  if (designsError) throw designsError;
-
-  const activeBatchItemIds = new Set(batchItems.filter((item) => item.status === "active").map((item) => item.order_item_id));
-  const designsByOrderItemId = new Map((designs || []).map((design) => [design.order_item_id, design]));
-  const groups = new Map();
-  for (const row of itemRows) {
-    appendOrderItemToGroups(groups, normalizeCompactOrderItem(row, {
-      design: designsByOrderItemId.get(row.id) || null,
-      activeBatchItemIds,
-    }));
-  }
-  return { orders: Array.from(groups.values()) };
+  const rows = Array.isArray(data) ? data : [];
+  const hasMore = rows.length > requestedLimit;
+  const pageRows = rows.slice(0, requestedLimit);
+  const cursorRow = hasMore ? pageRows.at(-1) : null;
+  return {
+    orders: pageRows.map(normalizeCompactRpcGroup),
+    nextCursorValues: cursorRow
+      ? { sortKey: cursorRow.sort_key, groupId: cursorRow.group_id }
+      : null,
+    hasMore,
+  };
 }
 
 export async function getWorkspaceOrderDetail({ workspaceId, orderId, activeBatchId = null }) {

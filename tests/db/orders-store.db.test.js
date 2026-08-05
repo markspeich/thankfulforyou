@@ -5,6 +5,7 @@ import { createSupabaseAdminClient } from "../../api/_lib/supabase-admin.js";
 import {
   addOrderGroupsToProductionBatch,
   importWorkspaceOrderItems,
+  listWorkspaceOrderSummaries,
   listWorkspaceOrders,
   updateOrderGroupStatus,
 } from "../../api/_lib/orders-store.js";
@@ -42,6 +43,202 @@ beforeAll(() => {
 });
 
 describe("orders store database integration", () => {
+  it("searches and paginates more than one thousand complete order groups without splitting a group", async () => {
+    // Break caught: compact Orders search reads only a browser-sized subset or paginates item rows.
+    const suffix = randomUUID().slice(0, 8);
+    const boundaryOrderNumber = `99${String(Date.now()).slice(-8)}`;
+    const supabase = createSupabaseAdminClient();
+    const bulkRows = Array.from({ length: 1005 }, (_, index) => ({
+      id: `scale-${suffix}-${index}`,
+      workspace_id: PRIMARY_WORKSPACE_ID,
+      status: ["open", "complete", "skipped"][index % 3],
+      order_number: index === 0
+        ? `MANUAL-${suffix}`
+        : index === 1
+          ? null
+          : `8${String(index).padStart(9, "0")}`,
+      buyer_name: `Scale Buyer ${index}`,
+      listing_id: `scale-listing-${index}`,
+      transaction_id: `scale-transaction-${index}`,
+      imported_color: index % 2 ? "Pink" : "Teal",
+      quantity: 1,
+      source_json: {},
+      created_at: new Date(Date.UTC(2025, 0, 1, 0, 0, index)).toISOString(),
+    }));
+    const specialRows = [
+      {
+        id: `scale-${suffix}-boundary-a`, workspace_id: PRIMARY_WORKSPACE_ID, status: "open",
+        order_number: boundaryOrderNumber, buyer_name: "Boundary Buyer", listing_id: "boundary-a",
+        transaction_id: `boundary-a-${suffix}`, imported_color: "White", quantity: 1, source_json: {},
+      },
+      {
+        id: `scale-${suffix}-boundary-b`, workspace_id: PRIMARY_WORKSPACE_ID, status: "open",
+        order_number: boundaryOrderNumber, buyer_name: "Boundary Buyer", listing_id: "boundary-b",
+        transaction_id: `boundary-b-${suffix}`, imported_color: "Black", quantity: 1, source_json: {},
+      },
+      {
+        id: `scale-${suffix}-old-complete`, workspace_id: PRIMARY_WORKSPACE_ID, status: "complete",
+        order_number: "4118855809", buyer_name: "Historical Buyer", listing_id: "historical-listing",
+        transaction_id: `historical-${suffix}`, imported_color: "Navy", quantity: 1, source_json: {},
+        created_at: "2020-01-01T00:00:00.000Z",
+      },
+      {
+        id: `scale-${suffix}-buyer`, workspace_id: PRIMARY_WORKSPACE_ID, status: "open",
+        order_number: `BUYER-${suffix}`, buyer_name: "Only NeedleBuyer Match", listing_id: "plain-listing",
+        transaction_id: `plain-buyer-${suffix}`, imported_color: "Plain", quantity: 1, source_json: {},
+      },
+      {
+        id: `scale-${suffix}-listing-id`, workspace_id: PRIMARY_WORKSPACE_ID, status: "open",
+        order_number: `LISTING-ID-${suffix}`, buyer_name: "Plain", listing_id: "Only-NeedleListingId-Match",
+        transaction_id: `plain-listing-${suffix}`, imported_color: "Plain", quantity: 1, source_json: {},
+      },
+      {
+        id: `scale-${suffix}-listing-title`, workspace_id: PRIMARY_WORKSPACE_ID, status: "open",
+        order_number: `LISTING-TITLE-${suffix}`, buyer_name: "Plain", listing_id: "plain",
+        transaction_id: `plain-title-${suffix}`, imported_color: "Plain", quantity: 1,
+        source_json: { marketplace: "amazon", listingTitle: "Only NeedleListingTitle Match", rawCustomization: { diagnostic: "must-not-leak" } },
+      },
+      {
+        id: `scale-${suffix}-transaction`, workspace_id: PRIMARY_WORKSPACE_ID, status: "open",
+        order_number: `TRANSACTION-${suffix}`, buyer_name: "Plain", listing_id: "plain",
+        transaction_id: "Only-NeedleTransaction-Match", imported_color: "Plain", quantity: 1, source_json: {},
+      },
+      {
+        id: `scale-${suffix}-color`, workspace_id: PRIMARY_WORKSPACE_ID, status: "open",
+        order_number: `COLOR-${suffix}`, buyer_name: "Plain", listing_id: "plain",
+        transaction_id: `plain-color-${suffix}`, imported_color: "Only NeedleColor Match", quantity: 1, source_json: {},
+      },
+      {
+        id: `scale-${suffix}-design`, workspace_id: PRIMARY_WORKSPACE_ID, status: "open",
+        order_number: `DESIGN-${suffix}`, buyer_name: "Plain", listing_id: "plain",
+        transaction_id: `plain-design-${suffix}`, imported_color: "Plain", quantity: 1, source_json: {},
+      },
+      {
+        id: `scale-${suffix}-line`, workspace_id: PRIMARY_WORKSPACE_ID, status: "open",
+        order_number: `LINE-${suffix}`, buyer_name: "Plain", listing_id: "plain",
+        transaction_id: `plain-line-${suffix}`, imported_color: "Plain", quantity: 1, source_json: {},
+      },
+    ].map((row, index) => ({
+      created_at: new Date(Date.UTC(2026, 0, 1, 0, 0, index)).toISOString(),
+      ...row,
+    }));
+
+    for (let index = 0; index < bulkRows.length; index += 250) {
+      const { error } = await supabase.from("order_items").insert(bulkRows.slice(index, index + 250));
+      expect(error).toBeNull();
+    }
+    const { error: specialError } = await supabase.from("order_items").insert(specialRows);
+    expect(specialError).toBeNull();
+    const filterBatchId = await createTestBatch(`Scale Filter ${suffix}`);
+    const { error: membershipError } = await supabase.from("batch_items").insert({
+      workspace_id: PRIMARY_WORKSPACE_ID,
+      batch_id: filterBatchId,
+      order_item_id: `scale-${suffix}-boundary-a`,
+      batch_position: 0,
+      status: "active",
+    });
+    expect(membershipError).toBeNull();
+
+    const designId = randomUUID();
+    const lineDesignId = randomUUID();
+    const { error: designsError } = await supabase.from("designs").insert([
+      { id: designId, workspace_id: PRIMARY_WORKSPACE_ID, order_item_id: `scale-${suffix}-design`, design_text: "Only NeedleDesign Match" },
+      { id: lineDesignId, workspace_id: PRIMARY_WORKSPACE_ID, order_item_id: `scale-${suffix}-line`, design_text: "Plain design" },
+    ]);
+    expect(designsError).toBeNull();
+    const { error: lineError } = await supabase.from("design_lines").insert({
+      workspace_id: PRIMARY_WORKSPACE_ID,
+      design_id: lineDesignId,
+      line_index: 0,
+      text: "Only NeedleLine Match",
+      font_id: "skywalk",
+    });
+    expect(lineError).toBeNull();
+
+    const page = await listWorkspaceOrderSummaries({
+      workspaceId: PRIMARY_WORKSPACE_ID,
+      statusFilter: "open",
+      limit: 50,
+    });
+    expect(page.orders).toHaveLength(50);
+    expect(page.hasMore).toBe(true);
+    expect(new Set(page.orders.map((order) => order.id)).size).toBe(50);
+    expect(JSON.stringify(page)).not.toContain("must-not-leak");
+
+    const boundaryPage = await listWorkspaceOrderSummaries({
+      workspaceId: PRIMARY_WORKSPACE_ID,
+      statusFilter: "open",
+      limit: 1,
+    });
+    expect(boundaryPage.orders).toHaveLength(1);
+    expect(boundaryPage.orders[0]).toMatchObject({ id: `order:${boundaryOrderNumber}` });
+    expect(boundaryPage.orders[0].items).toHaveLength(2);
+    const afterBoundary = await listWorkspaceOrderSummaries({
+      workspaceId: PRIMARY_WORKSPACE_ID,
+      statusFilter: "open",
+      limit: 1,
+      cursor: { version: 1, ...boundaryPage.nextCursorValues },
+    });
+    expect(afterBoundary.orders.map((order) => order.id)).not.toContain(`order:${boundaryOrderNumber}`);
+
+    const inBatch = await listWorkspaceOrderSummaries({
+      workspaceId: PRIMARY_WORKSPACE_ID,
+      activeBatchId: filterBatchId,
+      statusFilter: "open",
+      batchFilter: "inBatch",
+      searchTerm: boundaryOrderNumber,
+      limit: 50,
+    });
+    expect(inBatch.orders).toHaveLength(1);
+    expect(inBatch.orders[0]).toMatchObject({
+      id: `order:${boundaryOrderNumber}`,
+      isInActiveBatch: true,
+    });
+    expect(inBatch.orders[0].items).toHaveLength(2);
+    const notInBatch = await listWorkspaceOrderSummaries({
+      workspaceId: PRIMARY_WORKSPACE_ID,
+      activeBatchId: filterBatchId,
+      statusFilter: "open",
+      batchFilter: "notInBatch",
+      searchTerm: boundaryOrderNumber,
+      limit: 50,
+    });
+    expect(notInBatch.orders).toEqual([]);
+
+    for (const [term, expectedId] of [
+      ["needlebuyer", `order:BUYER-${suffix}`],
+      ["needlelistingid", `order:LISTING-ID-${suffix}`],
+      ["needlelistingtitle", `order:LISTING-TITLE-${suffix}`],
+      ["needletransaction", `order:TRANSACTION-${suffix}`],
+      ["needlecolor", `order:COLOR-${suffix}`],
+      ["needledesign", `order:DESIGN-${suffix}`],
+      ["needleline", `order:LINE-${suffix}`],
+    ]) {
+      const search = await listWorkspaceOrderSummaries({
+        workspaceId: PRIMARY_WORKSPACE_ID,
+        statusFilter: "all",
+        searchTerm: term.toUpperCase(),
+        limit: 50,
+      });
+      expect(search.orders.map((order) => order.id)).toContain(expectedId);
+      expect(JSON.stringify(search)).not.toContain("must-not-leak");
+    }
+
+    for (const statusFilter of ["all", "complete"]) {
+      const historical = await listWorkspaceOrderSummaries({
+        workspaceId: PRIMARY_WORKSPACE_ID,
+        statusFilter,
+        searchTerm: "4118855809",
+        limit: 50,
+      });
+      expect(historical.orders).toHaveLength(1);
+      expect(historical.orders[0]).toMatchObject({
+        id: "order:4118855809",
+        status: "complete",
+      });
+    }
+  }, 60_000);
+
   it("imports order items to Orders without adding them to the production batch", async () => {
     const suffix = Date.now().toString(36);
     const orderNumber = `ORDERS-${suffix}`;
