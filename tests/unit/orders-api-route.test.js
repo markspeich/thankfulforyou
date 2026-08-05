@@ -73,7 +73,7 @@ describe("orders api route", () => {
     resolveProductionBatchAuthMock.mockResolvedValue({ userId: "user-1", workspaceId: "workspace-1" });
     listWorkspaceOrderSummariesMock.mockResolvedValue({
       orders: [{ id: "order:1001", items: [{ id: "item-1", designText: "Ada\nRN" }] }],
-      nextCursor: null,
+      nextCursorValues: null,
       hasMore: false,
     });
     const { default: handler } = await import("../../api/orders.js");
@@ -109,7 +109,7 @@ describe("orders api route", () => {
 
   it("uses compact pagination defaults", async () => {
     resolveProductionBatchAuthMock.mockResolvedValue({ userId: "user-1", workspaceId: "workspace-1" });
-    listWorkspaceOrderSummariesMock.mockResolvedValue({ orders: [], nextCursor: null, hasMore: false });
+    listWorkspaceOrderSummariesMock.mockResolvedValue({ orders: [], nextCursorValues: null, hasMore: false });
     const { default: handler } = await import("../../api/orders.js");
     const response = createResponseRecorder();
 
@@ -125,6 +125,46 @@ describe("orders api route", () => {
       cursor: null,
     });
     expect(response.body).toEqual({ orders: [], nextCursor: null, hasMore: false });
+  });
+
+  it("serializes a store cursor without exposing its values", async () => {
+    const cursorValues = {
+      version: 1,
+      sortKey: "2026-08-05T00:00:00.000Z",
+      groupId: "order:1050",
+    };
+    resolveProductionBatchAuthMock.mockResolvedValue({ userId: "user-1", workspaceId: "workspace-1" });
+    listWorkspaceOrderSummariesMock
+      .mockResolvedValueOnce({
+        orders: Array.from({ length: 50 }, (_, index) => ({ id: `order:${index + 1001}` })),
+        nextCursorValues: cursorValues,
+        hasMore: true,
+      })
+      .mockResolvedValueOnce({ orders: [], nextCursorValues: null, hasMore: false });
+    const { default: handler } = await import("../../api/orders.js");
+    const firstResponse = createResponseRecorder();
+
+    await handler({ method: "GET", headers: {}, query: { view: "compact" } }, firstResponse);
+
+    expect(firstResponse.statusCode).toBe(200);
+    expect(firstResponse.body.orders).toHaveLength(50);
+    expect(firstResponse.body).not.toHaveProperty("nextCursorValues");
+    expect(firstResponse.body.nextCursor).toEqual(expect.any(String));
+    expect(firstResponse.body.nextCursor).not.toContain(cursorValues.sortKey);
+    expect(firstResponse.body.nextCursor).not.toContain(cursorValues.groupId);
+    expect(firstResponse.body.hasMore).toBe(true);
+
+    const secondResponse = createResponseRecorder();
+    await handler({
+      method: "GET",
+      headers: {},
+      query: { view: "compact", cursor: firstResponse.body.nextCursor },
+    }, secondResponse);
+
+    expect(listWorkspaceOrderSummariesMock).toHaveBeenLastCalledWith(expect.objectContaining({
+      cursor: cursorValues,
+    }));
+    expect(secondResponse.body).toEqual({ orders: [], nextCursor: null, hasMore: false });
   });
 
   it.each([

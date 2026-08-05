@@ -361,10 +361,11 @@ export default async function handler(req, res) {
           activeBatchId: batchId || null,
           ...compactQuery.value,
         });
+        const hasMore = Boolean(ordersPayload?.hasMore);
         res.status(200).json({
           orders: Array.isArray(ordersPayload?.orders) ? ordersPayload.orders : [],
-          nextCursor: typeof ordersPayload?.nextCursor === "string" ? ordersPayload.nextCursor : null,
-          hasMore: Boolean(ordersPayload?.hasMore),
+          nextCursor: hasMore ? encodeCompactCursor(ordersPayload.nextCursorValues) : null,
+          hasMore,
         });
         return;
       }
