@@ -2,14 +2,6 @@
 create index if not exists order_items_workspace_status_order_group_idx
   on public.order_items (workspace_id, status, order_number, id);
 
--- Supports the one-design-per-order-item join used by compact list search and projection.
-create index if not exists designs_order_item_id_idx
-  on public.designs (order_item_id);
-
--- Supports the correlated design-line search predicate by parent design.
-create index if not exists design_lines_design_id_idx
-  on public.design_lines (design_id);
-
 -- Supports active membership checks for one workspace batch and order item.
 create index if not exists batch_items_active_membership_idx
   on public.batch_items (workspace_id, batch_id, order_item_id)
@@ -70,8 +62,8 @@ as $$
           then '3:' || lpad(btrim(orders.order_number), 64, '0')
         when nullif(btrim(orders.order_number), '') is not null
           then '2:' || lower(btrim(orders.order_number))
-        else '1:' || to_char(orders.created_at at time zone 'UTC', 'YYYYMMDDHH24MISSUS')
-      end as sort_key,
+        else '1:'
+      end as order_identity_key,
       exists (
         select 1
         from public.batch_items active_membership
@@ -132,7 +124,10 @@ as $$
     -- 4. Aggregate after eligibility so a multi-item order is never split across pages.
     select
       candidate.group_id,
-      max(candidate.sort_key) as sort_key,
+      -- Newest group activity is the primary order across every order-number class;
+      -- the normalized identity suffix makes equal timestamps deterministic.
+      to_char(max(candidate.created_at) at time zone 'UTC', 'YYYYMMDDHH24MISSUS')
+        || ':' || max(candidate.order_identity_key) as sort_key,
       (array_agg(candidate.order_number order by candidate.created_at, candidate.id))[1] as order_number,
       (array_agg(candidate.buyer_name order by candidate.created_at, candidate.id))[1] as buyer_name,
       case
@@ -185,7 +180,7 @@ as $$
   where p_cursor_sort_key is null
      or p_cursor_group_id is null
      or (grouped.sort_key, grouped.group_id) < (p_cursor_sort_key, p_cursor_group_id)
-  -- 6. The normalized key handles numeric, nonnumeric, manual, and null order numbers.
+  -- 6. One newest-first key handles numeric, nonnumeric/manual, and null order numbers.
   order by grouped.sort_key desc, grouped.group_id desc
   -- 7. The extra group is used only to derive hasMore.
   limit least(greatest(coalesce(p_requested_limit, 50), 1), 50) + 1;
