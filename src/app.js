@@ -99,6 +99,7 @@ import {
   getOrderItemStatusDescriptor,
   getOrderLifecycleStatusDescriptor,
   getOrderItemListingText as getDatabaseOrderItemListingText,
+  getOrdersRetryLoadOptions,
   getSelectedGroupedOrder,
   getVisibleOrderSelectionState,
   mergeOrdersPageState,
@@ -520,6 +521,7 @@ let checkedDatabaseOrderIds = new Set();
 let databaseOrdersLoading = false;
 let databaseOrdersLoadingMode = "idle";
 let databaseOrdersLoadError = null;
+let databaseOrdersFailedLoadingMode = null;
 let databaseOrdersNextCursor = null;
 let databaseOrdersHasMore = false;
 let databaseOrdersRequestGeneration = 0;
@@ -6675,7 +6677,10 @@ function resetDatabaseOrdersQuery({ debounce = false } = {}) {
 }
 
 function retryDatabaseOrdersLoad() {
-  return loadDatabaseOrders({ reset: databaseOrders.length === 0, append: databaseOrders.length > 0 && databaseOrdersLoadingMode === "append" });
+  return loadDatabaseOrders(getOrdersRetryLoadOptions({
+    orders: databaseOrders,
+    failedLoadingMode: databaseOrdersFailedLoadingMode,
+  }));
 }
 
 function loadDatabaseOrders({ force = false, reset = false, append = false } = {}) {
@@ -6720,6 +6725,7 @@ async function performDatabaseOrdersLoad({ reset, append }) {
   databaseOrdersLoading = true;
   databaseOrdersLoadingMode = append ? "append" : "reset";
   databaseOrdersLoadError = null;
+  databaseOrdersFailedLoadingMode = null;
   const loadMutationVersion = databaseOrdersMutationVersion;
   renderDatabaseOrdersWorkspace();
   updateWorkflowAlert("Loading orders...", "pending", { autoHideMs: 0 });
@@ -6759,6 +6765,7 @@ async function performDatabaseOrdersLoad({ reset, append }) {
   } catch (error) {
     if (requestGeneration === databaseOrdersRequestGeneration && error?.name !== "AbortError") {
       databaseOrdersLoadError = error instanceof Error ? error : new Error("Unable to load workspace orders.");
+      databaseOrdersFailedLoadingMode = databaseOrdersLoadingMode;
       updateWorkflowAlert(databaseOrdersLoadError.message, "error");
     }
   } finally {

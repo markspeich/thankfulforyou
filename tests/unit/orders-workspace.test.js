@@ -14,6 +14,7 @@ import {
   getOrderItemListingText,
   getSelectedGroupedOrder,
   getVisibleOrderSelectionState,
+  getOrdersRetryLoadOptions,
   mergeOrdersPageState,
   normalizeOrdersWorkspaceState,
 } from "../../src/orders-workspace.js";
@@ -52,6 +53,7 @@ describe("orders workspace helpers", () => {
       incomingOrders: [
         { id: "order:new", buyerName: "Duplicate stale page" },
         { id: "order:later", buyerName: "Later" },
+        { id: "order:later", buyerName: "Duplicate in the fetched page" },
       ],
       selectedOrderId: resetState.selectedOrderId,
       checkedOrderIds: resetState.checkedOrderIds,
@@ -68,6 +70,18 @@ describe("orders workspace helpers", () => {
     expect(appendState.selectedOrderId).toBe("order:kept");
     expect([...appendState.checkedOrderIds]).toEqual(["order:kept"]);
     expect(appendState).toMatchObject({ nextCursor: null, hasMore: false });
+  });
+
+  it("retries a failed append as an append instead of treating the list as already loaded", () => {
+    expect(getOrdersRetryLoadOptions({
+      orders: [{ id: "order:page-one" }],
+      failedLoadingMode: "append",
+    })).toEqual({ append: true });
+
+    expect(getOrdersRetryLoadOptions({
+      orders: [],
+      failedLoadingMode: "reset",
+    })).toEqual({ reset: true });
   });
 
   it("normalizes grouped order payloads and preserves selected and checked ids when possible", () => {

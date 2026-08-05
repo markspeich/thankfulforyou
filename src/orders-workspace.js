@@ -222,11 +222,19 @@ export function mergeOrdersPageState({
   const current = (Array.isArray(currentOrders) ? currentOrders : [])
     .filter((order) => order && isNonEmptyString(order.id));
   const currentOrderIds = new Set(current.map((order) => order.id));
+  const incomingOrderIds = new Set();
+  const uniqueIncoming = incoming.filter((order) => {
+    if (currentOrderIds.has(order.id) || incomingOrderIds.has(order.id)) {
+      return false;
+    }
+    incomingOrderIds.add(order.id);
+    return true;
+  });
   const orders = reset
     ? incoming
     : [
       ...current,
-      ...incoming.filter((order) => !currentOrderIds.has(order.id)),
+      ...uniqueIncoming,
     ];
 
   const normalized = normalizeOrdersWorkspaceState({
@@ -239,6 +247,13 @@ export function mergeOrdersPageState({
     nextCursor: isNonEmptyString(nextCursor) ? nextCursor : null,
     hasMore: Boolean(hasMore),
   };
+}
+
+export function getOrdersRetryLoadOptions({ orders, failedLoadingMode } = {}) {
+  if (failedLoadingMode === "append" && Array.isArray(orders) && orders.length > 0) {
+    return { append: true };
+  }
+  return { reset: true };
 }
 
 export function getCopyableSavedBuild(item) {
