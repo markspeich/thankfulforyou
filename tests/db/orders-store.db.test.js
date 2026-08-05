@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { randomUUID } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
 
@@ -11,24 +11,104 @@ import {
   updateOrderGroupStatus,
 } from "../../api/_lib/orders-store.js";
 import { loadEnvFile } from "../../tools/env_file.mjs";
+import { spawnCommand } from "../../tools/supabase_env.mjs";
+import { generateSupabaseWorktreeConfig } from "../../tools/supabase_worktree_config.mjs";
 
 const PRIMARY_WORKSPACE_ID = "11111111-1111-4111-8111-111111111111";
 const PRIMARY_BATCH_ID = "22222222-2222-4222-8222-222222222222";
+const disposableWorkspaceIds = new Set();
+const disposableAuthUserIds = new Set();
 
-async function createTestBatch(name = "Orders Store DB Test Batch") {
+async function createDisposableWorkspace(name) {
+  const workspaceId = randomUUID();
+  const supabase = createSupabaseAdminClient();
+  const { error } = await supabase.from("workspaces").insert({ id: workspaceId, name });
+  expect(error).toBeNull();
+  disposableWorkspaceIds.add(workspaceId);
+  return workspaceId;
+}
+
+async function createTestBatch(
+  name = "Orders Store DB Test Batch",
+  workspaceId = PRIMARY_WORKSPACE_ID,
+) {
   const batchId = randomUUID();
   const supabase = createSupabaseAdminClient();
   const { error } = await supabase
     .from("production_batches")
     .insert({
       id: batchId,
-      workspace_id: PRIMARY_WORKSPACE_ID,
+      workspace_id: workspaceId,
       name,
       status: "active",
     });
 
   expect(error).toBeNull();
   return batchId;
+}
+
+function quoteSqlLiteral(value) {
+  return `'${String(value).replaceAll("'", "''")}'`;
+}
+
+async function assertLegacyArchivedOrderExcluded(row) {
+  const config = await generateSupabaseWorktreeConfig();
+  const databaseContainer = spawnCommand("docker", [
+    "ps",
+    "--filter", `label=com.supabase.cli.project=${config.projectId}`,
+    "--filter", "name=supabase_db_",
+    "--format", "{{.ID}}",
+  ], { encoding: "utf8" });
+  expect(databaseContainer.status, databaseContainer.stderr).toBe(0);
+
+  const databaseContainerId = databaseContainer.stdout.trim();
+  expect(databaseContainerId).toMatch(/^[a-f0-9]+$/i);
+
+  const assertionResult = spawnCommand("docker", [
+    "exec",
+    databaseContainerId,
+    "psql",
+    "-v", "ON_ERROR_STOP=1",
+    "-U", "postgres",
+    "-d", "postgres",
+    "-c",
+    `begin;
+alter table public.order_items drop constraint order_items_status_check;
+insert into public.order_items (
+  id, workspace_id, status, order_number, buyer_name, listing_id, transaction_id, quantity, source_json
+) values (
+  ${quoteSqlLiteral(row.id)},
+  ${quoteSqlLiteral(row.workspaceId)}::uuid,
+  'archived',
+  ${quoteSqlLiteral(row.orderNumber)},
+  ${quoteSqlLiteral(row.buyerName)},
+  'legacy',
+  ${quoteSqlLiteral(row.transactionId)},
+  1,
+  '{}'::jsonb
+);
+do $test$
+begin
+  if exists (
+    select 1
+    from public.list_workspace_order_summaries(
+      p_workspace_id => ${quoteSqlLiteral(row.workspaceId)}::uuid,
+      p_status_filter => 'open',
+      p_search_term => ${quoteSqlLiteral(row.buyerName)}
+    )
+    where group_id = ${quoteSqlLiteral(`order:${row.orderNumber}`)}
+  ) then
+    raise exception 'legacy archived order was returned by the open filter';
+  end if;
+end
+$test$;
+rollback;
+`,
+  ], { encoding: "utf8" });
+  expect(
+    assertionResult.status,
+    assertionResult.stderr || assertionResult.stdout,
+  ).toBe(0);
 }
 
 beforeAll(() => {
@@ -43,16 +123,34 @@ beforeAll(() => {
   }
 });
 
+afterEach(async () => {
+  const supabase = createSupabaseAdminClient();
+  const cleanupErrors = [];
+  for (const userId of disposableAuthUserIds) {
+    const { error } = await supabase.auth.admin.deleteUser(userId);
+    if (error) cleanupErrors.push(error.message);
+  }
+  disposableAuthUserIds.clear();
+
+  for (const workspaceId of disposableWorkspaceIds) {
+    const { error } = await supabase.from("workspaces").delete().eq("id", workspaceId);
+    if (error) cleanupErrors.push(error.message);
+  }
+  disposableWorkspaceIds.clear();
+  expect(cleanupErrors).toEqual([]);
+});
+
 describe("orders store database integration", () => {
   it("searches and paginates more than one thousand complete order groups without splitting a group", async () => {
     // Break caught: compact Orders search reads only a browser-sized subset or paginates item rows.
     const suffix = randomUUID().slice(0, 8);
+    const testWorkspaceId = await createDisposableWorkspace(`Scale Search ${suffix}`);
     const boundaryOrderNumber = `99${String(Date.now()).slice(-8)}`;
     const traversalToken = `Traverse${suffix}`;
     const supabase = createSupabaseAdminClient();
     const bulkRows = Array.from({ length: 1005 }, (_, index) => ({
       id: `scale-${suffix}-${index}`,
-      workspace_id: PRIMARY_WORKSPACE_ID,
+      workspace_id: testWorkspaceId,
       status: ["open", "complete", "skipped"][index % 3],
       order_number: index === 0
         ? `MANUAL-${suffix}`
@@ -69,98 +167,98 @@ describe("orders store database integration", () => {
     }));
     const specialRows = [
       {
-        id: `scale-${suffix}-boundary-a`, workspace_id: PRIMARY_WORKSPACE_ID, status: "open",
+        id: `scale-${suffix}-boundary-a`, workspace_id: testWorkspaceId, status: "open",
         order_number: boundaryOrderNumber, buyer_name: "Boundary Buyer", listing_id: "boundary-a",
         transaction_id: `boundary-a-${suffix}`, imported_color: "White", quantity: 1, source_json: {},
       },
       {
-        id: `scale-${suffix}-boundary-b`, workspace_id: PRIMARY_WORKSPACE_ID, status: "open",
+        id: `scale-${suffix}-boundary-b`, workspace_id: testWorkspaceId, status: "open",
         order_number: boundaryOrderNumber, buyer_name: "Boundary Buyer", listing_id: "boundary-b",
         transaction_id: `boundary-b-${suffix}`, imported_color: "Black", quantity: 1, source_json: {},
       },
       {
-        id: `scale-${suffix}-boundary-next`, workspace_id: PRIMARY_WORKSPACE_ID, status: "open",
+        id: `scale-${suffix}-boundary-next`, workspace_id: testWorkspaceId, status: "open",
         order_number: `98${String(Date.now()).slice(-8)}`, buyer_name: "Boundary Buyer", listing_id: "boundary-next",
         transaction_id: `boundary-next-${suffix}`, imported_color: "Gray", quantity: 1, source_json: {},
         created_at: "2025-12-01T00:00:00.000Z",
       },
       {
-        id: `scale-${suffix}-old-complete`, workspace_id: PRIMARY_WORKSPACE_ID, status: "complete",
+        id: `scale-${suffix}-old-complete`, workspace_id: testWorkspaceId, status: "complete",
         order_number: "4118855809", buyer_name: "Historical Buyer", listing_id: "historical-listing",
         transaction_id: `historical-${suffix}`, imported_color: "Navy", quantity: 1, source_json: {},
         created_at: "2020-01-01T00:00:00.000Z",
       },
       {
-        id: `scale-${suffix}-buyer`, workspace_id: PRIMARY_WORKSPACE_ID, status: "open",
+        id: `scale-${suffix}-buyer`, workspace_id: testWorkspaceId, status: "open",
         order_number: `BUYER-${suffix}`, buyer_name: "Only NeedleBuyer Match", listing_id: "plain-listing",
         transaction_id: `plain-buyer-${suffix}`, imported_color: "Plain", quantity: 1, source_json: {},
       },
       {
-        id: `scale-${suffix}-listing-id`, workspace_id: PRIMARY_WORKSPACE_ID, status: "open",
+        id: `scale-${suffix}-listing-id`, workspace_id: testWorkspaceId, status: "open",
         order_number: `LISTING-ID-${suffix}`, buyer_name: "Plain", listing_id: "Only-NeedleListingId-Match",
         transaction_id: `plain-listing-${suffix}`, imported_color: "Plain", quantity: 1, source_json: {},
       },
       {
-        id: `scale-${suffix}-listing-title`, workspace_id: PRIMARY_WORKSPACE_ID, status: "open",
+        id: `scale-${suffix}-listing-title`, workspace_id: testWorkspaceId, status: "open",
         order_number: `LISTING-TITLE-${suffix}`, buyer_name: "Plain", listing_id: "plain",
         transaction_id: `plain-title-${suffix}`, imported_color: "Plain", quantity: 1,
         source_json: { marketplace: "amazon", listingTitle: "Only NeedleListingTitle Match", rawCustomization: { diagnostic: "must-not-leak" } },
       },
       {
-        id: `scale-${suffix}-transaction`, workspace_id: PRIMARY_WORKSPACE_ID, status: "open",
+        id: `scale-${suffix}-transaction`, workspace_id: testWorkspaceId, status: "open",
         order_number: `TRANSACTION-${suffix}`, buyer_name: "Plain", listing_id: "plain",
         transaction_id: "Only-NeedleTransaction-Match", imported_color: "Plain", quantity: 1, source_json: {},
       },
       {
-        id: `scale-${suffix}-color`, workspace_id: PRIMARY_WORKSPACE_ID, status: "open",
+        id: `scale-${suffix}-color`, workspace_id: testWorkspaceId, status: "open",
         order_number: `COLOR-${suffix}`, buyer_name: "Plain", listing_id: "plain",
         transaction_id: `plain-color-${suffix}`, imported_color: "Only NeedleColor Match", quantity: 1, source_json: {},
       },
       {
-        id: `scale-${suffix}-design`, workspace_id: PRIMARY_WORKSPACE_ID, status: "open",
+        id: `scale-${suffix}-design`, workspace_id: testWorkspaceId, status: "open",
         order_number: `DESIGN-${suffix}`, buyer_name: "Plain", listing_id: "plain",
         transaction_id: `plain-design-${suffix}`, imported_color: "Plain", quantity: 1, source_json: {},
       },
       {
-        id: `scale-${suffix}-line`, workspace_id: PRIMARY_WORKSPACE_ID, status: "open",
+        id: `scale-${suffix}-line`, workspace_id: testWorkspaceId, status: "open",
         order_number: `LINE-${suffix}`, buyer_name: "Plain", listing_id: "plain",
         transaction_id: `plain-line-${suffix}`, imported_color: "Plain", quantity: 1, source_json: {},
       },
       {
-        id: `scale-${suffix}-order-numeric`, workspace_id: PRIMARY_WORKSPACE_ID, status: "open",
+        id: `scale-${suffix}-order-numeric`, workspace_id: testWorkspaceId, status: "open",
         order_number: `77${String(Date.now()).slice(-8)}`, buyer_name: `Ordering-${suffix}`,
         listing_id: "plain", transaction_id: `ordering-numeric-${suffix}`, imported_color: "Plain",
         quantity: 1, source_json: {}, created_at: "2026-01-01T00:00:00.000Z",
       },
       {
-        id: `scale-${suffix}-order-nonnumeric`, workspace_id: PRIMARY_WORKSPACE_ID, status: "open",
+        id: `scale-${suffix}-order-nonnumeric`, workspace_id: testWorkspaceId, status: "open",
         order_number: `CUSTOM-${suffix}`, buyer_name: `Ordering-${suffix}`,
         listing_id: "plain", transaction_id: `ordering-nonnumeric-${suffix}`, imported_color: "Plain",
         quantity: 1, source_json: {}, created_at: "2026-02-01T00:00:00.000Z",
       },
       {
-        id: `scale-${suffix}-order-null`, workspace_id: PRIMARY_WORKSPACE_ID, status: "open",
+        id: `scale-${suffix}-order-null`, workspace_id: testWorkspaceId, status: "open",
         order_number: null, buyer_name: `Ordering-${suffix}`,
         listing_id: "plain", transaction_id: `ordering-null-${suffix}`, imported_color: "Plain",
         quantity: 1, source_json: {}, created_at: "2026-03-01T00:00:00.000Z",
       },
       {
-        id: `scale-${suffix}-mixed-complete`, workspace_id: PRIMARY_WORKSPACE_ID, status: "complete",
+        id: `scale-${suffix}-mixed-complete`, workspace_id: testWorkspaceId, status: "complete",
         order_number: `MIXED-${suffix}`, buyer_name: "Mixed Group", listing_id: "plain",
         transaction_id: `mixed-complete-${suffix}`, imported_color: "Plain", quantity: 1, source_json: {},
       },
       {
-        id: `scale-${suffix}-mixed-open`, workspace_id: PRIMARY_WORKSPACE_ID, status: "open",
+        id: `scale-${suffix}-mixed-open`, workspace_id: testWorkspaceId, status: "open",
         order_number: `MIXED-${suffix}`, buyer_name: "Mixed Group", listing_id: "plain",
         transaction_id: `mixed-open-${suffix}`, imported_color: "Plain", quantity: 1, source_json: {},
       },
       {
-        id: `scale-${suffix}-skipped-a`, workspace_id: PRIMARY_WORKSPACE_ID, status: "skipped",
+        id: `scale-${suffix}-skipped-a`, workspace_id: testWorkspaceId, status: "skipped",
         order_number: `SKIPPED-${suffix}`, buyer_name: "Skipped Group", listing_id: "plain",
         transaction_id: `skipped-a-${suffix}`, imported_color: "Plain", quantity: 1, source_json: {},
       },
       {
-        id: `scale-${suffix}-skipped-b`, workspace_id: PRIMARY_WORKSPACE_ID, status: "skipped",
+        id: `scale-${suffix}-skipped-b`, workspace_id: testWorkspaceId, status: "skipped",
         order_number: `SKIPPED-${suffix}`, buyer_name: "Skipped Group", listing_id: "plain",
         transaction_id: `skipped-b-${suffix}`, imported_color: "Plain", quantity: 1, source_json: {},
       },
@@ -175,12 +273,7 @@ describe("orders store database integration", () => {
     }
     const { error: specialError } = await supabase.from("order_items").insert(specialRows);
     expect(specialError).toBeNull();
-    const isolatedWorkspaceId = randomUUID();
-    const { error: workspaceError } = await supabase.from("workspaces").insert({
-      id: isolatedWorkspaceId,
-      name: `Isolated ${suffix}`,
-    });
-    expect(workspaceError).toBeNull();
+    const isolatedWorkspaceId = await createDisposableWorkspace(`Isolated ${suffix}`);
     const { error: isolatedOrderError } = await supabase.from("order_items").insert({
       id: `scale-${suffix}-other-workspace`,
       workspace_id: isolatedWorkspaceId,
@@ -191,9 +284,9 @@ describe("orders store database integration", () => {
       source_json: {},
     });
     expect(isolatedOrderError).toBeNull();
-    const filterBatchId = await createTestBatch(`Scale Filter ${suffix}`);
+    const filterBatchId = await createTestBatch(`Scale Filter ${suffix}`, testWorkspaceId);
     const { error: membershipError } = await supabase.from("batch_items").insert({
-      workspace_id: PRIMARY_WORKSPACE_ID,
+      workspace_id: testWorkspaceId,
       batch_id: filterBatchId,
       order_item_id: `scale-${suffix}-boundary-a`,
       batch_position: 0,
@@ -204,12 +297,12 @@ describe("orders store database integration", () => {
     const designId = randomUUID();
     const lineDesignId = randomUUID();
     const { error: designsError } = await supabase.from("designs").insert([
-      { id: designId, workspace_id: PRIMARY_WORKSPACE_ID, order_item_id: `scale-${suffix}-design`, design_text: "Only NeedleDesign Match" },
-      { id: lineDesignId, workspace_id: PRIMARY_WORKSPACE_ID, order_item_id: `scale-${suffix}-line`, design_text: "Plain design" },
+      { id: designId, workspace_id: testWorkspaceId, order_item_id: `scale-${suffix}-design`, design_text: "Only NeedleDesign Match" },
+      { id: lineDesignId, workspace_id: testWorkspaceId, order_item_id: `scale-${suffix}-line`, design_text: "Plain design" },
     ]);
     expect(designsError).toBeNull();
     const { error: lineError } = await supabase.from("design_lines").insert({
-      workspace_id: PRIMARY_WORKSPACE_ID,
+      workspace_id: testWorkspaceId,
       design_id: lineDesignId,
       line_index: 0,
       text: "Only NeedleLine Match",
@@ -218,7 +311,7 @@ describe("orders store database integration", () => {
     expect(lineError).toBeNull();
 
     const page = await listWorkspaceOrderSummaries({
-      workspaceId: PRIMARY_WORKSPACE_ID,
+      workspaceId: testWorkspaceId,
       statusFilter: "open",
       limit: 50,
     });
@@ -228,7 +321,7 @@ describe("orders store database integration", () => {
     expect(JSON.stringify(page)).not.toContain("must-not-leak");
 
     const boundaryPage = await listWorkspaceOrderSummaries({
-      workspaceId: PRIMARY_WORKSPACE_ID,
+      workspaceId: testWorkspaceId,
       statusFilter: "open",
       searchTerm: "Boundary Buyer",
       limit: 1,
@@ -237,7 +330,7 @@ describe("orders store database integration", () => {
     expect(boundaryPage.orders[0]).toMatchObject({ id: `order:${boundaryOrderNumber}` });
     expect(boundaryPage.orders[0].items).toHaveLength(2);
     const afterBoundary = await listWorkspaceOrderSummaries({
-      workspaceId: PRIMARY_WORKSPACE_ID,
+      workspaceId: testWorkspaceId,
       statusFilter: "open",
       searchTerm: "Boundary Buyer",
       limit: 1,
@@ -246,7 +339,7 @@ describe("orders store database integration", () => {
     expect(afterBoundary.orders.map((order) => order.id)).not.toContain(`order:${boundaryOrderNumber}`);
 
     const inBatch = await listWorkspaceOrderSummaries({
-      workspaceId: PRIMARY_WORKSPACE_ID,
+      workspaceId: testWorkspaceId,
       activeBatchId: filterBatchId,
       statusFilter: "open",
       batchFilter: "inBatch",
@@ -260,7 +353,7 @@ describe("orders store database integration", () => {
     });
     expect(inBatch.orders[0].items).toHaveLength(2);
     const notInBatch = await listWorkspaceOrderSummaries({
-      workspaceId: PRIMARY_WORKSPACE_ID,
+      workspaceId: testWorkspaceId,
       activeBatchId: filterBatchId,
       statusFilter: "open",
       batchFilter: "notInBatch",
@@ -270,7 +363,7 @@ describe("orders store database integration", () => {
     expect(notInBatch.orders).toEqual([]);
 
     const orderedKinds = await listWorkspaceOrderSummaries({
-      workspaceId: PRIMARY_WORKSPACE_ID,
+      workspaceId: testWorkspaceId,
       statusFilter: "open",
       searchTerm: `Ordering-${suffix}`,
       limit: 50,
@@ -291,7 +384,7 @@ describe("orders store database integration", () => {
     expect(otherWorkspace.orders.map((order) => order.id)).toEqual([`order:OTHER-${suffix}`]);
 
     const mixedOpen = await listWorkspaceOrderSummaries({
-      workspaceId: PRIMARY_WORKSPACE_ID,
+      workspaceId: testWorkspaceId,
       statusFilter: "open",
       searchTerm: `MIXED-${suffix}`,
       limit: 50,
@@ -300,7 +393,7 @@ describe("orders store database integration", () => {
     expect(mixedOpen.orders[0]).toMatchObject({ id: `order:MIXED-${suffix}`, status: "open" });
     expect(mixedOpen.orders[0].items.map((item) => item.status).sort()).toEqual(["complete", "open"]);
     const mixedComplete = await listWorkspaceOrderSummaries({
-      workspaceId: PRIMARY_WORKSPACE_ID,
+      workspaceId: testWorkspaceId,
       statusFilter: "complete",
       searchTerm: `MIXED-${suffix}`,
       limit: 50,
@@ -308,7 +401,7 @@ describe("orders store database integration", () => {
     expect(mixedComplete.orders).toEqual([]);
 
     const skipped = await listWorkspaceOrderSummaries({
-      workspaceId: PRIMARY_WORKSPACE_ID,
+      workspaceId: testWorkspaceId,
       statusFilter: "skipped",
       searchTerm: `SKIPPED-${suffix}`,
       limit: 50,
@@ -321,7 +414,7 @@ describe("orders store database integration", () => {
     let traversalCursor = null;
     do {
       const traversalPage = await listWorkspaceOrderSummaries({
-        workspaceId: PRIMARY_WORKSPACE_ID,
+        workspaceId: testWorkspaceId,
         statusFilter: "all",
         searchTerm: traversalToken,
         limit: 50,
@@ -342,7 +435,7 @@ describe("orders store database integration", () => {
       auth: { persistSession: false, autoRefreshToken: false },
     });
     const { error: anonRpcError } = await anon.rpc("list_workspace_order_summaries", {
-      p_workspace_id: PRIMARY_WORKSPACE_ID,
+      p_workspace_id: testWorkspaceId,
       p_status_filter: "open",
       p_requested_limit: 1,
     });
@@ -355,6 +448,7 @@ describe("orders store database integration", () => {
       email_confirm: true,
     });
     expect(createUserError).toBeNull();
+    disposableAuthUserIds.add(createdUser.user.id);
     const authenticated = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY, {
       auth: { persistSession: false, autoRefreshToken: false },
     });
@@ -364,14 +458,11 @@ describe("orders store database integration", () => {
     });
     expect(signInError).toBeNull();
     const { error: authenticatedRpcError } = await authenticated.rpc("list_workspace_order_summaries", {
-      p_workspace_id: PRIMARY_WORKSPACE_ID,
+      p_workspace_id: testWorkspaceId,
       p_status_filter: "open",
       p_requested_limit: 1,
     });
     expect(authenticatedRpcError).not.toBeNull();
-    const { error: deleteUserError } = await supabase.auth.admin.deleteUser(createdUser.user.id);
-    expect(deleteUserError).toBeNull();
-
     for (const [term, expectedId] of [
       ["needlebuyer", `order:BUYER-${suffix}`],
       ["needlelistingid", `order:LISTING-ID-${suffix}`],
@@ -382,7 +473,7 @@ describe("orders store database integration", () => {
       ["needleline", `order:LINE-${suffix}`],
     ]) {
       const search = await listWorkspaceOrderSummaries({
-        workspaceId: PRIMARY_WORKSPACE_ID,
+        workspaceId: testWorkspaceId,
         statusFilter: "all",
         searchTerm: term.toUpperCase(),
         limit: 50,
@@ -393,7 +484,7 @@ describe("orders store database integration", () => {
 
     for (const statusFilter of ["all", "complete"]) {
       const historical = await listWorkspaceOrderSummaries({
-        workspaceId: PRIMARY_WORKSPACE_ID,
+        workspaceId: testWorkspaceId,
         statusFilter,
         searchTerm: "4118855809",
         limit: 50,
@@ -405,6 +496,67 @@ describe("orders store database integration", () => {
       });
     }
   }, 60_000);
+
+  it("treats LIKE metacharacters and both listing title keys as literal search data", async () => {
+    // Break caught: raw LIKE patterns broaden user searches or source_json.title is skipped.
+    const suffix = randomUUID().slice(0, 8);
+    const testWorkspaceId = await createDisposableWorkspace(`Literal Search ${suffix}`);
+    const supabase = createSupabaseAdminClient();
+    const rows = [
+      {
+        id: `literal-${suffix}-percent`, workspace_id: testWorkspaceId, status: "open",
+        order_number: `PERCENT-${suffix}`, buyer_name: `Literal 100% Match ${suffix}`,
+        listing_id: "plain", transaction_id: `percent-${suffix}`, quantity: 1, source_json: {},
+      },
+      {
+        id: `literal-${suffix}-percent-decoy`, workspace_id: testWorkspaceId, status: "open",
+        order_number: `PERCENT-DECOY-${suffix}`, buyer_name: `Literal 1000 Match ${suffix}`,
+        listing_id: "plain", transaction_id: `percent-decoy-${suffix}`, quantity: 1, source_json: {},
+      },
+      {
+        id: `literal-${suffix}-underscore`, workspace_id: testWorkspaceId, status: "open",
+        order_number: `UNDERSCORE-${suffix}`, buyer_name: `Literal under_score ${suffix}`,
+        listing_id: "plain", transaction_id: `underscore-${suffix}`, quantity: 1, source_json: {},
+      },
+      {
+        id: `literal-${suffix}-underscore-decoy`, workspace_id: testWorkspaceId, status: "open",
+        order_number: `UNDERSCORE-DECOY-${suffix}`, buyer_name: `Literal underXscore ${suffix}`,
+        listing_id: "plain", transaction_id: `underscore-decoy-${suffix}`, quantity: 1, source_json: {},
+      },
+      {
+        id: `literal-${suffix}-backslash`, workspace_id: testWorkspaceId, status: "open",
+        order_number: `BACKSLASH-${suffix}`, buyer_name: `Literal slash\\value ${suffix}`,
+        listing_id: "plain", transaction_id: `backslash-${suffix}`, quantity: 1, source_json: {},
+      },
+      {
+        id: `literal-${suffix}-backslash-decoy`, workspace_id: testWorkspaceId, status: "open",
+        order_number: `BACKSLASH-DECOY-${suffix}`, buyer_name: `Literal slashvalue ${suffix}`,
+        listing_id: "plain", transaction_id: `backslash-decoy-${suffix}`, quantity: 1, source_json: {},
+      },
+      {
+        id: `literal-${suffix}-source-title`, workspace_id: testWorkspaceId, status: "open",
+        order_number: `SOURCE-TITLE-${suffix}`, buyer_name: "Plain",
+        listing_id: "plain", transaction_id: `source-title-${suffix}`, quantity: 1,
+        source_json: { title: `Legacy listing title ${suffix}` },
+      },
+    ];
+    const { error } = await supabase.from("order_items").insert(rows);
+    expect(error).toBeNull();
+
+    for (const [searchTerm, expectedOrderId] of [
+      [`100% Match ${suffix}`, `order:PERCENT-${suffix}`],
+      [`under_score ${suffix}`, `order:UNDERSCORE-${suffix}`],
+      [`slash\\value ${suffix}`, `order:BACKSLASH-${suffix}`],
+      [`listing title ${suffix}`, `order:SOURCE-TITLE-${suffix}`],
+    ]) {
+      const page = await listWorkspaceOrderSummaries({
+        workspaceId: testWorkspaceId,
+        statusFilter: "open",
+        searchTerm,
+      });
+      expect(page.orders.map((order) => order.id)).toEqual([expectedOrderId]);
+    }
+  }, 30_000);
 
   it("imports order items to Orders without adding them to the production batch", async () => {
     const suffix = Date.now().toString(36);
@@ -704,4 +856,17 @@ describe("orders store database integration", () => {
     expect(batchItemsError).toBeNull();
     expect(batchItems).toEqual([]);
   });
+
+  it("excludes legacy archived order items from the open filter", async () => {
+    // Break caught: a historical archived item is returned as open after the lifecycle change.
+    const suffix = randomUUID().slice(0, 8);
+    const archivedId = `legacy-${suffix}-archived`;
+    await assertLegacyArchivedOrderExcluded({
+      id: archivedId,
+      workspaceId: PRIMARY_WORKSPACE_ID,
+      orderNumber: `ARCHIVED-${suffix}`,
+      buyerName: `Legacy archived ${suffix}`,
+      transactionId: `archived-${suffix}`,
+    });
+  }, 30_000);
 });
