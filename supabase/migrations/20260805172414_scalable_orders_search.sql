@@ -1,6 +1,41 @@
--- Supports the leading workspace/lifecycle predicate and order-number grouping.
-create index if not exists order_items_workspace_status_order_group_idx
-  on public.order_items (workspace_id, status, order_number, id);
+-- Supports empty-search keyset scans in newest-first group order.
+create index if not exists order_items_workspace_newest_group_idx
+  on public.order_items (
+    workspace_id,
+    created_at desc,
+    (
+      case
+        when nullif(btrim(order_number), '') ~ '^[0-9]+$'
+          then '3:' || lpad(btrim(order_number), 64, '0')
+        when nullif(btrim(order_number), '') is not null
+          then '2:' || lower(btrim(order_number))
+        else '1:'
+      end
+    ) desc,
+    (
+      case
+        when nullif(btrim(order_number), '') is not null
+          then 'order:' || order_number
+        else 'item:' || id
+      end
+    ) desc,
+    id desc
+  );
+
+-- Supports newest-representative checks, whole-group filters, and page hydration.
+create index if not exists order_items_workspace_group_members_idx
+  on public.order_items (
+    workspace_id,
+    (
+      case
+        when nullif(btrim(order_number), '') is not null
+          then 'order:' || order_number
+        else 'item:' || id
+      end
+    ),
+    created_at desc,
+    id desc
+  );
 
 -- Supports active membership checks for one workspace batch and order item.
 create index if not exists batch_items_active_membership_idx
@@ -43,8 +78,148 @@ as $$
         '_', E'\\_'
       ) as escaped_search_term
   ),
-  eligible_group_keys as (
-    -- 1. Select only a page of eligible group keys before compact-response hydration.
+  cursor_params as (
+    select
+      case
+        when p_cursor_sort_key is null or p_cursor_group_id is null then 'infinity'::timestamptz
+        else make_timestamptz(
+          substr(p_cursor_sort_key, 1, 4)::integer,
+          substr(p_cursor_sort_key, 5, 2)::integer,
+          substr(p_cursor_sort_key, 7, 2)::integer,
+          substr(p_cursor_sort_key, 9, 2)::integer,
+          substr(p_cursor_sort_key, 11, 2)::integer,
+          substr(p_cursor_sort_key, 13, 2)::double precision
+            + substr(p_cursor_sort_key, 15, 6)::double precision / 1000000,
+          'UTC'
+        )
+      end as cursor_created_at,
+      case
+        when p_cursor_sort_key is null or p_cursor_group_id is null then ''
+        else substr(p_cursor_sort_key, 22)
+      end as cursor_order_sort,
+      coalesce(p_cursor_group_id, '') as cursor_group_id
+  ),
+  empty_page_group_keys as materialized (
+    -- Empty search stays page-bounded: start at the cursor in the newest-first index,
+    -- qualify one newest representative per group, and stop at limit + 1.
+    select
+      case
+        when nullif(btrim(representative.order_number), '') is not null
+          then 'order:' || representative.order_number
+        else 'item:' || representative.id
+      end as group_id,
+      to_char(representative.created_at at time zone 'UTC', 'YYYYMMDDHH24MISSUS')
+        || ':' || case
+          when nullif(btrim(representative.order_number), '') ~ '^[0-9]+$'
+            then '3:' || lpad(btrim(representative.order_number), 64, '0')
+          when nullif(btrim(representative.order_number), '') is not null
+            then '2:' || lower(btrim(representative.order_number))
+          else '1:'
+        end as sort_key
+    from public.order_items representative
+    cross join search_params params
+    cross join cursor_params cursor
+    cross join lateral (
+      select
+        bool_and(group_member.status = 'complete') as all_complete,
+        bool_and(group_member.status = 'skipped') as all_skipped,
+        bool_or(group_member.status = 'open') as any_open,
+        bool_or(exists (
+          select 1
+          from public.batch_items active_membership
+          where p_active_batch_id is not null
+            and active_membership.workspace_id = p_workspace_id
+            and active_membership.batch_id = p_active_batch_id
+            and active_membership.order_item_id = group_member.id
+            and active_membership.status = 'active'
+        )) as any_in_active_batch
+      from public.order_items group_member
+      where group_member.workspace_id = p_workspace_id
+        and (
+          case
+            when nullif(btrim(group_member.order_number), '') is not null
+              then 'order:' || group_member.order_number
+            else 'item:' || group_member.id
+          end
+        ) = (
+          case
+            when nullif(btrim(representative.order_number), '') is not null
+              then 'order:' || representative.order_number
+            else 'item:' || representative.id
+          end
+        )
+    ) group_state
+    where params.escaped_search_term = ''
+      and representative.workspace_id = p_workspace_id
+      and not exists (
+        select 1
+        from public.order_items newer_group_member
+        where newer_group_member.workspace_id = p_workspace_id
+          and (
+            case
+              when nullif(btrim(newer_group_member.order_number), '') is not null
+                then 'order:' || newer_group_member.order_number
+              else 'item:' || newer_group_member.id
+            end
+          ) = (
+            case
+              when nullif(btrim(representative.order_number), '') is not null
+                then 'order:' || representative.order_number
+              else 'item:' || representative.id
+            end
+          )
+          and (newer_group_member.created_at, newer_group_member.id)
+            > (representative.created_at, representative.id)
+      )
+      and (
+          representative.created_at,
+          case
+            when nullif(btrim(representative.order_number), '') ~ '^[0-9]+$'
+              then '3:' || lpad(btrim(representative.order_number), 64, '0')
+            when nullif(btrim(representative.order_number), '') is not null
+              then '2:' || lower(btrim(representative.order_number))
+            else '1:'
+          end,
+          case
+            when nullif(btrim(representative.order_number), '') is not null
+              then 'order:' || representative.order_number
+            else 'item:' || representative.id
+          end
+        ) < (
+          cursor.cursor_created_at,
+          cursor.cursor_order_sort,
+          cursor.cursor_group_id
+        )
+      and (
+        p_status_filter = 'all'
+        or (p_status_filter = 'complete' and group_state.all_complete)
+        or (p_status_filter = 'skipped' and group_state.all_skipped)
+        or (p_status_filter = 'open' and group_state.any_open)
+      )
+      and (
+        p_batch_filter = 'all'
+        or (p_batch_filter = 'inBatch' and group_state.any_in_active_batch)
+        or (p_batch_filter = 'notInBatch' and not group_state.any_in_active_batch)
+      )
+    order by
+      representative.created_at desc,
+      case
+        when nullif(btrim(representative.order_number), '') ~ '^[0-9]+$'
+          then '3:' || lpad(btrim(representative.order_number), 64, '0')
+        when nullif(btrim(representative.order_number), '') is not null
+          then '2:' || lower(btrim(representative.order_number))
+        else '1:'
+      end desc,
+      case
+        when nullif(btrim(representative.order_number), '') is not null
+          then 'order:' || representative.order_number
+        else 'item:' || representative.id
+      end desc,
+      representative.id desc
+    limit least(greatest(coalesce(p_requested_limit, 50), 1), 50) + 1
+  ),
+  searched_eligible_group_keys as (
+    -- Non-empty substring search retains the measured workspace-wide search branch.
     select
       case
         when nullif(btrim(orders.order_number), '') is not null
@@ -67,6 +242,7 @@ as $$
      and designs.workspace_id = p_workspace_id
     cross join search_params params
     where orders.workspace_id = p_workspace_id
+      and params.escaped_search_term <> ''
     group by
       case
         when nullif(btrim(orders.order_number), '') is not null
@@ -110,10 +286,8 @@ as $$
           ))
         )
       )
-      -- 3. A match in any item/design/line includes the complete order group.
-      and (
-        params.escaped_search_term = ''
-        or bool_or(
+      -- A match in any item/design/line includes the complete order group.
+      and bool_or(
           lower(coalesce(orders.order_number, '')) like '%' || params.escaped_search_term || '%' escape E'\\'
           or lower(coalesce(orders.buyer_name, '')) like '%' || params.escaped_search_term || '%' escape E'\\'
           or lower(coalesce(orders.listing_id, '')) like '%' || params.escaped_search_term || '%' escape E'\\'
@@ -128,22 +302,28 @@ as $$
             where lines.design_id = designs.id
               and lower(coalesce(lines.text, '')) like '%' || params.escaped_search_term || '%' escape E'\\'
           )
-        )
       )
   ),
-  page_group_keys as (
+  searched_page_group_keys as (
     select candidate.group_id, candidate.sort_key
-    from eligible_group_keys candidate
-    -- 4. Descending keyset pagination runs before JSON aggregation/hydration.
+    from searched_eligible_group_keys candidate
+    -- Descending keyset pagination runs before JSON aggregation/hydration.
     where p_cursor_sort_key is null
        or p_cursor_group_id is null
        or (candidate.sort_key, candidate.group_id) < (p_cursor_sort_key, p_cursor_group_id)
     order by candidate.sort_key desc, candidate.group_id desc
-    -- 5. The extra key is used only to derive hasMore.
+    -- The extra key is used only to derive hasMore.
     limit least(greatest(coalesce(p_requested_limit, 50), 1), 50) + 1
   ),
+  page_group_keys as materialized (
+    select empty_page.group_id, empty_page.sort_key
+    from empty_page_group_keys empty_page
+    union all
+    select searched_page.group_id, searched_page.sort_key
+    from searched_page_group_keys searched_page
+  ),
   hydrated_items as (
-    -- 6. Hydrate only the selected keys, keeping multi-item groups intact.
+    -- Hydrate only the selected keys through the group-member index.
     select
       page.group_id,
       page.sort_key,
@@ -238,7 +418,7 @@ as $$
     grouped.ship_by_date,
     grouped.items
   from grouped
-  -- 7. One newest-first key handles numeric, nonnumeric/manual, and null order numbers.
+  -- One newest-first key handles numeric, nonnumeric/manual, and null order numbers.
   order by grouped.sort_key desc, grouped.group_id desc
 $$;
 

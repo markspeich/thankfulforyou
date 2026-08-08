@@ -51,6 +51,82 @@ function quoteSqlLiteral(value) {
   return `'${String(value).replaceAll("'", "''")}'`;
 }
 
+function quoteNullableSqlLiteral(value) {
+  return value == null ? "null" : quoteSqlLiteral(value);
+}
+
+async function explainInlinedOrdersSummaryFunction({
+  workspaceId,
+  cursorSortKey,
+  cursorGroupId,
+  limit = 5,
+}) {
+  const config = await generateSupabaseWorktreeConfig();
+  const databaseContainer = spawnCommand("docker", [
+    "ps",
+    "--filter", `label=com.supabase.cli.project=${config.projectId}`,
+    "--filter", "name=supabase_db_",
+    "--format", "{{.ID}}",
+  ], { encoding: "utf8" });
+  expect(databaseContainer.status, databaseContainer.stderr).toBe(0);
+
+  const databaseContainerId = databaseContainer.stdout.trim();
+  expect(databaseContainerId).toMatch(/^[a-f0-9]+$/i);
+
+  const sql = String.raw`
+\set ON_ERROR_STOP on
+\pset tuples_only on
+\pset format unaligned
+select replace(
+  replace(
+    pg_get_functiondef(
+      'public.list_workspace_order_summaries(uuid,uuid,text,text,text,integer,text,text)'::regprocedure
+    ),
+    'CREATE OR REPLACE FUNCTION public.list_workspace_order_summaries',
+    'CREATE OR REPLACE FUNCTION pg_temp.list_workspace_order_summaries'
+  ),
+  E'\n SET search_path TO ''''\n',
+  E'\n'
+)
+\gexec
+analyze public.order_items;
+analyze public.designs;
+explain (analyze, buffers, format json)
+select *
+from pg_temp.list_workspace_order_summaries(
+  p_workspace_id => ${quoteSqlLiteral(workspaceId)}::uuid,
+  p_status_filter => 'all',
+  p_batch_filter => 'all',
+  p_search_term => '',
+  p_requested_limit => ${limit},
+  p_cursor_sort_key => ${quoteNullableSqlLiteral(cursorSortKey)},
+  p_cursor_group_id => ${quoteNullableSqlLiteral(cursorGroupId)}
+);
+`;
+  const explainResult = spawnCommand("docker", [
+    "exec",
+    "-i",
+    databaseContainerId,
+    "psql",
+    "-X",
+    "-q",
+    "-v", "ON_ERROR_STOP=1",
+    "-U", "postgres",
+    "-d", "postgres",
+    "-f", "-",
+  ], { encoding: "utf8", input: sql });
+  expect(
+    explainResult.status,
+    explainResult.stderr || explainResult.stdout,
+  ).toBe(0);
+
+  return JSON.parse(explainResult.stdout.trim());
+}
+
+function flattenPlanNodes(node) {
+  return [node, ...(node.Plans || []).flatMap(flattenPlanNodes)];
+}
+
 async function assertLegacyArchivedOrderExcluded(row) {
   const config = await generateSupabaseWorktreeConfig();
   const databaseContainer = spawnCommand("docker", [
@@ -141,6 +217,182 @@ afterEach(async () => {
 });
 
 describe("orders store database integration", () => {
+  it("keeps empty-search discovery and group hydration index-bounded after a deep cursor", async () => {
+    // Break caught: empty Orders pages scan every historical item before applying the cursor and limit.
+    const suffix = randomUUID().slice(0, 8);
+    const testWorkspaceId = await createDisposableWorkspace(`Bounded Empty Search ${suffix}`);
+    const supabase = createSupabaseAdminClient();
+    const groupCount = 2400;
+    const rows = Array.from({ length: groupCount }, (_, offset) => {
+      const sequence = offset + 1;
+      return {
+        id: `bounded-${suffix}-${sequence}`,
+        workspace_id: testWorkspaceId,
+        status: sequence === 599 ? "complete" : sequence === 597 ? "skipped" : "open",
+        order_number: String(9_000_000_000 + sequence),
+        buyer_name: `Bounded Buyer ${sequence}`,
+        listing_id: `bounded-listing-${sequence}`,
+        transaction_id: `bounded-transaction-${sequence}`,
+        quantity: 1,
+        source_json: {},
+        created_at: new Date(Date.UTC(2025, 0, 1, 0, 0, sequence)).toISOString(),
+      };
+    });
+    const completeGroupNumber = String(9_000_000_000 + 599);
+    rows.push({
+      ...rows[598],
+      id: `bounded-${suffix}-599-sibling`,
+      transaction_id: `bounded-transaction-599-sibling`,
+      created_at: new Date(Date.UTC(2024, 11, 1)).toISOString(),
+    });
+
+    for (let offset = 0; offset < rows.length; offset += 250) {
+      const { error } = await supabase.from("order_items").insert(rows.slice(offset, offset + 250));
+      expect(error).toBeNull();
+    }
+    const designs = rows.map((row) => ({
+      workspace_id: testWorkspaceId,
+      order_item_id: row.id,
+      design_text: `Bounded design ${row.id}`,
+    }));
+    for (let offset = 0; offset < designs.length; offset += 250) {
+      const { error } = await supabase.from("designs").insert(designs.slice(offset, offset + 250));
+      expect(error).toBeNull();
+    }
+    const filterBatchId = await createTestBatch(`Bounded Filter ${suffix}`, testWorkspaceId);
+    const { error: membershipError } = await supabase.from("batch_items").insert({
+      workspace_id: testWorkspaceId,
+      batch_id: filterBatchId,
+      order_item_id: `bounded-${suffix}-599`,
+      batch_position: 0,
+      status: "active",
+    });
+    expect(membershipError).toBeNull();
+
+    const cursorSequence = 600;
+    const cursorOrderNumber = String(9_000_000_000 + cursorSequence);
+    const cursorSortKey = "20250101001000000000"
+      + ":3:"
+      + cursorOrderNumber.padStart(64, "0");
+    const cursorGroupId = `order:${cursorOrderNumber}`;
+    const page = await listWorkspaceOrderSummaries({
+      workspaceId: testWorkspaceId,
+      statusFilter: "all",
+      searchTerm: "",
+      limit: 5,
+      cursor: {
+        version: 1,
+        sortKey: cursorSortKey,
+        groupId: cursorGroupId,
+      },
+    });
+
+    expect(page.orders.map((order) => order.id)).toEqual([
+      `order:${completeGroupNumber}`,
+      "order:9000000598",
+      "order:9000000597",
+      "order:9000000596",
+      "order:9000000595",
+    ]);
+    expect(page.orders[0].items).toHaveLength(2);
+    expect(page.hasMore).toBe(true);
+
+    const firstPage = await listWorkspaceOrderSummaries({
+      workspaceId: testWorkspaceId,
+      statusFilter: "all",
+      searchTerm: "",
+      limit: 5,
+    });
+    expect(firstPage.orders.map((order) => order.id)).toEqual([
+      "order:9000002400",
+      "order:9000002399",
+      "order:9000002398",
+      "order:9000002397",
+      "order:9000002396",
+    ]);
+
+    const [completePage, skippedPage, inBatchPage, notInBatchPage] = await Promise.all([
+      listWorkspaceOrderSummaries({
+        workspaceId: testWorkspaceId,
+        statusFilter: "complete",
+        searchTerm: "",
+        limit: 1,
+        cursor: { version: 1, sortKey: cursorSortKey, groupId: cursorGroupId },
+      }),
+      listWorkspaceOrderSummaries({
+        workspaceId: testWorkspaceId,
+        statusFilter: "skipped",
+        searchTerm: "",
+        limit: 1,
+        cursor: { version: 1, sortKey: cursorSortKey, groupId: cursorGroupId },
+      }),
+      listWorkspaceOrderSummaries({
+        workspaceId: testWorkspaceId,
+        activeBatchId: filterBatchId,
+        statusFilter: "all",
+        batchFilter: "inBatch",
+        searchTerm: "",
+        limit: 1,
+        cursor: { version: 1, sortKey: cursorSortKey, groupId: cursorGroupId },
+      }),
+      listWorkspaceOrderSummaries({
+        workspaceId: testWorkspaceId,
+        activeBatchId: filterBatchId,
+        statusFilter: "all",
+        batchFilter: "notInBatch",
+        searchTerm: "",
+        limit: 1,
+        cursor: { version: 1, sortKey: cursorSortKey, groupId: cursorGroupId },
+      }),
+    ]);
+    expect(completePage.orders[0]).toMatchObject({
+      id: `order:${completeGroupNumber}`,
+      status: "complete",
+    });
+    expect(completePage.orders[0].items).toHaveLength(2);
+    expect(skippedPage.orders[0]).toMatchObject({ id: "order:9000000597", status: "skipped" });
+    expect(inBatchPage.orders[0].id).toBe(`order:${completeGroupNumber}`);
+    expect(inBatchPage.orders[0].isInActiveBatch).toBe(true);
+    expect(inBatchPage.orders[0].items).toHaveLength(2);
+    expect(notInBatchPage.orders[0].id).toBe("order:9000000598");
+
+    const firstPagePlan = await explainInlinedOrdersSummaryFunction({
+      workspaceId: testWorkspaceId,
+      cursorSortKey: null,
+      cursorGroupId: null,
+      limit: 5,
+    });
+    const deepCursorPlan = await explainInlinedOrdersSummaryFunction({
+      workspaceId: testWorkspaceId,
+      cursorSortKey,
+      cursorGroupId,
+      limit: 5,
+    });
+    for (const explained of [firstPagePlan, deepCursorPlan]) {
+      const planNodes = flattenPlanNodes(explained[0].Plan);
+      const orderItemScans = planNodes.filter((node) => node["Relation Name"] === "order_items");
+      const orderItemIndexNames = new Set(orderItemScans.map((node) => node["Index Name"]).filter(Boolean));
+
+      expect(orderItemIndexNames).toContain("order_items_workspace_newest_group_idx");
+      expect(orderItemIndexNames).toContain("order_items_workspace_group_members_idx");
+      expect(
+        orderItemScans.some(
+          (node) => node["Node Type"] === "Seq Scan" && node["Actual Loops"] > 0,
+        ),
+        JSON.stringify(orderItemScans, null, 2),
+      ).toBe(false);
+      const newestScan = orderItemScans.find(
+        (node) => node["Index Name"] === "order_items_workspace_newest_group_idx",
+      );
+      expect(newestScan).toBeDefined();
+      expect(
+        (newestScan["Actual Rows"] + (newestScan["Rows Removed by Filter"] || 0))
+        * newestScan["Actual Loops"],
+        JSON.stringify(newestScan, null, 2),
+      ).toBe(6);
+    }
+  }, 60_000);
+
   it("searches and paginates more than one thousand complete order groups without splitting a group", async () => {
     // Break caught: compact Orders search reads only a browser-sized subset or paginates item rows.
     const suffix = randomUUID().slice(0, 8);
