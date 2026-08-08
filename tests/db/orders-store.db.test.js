@@ -55,7 +55,7 @@ function quoteNullableSqlLiteral(value) {
   return value == null ? "null" : quoteSqlLiteral(value);
 }
 
-async function explainInlinedOrdersSummaryFunction({
+async function executeExactOrdersSummaryFunction({
   workspaceId,
   activeBatchId = null,
   statusFilter = "all",
@@ -64,41 +64,30 @@ async function explainInlinedOrdersSummaryFunction({
   cursorGroupId,
   limit = 5,
 }) {
-  const config = await generateSupabaseWorktreeConfig();
-  const databaseContainer = spawnCommand("docker", [
-    "ps",
-    "--filter", `label=com.supabase.cli.project=${config.projectId}`,
-    "--filter", "name=supabase_db_",
-    "--format", "{{.ID}}",
-  ], { encoding: "utf8" });
-  expect(databaseContainer.status, databaseContainer.stderr).toBe(0);
+  const databaseContainerId = await getLocalDatabaseContainerId();
 
-  const databaseContainerId = databaseContainer.stdout.trim();
-  expect(databaseContainerId).toMatch(/^[a-f0-9]+$/i);
-
-  const sql = String.raw`
-\set ON_ERROR_STOP on
-\pset tuples_only on
-\pset format unaligned
-select replace(
-  replace(
-    pg_get_functiondef(
-      'public.list_workspace_order_summaries(uuid,uuid,text,text,text,integer,text,text)'::regprocedure
-    ),
-    'CREATE OR REPLACE FUNCTION public.list_workspace_order_summaries',
-    'CREATE OR REPLACE FUNCTION pg_temp.list_workspace_order_summaries'
-  ),
-  E'\n SET search_path TO ''''\n',
-  E'\n'
-)
-\gexec
+  const analyzeResult = executeDatabaseSql(databaseContainerId, String.raw`
 analyze public.order_items;
 analyze public.designs;
 analyze public.order_group_summaries;
 analyze public.order_group_batch_visibility;
-explain (analyze, buffers, format json)
-select *
-from pg_temp.list_workspace_order_summaries(
+`);
+  expect(analyzeResult.status, analyzeResult.stderr || analyzeResult.stdout).toBe(0);
+
+  // SET search_path keeps ordinary EXPLAIN at an opaque Function Scan, and the local
+  // Supabase image blocks auto_explain. Transaction-local index counters from the
+  // exact call therefore provide runtime plan evidence without cloning the function,
+  // stripping its settings, or constant-folding its production parameters.
+  const sql = String.raw`
+\set ON_ERROR_STOP on
+\pset tuples_only on
+\pset format unaligned
+begin;
+select coalesce(
+  jsonb_agg(to_jsonb(result) order by result.sort_key desc, result.group_id desc),
+  '[]'::jsonb
+)
+from public.list_workspace_order_summaries(
   p_workspace_id => ${quoteSqlLiteral(workspaceId)}::uuid,
   p_active_batch_id => ${quoteNullableSqlLiteral(activeBatchId)}::uuid,
   p_status_filter => ${quoteSqlLiteral(statusFilter)},
@@ -107,30 +96,42 @@ from pg_temp.list_workspace_order_summaries(
   p_requested_limit => ${limit},
   p_cursor_sort_key => ${quoteNullableSqlLiteral(cursorSortKey)},
   p_cursor_group_id => ${quoteNullableSqlLiteral(cursorGroupId)}
-);
+) result;
+select coalesce(
+  jsonb_object_agg(
+    indexes.relname,
+    jsonb_build_object(
+      'scans', pg_catalog.pg_stat_get_xact_numscans(indexes.oid),
+      'tuplesRead', pg_catalog.pg_stat_get_xact_tuples_returned(indexes.oid)
+    )
+  ),
+  '{}'::jsonb
+)
+from pg_catalog.pg_class indexes
+join pg_catalog.pg_namespace schemas on schemas.oid = indexes.relnamespace
+where schemas.nspname = 'public'
+  and indexes.relname in (
+    'order_group_summaries_page_idx',
+    'order_group_summaries_status_page_idx',
+    'order_group_batch_visibility_page_idx',
+    'order_group_batch_visibility_status_page_idx',
+    'order_items_workspace_newest_group_idx',
+    'order_items_workspace_group_members_idx'
+  );
+rollback;
 `;
-  const explainResult = spawnCommand("docker", [
-    "exec",
-    "-i",
-    databaseContainerId,
-    "psql",
-    "-X",
-    "-q",
-    "-v", "ON_ERROR_STOP=1",
-    "-U", "postgres",
-    "-d", "postgres",
-    "-f", "-",
-  ], { encoding: "utf8", input: sql });
+  const exactResult = executeDatabaseSql(databaseContainerId, sql);
   expect(
-    explainResult.status,
-    explainResult.stderr || explainResult.stdout,
+    exactResult.status,
+    exactResult.stderr || exactResult.stdout,
   ).toBe(0);
 
-  return JSON.parse(explainResult.stdout.trim());
-}
-
-function flattenPlanNodes(node) {
-  return [node, ...(node.Plans || []).flatMap(flattenPlanNodes)];
+  const outputLines = exactResult.stdout.trim().split(/\r?\n/).filter(Boolean);
+  expect(outputLines).toHaveLength(2);
+  return {
+    rows: JSON.parse(outputLines[0]),
+    indexDeltas: JSON.parse(outputLines[1]),
+  };
 }
 
 async function getLocalDatabaseContainerId() {
@@ -858,6 +859,48 @@ drop function if exists public.${holdFunctionName}();
     }
   }, 30_000);
 
+  it("treats unknown and foreign batch ids as zero membership for empty not-in-batch search", async () => {
+    // Break caught: the projection path returns no rows while source search treats a missing batch as zero membership.
+    const suffix = randomUUID().slice(0, 8);
+    const workspaceId = await createDisposableWorkspace(`Missing Batch ${suffix}`);
+    const otherWorkspaceId = await createDisposableWorkspace(`Foreign Batch ${suffix}`);
+    const foreignBatchId = await createTestBatch(`Foreign Batch ${suffix}`, otherWorkspaceId);
+    const unknownBatchId = randomUUID();
+    const orderNumber = `MISSING-BATCH-${suffix}`;
+    const searchToken = `MissingBatchBuyer${suffix}`;
+    const supabase = createSupabaseAdminClient();
+    const { error } = await supabase.from("order_items").insert({
+      id: `missing-batch-${suffix}`,
+      workspace_id: workspaceId,
+      status: "open",
+      order_number: orderNumber,
+      buyer_name: searchToken,
+      quantity: 1,
+      source_json: {},
+    });
+    expect(error).toBeNull();
+
+    for (const activeBatchId of [unknownBatchId, foreignBatchId]) {
+      const emptyPage = await listWorkspaceOrderSummaries({
+        workspaceId,
+        activeBatchId,
+        statusFilter: "all",
+        batchFilter: "notInBatch",
+        searchTerm: "",
+      });
+      const searchedPage = await listWorkspaceOrderSummaries({
+        workspaceId,
+        activeBatchId,
+        statusFilter: "all",
+        batchFilter: "notInBatch",
+        searchTerm: searchToken,
+      });
+
+      expect(emptyPage.orders.map((order) => order.id)).toEqual([`order:${orderNumber}`]);
+      expect(searchedPage.orders.map((order) => order.id)).toEqual([`order:${orderNumber}`]);
+    }
+  });
+
   it("keeps empty-search discovery and group hydration index-bounded after a deep cursor", async () => {
     // Break caught: empty Orders pages scan every historical item before applying the cursor and limit.
     const suffix = randomUUID().slice(0, 8);
@@ -869,7 +912,11 @@ drop function if exists public.${holdFunctionName}();
       return {
         id: `bounded-${suffix}-${sequence}`,
         workspace_id: testWorkspaceId,
-        status: sequence === 599 ? "complete" : sequence === 597 ? "skipped" : "open",
+        status: [599, 590].includes(sequence)
+          ? "complete"
+          : [597, 589].includes(sequence)
+            ? "skipped"
+            : "open",
         order_number: String(9_000_000_000 + sequence),
         buyer_name: `Bounded Buyer ${sequence}`,
         listing_id: `bounded-listing-${sequence}`,
@@ -908,6 +955,20 @@ drop function if exists public.${holdFunctionName}();
         batch_id: filterBatchId,
         order_item_id: `bounded-${suffix}-599`,
         batch_position: 0,
+        status: "active",
+      },
+      {
+        workspace_id: testWorkspaceId,
+        batch_id: filterBatchId,
+        order_item_id: `bounded-${suffix}-589`,
+        batch_position: 1,
+        status: "active",
+      },
+      {
+        workspace_id: testWorkspaceId,
+        batch_id: filterBatchId,
+        order_item_id: `bounded-${suffix}-588`,
+        batch_position: 2,
         status: "active",
       },
       {
@@ -1007,103 +1068,49 @@ drop function if exists public.${holdFunctionName}();
     expect(inBatchPage.orders[0].items).toHaveLength(2);
     expect(notInBatchPage.orders[0].id).toBe("order:9000000598");
 
-    const sparsePlans = [
-      {
-        relationName: "order_group_summaries",
-        indexNames: ["order_group_summaries_status_page_idx"],
-        options: { statusFilter: "complete" },
-      },
-      {
-        relationName: "order_group_summaries",
-        indexNames: ["order_group_summaries_status_page_idx"],
-        options: { statusFilter: "skipped" },
-      },
-      {
-        relationName: "order_group_batch_visibility",
-        indexNames: [
-          "order_group_batch_visibility_page_idx",
-          "order_group_batch_visibility_status_page_idx",
-        ],
-        options: {
-          activeBatchId: filterBatchId,
-          batchFilter: "inBatch",
-        },
-      },
-      {
-        relationName: "order_group_batch_visibility",
-        indexNames: [
-          "order_group_batch_visibility_page_idx",
-          "order_group_batch_visibility_status_page_idx",
-        ],
-        options: {
-          activeBatchId: filterBatchId,
-          batchFilter: "notInBatch",
-        },
-      },
+    const lifecycleBatchCases = [
+      { statusFilter: "all", batchFilter: "all", expectedIndex: "order_group_summaries_page_idx", expectedIds: ["9000000599", "9000000598"] },
+      { statusFilter: "open", batchFilter: "all", expectedIndex: "order_group_summaries_status_page_idx", expectedIds: ["9000000598", "9000000596"] },
+      { statusFilter: "complete", batchFilter: "all", expectedIndex: "order_group_summaries_status_page_idx", expectedIds: ["9000000599", "9000000590"] },
+      { statusFilter: "skipped", batchFilter: "all", expectedIndex: "order_group_summaries_status_page_idx", expectedIds: ["9000000597", "9000000589"] },
+      { statusFilter: "all", batchFilter: "inBatch", expectedIndex: "order_group_batch_visibility_page_idx", expectedIds: ["9000000599", "9000000589"] },
+      { statusFilter: "open", batchFilter: "inBatch", expectedIndex: "order_group_batch_visibility_status_page_idx", expectedIds: ["9000000588"] },
+      { statusFilter: "complete", batchFilter: "inBatch", expectedIndex: "order_group_batch_visibility_status_page_idx", expectedIds: ["9000000599"] },
+      { statusFilter: "skipped", batchFilter: "inBatch", expectedIndex: "order_group_batch_visibility_status_page_idx", expectedIds: ["9000000589"] },
+      { statusFilter: "all", batchFilter: "notInBatch", expectedIndex: "order_group_batch_visibility_page_idx", expectedIds: ["9000000598", "9000000597"] },
+      { statusFilter: "open", batchFilter: "notInBatch", expectedIndex: "order_group_batch_visibility_status_page_idx", expectedIds: ["9000000598", "9000000596"] },
+      { statusFilter: "complete", batchFilter: "notInBatch", expectedIndex: "order_group_batch_visibility_status_page_idx", expectedIds: ["9000000590"] },
+      { statusFilter: "skipped", batchFilter: "notInBatch", expectedIndex: "order_group_batch_visibility_status_page_idx", expectedIds: ["9000000597"] },
     ];
 
-    for (const sparsePlan of sparsePlans) {
-      const explained = await explainInlinedOrdersSummaryFunction({
+    for (const testCase of lifecycleBatchCases) {
+      const exactExecution = await executeExactOrdersSummaryFunction({
         workspaceId: testWorkspaceId,
+        activeBatchId: testCase.batchFilter === "all" ? null : filterBatchId,
+        statusFilter: testCase.statusFilter,
+        batchFilter: testCase.batchFilter,
         cursorSortKey,
         cursorGroupId,
         limit: 1,
-        ...sparsePlan.options,
       });
-      const planNodes = flattenPlanNodes(explained[0].Plan);
-      const projectionScan = planNodes.find(
-        (node) => node["Relation Name"] === sparsePlan.relationName
-          && sparsePlan.indexNames.includes(node["Index Name"]),
+      expect(exactExecution.rows.map((row) => row.group_id)).toEqual(
+        testCase.expectedIds.map((id) => `order:${id}`),
       );
-      expect(projectionScan, JSON.stringify(planNodes, null, 2)).toBeDefined();
+      expect(exactExecution.rows.length, JSON.stringify(testCase)).toBeLessThanOrEqual(2);
       expect(
-        (projectionScan["Actual Rows"] + (projectionScan["Rows Removed by Filter"] || 0))
-          * projectionScan["Actual Loops"],
-        JSON.stringify(projectionScan, null, 2),
-      ).toBeLessThanOrEqual(2);
+        exactExecution.indexDeltas[testCase.expectedIndex].scans,
+        JSON.stringify(testCase),
+      ).toBeGreaterThan(0);
+      // pg_stat_get_xact_tuples_returned counts the index AM's one-row lookahead
+      // even when the LIMIT node emits only limit + 1 candidate groups.
       expect(
-        planNodes.some(
-          (node) => node["Relation Name"] === "order_items"
-            && node["Index Name"] === "order_items_workspace_newest_group_idx",
-        ),
-        JSON.stringify(planNodes, null, 2),
-      ).toBe(false);
-    }
-
-    const firstPagePlan = await explainInlinedOrdersSummaryFunction({
-      workspaceId: testWorkspaceId,
-      cursorSortKey: null,
-      cursorGroupId: null,
-      limit: 5,
-    });
-    const deepCursorPlan = await explainInlinedOrdersSummaryFunction({
-      workspaceId: testWorkspaceId,
-      cursorSortKey,
-      cursorGroupId,
-      limit: 5,
-    });
-    for (const explained of [firstPagePlan, deepCursorPlan]) {
-      const planNodes = flattenPlanNodes(explained[0].Plan);
-      const orderItemScans = planNodes.filter((node) => node["Relation Name"] === "order_items");
-      const orderItemIndexNames = new Set(orderItemScans.map((node) => node["Index Name"]).filter(Boolean));
-      const summaryScan = planNodes.find(
-        (node) => node["Relation Name"] === "order_group_summaries"
-          && node["Index Name"] === "order_group_summaries_page_idx",
-      );
-
-      expect(summaryScan, JSON.stringify(planNodes, null, 2)).toBeDefined();
-      expect(orderItemIndexNames).toContain("order_items_workspace_group_members_idx");
-      expect(
-        orderItemScans.some(
-          (node) => node["Node Type"] === "Seq Scan" && node["Actual Loops"] > 0,
-        ),
-        JSON.stringify(orderItemScans, null, 2),
-      ).toBe(false);
-      expect(
-        (summaryScan["Actual Rows"] + (summaryScan["Rows Removed by Filter"] || 0))
-        * summaryScan["Actual Loops"],
-        JSON.stringify(summaryScan, null, 2),
-      ).toBe(6);
+        exactExecution.indexDeltas[testCase.expectedIndex].tuplesRead,
+        JSON.stringify({ testCase, indexDeltas: exactExecution.indexDeltas }, null, 2),
+      ).toBeLessThanOrEqual(3);
+      expect(exactExecution.indexDeltas.order_items_workspace_newest_group_idx).toEqual({
+        scans: 0,
+        tuplesRead: 0,
+      });
     }
   }, 60_000);
 

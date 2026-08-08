@@ -712,49 +712,78 @@ as $$
         '_', E'\\_'
       ) as escaped_search_term
   ),
-  cursor_params as (
-    select
-      case
-        when p_cursor_sort_key is null or p_cursor_group_id is null then 'infinity'::timestamptz
-        else make_timestamptz(
-          substr(p_cursor_sort_key, 1, 4)::integer,
-          substr(p_cursor_sort_key, 5, 2)::integer,
-          substr(p_cursor_sort_key, 7, 2)::integer,
-          substr(p_cursor_sort_key, 9, 2)::integer,
-          substr(p_cursor_sort_key, 11, 2)::integer,
-          substr(p_cursor_sort_key, 13, 2)::double precision
-            + substr(p_cursor_sort_key, 15, 6)::double precision / 1000000,
-          'UTC'
-        )
-      end as cursor_created_at,
-      case
-        when p_cursor_sort_key is null or p_cursor_group_id is null then ''
-        else substr(p_cursor_sort_key, 22)
-      end as cursor_order_sort,
-      coalesce(p_cursor_group_id, '') as cursor_group_id
-  ),
-  empty_summary_page_group_keys as materialized (
-    -- Empty batch=all search pages compact summary keys before source hydration.
+  empty_summary_all_page_group_keys as materialized (
+    -- Empty batch=all/status=all search pages compact summary keys before hydration.
     select summaries.group_id, summaries.sort_key
     from public.order_group_summaries summaries
     where coalesce(p_search_term, '') = ''
       and summaries.workspace_id = p_workspace_id
       and (
         p_batch_filter = 'all'
-        or (p_batch_filter = 'notInBatch' and p_active_batch_id is null)
+        or (
+          p_batch_filter = 'notInBatch'
+          and (
+            p_active_batch_id is null
+            or not exists (
+              select 1
+              from public.production_batches batches
+              where batches.workspace_id = p_workspace_id
+                and batches.id = p_active_batch_id
+            )
+          )
+        )
       )
-      and (p_status_filter = 'all' or summaries.group_status = p_status_filter)
-      and (
-        p_cursor_sort_key is null
-        or p_cursor_group_id is null
-        or (summaries.sort_key, summaries.group_id)
-          < (p_cursor_sort_key, p_cursor_group_id)
+      and p_status_filter = 'all'
+      and (summaries.sort_key, summaries.group_id) < (
+        case
+          when p_cursor_sort_key is null or p_cursor_group_id is null then U&'\+10FFFF'
+          else p_cursor_sort_key
+        end,
+        case
+          when p_cursor_sort_key is null or p_cursor_group_id is null then U&'\+10FFFF'
+          else p_cursor_group_id
+        end
       )
     order by summaries.sort_key desc, summaries.group_id desc
     limit least(greatest(coalesce(p_requested_limit, 50), 1), 50) + 1
   ),
-  empty_visibility_page_group_keys as materialized (
-    -- An explicit batch filter pages its materialized visibility state independently.
+  empty_summary_status_page_group_keys as materialized (
+    select summaries.group_id, summaries.sort_key
+    from public.order_group_summaries summaries
+    where coalesce(p_search_term, '') = ''
+      and summaries.workspace_id = p_workspace_id
+      and (
+        p_batch_filter = 'all'
+        or (
+          p_batch_filter = 'notInBatch'
+          and (
+            p_active_batch_id is null
+            or not exists (
+              select 1
+              from public.production_batches batches
+              where batches.workspace_id = p_workspace_id
+                and batches.id = p_active_batch_id
+            )
+          )
+        )
+      )
+      and p_status_filter <> 'all'
+      and summaries.group_status = p_status_filter
+      and (summaries.sort_key, summaries.group_id) < (
+        case
+          when p_cursor_sort_key is null or p_cursor_group_id is null then U&'\+10FFFF'
+          else p_cursor_sort_key
+        end,
+        case
+          when p_cursor_sort_key is null or p_cursor_group_id is null then U&'\+10FFFF'
+          else p_cursor_group_id
+        end
+      )
+    order by summaries.sort_key desc, summaries.group_id desc
+    limit least(greatest(coalesce(p_requested_limit, 50), 1), 50) + 1
+  ),
+  empty_visibility_all_page_group_keys as materialized (
+    -- Explicit batch filters page their materialized visibility state independently.
     select visibility.group_id, visibility.sort_key
     from public.order_group_batch_visibility visibility
     where coalesce(p_search_term, '') = ''
@@ -763,22 +792,56 @@ as $$
       and visibility.workspace_id = p_workspace_id
       and visibility.batch_id = p_active_batch_id
       and visibility.is_in_batch = (p_batch_filter = 'inBatch')
-      and (p_status_filter = 'all' or visibility.group_status = p_status_filter)
-      and (
-        p_cursor_sort_key is null
-        or p_cursor_group_id is null
-        or (visibility.sort_key, visibility.group_id)
-          < (p_cursor_sort_key, p_cursor_group_id)
+      and p_status_filter = 'all'
+      and (visibility.sort_key, visibility.group_id) < (
+        case
+          when p_cursor_sort_key is null or p_cursor_group_id is null then U&'\+10FFFF'
+          else p_cursor_sort_key
+        end,
+        case
+          when p_cursor_sort_key is null or p_cursor_group_id is null then U&'\+10FFFF'
+          else p_cursor_group_id
+        end
+      )
+    order by visibility.sort_key desc, visibility.group_id desc
+    limit least(greatest(coalesce(p_requested_limit, 50), 1), 50) + 1
+  ),
+  empty_visibility_status_page_group_keys as materialized (
+    select visibility.group_id, visibility.sort_key
+    from public.order_group_batch_visibility visibility
+    where coalesce(p_search_term, '') = ''
+      and p_active_batch_id is not null
+      and p_batch_filter in ('inBatch', 'notInBatch')
+      and visibility.workspace_id = p_workspace_id
+      and visibility.batch_id = p_active_batch_id
+      and visibility.is_in_batch = (p_batch_filter = 'inBatch')
+      and p_status_filter <> 'all'
+      and visibility.group_status = p_status_filter
+      and (visibility.sort_key, visibility.group_id) < (
+        case
+          when p_cursor_sort_key is null or p_cursor_group_id is null then U&'\+10FFFF'
+          else p_cursor_sort_key
+        end,
+        case
+          when p_cursor_sort_key is null or p_cursor_group_id is null then U&'\+10FFFF'
+          else p_cursor_group_id
+        end
       )
     order by visibility.sort_key desc, visibility.group_id desc
     limit least(greatest(coalesce(p_requested_limit, 50), 1), 50) + 1
   ),
   empty_page_group_keys as materialized (
-    select summary_page.group_id, summary_page.sort_key
-    from empty_summary_page_group_keys summary_page
+    select summary_all_page.group_id, summary_all_page.sort_key
+    from empty_summary_all_page_group_keys summary_all_page
     union all
-    select visibility_page.group_id, visibility_page.sort_key
-    from empty_visibility_page_group_keys visibility_page
+    select summary_status_page.group_id, summary_status_page.sort_key
+    from empty_summary_status_page_group_keys summary_status_page
+    union all
+    select visibility_all_page.group_id, visibility_all_page.sort_key
+    from empty_visibility_all_page_group_keys visibility_all_page
+    union all
+    select visibility_status_page.group_id, visibility_status_page.sort_key
+    from empty_visibility_status_page_group_keys visibility_status_page
   ),
   searched_eligible_group_keys as (
     -- Non-empty substring search retains the measured workspace-wide search branch.
