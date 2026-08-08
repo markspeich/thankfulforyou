@@ -605,6 +605,96 @@ drop function if exists public.${holdFunctionName}();
     }
   }, 30_000);
 
+  it("reconciles visibility after concurrent first group and batch creation", async () => {
+    // Break caught: concurrent creators each miss the other's uncommitted row and publish no pair.
+    const suffix = randomUUID().slice(0, 8);
+    const workspaceId = await createDisposableWorkspace(`Projection Creation Race ${suffix}`);
+    const orderNumber = `PROJECTION-CREATION-${suffix}`;
+    const groupId = `order:${orderNumber}`;
+    const orderItemId = `projection-creation-${suffix}`;
+    const batchId = randomUUID();
+    const databaseContainerId = await getLocalDatabaseContainerId();
+    const holdTriggerName = "zz_test_hold_order_group_projection_creation";
+    const holdFunctionName = "test_hold_order_group_projection_creation";
+    const setupResult = executeDatabaseSql(databaseContainerId, `
+create or replace function public.${holdFunctionName}()
+returns trigger
+language plpgsql
+security invoker
+set search_path = ''
+as $hold$
+begin
+  perform pg_catalog.pg_sleep(3);
+  return null;
+end;
+$hold$;
+
+create trigger ${holdTriggerName}
+after insert on public.order_items
+for each row
+when (new.id = ${quoteSqlLiteral(orderItemId)})
+execute function public.${holdFunctionName}();
+`);
+    expect(setupResult.status, setupResult.stderr || setupResult.stdout).toBe(0);
+
+    try {
+      const orderInsertPromise = createSupabaseAdminClient()
+        .from("order_items")
+        .insert({
+          id: orderItemId,
+          workspace_id: workspaceId,
+          status: "open",
+          order_number: orderNumber,
+          buyer_name: `Projection Creation ${suffix}`,
+          transaction_id: `projection-creation-${suffix}`,
+          quantity: 1,
+          source_json: {},
+        })
+        .then((result) => result);
+
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      waitForDatabaseSleep(databaseContainerId);
+
+      const batchInsertPromise = createSupabaseAdminClient()
+        .from("production_batches")
+        .insert({
+          id: batchId,
+          workspace_id: workspaceId,
+          name: `Projection Creation Batch ${suffix}`,
+          status: "active",
+        })
+        .then((result) => result);
+
+      const [orderInsert, batchInsert] = await Promise.all([
+        orderInsertPromise,
+        batchInsertPromise,
+      ]);
+      expect(orderInsert.error).toBeNull();
+      expect(batchInsert.error).toBeNull();
+
+      const { data: visibility, error: visibilityError } = await createSupabaseAdminClient()
+        .from("order_group_batch_visibility")
+        .select("workspace_id, batch_id, group_id, is_in_batch")
+        .eq("workspace_id", workspaceId)
+        .eq("batch_id", batchId)
+        .eq("group_id", groupId)
+        .maybeSingle();
+      expect(visibilityError).toBeNull();
+      expect(visibility).toEqual({
+        workspace_id: workspaceId,
+        batch_id: batchId,
+        group_id: groupId,
+        is_in_batch: false,
+      });
+    } finally {
+      const cleanupResult = executeDatabaseSql(databaseContainerId, `
+drop trigger if exists ${holdTriggerName} on public.order_items;
+drop function if exists public.${holdFunctionName}();
+`);
+      expect(cleanupResult.status, cleanupResult.stderr || cleanupResult.stdout).toBe(0);
+    }
+  }, 30_000);
+
   it("keeps empty-search discovery and group hydration index-bounded after a deep cursor", async () => {
     // Break caught: empty Orders pages scan every historical item before applying the cursor and limit.
     const suffix = randomUUID().slice(0, 8);

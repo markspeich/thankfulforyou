@@ -32,6 +32,31 @@ grant all on table public.order_group_summaries to service_role;
 revoke all on table public.order_group_batch_visibility from public, anon, authenticated;
 grant all on table public.order_group_batch_visibility to service_role;
 
+create or replace function public.lock_order_group_projection_workspace(p_workspace_id uuid)
+returns void
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+begin
+  if p_workspace_id is null then
+    return;
+  end if;
+
+  perform pg_catalog.pg_advisory_xact_lock(
+    pg_catalog.hashtextextended(
+      'order-group-projection-workspace|' || p_workspace_id::text,
+      0
+    )
+  );
+end;
+$$;
+
+revoke all on function public.lock_order_group_projection_workspace(uuid)
+  from public, anon, authenticated;
+grant execute on function public.lock_order_group_projection_workspace(uuid)
+  to service_role;
+
 create or replace function public.refresh_order_group_batch_visibility(
   p_workspace_id uuid,
   p_group_id text,
@@ -137,6 +162,15 @@ as $$
 begin
   if p_workspace_id is null or p_group_id is null then
     return;
+  end if;
+
+  if not exists (
+    select 1
+    from public.order_group_summaries summaries
+    where summaries.workspace_id = p_workspace_id
+      and summaries.group_id = p_group_id
+  ) then
+    perform public.lock_order_group_projection_workspace(p_workspace_id);
   end if;
 
   perform pg_catalog.pg_advisory_xact_lock(
@@ -383,6 +417,18 @@ as $$
 declare
   summary record;
 begin
+  if tg_op = 'INSERT' then
+    perform public.lock_order_group_projection_workspace(new.workspace_id);
+  elsif tg_op = 'UPDATE' and new.workspace_id is not distinct from old.workspace_id then
+    perform public.lock_order_group_projection_workspace(new.workspace_id);
+  elsif tg_op = 'UPDATE' and old.workspace_id::text < new.workspace_id::text then
+    perform public.lock_order_group_projection_workspace(old.workspace_id);
+    perform public.lock_order_group_projection_workspace(new.workspace_id);
+  elsif tg_op = 'UPDATE' then
+    perform public.lock_order_group_projection_workspace(new.workspace_id);
+    perform public.lock_order_group_projection_workspace(old.workspace_id);
+  end if;
+
   if tg_op <> 'INSERT' then
     for summary in
       select visibility.workspace_id, visibility.group_id
