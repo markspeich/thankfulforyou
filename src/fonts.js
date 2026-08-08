@@ -1,229 +1,110 @@
 import {
+  archiveWorkspaceFont,
   createWorkspaceFont,
-  deleteWorkspaceFont,
   fetchWorkspaceFonts,
   replaceWorkspaceFont,
+  restoreWorkspaceFont,
   updateWorkspaceFontSettings,
 } from "./font-api.js";
 
-export const BUILTIN_FONT_DEFINITIONS = Object.freeze([
-  {
-    id: "candlepin",
-    label: "Candlepin Laser",
-    family: "CandlepinLaser",
-    url: "public/fonts/Candlepin-Laser.otf",
-    exportPath: "public/fonts/Candlepin-Laser.otf",
-    fileFormat: "otf",
-    version: 1,
-    isBuiltin: true,
-    bridgingEnabled: true,
-  },
-  {
-    id: "skywalk",
-    label: "Skywalk Laser",
-    family: "SkywalkLaser",
-    url: "public/fonts/SkywalkLaserRegular.otf",
-    exportPath: "public/fonts/SkywalkLaserRegular.otf",
-    fileFormat: "otf",
-    version: 1,
-    isBuiltin: true,
-    bridgingEnabled: true,
-  },
-  {
-    id: "somekind",
-    label: "Somekind",
-    family: "Somekind",
-    url: "public/fonts/Somekind.ttf",
-    exportPath: "public/fonts/Somekind.ttf",
-    fileFormat: "ttf",
-    version: 1,
-    isBuiltin: true,
-    bridgingEnabled: true,
-  },
-]);
-
-const DEFAULT_FONT = BUILTIN_FONT_DEFINITIONS[0];
 const registeredBrowserFontFaces = new Map();
-const registeredBrowserFontStyles = new Map();
 
-function toTrimmedString(value) {
-  return typeof value === "string" ? value.trim() : "";
-}
+function text(value) { return typeof value === "string" ? value.trim() : ""; }
+function url(record) { return text(record.public_url) || text(record.publicUrl) || text(record.url) || text(record.storage_path) || text(record.storagePath); }
 
-function buildUploadedFamilyName(record) {
-  const familyName = toTrimmedString(record.family_name) || toTrimmedString(record.familyName);
-  if (familyName) {
-    return familyName;
-  }
-  return `WorkspaceFont_${toTrimmedString(record.id).replace(/[^a-z0-9_-]/gi, "_")}`;
-}
-
-function buildUploadedUrl(record) {
-  return toTrimmedString(record.public_url)
-    || toTrimmedString(record.publicUrl)
-    || toTrimmedString(record.url)
-    || toTrimmedString(record.storage_path)
-    || toTrimmedString(record.storagePath);
-}
-
-export function normalizeFontRecord(record, { includeDeleted = false } = {}) {
-  if (!record || typeof record !== "object") {
-    return null;
-  }
-
-  const id = toTrimmedString(record.id);
-  const label = toTrimmedString(record.display_name) || toTrimmedString(record.displayName) || id;
-  const url = buildUploadedUrl(record);
-  const deletedAt = record.deleted_at ?? record.deletedAt ?? null;
-  if (!id || !label || !url || (deletedAt && !includeDeleted)) {
-    return null;
-  }
-
-  const isDeleted = Boolean(deletedAt);
-  const version = Number.isFinite(Number(record.version)) ? Number(record.version) : 1;
-  const isBuiltin = Boolean(record.is_builtin ?? record.isBuiltin);
-  const bridgingEnabled = record.bridging_enabled ?? record.bridgingEnabled;
-
+export function normalizeFontRecord(record, { includeArchived = false } = {}) {
+  if (!record || typeof record !== "object") return null;
+  const id = text(record.id);
+  const displayName = text(record.display_name) || text(record.displayName) || id;
+  const publicUrl = url(record);
+  const browserUrl = !publicUrl || /^https?:|^\//i.test(publicUrl) ? publicUrl : `/${publicUrl}`;
+  const archivedAt = record.archived_at ?? record.archivedAt ?? record.deleted_at ?? record.deletedAt ?? null;
+  if (!id || !displayName || (archivedAt && !includeArchived)) return null;
   return {
-    id,
-    label: isDeleted ? `${label} (deleted)` : label,
-    displayName: label,
-    family: buildUploadedFamilyName({ ...record, id }),
-    url,
-    exportPath: url,
-    fileFormat: toTrimmedString(record.file_format) || toTrimmedString(record.fileFormat),
-    version,
-    isBuiltin,
-    isUploaded: !isBuiltin,
-    isDeleted,
-    deletedAt,
-    bridgingEnabled: typeof bridgingEnabled === "boolean" ? bridgingEnabled : true,
+    id, displayName, label: archivedAt ? `${displayName} (archived)` : displayName,
+    family: text(record.family_name) || text(record.familyName) || `WorkspaceFont_${id.replace(/[^a-z0-9_-]/gi, "_")}`,
+    url: browserUrl, exportPath: publicUrl,
+    fileFormat: text(record.file_format) || text(record.fileFormat),
+    version: Number.isFinite(Number(record.version)) ? Number(record.version) : 1,
+    archivedAt, isArchived: Boolean(archivedAt),
+    bridgingEnabled: typeof (record.bridging_enabled ?? record.bridgingEnabled) === "boolean"
+      ? (record.bridging_enabled ?? record.bridgingEnabled) : true,
   };
 }
 
-export function buildFontOptions(fontRecords = [], { includeDeleted = false } = {}) {
-  const normalizedRecords = fontRecords
-    .map((record) => normalizeFontRecord(record, { includeDeleted }))
-    .filter(Boolean);
-  const builtinIds = new Set(BUILTIN_FONT_DEFINITIONS.map((builtin) => builtin.id));
-  const recordById = new Map(
-    normalizedRecords
-      .filter((font) => !(font.isDeleted && builtinIds.has(font.id)))
-      .map((font) => [font.id, font]),
-  );
-  const builtinOptions = BUILTIN_FONT_DEFINITIONS.map((builtin) => recordById.get(builtin.id) || builtin);
-  const uploadedOptions = normalizedRecords
-    .filter((font) => !builtinIds.has(font.id));
-
-  return [
-    ...builtinOptions,
-    ...uploadedOptions,
-  ];
+export function buildFontOptions(records = [], { includeArchived = false } = {}) {
+  return records.map((record) => normalizeFontRecord(record, { includeArchived })).filter(Boolean)
+    .sort((a, b) => a.displayName.localeCompare(b.displayName));
 }
 
-export function getSelectableFontOptions(fontOptions = BUILTIN_FONT_DEFINITIONS, selectedFontId = "") {
-  const activeOptions = fontOptions.filter((font) => !font.isDeleted);
-  const selectedOption = fontOptions.find((font) => font.id === selectedFontId);
-  if (selectedOption?.isDeleted) {
-    return [...activeOptions, selectedOption];
+export function getSelectableFontOptions(fontOptions = [], selectedFontId = "") {
+  const active = fontOptions.filter((font) => !font.isArchived);
+  const selected = fontOptions.find((font) => font.id === selectedFontId);
+  if (selected?.isArchived) return [...active, selected];
+  if (selectedFontId && !selected) return [...active, { id: selectedFontId, label: `Missing font (${selectedFontId})`, isMissing: true, isArchived: true }];
+  return active;
+}
+
+export function getFontLibraryOptions(fontOptions = [], { showArchived = false } = {}) {
+  return showArchived ? fontOptions : fontOptions.filter((font) => !font.isArchived);
+}
+
+export function resolveFontOption(fontId, fontOptions = []) {
+  return fontOptions.find((font) => font.id === fontId) || { id: fontId, label: `Missing font (${fontId})`, isMissing: true, family: "", url: "", exportPath: "" };
+}
+
+export function getFontRenderingIssue(settings = {}, fontOptions = []) {
+  const rawLines = typeof settings.text === "string" ? settings.text.split(/\r?\n/) : [];
+  let textLineIndex = 0;
+
+  for (const line of Array.isArray(settings.lines) ? settings.lines : []) {
+    if (line?.kind === "fixedSvg") {
+      continue;
+    }
+
+    const rawLine = rawLines[textLineIndex] || "";
+    textLineIndex += 1;
+    if (!rawLine.trim()) {
+      continue;
+    }
+
+    const fontId = typeof line?.fontId === "string" ? line.fontId : "";
+    const font = resolveFontOption(fontId, fontOptions);
+    if (font.isMissing) {
+      return { fontId, label: font.label, reason: "missing" };
+    }
+    if (font.loadError) {
+      return { fontId, label: font.displayName || font.label || fontId, reason: "load-failed", detail: font.loadError };
+    }
+    if (!font.family || !font.url || !font.exportPath) {
+      return { fontId, label: font.displayName || font.label || fontId, reason: "unresolvable" };
+    }
   }
 
-  if (selectedFontId && !selectedOption) {
-    return [
-      ...activeOptions,
-      {
-        id: selectedFontId,
-        label: `Missing font (${selectedFontId})`,
-        family: DEFAULT_FONT.family,
-        url: DEFAULT_FONT.url,
-        exportPath: DEFAULT_FONT.exportPath,
-        fileFormat: DEFAULT_FONT.fileFormat,
-        version: 0,
-        isMissing: true,
-        isDeleted: true,
-        bridgingEnabled: true,
-      },
-    ];
-  }
-
-  return activeOptions;
-}
-
-export function getFontLibraryOptions(fontOptions = BUILTIN_FONT_DEFINITIONS, { showDeleted = false } = {}) {
-  return showDeleted
-    ? fontOptions
-    : fontOptions.filter((font) => !font.isDeleted);
-}
-export function resolveFontOption(fontId, fontOptions = BUILTIN_FONT_DEFINITIONS) {
-  return fontOptions.find((font) => font.id === fontId) || DEFAULT_FONT;
-}
-
-function removeRegisteredBrowserFontStyle(family) {
-  const existingStyle = registeredBrowserFontStyles.get(family);
-  if (existingStyle && typeof existingStyle.remove === "function") {
-    existingStyle.remove();
-  }
-  registeredBrowserFontStyles.delete(family);
-}
-
-function registerBrowserFontStyle(font) {
-  if (typeof document === "undefined" || !document?.head || typeof document.createElement !== "function") {
-    return null;
-  }
-
-  removeRegisteredBrowserFontStyle(font.family);
-  const style = document.createElement("style");
-  style.dataset.workspaceFontFamily = font.family;
-  style.textContent = `@font-face {
-  font-family: ${JSON.stringify(font.family)};
-  src: url(${JSON.stringify(font.url)});
-  font-display: block;
-}`;
-  document.head.appendChild(style);
-  registeredBrowserFontStyles.set(font.family, style);
-  return style;
+  return null;
 }
 
 export async function registerBrowserFont(font) {
-  if (!font || !font.family || !font.url) {
-    return null;
+  if (!font?.family || !font?.url) throw new Error(`Font ${font?.label || font?.id || "asset"} has no resolvable asset.`);
+  if (typeof FontFace === "undefined" || typeof document === "undefined" || !document.fonts) {
+    throw new Error(`The browser cannot register ${font.label || font.id}.`);
   }
-
-  if (typeof FontFace === "undefined" || typeof document === "undefined" || !document?.fonts) {
-    return registerBrowserFontStyle(font);
-  }
-
-  const existingFace = registeredBrowserFontFaces.get(font.family);
-  if (existingFace && typeof document.fonts.delete === "function") {
-    document.fonts.delete(existingFace);
-  }
-  removeRegisteredBrowserFontStyle(font.family);
-
-  try {
-    const face = new FontFace(font.family, `url("${font.url}")`);
-    await face.load();
-    document.fonts.add(face);
-    registeredBrowserFontFaces.set(font.family, face);
-    return face;
-  } catch {
-    return registerBrowserFontStyle(font);
-  }
+  const registrationKey = font.id || font.family;
+  const previous = registeredBrowserFontFaces.get(registrationKey);
+  if (previous && typeof document.fonts.delete === "function") document.fonts.delete(previous);
+  const face = new FontFace(font.family, `url("${font.url}")`);
+  await face.load();
+  document.fonts.add(face);
+  registeredBrowserFontFaces.set(registrationKey, face);
+  return face;
 }
 
 export async function registerBrowserFonts(fontOptions) {
-  return Promise.allSettled(
-    fontOptions.map((font) => registerBrowserFont(font)),
-  );
+  return Promise.allSettled(fontOptions.map(registerBrowserFont));
 }
 
 export async function loadWorkspaceFontOptions(options = {}) {
-  const records = await fetchWorkspaceFonts(options);
-  return buildFontOptions(records, { includeDeleted: Boolean(options.includeDeleted) });
+  return buildFontOptions(await fetchWorkspaceFonts(options), { includeArchived: Boolean(options.includeArchived) });
 }
 
-export {
-  createWorkspaceFont,
-  deleteWorkspaceFont,
-  replaceWorkspaceFont,
-  updateWorkspaceFontSettings,
-};
+export { archiveWorkspaceFont, createWorkspaceFont, replaceWorkspaceFont, restoreWorkspaceFont, updateWorkspaceFontSettings };

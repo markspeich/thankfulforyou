@@ -407,9 +407,19 @@ async function installDefaultProductionBatchRoutes(page) {
   });
 }
 
+const defaultFontRouteHandler = (route) => route.fulfill({
+  contentType: "application/json",
+  body: JSON.stringify({ fonts: [
+    { id: "candlepin", display_name: "Candlepin Laser", family_name: "CandlepinLaser", public_url: "public/fonts/Candlepin-Laser.otf", file_format: "otf", version: 1 },
+    { id: "skywalk", display_name: "Skywalk Laser", family_name: "SkywalkLaser", public_url: "public/fonts/SkywalkLaserRegular.otf", file_format: "otf", version: 1 },
+    { id: "somekind", display_name: "Somekind", family_name: "Somekind", public_url: "public/fonts/Somekind.ttf", file_format: "ttf", version: 1 },
+  ] }),
+});
+
 test.beforeEach(async ({ page, request }) => {
   await installSupabaseSession(page);
   await installDefaultProductionBatchRoutes(page);
+  await page.route("**/api/fonts**", defaultFontRouteHandler);
   await request.delete("/api/batch-snapshot?workspaceKey=primary").catch(() => null);
   await page.addInitScript(() => {
     window.localStorage.removeItem("thankfulforyou.designBatch");
@@ -470,7 +480,7 @@ test("switches between order items, presets, and size guides from the left nav",
   await expect(fontsWorkspace.getByRole("heading", { name: "Fonts" })).toBeVisible();
   await expect(fontsWorkspace.getByRole("button", { name: /Candlepin Laser/ })).toBeVisible();
   await expect(fontsWorkspace.getByRole("button", { name: "Upload New Version" })).toBeEnabled();
-  await expect(fontsWorkspace.getByRole("button", { name: "Delete font" })).toBeDisabled();
+  await expect(fontsWorkspace.getByRole("button", { name: "Archive font" })).toBeEnabled();
   await expect(fontsWorkspace.getByText("Built-in", { exact: true })).toHaveCount(0);
   const candlepinPreview = fontsWorkspace.locator('.font-library-row[data-font-id="candlepin"] .font-library-preview');
   await expect(candlepinPreview).toHaveText("Candlepin Laser");
@@ -553,8 +563,6 @@ test("loads workspace fonts into the Fonts workspace and line controls", async (
             public_url: "public/fonts/Candlepin-Laser.otf",
             file_format: "otf",
             version: 1,
-            is_builtin: false,
-            deleted_at: null,
           },
         ],
       }),
@@ -586,8 +594,6 @@ test("shows uploaded font guidance as neutral information", async ({ page }) => 
             public_url: "public/fonts/Candlepin-Laser.otf",
             file_format: "otf",
             version: 1,
-            is_builtin: false,
-            deleted_at: null,
           },
         ],
       }),
@@ -602,11 +608,46 @@ test("shows uploaded font guidance as neutral information", async ({ page }) => 
   });
   await page.locator("#fontsWorkspace .font-library-row", { hasText: "Clinic Sans" }).click();
 
-  await expect(status).toHaveText("Uploaded fonts can be replaced with a new version or deleted from future selections.");
+  await expect(status).toHaveText("This font can be replaced with a new version or archived from future selections.");
   await expect(status).not.toHaveAttribute("data-state", "error");
 });
 
-test("shows original production fonts as versionable but not deletable", async ({ page }) => {
+test("registers a replaced Candlepin asset instead of rendering a fallback font", async ({ page }) => {
+  await page.addInitScript(() => {
+    const NativeFontFace = window.FontFace;
+    window.FontFace = class TrackedFontFace extends NativeFontFace {
+      constructor(family, source, descriptors) {
+        super(family, source, descriptors);
+        this.trackedSource = source;
+      }
+    };
+    const add = document.fonts.add.bind(document.fonts);
+    window.__registeredWorkspaceFontFaces = [];
+    document.fonts.add = (face) => {
+      window.__registeredWorkspaceFontFaces.push({ family: face.family, source: face.trackedSource });
+      return add(face);
+    };
+  });
+  let analyzedLayout = null;
+  let exportedLayout = null;
+  const replacementAnalysis = buildMockAnalysisResponse({
+    facePath: "M2 2 L12 2 L12 12 L2 12 Z",
+    exportFacePath: "M2 2 L12 2 L12 12 L2 12 Z",
+  });
+  await page.route("**/api/layout-analyze", async (route) => {
+    analyzedLayout = route.request().postDataJSON()?.layout || null;
+    await route.fulfill({
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify(replacementAnalysis),
+    });
+  });
+  await page.route("**/api/export-svg", async (route) => {
+    exportedLayout = route.request().postDataJSON() || null;
+    await route.fulfill({
+      contentType: "image/svg+xml; charset=utf-8",
+      body: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"></svg>',
+    });
+  });
   await page.route("**/api/fonts**", async (route) => {
     await route.fulfill({
       status: 200,
@@ -617,11 +658,9 @@ test("shows original production fonts as versionable but not deletable", async (
             id: "candlepin",
             display_name: "Candlepin Shop Version",
             family_name: "WorkspaceFont_Candlepin_Shop_Version",
-            public_url: "public/fonts/Candlepin-Laser.otf",
+            public_url: "public/fonts/Candlepin-Laser.otf?v=2",
             file_format: "otf",
             version: 2,
-            is_builtin: true,
-            deleted_at: null,
           },
         ],
       }),
@@ -631,7 +670,18 @@ test("shows original production fonts as versionable but not deletable", async (
   await page.goto("/fonts/candlepin");
 
   await expect(page.locator("#selectedFontName")).toHaveText("Candlepin Shop Version");
-  await expect(page.locator("#selectedFontMeta")).toContainText("Built-in production font");
+  const candlepinPreview = page.locator("#selectedFontPreview");
+  await expect.poll(async () => candlepinPreview.evaluate((element) => window.getComputedStyle(element).fontFamily))
+    .toContain("WorkspaceFont_Candlepin_Shop_Version");
+  await expect.poll(async () => candlepinPreview.evaluate(() => (
+    document.fonts.check('16px "WorkspaceFont_Candlepin_Shop_Version"')
+  ))).toBe(true);
+  await expect.poll(async () => page.evaluate(() => window.__registeredWorkspaceFontFaces))
+    .toContainEqual({
+      family: "WorkspaceFont_Candlepin_Shop_Version",
+      source: 'url("/public/fonts/Candlepin-Laser.otf?v=2")',
+    });
+  await expect(page.locator("#selectedFontMeta")).toContainText("Available");
   await expect(page.locator("#selectedFontMeta")).toContainText("v2");
   await expect(page.locator("#fontDisplayNameInput")).toBeEnabled();
   await expect(page.locator("#fontPreviewTextInput")).toHaveValue("ABCDEFGHIJKLMNOPQRSTUVWXYZ\nabcdefghijklmnopqrstuvwxyz");
@@ -639,8 +689,8 @@ test("shows original production fonts as versionable but not deletable", async (
   await page.locator("#fontPreviewTextInput").fill("Badge\nReel");
   await expect(page.locator("#selectedFontPreview")).toHaveText("Badge\nReel");
   await expect(page.getByRole("button", { name: "Upload New Version" })).toBeEnabled();
-  await expect(page.getByRole("button", { name: "Delete font" })).toBeDisabled();
-  await expect(page.locator("#fontEditorStatus")).toHaveText("Original production fonts can be replaced with a new version while keeping their stable design and preset references.");
+  await expect(page.getByRole("button", { name: "Archive font" })).toBeEnabled();
+  await expect(page.locator("#fontEditorStatus")).toHaveText("This font can be replaced with a new version or archived from future selections.");
   const fontPresetCard = page.locator("#fontUsedByPresetsList");
   await expect(page.locator("#fontsWorkspace").getByRole("heading", { level: 3, name: "Used by Presets" })).toBeVisible();
   await expect(fontPresetCard).toContainText("All Candlepin");
@@ -654,9 +704,106 @@ test("shows original production fonts as versionable but not deletable", async (
   await fontPresetLink.click();
   await expect(page).toHaveURL(/\/presets\/preset-a1f4c8e2b601$/);
   await expect(page.locator("#presetDraftName")).toHaveValue("All Candlepin");
+
+  await page.goto("/production-batch");
+  await clickBatchAction(page, "Add Design");
+  await page.getByRole("textbox", { name: "Design Text" }).fill("Nurse Joy");
+  await page.locator("#captureButton").click();
+  await expect.poll(() => analyzedLayout?.letters?.map((letter) => letter.fontPath))
+    .toEqual(expect.arrayContaining(["public/fonts/Candlepin-Laser.otf?v=2"]));
+
+  await page.locator(".editor-tools-toggle").click();
+  await page.getByRole("button", { name: "Export This Design" }).click();
+  await expect.poll(() => exportedLayout?.letters?.map((letter) => letter.fontPath))
+    .toEqual(expect.arrayContaining(["public/fonts/Candlepin-Laser.otf?v=2"]));
+  await expect.poll(() => exportedLayout?.analysis?.exportFacePath)
+    .toBe(replacementAnalysis.exportFacePath);
 });
 
-test("does not offer deleted fonts as new production batch font choices", async ({ page }) => {
+test("retains the current archived font but excludes other archived fonts from production choices", async ({ page }) => {
+  const archivedAssetUrl = "public/fonts/Candlepin-Laser.otf?v=2";
+  const archivedFamily = "WorkspaceFont_Candlepin_Archived";
+  const archivedSettings = {
+    text: "Archived Nurse",
+    presetId: "preset-a1f4c8e2b601",
+    boundingSizePresetId: "size-2-2x1-5",
+    backingMm: 3.2,
+    weldExportedDesign: false,
+    lines: [
+      {
+        fontId: "candlepin",
+        bridgeMm: 0.5,
+        lineBridgeMm: 0.5,
+        offsetXMm: 0,
+        fontSizeMm: 34,
+        horizontalScale: 1,
+        verticalScale: 1,
+        lockTextHeight: false,
+      },
+    ],
+  };
+  let analyzedLayout = null;
+  let exportedLayout = null;
+
+  await page.addInitScript(() => {
+    const descriptor = Object.getOwnPropertyDescriptor(CanvasRenderingContext2D.prototype, "font");
+    window.__previewCanvasFonts = [];
+    if (!descriptor?.get || !descriptor?.set) {
+      return;
+    }
+    Object.defineProperty(CanvasRenderingContext2D.prototype, "font", {
+      configurable: descriptor.configurable,
+      enumerable: descriptor.enumerable,
+      get: descriptor.get,
+      set(value) {
+        window.__previewCanvasFonts.push(String(value));
+        descriptor.set.call(this, value);
+      },
+    });
+  });
+  await page.route("**/api/production-batch?batchId=batch-1", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify({
+        batch: { id: "batch-1", workspaceId: "workspace-1" },
+        activeOrderItemId: "archived-font-design",
+        orderItems: [
+          {
+            id: "archived-font-design",
+            revision: 4,
+            text: archivedSettings.text,
+            status: "in-progress",
+            settings: archivedSettings,
+            cachedBuild: null,
+            previousCompletedBuild: null,
+            savedSettingsSignature: null,
+            completedSettingsSignature: null,
+            analysisBadge: null,
+            pendingAnalysisSignature: null,
+            source: {
+              listingTitle: "Existing archived-font design",
+              buyerName: "Archive Tester",
+            },
+          },
+        ],
+      }),
+    });
+  });
+  await page.route("**/api/layout-analyze", async (route) => {
+    analyzedLayout = route.request().postDataJSON()?.layout || null;
+    await route.fulfill({
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify(buildMockAnalysisResponse()),
+    });
+  });
+  await page.route("**/api/export-svg", async (route) => {
+    exportedLayout = route.request().postDataJSON() || null;
+    await route.fulfill({
+      contentType: "image/svg+xml; charset=utf-8",
+      body: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"></svg>',
+    });
+  });
   await page.route("**/api/fonts**", async (route) => {
     await route.fulfill({
       status: 200,
@@ -666,36 +813,196 @@ test("does not offer deleted fonts as new production batch font choices", async 
           {
             id: "candlepin",
             display_name: "Candlepin",
-            family_name: "WorkspaceFont_Candlepin_Deleted",
-            public_url: "public/fonts/Candlepin-Laser.otf",
+            family_name: archivedFamily,
+            public_url: archivedAssetUrl,
             file_format: "otf",
             version: 2,
-            is_builtin: true,
-            deleted_at: "2026-06-14T00:00:00.000Z",
+            archived_at: "2026-06-14T00:00:00.000Z",
           },
           {
-            id: "font-deleted",
-            display_name: "Deleted Upload",
-            family_name: "DeletedUpload",
+            id: "font-archived",
+            display_name: "Archived Upload",
+            family_name: "ArchivedUpload",
             public_url: "public/fonts/Candlepin-Laser.otf",
             file_format: "otf",
             version: 1,
-            is_builtin: false,
-            deleted_at: "2026-06-14T00:00:00.000Z",
+            archived_at: "2026-06-14T00:00:00.000Z",
           },
         ],
       }),
     });
   });
 
-  await page.goto("/");
-  await clickBatchAction(page, "Add Design");
-  await page.getByRole("textbox", { name: "Design Text" }).fill("Nurse Joy");
+  await page.goto("/production-batch");
+  await expect(page.getByRole("textbox", { name: "Design Text" })).toHaveValue("Archived Nurse");
 
   const fontSelect = page.locator('[data-line-index="0"] [data-setting="fontId"]');
-  await expect(fontSelect).toContainText("Candlepin Laser");
-  await expect(fontSelect).not.toContainText("Candlepin (deleted)");
-  await expect(fontSelect).not.toContainText("Deleted Upload");
+  await expect(fontSelect).toHaveValue("candlepin");
+  await expect(fontSelect).toContainText("Candlepin (archived)");
+  await expect(fontSelect).not.toContainText("Archived Upload");
+  await expect(fontSelect.locator('option[value="candlepin"]')).toHaveJSProperty("disabled", false);
+  await expect.poll(async () => page.evaluate((family) => (
+    window.__previewCanvasFonts.some((font) => font.includes(`"${family}"`))
+  ), archivedFamily)).toBe(true);
+
+  await expect(page.locator("#captureButton")).toBeEnabled();
+  await page.locator("#captureButton").click();
+  await expect.poll(() => (
+    analyzedLayout?.letters?.length > 0
+      && analyzedLayout.letters.every((letter) => letter.fontPath === archivedAssetUrl)
+  )).toBe(true);
+
+  await page.locator(".editor-tools-toggle").click();
+  await page.getByRole("button", { name: "Export This Design" }).click();
+  await expect.poll(() => (
+    exportedLayout?.letters?.length > 0
+      && exportedLayout.letters.every((letter) => letter.fontPath === archivedAssetUrl)
+  )).toBe(true);
+
+  await page.getByRole("button", { name: "Presets" }).click();
+  const presetFontSelect = page.locator('select[data-preset-rule-key="first"][data-setting="fontId"]');
+  await expect(presetFontSelect).toHaveValue("candlepin");
+  await expect(presetFontSelect).toContainText("Candlepin (archived)");
+  await expect(presetFontSelect).not.toContainText("Archived Upload");
+  await expect(presetFontSelect.locator('option[value="candlepin"]')).toHaveJSProperty("disabled", false);
+});
+
+test("archives and restores Candlepin through the Fonts workspace", async ({ page }) => {
+  let candlepinArchivedAt = null;
+  const lifecyclePayloads = [];
+  await page.route("**/api/fonts**", async (route) => {
+    const request = route.request();
+    if (request.method() === "PATCH") {
+      const payload = request.postDataJSON();
+      lifecyclePayloads.push(payload);
+      candlepinArchivedAt = payload.lifecycle === "archive"
+        ? "2026-08-05T20:00:00.000Z"
+        : null;
+      await route.fulfill({
+        contentType: "application/json; charset=utf-8",
+        body: JSON.stringify({
+          font: {
+            id: "candlepin",
+            archived_at: candlepinArchivedAt,
+          },
+        }),
+      });
+      return;
+    }
+
+    await route.fulfill({
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify({
+        fonts: [
+          {
+            id: "candlepin",
+            display_name: "Candlepin Laser",
+            family_name: "CandlepinLaser",
+            public_url: "public/fonts/Candlepin-Laser.otf",
+            file_format: "otf",
+            version: 1,
+            archived_at: candlepinArchivedAt,
+          },
+          {
+            id: "skywalk",
+            display_name: "Skywalk Laser",
+            family_name: "SkywalkLaser",
+            public_url: "public/fonts/SkywalkLaserRegular.otf",
+            file_format: "otf",
+            version: 1,
+          },
+          {
+            id: "somekind",
+            display_name: "Somekind",
+            family_name: "Somekind",
+            public_url: "public/fonts/Somekind.ttf",
+            file_format: "ttf",
+            version: 1,
+          },
+        ],
+      }),
+    });
+  });
+
+  await page.goto("/fonts/candlepin");
+  await page.getByRole("button", { name: "Archive font" }).click();
+  const dialog = page.locator("#confirmationDialog");
+  await expect(dialog.locator("#confirmationDialogTitle")).toHaveText("Archive Font?");
+  await expect(dialog.locator("#confirmationDialogDescription")).toContainText("Existing saved designs and presets will continue to use it.");
+  await dialog.locator("#confirmationDialogConfirmButton").click();
+
+  await expect(page.getByRole("button", { name: "Restore font" })).toBeEnabled();
+  await expect(page.locator("#fontEditorStatus")).toHaveText("Font archived from future selections.");
+  expect(lifecyclePayloads).toEqual([{ lifecycle: "archive" }]);
+
+  await page.getByRole("button", { name: "Restore font" }).click();
+  await expect(page.getByRole("button", { name: "Archive font" })).toBeEnabled();
+  await expect(page.locator("#fontEditorStatus")).toHaveText("Font restored.");
+  expect(lifecyclePayloads).toEqual([{ lifecycle: "archive" }, { lifecycle: "restore" }]);
+});
+
+test("shows a visible warning when a selected font asset cannot load", async ({ page }) => {
+  let analysisRequestCount = 0;
+  await page.route("**/api/layout-analyze", async (route) => {
+    analysisRequestCount += 1;
+    await route.fulfill({
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify(buildMockAnalysisResponse()),
+    });
+  });
+  await page.route("**/api/fonts**", (route) => route.fulfill({
+    contentType: "application/json; charset=utf-8",
+    body: JSON.stringify({
+      fonts: [
+        {
+          id: "candlepin",
+          display_name: "Broken Candlepin",
+          family_name: "BrokenCandlepin",
+          public_url: "public/fonts/does-not-exist.otf",
+          file_format: "otf",
+          version: 7,
+        },
+        {
+          id: "skywalk",
+          display_name: "Skywalk Laser",
+          family_name: "SkywalkLaser",
+          public_url: "public/fonts/SkywalkLaserRegular.otf",
+          file_format: "otf",
+          version: 1,
+        },
+        {
+          id: "somekind",
+          display_name: "Somekind",
+          family_name: "Somekind",
+          public_url: "public/fonts/Somekind.ttf",
+          file_format: "ttf",
+          version: 1,
+        },
+      ],
+    }),
+  }));
+
+  await page.goto("/fonts/candlepin");
+
+  await expect(page.locator("#fontEditorStatus")).toHaveAttribute("data-state", "error");
+  await expect(page.locator("#fontEditorStatus")).toContainText("Broken Candlepin");
+  await expect(page.locator("#fontEditorStatus")).toContainText("failed to load");
+
+  await page.getByRole("button", { name: "Production Batch" }).click();
+  await clickBatchAction(page, "Add Design");
+  await page.getByRole("textbox", { name: "Design Text" }).fill("Nurse Joy");
+  await expect(page.locator('[data-line-index="0"] [data-setting="fontId"]'))
+    .toContainText("Broken Candlepin (load failed)");
+  await expect(page.locator("#connectionStatusLabel")).toHaveText("Font unavailable");
+  await expect(page.locator("#connectionStatusDetail")).toContainText("Open Fonts to repair the asset or select an available font");
+  await expect(page.locator("#connectionStatusDetail")).toContainText("before previewing, saving, analyzing, or exporting");
+  await expect(page.locator("#preview .face-layer")).toHaveCount(0);
+  await expect(page.locator("#captureButton")).toBeDisabled();
+  await expect(page.locator("#completeNextButton")).toBeDisabled();
+  await page.locator(".editor-tools-toggle").click();
+  await expect(page.getByRole("button", { name: "Export This Design" })).toBeDisabled();
+  await page.waitForTimeout(250);
+  expect(analysisRequestCount).toBe(0);
 });
 
 test("saves the font bridging setting from the Fonts workspace checkbox", async ({ page }) => {
@@ -719,9 +1026,7 @@ test("saves the font bridging setting from the Fonts workspace checkbox", async 
             public_url: "public/fonts/Candlepin-Laser.otf",
             file_format: "otf",
             version: 1,
-            is_builtin: false,
             bridging_enabled: bridgingEnabled,
-            deleted_at: null,
           },
         }),
       });
@@ -740,9 +1045,7 @@ test("saves the font bridging setting from the Fonts workspace checkbox", async 
             public_url: "public/fonts/Candlepin-Laser.otf",
             file_format: "otf",
             version: 1,
-            is_builtin: false,
             bridging_enabled: bridgingEnabled,
-            deleted_at: null,
           },
         ],
       }),
@@ -764,7 +1067,7 @@ test("saves font display name changes from the Fonts workspace Save button", asy
   let displayName = "Connected Script";
   let patchPayload = null;
 
-  await page.route("**/api/fonts**", async (route) => {
+  const displayNameFontRouteHandler = async (route) => {
     const request = route.request();
 
     if (request.method() === "PATCH") {
@@ -781,9 +1084,7 @@ test("saves font display name changes from the Fonts workspace Save button", asy
             public_url: "public/fonts/Candlepin-Laser.otf",
             file_format: "otf",
             version: 1,
-            is_builtin: false,
             bridging_enabled: true,
-            deleted_at: null,
           },
         }),
       });
@@ -802,19 +1103,19 @@ test("saves font display name changes from the Fonts workspace Save button", asy
             public_url: "public/fonts/Candlepin-Laser.otf",
             file_format: "otf",
             version: 1,
-            is_builtin: false,
             bridging_enabled: true,
-            deleted_at: null,
           },
         ],
       }),
     });
-  });
+  };
+  await page.unroute("**/api/fonts**", defaultFontRouteHandler);
+  await page.route("**/api/fonts**", displayNameFontRouteHandler);
 
   await page.goto("/fonts/font-connected-script");
 
   const saveButton = page.getByRole("button", { name: "Save font display name" });
-  await expect(page.locator("#fontEditorStatus")).toHaveText("Uploaded fonts can be replaced with a new version or deleted from future selections.");
+  await expect(page.locator("#fontEditorStatus")).toHaveText("This font can be replaced with a new version or archived from future selections.");
   await expect(saveButton).toBeDisabled();
 
   await page.locator("#fontDisplayNameInput").fill("Connected Script Display");
@@ -845,8 +1146,6 @@ test("keeps the font workspace stable after a successful upload", async ({ page 
             public_url: "public/fonts/Candlepin-Laser.otf",
             file_format: "otf",
             version: 1,
-            is_builtin: false,
-            deleted_at: null,
           },
         }),
       });
@@ -865,8 +1164,6 @@ test("keeps the font workspace stable after a successful upload", async ({ page 
             public_url: "public/fonts/Candlepin-Laser.otf",
             file_format: "otf",
             version: 1,
-            is_builtin: false,
-            deleted_at: null,
           },
         ],
       }),

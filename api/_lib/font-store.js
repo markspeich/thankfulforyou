@@ -18,7 +18,6 @@ const FONT_STORAGE_BUCKET_OPTIONS = Object.freeze({
   ],
 });
 const SUPPORTED_FONT_EXTENSIONS = new Set(["otf", "ttf", "woff", "woff2"]);
-const ORIGINAL_PRODUCTION_FONT_IDS = new Set(["candlepin", "skywalk", "somekind"]);
 const CONTENT_TYPE_BY_FORMAT = {
   otf: "font/otf",
   ttf: "font/ttf",
@@ -225,12 +224,6 @@ export function rejectMissingFontReplacement(font) {
   }
 }
 
-export function rejectBuiltinFontDeletion(font) {
-  if (font?.is_builtin || font?.isBuiltin || ORIGINAL_PRODUCTION_FONT_IDS.has(font?.id)) {
-    throw createFontStoreError(400, "Original production fonts cannot be deleted.");
-  }
-}
-
 export function normalizeFontRow(row) {
   if (!row) {
     return null;
@@ -246,9 +239,8 @@ export function normalizeFontRow(row) {
     file_name: row.file_name,
     file_format: row.file_format,
     version: row.version,
-    is_builtin: row.is_builtin,
     bridging_enabled: typeof row.bridging_enabled === "boolean" ? row.bridging_enabled : true,
-    deleted_at: row.deleted_at,
+    archived_at: row.archived_at ?? row.deleted_at ?? null,
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
@@ -319,17 +311,18 @@ async function uploadFontObject(supabase, storagePath, file, contentType) {
   }
 }
 
-export async function listWorkspaceFonts({ workspaceId, includeDeleted = false }) {
+export async function listWorkspaceFonts({ workspaceId, includeArchived = false }) {
   const supabase = createSupabaseAdminClient();
   let query = supabase
     .from("fonts")
-    .select("id, workspace_id, display_name, family_name, storage_bucket, storage_path, public_url, file_name, file_format, version, is_builtin, bridging_enabled, deleted_at, created_at, updated_at")
+    .select("id, workspace_id, display_name, family_name, storage_bucket, storage_path, public_url, file_name, file_format, version, bridging_enabled, archived_at, deleted_at, created_at, updated_at")
     .eq("workspace_id", workspaceId)
-    .order("is_builtin", { ascending: false })
     .order("display_name", { ascending: true });
 
-  if (!includeDeleted) {
-    query = query.is("deleted_at", null);
+  if (!includeArchived) {
+    query = query
+      .is("archived_at", null)
+      .is("deleted_at", null);
   }
 
   const { data, error } = await query;
@@ -373,8 +366,8 @@ export async function createWorkspaceFont({ workspaceId, displayName, file }) {
     file_name: upload.fileName,
     file_format: upload.fileFormat,
     version,
-    is_builtin: false,
     bridging_enabled: true,
+    archived_at: null,
     deleted_at: null,
   };
 
@@ -439,7 +432,6 @@ export async function replaceWorkspaceFont({ workspaceId, fontId, file }) {
       file_name: upload.fileName,
       file_format: upload.fileFormat,
       version,
-      deleted_at: null,
       updated_at: new Date().toISOString(),
     })
     .eq("workspace_id", workspaceId)
@@ -483,16 +475,17 @@ export async function updateWorkspaceFontSettings({ workspaceId, fontId, display
   return normalizeFontRow(data);
 }
 
-export async function deleteWorkspaceFont({ workspaceId, fontId }) {
+export async function archiveWorkspaceFont({ workspaceId, fontId }) {
   const supabase = createSupabaseAdminClient();
-  const existing = await getWorkspaceFontOrThrow(supabase, { workspaceId, fontId });
-  rejectBuiltinFontDeletion(existing);
+  await getWorkspaceFontOrThrow(supabase, { workspaceId, fontId });
+  const archivedAt = new Date().toISOString();
 
   const { data, error } = await supabase
     .from("fonts")
     .update({
-      deleted_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
+      archived_at: archivedAt,
+      deleted_at: archivedAt,
+      updated_at: archivedAt,
     })
     .eq("workspace_id", workspaceId)
     .eq("id", fontId)
@@ -503,5 +496,25 @@ export async function deleteWorkspaceFont({ workspaceId, fontId }) {
     throw error;
   }
 
+  return normalizeFontRow(data);
+}
+
+export async function restoreWorkspaceFont({ workspaceId, fontId }) {
+  const supabase = createSupabaseAdminClient();
+  await getWorkspaceFontOrThrow(supabase, { workspaceId, fontId });
+  const { data, error } = await supabase
+    .from("fonts")
+    .update({
+      archived_at: null,
+      deleted_at: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("workspace_id", workspaceId)
+    .eq("id", fontId)
+    .select()
+    .single();
+  if (error) {
+    throw error;
+  }
   return normalizeFontRow(data);
 }

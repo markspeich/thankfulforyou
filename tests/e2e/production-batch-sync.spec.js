@@ -1,6 +1,11 @@
 import { expect, test } from "playwright/test";
+import { installSeededFontRoute } from "./font-test-routes.js";
 
 test.describe.configure({ mode: "serial" });
+
+test.beforeEach(async ({ page }) => {
+  await installSeededFontRoute(page);
+});
 
 function installSupabaseSession(page) {
   return page.addInitScript(({ providedSession }) => {
@@ -102,6 +107,36 @@ function buildTestSettingsSignature(settings = {}) {
   });
 }
 
+function buildCachedTextLetters(settings) {
+  const textLines = typeof settings?.text === "string" ? settings.text.split(/\r?\n/) : [];
+  const configuredLines = Array.isArray(settings?.lines)
+    ? settings.lines.filter((line) => line?.kind !== "fixedSvg")
+    : [];
+  const fontPaths = {
+    candlepin: "public/fonts/Candlepin-Laser.otf",
+    skywalk: "public/fonts/SkywalkLaserRegular.otf",
+    somekind: "public/fonts/Somekind.ttf",
+  };
+
+  return textLines.flatMap((textLine, lineIndex) => {
+    const line = configuredLines[lineIndex] || configuredLines[0] || {};
+    return [...textLine].flatMap((character, characterIndex) => (
+      character.trim()
+        ? [{
+            character,
+            x: 2 + characterIndex * 2,
+            y: 5 + lineIndex * 5,
+            fontId: line.fontId,
+            fontPath: fontPaths[line.fontId],
+            fontSizeMm: line.fontSizeMm,
+            horizontalScale: line.horizontalScale,
+            verticalScale: line.verticalScale,
+          }]
+        : []
+    ));
+  });
+}
+
 function buildCompletedRemoteOrder(overrides = {}) {
   const settings = overrides.settings || {
     text: "Saved Linked\nPreset",
@@ -171,7 +206,7 @@ function buildCompletedRemoteOrder(overrides = {}) {
           lineScaleFactors: [1, 1],
           overflowsGuide: false,
         },
-        letters: [],
+        letters: buildCachedTextLetters(settings),
       },
       analysis: buildMockAnalysisResponse(),
     },

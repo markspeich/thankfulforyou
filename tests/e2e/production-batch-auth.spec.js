@@ -1,4 +1,5 @@
 import { expect, test } from "playwright/test";
+import { installSeededFontRoute } from "./font-test-routes.js";
 
 function installSupabaseSession(page, session) {
   return page.addInitScript(({ providedSession }) => {
@@ -210,6 +211,7 @@ test("returns to the sign-in state when a production batch save gets a 401", asy
       email: "mark@example.com",
     },
   });
+  await installSeededFontRoute(page);
 
   await page.route("**/api/batch-session", async (route) => {
     await route.fulfill({

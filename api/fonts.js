@@ -1,9 +1,10 @@
 import { resolveProductionBatchAuth } from "./_lib/production-batch-auth.js";
 import {
   createWorkspaceFont,
-  deleteWorkspaceFont,
+  archiveWorkspaceFont,
   listWorkspaceFonts,
   replaceWorkspaceFont,
+  restoreWorkspaceFont,
   updateWorkspaceFontSettings,
 } from "./_lib/font-store.js";
 
@@ -33,6 +34,7 @@ function readFontSettingsPayload(req) {
   return {
     displayName: typeof body.displayName === "string" ? body.displayName.trim() : undefined,
     bridgingEnabled: body.bridgingEnabled,
+    lifecycle: body.lifecycle,
   };
 }
 
@@ -54,7 +56,7 @@ export default async function handler(req, res) {
     if (req.method === "GET") {
       const fonts = await listWorkspaceFonts({
         workspaceId: req.auth.workspaceId,
-        includeDeleted: req.query?.includeDeleted === "true",
+        includeArchived: req.query?.includeArchived === "true",
       });
       res.status(200).json({ fonts });
       return;
@@ -97,9 +99,16 @@ export default async function handler(req, res) {
 
     if (req.method === "PATCH") {
       const fontId = readFontId(req);
-      const { displayName, bridgingEnabled } = readFontSettingsPayload(req);
+      const { displayName, bridgingEnabled, lifecycle } = readFontSettingsPayload(req);
       if (!fontId) {
         res.status(400).json({ error: "fontId is required." });
+        return;
+      }
+      if (lifecycle === "archive" || lifecycle === "restore") {
+        const font = lifecycle === "archive"
+          ? await archiveWorkspaceFont({ workspaceId: req.auth.workspaceId, fontId })
+          : await restoreWorkspaceFont({ workspaceId: req.auth.workspaceId, fontId });
+        res.status(200).json({ font });
         return;
       }
       if (typeof bridgingEnabled !== "boolean") {
@@ -120,21 +129,7 @@ export default async function handler(req, res) {
       return;
     }
 
-    if (req.method === "DELETE") {
-      const fontId = readFontId(req);
-      if (!fontId) {
-        res.status(400).json({ error: "fontId is required." });
-        return;
-      }
-      const font = await deleteWorkspaceFont({
-        workspaceId: req.auth.workspaceId,
-        fontId,
-      });
-      res.status(200).json({ font });
-      return;
-    }
-
-    res.setHeader("Allow", "GET, POST, PUT, PATCH, DELETE");
+    res.setHeader("Allow", "GET, POST, PUT, PATCH");
     res.status(405).json({ error: "Method not allowed." });
   } catch (error) {
     sendError(res, error);

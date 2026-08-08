@@ -1,4 +1,5 @@
 import { expect, test } from "playwright/test";
+import { installSeededFontRoute } from "./font-test-routes.js";
 
 function installSupabaseSession(page) {
   return page.addInitScript(() => {
@@ -768,6 +769,7 @@ test("ignores stale order detail after a newer selection", async ({ page }) => {
 
 test("refreshes Orders after saving a new manual production batch design", async ({ page }) => {
   await installSupabaseSession(page);
+  await installSeededFontRoute(page);
   const ordersPayload = buildOrdersPayload();
   await installProductionBatchRoutes(page, {
     onPut: async (snapshot) => {
