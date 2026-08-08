@@ -4,7 +4,7 @@
 
 **Goal:** Make every empty-search Orders filter query page-bounded through a transactionally maintained compact order-group projection.
 
-**Architecture:** Add one projection row per workspace/order group, refresh it in the source mutation transaction, and keyset page the projection before hydrating selected complete groups. Nonempty substring search remains source-table based.
+**Architecture:** Add one compact summary per workspace/order group plus one visibility row per workspace/batch/group combination, refresh both transactionally with deterministic group locks, and keyset page the applicable projection before hydration. Nonempty substring search remains source-table based.
 
 **Tech Stack:** PostgreSQL/Supabase migrations and triggers, Node.js, Vitest database tests.
 
@@ -24,12 +24,13 @@
 - Test: `tests/db/orders-store.db.test.js`
 
 **Interfaces:**
-- Produces: `public.order_group_summaries` with `(workspace_id, group_id)` uniqueness, sort key, lifecycle status, active-batch flag, and compact metadata.
-- Produces: `public.refresh_order_group_summary(uuid, text)` and source-table triggers.
+- Produces: `public.order_group_summaries` with `(workspace_id, group_id)` uniqueness, sort key, lifecycle status, and compact metadata.
+- Produces: `public.order_group_batch_visibility` with `(workspace_id, batch_id, group_id)` uniqueness and explicit in-batch visibility.
+- Produces: locked refresh functions and source-table triggers.
 
 - [ ] **Step 1: Write failing database tests**
 
-Seed an isolated multi-item group. Assert the projection initially reports `open`, becomes `complete` when each member completes, toggles `is_in_active_batch` as batch membership changes, updates sort order when a member changes, and deletes its row after its final member is removed.
+Seed an isolated multi-item group and two batches. Assert the summary initially reports `open`, becomes `complete` when each member completes, and each batch visibility row independently toggles as membership changes. Assert sort updates, deletion after its final member is removed, and concurrent member updates leave the final summary correct.
 
 - [ ] **Step 2: Run RED**
 
@@ -37,7 +38,7 @@ Run `npm run test:db:local`; expect the projection relation or refresh behavior 
 
 - [ ] **Step 3: Implement schema, refresh function, triggers, and backfill**
 
-Create the additive projection table and `refresh_order_group_summary`. Derive values from `order_items` and active `batch_items`; delete a row when its group has no remaining items. Install `AFTER INSERT OR UPDATE OR DELETE` trigger functions that refresh old and new group keys as applicable, then backfill every existing group.
+Create additive summary and visibility tables. Derive values from `order_items`, `production_batches`, and active `batch_items`; delete rows when their source group or batch disappears. Refresh functions take a deterministic advisory transaction lock per group before recomputing. Install `AFTER INSERT OR UPDATE OR DELETE` trigger functions that refresh old and new group keys as applicable, then backfill every existing group/batch pair.
 
 - [ ] **Step 4: Run GREEN and commit**
 
@@ -55,7 +56,7 @@ Run `npm run test:db:local` and commit migration/tests as `feat: maintain order 
 
 - [ ] **Step 1: Write failing sparse-filter plan tests**
 
-Seed thousands of newer nonmatching groups and six matching groups for each `complete`, `skipped`, `inBatch`, and `notInBatch` query. Assert correct result groups and JSON EXPLAIN shows a projection index scan, no pre-limit `order_items` scan, and at most `limit + 1` candidate rows.
+Seed thousands of newer nonmatching groups and two batches with opposite memberships. For each `complete`, `skipped`, `inBatch`, and `notInBatch` query assert correct result groups and JSON EXPLAIN shows the applicable summary or batch-visibility projection index scan, no pre-limit `order_items` scan, and at most `limit + 1` candidate rows.
 
 - [ ] **Step 2: Run RED**
 
@@ -63,7 +64,7 @@ Run `npm run test:db:local`; expect the source-table fast path to scan sparse no
 
 - [ ] **Step 3: Implement projection index and empty branch**
 
-Create a workspace/filter/newest-first keyset index. Change only the empty-search CTE to filter and keyset-page `order_group_summaries` before `limit + 1`; retain source hydration and leave nonempty substring search unchanged.
+Create workspace/lifecycle/newest-first and workspace/batch/visibility/newest-first keyset indexes. Change only the empty-search CTE to filter and page `order_group_summaries` for `batch=all`, or `order_group_batch_visibility` for `inBatch` and `notInBatch`, before `limit + 1`; retain source hydration and leave nonempty substring search unchanged.
 
 - [ ] **Step 4: Run GREEN and commit**
 
