@@ -59,6 +59,8 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 
 ## Current Production Requirements
 
+- Empty-search Orders pagination must remain page-bounded as history grows for every lifecycle and active-batch filter, including sparse `Complete`, `Skipped`, `In Batch`, and `Not in Batch` result sets. The database may maintain a transactionally refreshed, compact order-group search projection solely to meet this requirement. The projection must not expose raw customization diagnostics, design lines, cached geometry, or prior builds, and full design details must continue to come from the bounded detail route.
+
 - Authenticated app requests must silently recover from an expired Supabase access token by refreshing the session and retrying the failed request once. Operators should only be returned to sign-in when the session cannot be refreshed or the retried request is still unauthorized.
 - Authentication expiry must not leave an operation progress dialog spinning indefinitely. Every action must settle its dialog into either a completion state or a dismissible error state.
 
