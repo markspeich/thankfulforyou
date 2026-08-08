@@ -57,6 +57,9 @@ function quoteNullableSqlLiteral(value) {
 
 async function explainInlinedOrdersSummaryFunction({
   workspaceId,
+  activeBatchId = null,
+  statusFilter = "all",
+  batchFilter = "all",
   cursorSortKey,
   cursorGroupId,
   limit = 5,
@@ -91,12 +94,15 @@ select replace(
 \gexec
 analyze public.order_items;
 analyze public.designs;
+analyze public.order_group_summaries;
+analyze public.order_group_batch_visibility;
 explain (analyze, buffers, format json)
 select *
 from pg_temp.list_workspace_order_summaries(
   p_workspace_id => ${quoteSqlLiteral(workspaceId)}::uuid,
-  p_status_filter => 'all',
-  p_batch_filter => 'all',
+  p_active_batch_id => ${quoteNullableSqlLiteral(activeBatchId)}::uuid,
+  p_status_filter => ${quoteSqlLiteral(statusFilter)},
+  p_batch_filter => ${quoteSqlLiteral(batchFilter)},
   p_search_term => '',
   p_requested_limit => ${limit},
   p_cursor_sort_key => ${quoteNullableSqlLiteral(cursorSortKey)},
@@ -895,13 +901,23 @@ drop function if exists public.${holdFunctionName}();
       expect(error).toBeNull();
     }
     const filterBatchId = await createTestBatch(`Bounded Filter ${suffix}`, testWorkspaceId);
-    const { error: membershipError } = await supabase.from("batch_items").insert({
-      workspace_id: testWorkspaceId,
-      batch_id: filterBatchId,
-      order_item_id: `bounded-${suffix}-599`,
-      batch_position: 0,
-      status: "active",
-    });
+    const oppositeBatchId = await createTestBatch(`Bounded Opposite ${suffix}`, testWorkspaceId);
+    const { error: membershipError } = await supabase.from("batch_items").insert([
+      {
+        workspace_id: testWorkspaceId,
+        batch_id: filterBatchId,
+        order_item_id: `bounded-${suffix}-599`,
+        batch_position: 0,
+        status: "active",
+      },
+      {
+        workspace_id: testWorkspaceId,
+        batch_id: oppositeBatchId,
+        order_item_id: `bounded-${suffix}-598`,
+        batch_position: 0,
+        status: "active",
+      },
+    ]);
     expect(membershipError).toBeNull();
 
     const cursorSequence = 600;
@@ -991,6 +1007,69 @@ drop function if exists public.${holdFunctionName}();
     expect(inBatchPage.orders[0].items).toHaveLength(2);
     expect(notInBatchPage.orders[0].id).toBe("order:9000000598");
 
+    const sparsePlans = [
+      {
+        relationName: "order_group_summaries",
+        indexNames: ["order_group_summaries_status_page_idx"],
+        options: { statusFilter: "complete" },
+      },
+      {
+        relationName: "order_group_summaries",
+        indexNames: ["order_group_summaries_status_page_idx"],
+        options: { statusFilter: "skipped" },
+      },
+      {
+        relationName: "order_group_batch_visibility",
+        indexNames: [
+          "order_group_batch_visibility_page_idx",
+          "order_group_batch_visibility_status_page_idx",
+        ],
+        options: {
+          activeBatchId: filterBatchId,
+          batchFilter: "inBatch",
+        },
+      },
+      {
+        relationName: "order_group_batch_visibility",
+        indexNames: [
+          "order_group_batch_visibility_page_idx",
+          "order_group_batch_visibility_status_page_idx",
+        ],
+        options: {
+          activeBatchId: filterBatchId,
+          batchFilter: "notInBatch",
+        },
+      },
+    ];
+
+    for (const sparsePlan of sparsePlans) {
+      const explained = await explainInlinedOrdersSummaryFunction({
+        workspaceId: testWorkspaceId,
+        cursorSortKey,
+        cursorGroupId,
+        limit: 1,
+        ...sparsePlan.options,
+      });
+      const planNodes = flattenPlanNodes(explained[0].Plan);
+      const projectionScan = planNodes.find(
+        (node) => node["Relation Name"] === sparsePlan.relationName
+          && sparsePlan.indexNames.includes(node["Index Name"]),
+      );
+      expect(projectionScan, JSON.stringify(planNodes, null, 2)).toBeDefined();
+      expect(
+        (projectionScan["Actual Rows"] + (projectionScan["Rows Removed by Filter"] || 0))
+          * projectionScan["Actual Loops"],
+        JSON.stringify(projectionScan, null, 2),
+      ).toBeLessThanOrEqual(2);
+      expect(
+        planNodes.some(
+          (node) => node["Relation Name"] === "order_items"
+            && node["Index Name"] === "order_items_workspace_newest_group_idx",
+        ),
+        JSON.stringify(planNodes, null, 2),
+      ).toBe(false);
+    }
+
     const firstPagePlan = await explainInlinedOrdersSummaryFunction({
       workspaceId: testWorkspaceId,
       cursorSortKey: null,
@@ -1007,8 +1086,12 @@ drop function if exists public.${holdFunctionName}();
       const planNodes = flattenPlanNodes(explained[0].Plan);
       const orderItemScans = planNodes.filter((node) => node["Relation Name"] === "order_items");
       const orderItemIndexNames = new Set(orderItemScans.map((node) => node["Index Name"]).filter(Boolean));
+      const summaryScan = planNodes.find(
+        (node) => node["Relation Name"] === "order_group_summaries"
+          && node["Index Name"] === "order_group_summaries_page_idx",
+      );
 
-      expect(orderItemIndexNames).toContain("order_items_workspace_newest_group_idx");
+      expect(summaryScan, JSON.stringify(planNodes, null, 2)).toBeDefined();
       expect(orderItemIndexNames).toContain("order_items_workspace_group_members_idx");
       expect(
         orderItemScans.some(
@@ -1016,14 +1099,10 @@ drop function if exists public.${holdFunctionName}();
         ),
         JSON.stringify(orderItemScans, null, 2),
       ).toBe(false);
-      const newestScan = orderItemScans.find(
-        (node) => node["Index Name"] === "order_items_workspace_newest_group_idx",
-      );
-      expect(newestScan).toBeDefined();
       expect(
-        (newestScan["Actual Rows"] + (newestScan["Rows Removed by Filter"] || 0))
-        * newestScan["Actual Loops"],
-        JSON.stringify(newestScan, null, 2),
+        (summaryScan["Actual Rows"] + (summaryScan["Rows Removed by Filter"] || 0))
+        * summaryScan["Actual Loops"],
+        JSON.stringify(summaryScan, null, 2),
       ).toBe(6);
     }
   }, 60_000);

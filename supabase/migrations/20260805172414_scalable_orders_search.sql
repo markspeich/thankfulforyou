@@ -551,6 +551,38 @@ create index if not exists batch_items_active_membership_idx
   on public.batch_items (workspace_id, batch_id, order_item_id)
   where status = 'active';
 
+-- Supports empty-search newest-first paging across every lifecycle state.
+create index if not exists order_group_summaries_page_idx
+  on public.order_group_summaries (workspace_id, sort_key desc, group_id desc);
+
+create index if not exists order_group_summaries_status_page_idx
+  on public.order_group_summaries (
+    workspace_id,
+    group_status,
+    sort_key desc,
+    group_id desc
+  );
+
+-- Supports empty-search newest-first paging for either batch visibility state.
+create index if not exists order_group_batch_visibility_page_idx
+  on public.order_group_batch_visibility (
+    workspace_id,
+    batch_id,
+    is_in_batch,
+    sort_key desc,
+    group_id desc
+  );
+
+create index if not exists order_group_batch_visibility_status_page_idx
+  on public.order_group_batch_visibility (
+    workspace_id,
+    batch_id,
+    is_in_batch,
+    group_status,
+    sort_key desc,
+    group_id desc
+  );
+
 -- Backfill set-wise so the migration does not retain one advisory lock per historical group.
 insert into public.order_group_summaries (
   workspace_id,
@@ -701,124 +733,52 @@ as $$
       end as cursor_order_sort,
       coalesce(p_cursor_group_id, '') as cursor_group_id
   ),
-  empty_page_group_keys as materialized (
-    -- Empty search stays page-bounded: start at the cursor in the newest-first index,
-    -- qualify one newest representative per group, and stop at limit + 1.
-    select
-      case
-        when nullif(btrim(representative.order_number), '') is not null
-          then 'order:' || representative.order_number
-        else 'item:' || representative.id
-      end as group_id,
-      to_char(representative.created_at at time zone 'UTC', 'YYYYMMDDHH24MISSUS')
-        || ':' || case
-          when nullif(btrim(representative.order_number), '') ~ '^[0-9]+$'
-            then '3:' || lpad(btrim(representative.order_number), 64, '0')
-          when nullif(btrim(representative.order_number), '') is not null
-            then '2:' || lower(btrim(representative.order_number))
-          else '1:'
-        end as sort_key
-    from public.order_items representative
-    cross join search_params params
-    cross join cursor_params cursor
-    cross join lateral (
-      select
-        bool_and(group_member.status = 'complete') as all_complete,
-        bool_and(group_member.status = 'skipped') as all_skipped,
-        bool_or(group_member.status = 'open') as any_open,
-        bool_or(exists (
-          select 1
-          from public.batch_items active_membership
-          where p_active_batch_id is not null
-            and active_membership.workspace_id = p_workspace_id
-            and active_membership.batch_id = p_active_batch_id
-            and active_membership.order_item_id = group_member.id
-            and active_membership.status = 'active'
-        )) as any_in_active_batch
-      from public.order_items group_member
-      where group_member.workspace_id = p_workspace_id
-        and (
-          case
-            when nullif(btrim(group_member.order_number), '') is not null
-              then 'order:' || group_member.order_number
-            else 'item:' || group_member.id
-          end
-        ) = (
-          case
-            when nullif(btrim(representative.order_number), '') is not null
-              then 'order:' || representative.order_number
-            else 'item:' || representative.id
-          end
-        )
-    ) group_state
-    where params.escaped_search_term = ''
-      and representative.workspace_id = p_workspace_id
-      and not exists (
-        select 1
-        from public.order_items newer_group_member
-        where newer_group_member.workspace_id = p_workspace_id
-          and (
-            case
-              when nullif(btrim(newer_group_member.order_number), '') is not null
-                then 'order:' || newer_group_member.order_number
-              else 'item:' || newer_group_member.id
-            end
-          ) = (
-            case
-              when nullif(btrim(representative.order_number), '') is not null
-                then 'order:' || representative.order_number
-              else 'item:' || representative.id
-            end
-          )
-          and (newer_group_member.created_at, newer_group_member.id)
-            > (representative.created_at, representative.id)
-      )
-      and (
-          representative.created_at,
-          case
-            when nullif(btrim(representative.order_number), '') ~ '^[0-9]+$'
-              then '3:' || lpad(btrim(representative.order_number), 64, '0')
-            when nullif(btrim(representative.order_number), '') is not null
-              then '2:' || lower(btrim(representative.order_number))
-            else '1:'
-          end,
-          case
-            when nullif(btrim(representative.order_number), '') is not null
-              then 'order:' || representative.order_number
-            else 'item:' || representative.id
-          end
-        ) < (
-          cursor.cursor_created_at,
-          cursor.cursor_order_sort,
-          cursor.cursor_group_id
-        )
-      and (
-        p_status_filter = 'all'
-        or (p_status_filter = 'complete' and group_state.all_complete)
-        or (p_status_filter = 'skipped' and group_state.all_skipped)
-        or (p_status_filter = 'open' and group_state.any_open)
-      )
+  empty_summary_page_group_keys as materialized (
+    -- Empty batch=all search pages compact summary keys before source hydration.
+    select summaries.group_id, summaries.sort_key
+    from public.order_group_summaries summaries
+    where coalesce(p_search_term, '') = ''
+      and summaries.workspace_id = p_workspace_id
       and (
         p_batch_filter = 'all'
-        or (p_batch_filter = 'inBatch' and group_state.any_in_active_batch)
-        or (p_batch_filter = 'notInBatch' and not group_state.any_in_active_batch)
+        or (p_batch_filter = 'notInBatch' and p_active_batch_id is null)
       )
-    order by
-      representative.created_at desc,
-      case
-        when nullif(btrim(representative.order_number), '') ~ '^[0-9]+$'
-          then '3:' || lpad(btrim(representative.order_number), 64, '0')
-        when nullif(btrim(representative.order_number), '') is not null
-          then '2:' || lower(btrim(representative.order_number))
-        else '1:'
-      end desc,
-      case
-        when nullif(btrim(representative.order_number), '') is not null
-          then 'order:' || representative.order_number
-        else 'item:' || representative.id
-      end desc,
-      representative.id desc
+      and (p_status_filter = 'all' or summaries.group_status = p_status_filter)
+      and (
+        p_cursor_sort_key is null
+        or p_cursor_group_id is null
+        or (summaries.sort_key, summaries.group_id)
+          < (p_cursor_sort_key, p_cursor_group_id)
+      )
+    order by summaries.sort_key desc, summaries.group_id desc
     limit least(greatest(coalesce(p_requested_limit, 50), 1), 50) + 1
+  ),
+  empty_visibility_page_group_keys as materialized (
+    -- An explicit batch filter pages its materialized visibility state independently.
+    select visibility.group_id, visibility.sort_key
+    from public.order_group_batch_visibility visibility
+    where coalesce(p_search_term, '') = ''
+      and p_active_batch_id is not null
+      and p_batch_filter in ('inBatch', 'notInBatch')
+      and visibility.workspace_id = p_workspace_id
+      and visibility.batch_id = p_active_batch_id
+      and visibility.is_in_batch = (p_batch_filter = 'inBatch')
+      and (p_status_filter = 'all' or visibility.group_status = p_status_filter)
+      and (
+        p_cursor_sort_key is null
+        or p_cursor_group_id is null
+        or (visibility.sort_key, visibility.group_id)
+          < (p_cursor_sort_key, p_cursor_group_id)
+      )
+    order by visibility.sort_key desc, visibility.group_id desc
+    limit least(greatest(coalesce(p_requested_limit, 50), 1), 50) + 1
+  ),
+  empty_page_group_keys as materialized (
+    select summary_page.group_id, summary_page.sort_key
+    from empty_summary_page_group_keys summary_page
+    union all
+    select visibility_page.group_id, visibility_page.sort_key
+    from empty_visibility_page_group_keys visibility_page
   ),
   searched_eligible_group_keys as (
     -- Non-empty substring search retains the measured workspace-wide search branch.
