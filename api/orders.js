@@ -67,6 +67,48 @@ function encodeCompactCursor({ sortKey, groupId }) {
   return Buffer.from(JSON.stringify({ version: 1, sortKey, groupId })).toString("base64url");
 }
 
+function isCanonicalCursorTimestamp(value) {
+  if (!/^\d{20}$/.test(value)) return false;
+
+  const year = Number(value.slice(0, 4));
+  const month = Number(value.slice(4, 6));
+  const day = Number(value.slice(6, 8));
+  const hour = Number(value.slice(8, 10));
+  const minute = Number(value.slice(10, 12));
+  const second = Number(value.slice(12, 14));
+  const millisecond = Number(value.slice(14, 17));
+
+  if (year < 1 || month < 1 || month > 12 || day < 1 || hour > 23 || minute > 59 || second > 59) {
+    return false;
+  }
+
+  const timestamp = new Date(0);
+  timestamp.setUTCFullYear(year, month - 1, day);
+  timestamp.setUTCHours(hour, minute, second, millisecond);
+  return timestamp.getUTCFullYear() === year
+    && timestamp.getUTCMonth() === month - 1
+    && timestamp.getUTCDate() === day
+    && timestamp.getUTCHours() === hour
+    && timestamp.getUTCMinutes() === minute
+    && timestamp.getUTCSeconds() === second
+    && timestamp.getUTCMilliseconds() === millisecond;
+}
+
+function isCanonicalCompactCursor({ sortKey, groupId }) {
+  const separatorIndex = sortKey.indexOf(":");
+  if (separatorIndex !== 20 || !isCanonicalCursorTimestamp(sortKey.slice(0, separatorIndex))) return false;
+
+  const normalizedKey = sortKey.slice(separatorIndex + 1);
+  const isValidNormalizedKey = normalizedKey === "1:"
+    || /^3:\d{64}$/.test(normalizedKey)
+    || (/^2:.+$/.test(normalizedKey)
+      && normalizedKey.slice(2) === normalizedKey.slice(2).trim().toLowerCase());
+  if (!isValidNormalizedKey) return false;
+  return normalizedKey === "1:"
+    ? /^item:.+$/.test(groupId)
+    : /^order:.+$/.test(groupId);
+}
+
 function decodeCompactCursor(value) {
   const normalized = normalizeString(value);
   if (!normalized) return { value: null };
@@ -82,7 +124,8 @@ function decodeCompactCursor(value) {
       || Object.keys(cursor).sort().join(",") !== expectedKeys.join(",")
       || cursor.version !== 1
       || typeof cursor.sortKey !== "string"
-      || typeof cursor.groupId !== "string") {
+      || typeof cursor.groupId !== "string"
+      || !isCanonicalCompactCursor(cursor)) {
       throw new Error("Invalid cursor values.");
     }
     return { value: cursor };

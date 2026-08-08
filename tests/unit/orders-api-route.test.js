@@ -89,7 +89,7 @@ describe("orders api route", () => {
         batch: " notInBatch ",
         search: " 4118855809 ",
         limit: "50",
-        cursor: encodeCursor({ version: 1, sortKey: "2026-08-05T00:00:00.000Z", groupId: "order:1001" }),
+        cursor: encodeCursor({ version: 1, sortKey: "20260805000000000000:3:0000000000000000000000000000000000000000000000000000000000001001", groupId: "order:1001" }),
       },
     }, response);
 
@@ -100,7 +100,7 @@ describe("orders api route", () => {
       batchFilter: "notInBatch",
       searchTerm: "4118855809",
       limit: 50,
-      cursor: { version: 1, sortKey: "2026-08-05T00:00:00.000Z", groupId: "order:1001" },
+      cursor: { version: 1, sortKey: "20260805000000000000:3:0000000000000000000000000000000000000000000000000000000000001001", groupId: "order:1001" },
     });
     expect(listWorkspaceOrdersMock).not.toHaveBeenCalled();
     expect(response.statusCode).toBe(200);
@@ -130,7 +130,7 @@ describe("orders api route", () => {
   it("serializes a store cursor without exposing its values", async () => {
     const cursorValues = {
       version: 1,
-      sortKey: "2026-08-05T00:00:00.000Z",
+      sortKey: "20260805000000000000:3:0000000000000000000000000000000000000000000000000000000000001050",
       groupId: "order:1050",
     };
     resolveProductionBatchAuthMock.mockResolvedValue({ userId: "user-1", workspaceId: "workspace-1" });
@@ -170,6 +170,7 @@ describe("orders api route", () => {
   it.each([
     ["a malformed cursor", { cursor: "not-base64url" }],
     ["a cursor with unexpected fields", { cursor: encodeCursor({ version: 1, sortKey: "2026-08-05", groupId: "order:1001", extra: true }) }],
+    ["a cursor with a type-valid but out-of-range sort key", { cursor: encodeCursor({ version: 1, sortKey: "20261305000000000000:3:0000000000000000000000000000000000000000000000000000000000001001", groupId: "order:1001" }) }],
     ["limit zero", { limit: "0" }],
     ["a limit above 50", { limit: "51" }],
     ["an unknown status", { status: "pending" }],
