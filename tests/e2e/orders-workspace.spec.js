@@ -280,11 +280,21 @@ async function installOrdersWorkspaceRoutes(page, options = {}) {
       return;
     }
 
+    const url = new URL(request.url());
+    if (url.searchParams.get("view") === "detail") {
+      const orderId = url.searchParams.get("orderId");
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json; charset=utf-8",
+        body: JSON.stringify({ order: (ordersPayload.orders || []).find((order) => order.id === orderId) || null }),
+      });
+      return;
+    }
+
     if (getDelayMs > 0) {
       await new Promise((resolve) => setTimeout(resolve, getDelayMs));
     }
     onGet?.(request);
-    const url = new URL(request.url());
     const status = url.searchParams.get("status") || "open";
     const batch = url.searchParams.get("batch") || "all";
     const search = (url.searchParams.get("search") || "").toLowerCase();
@@ -487,6 +497,54 @@ test("updates and opens bookmarked Orders workspace order URLs", async ({ page }
     .click();
 
   await expect(page).toHaveURL(/\/orders\/order%3A1001$/);
+});
+
+test("hydrates a bookmarked Orders detail that is outside the loaded compact page", async ({ page }) => {
+  await installSupabaseSession(page);
+  await installProductionBatchRoutes(page);
+  const detail = buildOrdersPayload().orders[1];
+  await installOrdersWorkspaceRoutes(page, {
+    ordersPayload: { orders: [buildOrdersPayload().orders[0]], nextCursor: "page-2", hasMore: true },
+  });
+  await page.route("**/api/orders?*view=detail*", async (route) => {
+    await route.fulfill({ json: { order: detail } });
+  });
+
+  await page.goto("/orders/order%3A1002");
+
+  const workspace = page.getByRole("region", { name: "Orders workspace" });
+  await expect(workspace.getByRole("heading", { name: "Order 1002" })).toBeVisible();
+  await expect(workspace.locator(".database-order-row")).toHaveCount(1);
+  await expect(workspace.locator(".database-order-row")).toContainText("Order 1001");
+});
+
+test("keeps the latest selected Orders detail when earlier detail requests finish late", async ({ page }) => {
+  await installSupabaseSession(page);
+  await installProductionBatchRoutes(page);
+  const compactPayload = buildOrdersPayload();
+  compactPayload.orders[1] = { ...compactPayload.orders[1], buyerName: "Compact placeholder" };
+  await installOrdersWorkspaceRoutes(page, { ordersPayload: compactPayload });
+  const releases = new Map();
+  const fulfilledOrderIds = [];
+  await page.route("**/api/orders?*view=detail*", async (route) => {
+    const orderId = new URL(route.request().url()).searchParams.get("orderId");
+    await new Promise((resolve) => releases.set(orderId, resolve));
+    const order = buildOrdersPayload().orders.find((candidate) => candidate.id === orderId);
+    await route.fulfill({ json: { order } });
+    fulfilledOrderIds.push(orderId);
+  });
+
+  await page.goto("/orders");
+  const workspace = page.getByRole("region", { name: "Orders workspace" });
+  await expect.poll(() => releases.has("order:1001")).toBe(true);
+  await workspace.getByRole("button", { name: "Order 1002" }).click();
+  await expect.poll(() => releases.has("order:1002")).toBe(true);
+  releases.get("order:1002")();
+  await expect(workspace.getByRole("heading", { name: "Order 1002" })).toBeVisible();
+  await expect(workspace.locator(".database-order-items-panel .editor-meta")).toContainText("Grace Hopper");
+  releases.get("order:1001")();
+  await expect.poll(() => fulfilledOrderIds.includes("order:1001")).toBe(true);
+  await expect(workspace.locator(".database-order-items-panel .editor-meta")).toContainText("Grace Hopper");
 });
 
 test("identifies Etsy and Amazon in selected imported order headers", async ({ page }) => {
@@ -735,6 +793,10 @@ test("debounces server-filtered order searches and ignores an older response", a
   let resolveGraceResponse;
   await page.route("**/api/orders**", async (route) => {
     const url = new URL(route.request().url());
+    if (url.searchParams.get("view") === "detail") {
+      await route.fulfill({ json: { order: null } });
+      return;
+    }
     const search = url.searchParams.get("search");
     const status = url.searchParams.get("status");
     const batch = url.searchParams.get("batch");
@@ -1205,12 +1267,19 @@ test("shows an Orders paste summary with imported and duplicate counts", async (
 
 test("keeps Orders paste available while workspace orders are loading", async ({ page }) => {
   const orderPosts = [];
+  const ordersPayload = buildOrdersPayload();
   await installSupabaseSession(page);
   await installClipboardText(page, buildClipboardPayload());
   await installProductionBatchRoutes(page);
   await installOrdersWorkspaceRoutes(page, {
     getDelayMs: 5000,
     posts: orderPosts,
+    ordersPayload,
+    onPost(post) {
+      if (post.action === "importClipboardItems") {
+        ordersPayload.orders = buildOrdersPayloadWithImportedOrder().orders;
+      }
+    },
     postBody: buildOrdersPayloadWithImportedOrder(),
   });
 
@@ -1414,7 +1483,10 @@ test("hydrates the selected production batch item after adding from Orders", asy
     ordersPayload,
     onPost(post) {
       if (post.action === "addOrderItemToProductionBatch") {
-        productionBatchOrderItems.push(buildAdaProductionBatchOrderItem());
+        productionBatchOrderItems.push({
+          ...buildAdaProductionBatchOrderItem(),
+          source: { ...buildAdaProductionBatchOrderItem().source, marketplace: "amazon" },
+        });
       }
     },
     postBody: {

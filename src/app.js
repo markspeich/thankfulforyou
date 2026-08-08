@@ -75,6 +75,7 @@ import {
 import {
   addOrderItemToProductionBatch,
   addOrdersToProductionBatch,
+  fetchWorkspaceOrderDetail,
   fetchWorkspaceOrderSummaries,
   importWorkspaceOrders,
   updateOrderItemLifecycleStatus,
@@ -100,7 +101,6 @@ import {
   getOrderLifecycleStatusDescriptor,
   getOrderItemListingText as getDatabaseOrderItemListingText,
   getOrdersRetryLoadOptions,
-  getSelectedGroupedOrder,
   getVisibleOrderSelectionState,
   mergeOrdersPageState,
   normalizeOrdersWorkspaceState,
@@ -521,6 +521,8 @@ const initialAppRoute = readAppRoute();
 let activeWorkspace = initialAppRoute.workspace;
 let databaseOrders = [];
 let selectedDatabaseOrderId = initialAppRoute.workspace === "databaseOrders" ? initialAppRoute.itemId : null;
+let selectedDatabaseOrderDetail = null;
+let databaseOrderDetailGeneration = 0;
 let checkedDatabaseOrderIds = new Set();
 let databaseOrdersLoading = false;
 let databaseOrdersLoadingMode = "idle";
@@ -6163,72 +6165,10 @@ function updateDatabaseOrdersFromPayload(payload, options = {}) {
 }
 
 
-function getDatabaseOrderItemsById(orderItemIds) {
-  const requestedIds = new Set((orderItemIds || []).filter((id) => typeof id === "string" && id));
-  return databaseOrders.flatMap((order) => order.items || []).filter((item) => requestedIds.has(item.id));
-}
-
-function mapDatabaseDesignStatusToBatchStatus(status) {
-  if (status === "exported") return "exported";
-  if (status === "saved" || status === "export_ready") return "captured";
-  if (status === "draft") return "not-started";
-  return "in-progress";
-}
-
-function createBatchItemFromDatabaseOrderItem(item) {
-  const design = item?.design || {};
-  const source = {
-    ...(item?.source && typeof item.source === "object" ? structuredClone(item.source) : {}),
-    orderNumber: item?.orderNumber ?? item?.source?.orderNumber ?? null,
-    buyerName: item?.buyerName ?? item?.source?.buyerName ?? null,
-    listingId: item?.listingId ?? item?.source?.listingId ?? null,
-    transactionId: item?.transactionId ?? item?.source?.transactionId ?? null,
-    colorName: item?.importedColor ?? item?.source?.colorName ?? null,
-    quantity: String(item?.quantity || item?.source?.quantity || 1),
-    shipByDate: item?.shipByDate ?? item?.source?.shipByDate ?? null,
-  };
-  return hydrateStoredOrder({
-    id: item.id,
-    revision: design.revision ?? item.revision,
-    updatedAt: design.updatedAt ?? item.updatedAt,
-    updatedBy: design.updatedBy ?? item.updatedBy,
-    text: design.text || "",
-    status: mapDatabaseDesignStatusToBatchStatus(design.productionStatus),
-    source,
-    settings: {
-      text: design.text || "",
-      presetId: design.presetId,
-      boundingSizePresetId: design.sizeGuideId,
-      backingMm: design.backingBorderMm,
-      weldExportedDesign: design.weldExportedDesign,
-      globalHorizontalScale: design.globalHorizontalScale,
-      globalVerticalScale: design.globalVerticalScale,
-      lines: design.lines || [],
-    },
-    cachedBuild: design.cachedBuild,
-    previousCompletedBuild: design.previousCompletedBuild,
-    savedSettingsSignature: design.savedSettingsSignature,
-    completedSettingsSignature: design.completedSettingsSignature,
-    analysisBadge: design.analysisBadge,
-  }, orders.length);
-}
-
 function applyAddedOrderItemsDelta(payload) {
   const addedIds = Array.isArray(payload?.addedOrderItemIds) ? payload.addedOrderItemIds : [];
   const addedIdSet = new Set(addedIds);
   if (!addedIdSet.size) return 0;
-
-  saveActiveOrderDraft();
-  const existingIds = new Set(orders.map((order) => order.id));
-  const appended = getDatabaseOrderItemsById(addedIds)
-    .filter((item) => !existingIds.has(item.id))
-    .map(createBatchItemFromDatabaseOrderItem)
-    .filter(Boolean);
-  orders.push(...appended);
-  if (!activeOrderItemId && appended.length > 0) {
-    activeOrderItemId = appended[0].id;
-    applySettings(appended[0].settings);
-  }
 
   databaseOrders = databaseOrders.map((order) => {
     const items = (order.items || []).map((item) => (
@@ -6242,17 +6182,12 @@ function applyAddedOrderItemsDelta(payload) {
         ? "skipped"
         : "open";
     return { ...order, status, items, isInActiveBatch: items.some((item) => item.isInActiveBatch) };
-  });
+  }).filter(shouldRetainDatabaseOrderAfterKnownMutation);
 
   databaseOrdersMutationVersion += 1;
   loadedDatabaseOrdersKey = (getActiveProductionBatchId() || "") + "|" + databaseOrdersStatusFilterValue;
-  lastProductionBatchSaveKey = buildProductionBatchSaveKey(buildProductionBatchSnapshot());
-  suppressBatchSyncLocalNotice = true;
-  persistBatchState({ skipRemoteSave: true });
-  suppressBatchSyncLocalNotice = false;
-  renderOrderList();
   renderDatabaseOrdersWorkspace();
-  return appended.length;
+  return addedIdSet.size;
 }
 
 function applyOrderItemsStatusDelta(payload) {
@@ -6331,14 +6266,9 @@ async function refreshOrdersAndProductionBatch({ payload = null, accessToken, re
     await refreshProductionBatchSnapshot(accessToken);
   }
 
-  if (payload) {
-    databaseOrdersMutationVersion += 1;
-  }
-
-  if (!updateDatabaseOrdersFromPayload(payload)) {
-    invalidateDatabaseOrders();
-    await loadDatabaseOrders({ force: true });
-  }
+  if (payload) databaseOrdersMutationVersion += 1;
+  invalidateDatabaseOrders();
+  await loadDatabaseOrders({ force: true });
 }
 function initializeEtsyImportUi() {
   if (!ordersImportActions) return;
@@ -6757,7 +6687,10 @@ async function performDatabaseOrdersLoad({ reset, append }) {
       hasMore: payload?.hasMore,
       reset,
     });
-    updateDatabaseOrdersState(nextState);
+    updateDatabaseOrdersState({
+      ...nextState,
+      selectedOrderId: selectedDatabaseOrderId || nextState.selectedOrderId,
+    });
     databaseOrdersNextCursor = nextState.nextCursor;
     databaseOrdersHasMore = nextState.hasMore;
     loadedDatabaseOrdersKey = loadKey;
@@ -6765,6 +6698,9 @@ async function performDatabaseOrdersLoad({ reset, append }) {
       updateWorkflowAlert("No orders match the current search and filters.", "pending");
     } else {
       updateWorkflowAlert("", "pending", { autoHideMs: 0 });
+    }
+    if (selectedDatabaseOrderId) {
+      void hydrateSelectedDatabaseOrderDetail(selectedDatabaseOrderId);
     }
   } catch (error) {
     if (requestGeneration === databaseOrdersRequestGeneration && error?.name !== "AbortError") {
@@ -6796,16 +6732,50 @@ function updateDatabaseOrderSelectionRows() {
   });
 }
 
+function getSelectedDatabaseOrder() {
+  if (selectedDatabaseOrderDetail?.id === selectedDatabaseOrderId) {
+    return selectedDatabaseOrderDetail;
+  }
+  return databaseOrders.find((order) => order.id === selectedDatabaseOrderId) || null;
+}
+
+async function hydrateSelectedDatabaseOrderDetail(orderId = selectedDatabaseOrderId) {
+  if (!productionBatchAccessToken || typeof orderId !== "string" || !orderId) {
+    return;
+  }
+
+  const selectionGeneration = databaseOrderDetailGeneration;
+  try {
+    const payload = await runProductionBatchRequestWithSessionRefresh((accessToken) => fetchWorkspaceOrderDetail({
+      orderId,
+      batchId: getActiveProductionBatchId() || null,
+      accessToken,
+    }));
+    if (selectionGeneration !== databaseOrderDetailGeneration || selectedDatabaseOrderId !== orderId) {
+      return;
+    }
+    selectedDatabaseOrderDetail = payload?.order?.id === orderId ? payload.order : null;
+    renderSelectedDatabaseOrderItems();
+  } catch (error) {
+    if (selectionGeneration === databaseOrderDetailGeneration && error?.name !== "AbortError") {
+      selectedDatabaseOrderDetail = null;
+      renderSelectedDatabaseOrderItems();
+    }
+  }
+}
+
 function selectDatabaseOrder(orderId, options = {}) {
   const { updateRoute = true, replaceRoute = false } = options;
-  const order = databaseOrders.find((candidate) => candidate.id === orderId);
-  if (!order) {
+  if (typeof orderId !== "string" || !orderId) {
     return false;
   }
 
-  selectedDatabaseOrderId = order.id;
+  selectedDatabaseOrderId = orderId;
+  selectedDatabaseOrderDetail = null;
+  databaseOrderDetailGeneration += 1;
   updateDatabaseOrderSelectionRows();
   renderSelectedDatabaseOrderItems();
+  void hydrateSelectedDatabaseOrderDetail(orderId);
   if (updateRoute) {
     writeAppRoute({
       replace: replaceRoute,
@@ -7129,7 +7099,7 @@ function renderSelectedDatabaseOrderItems() {
 
   databaseOrderItemsShell.replaceChildren();
   const visibleOrders = getVisibleDatabaseOrders();
-  const selectedOrder = getSelectedGroupedOrder(visibleOrders, selectedDatabaseOrderId);
+  const selectedOrder = getSelectedDatabaseOrder();
 
   if (selectedDatabaseOrderTitle) {
     renderSelectedDatabaseOrderTitle(selectedOrder);
@@ -7411,6 +7381,7 @@ async function addDatabaseOrderItemToBatch(item, button = null) {
       accessToken: requestToken,
     }), accessToken);
 
+    await refreshProductionBatchSnapshot(productionBatchAccessToken);
     applyAddedOrderItemsDelta(payload);
     updateWorkflowAlert(buildAddedToBatchMessage(payload), "success");
     completeOperationDialog({ title: "Order Item Added", description: buildAddedToBatchMessage(payload), metrics: [{ label: "Selected", value: 1 }, { label: "Added", value: countFromPayload(payload, "addedOrderItemCount") }, { label: "Already in batch", value: Math.max(0, 1 - countFromPayload(payload, "addedOrderItemCount")) }] });
@@ -7594,7 +7565,7 @@ async function updateDatabaseOrderStatus({
 }
 
 async function skipSelectedDatabaseOrder() {
-  const selectedOrder = getSelectedGroupedOrder(getVisibleDatabaseOrders(), selectedDatabaseOrderId);
+  const selectedOrder = getSelectedDatabaseOrder();
   if (!canSkipDatabaseOrder(selectedOrder)) {
     return;
   }
@@ -7623,7 +7594,7 @@ async function skipSelectedDatabaseOrder() {
 }
 
 async function reopenSelectedDatabaseOrder() {
-  const selectedOrder = getSelectedGroupedOrder(getVisibleDatabaseOrders(), selectedDatabaseOrderId);
+  const selectedOrder = getSelectedDatabaseOrder();
   if (!canReopenDatabaseOrder(selectedOrder)) {
     return;
   }
@@ -7783,6 +7754,7 @@ async function addCheckedDatabaseOrdersToBatch() {
       [...checkedDatabaseOrderIds].filter((orderId) => !orderIds.includes(orderId)),
     );
 
+    await refreshProductionBatchSnapshot(productionBatchAccessToken);
     applyAddedOrderItemsDelta(payload);
     checkedDatabaseOrderIds = nextCheckedOrderIds;
     renderDatabaseOrdersWorkspace();
@@ -7804,7 +7776,7 @@ async function addCheckedDatabaseOrdersToBatch() {
 }
 
 async function addSelectedDatabaseOrderToBatch() {
-  const selectedOrder = getSelectedGroupedOrder(getVisibleDatabaseOrders(), selectedDatabaseOrderId);
+  const selectedOrder = getSelectedDatabaseOrder();
   const orderId = typeof selectedOrder?.id === "string" ? selectedOrder.id.trim() : "";
   const batchId = requireActiveProductionBatchId();
   if (!batchId || !orderId || !isDatabaseOrderBatchEligible(selectedOrder)) {
@@ -7829,6 +7801,7 @@ async function addSelectedDatabaseOrderToBatch() {
       accessToken: requestToken,
     }), accessToken);
 
+    await refreshProductionBatchSnapshot(productionBatchAccessToken);
     applyAddedOrderItemsDelta(payload);
     selectedOrderActionsMenu?.removeAttribute("open");
     updateWorkflowAlert(buildAddedToBatchMessage(payload), "success");
@@ -10968,7 +10941,7 @@ async function importFromClipboard({ clipboardText: providedClipboardText = null
       items: filteredItems,
       accessToken: requestToken,
     }), accessToken);
-    updateDatabaseOrdersFromPayload(payload);
+    await refreshOrdersAndProductionBatch({ accessToken: productionBatchAccessToken });
     appendImportedItemsToProductionBatch(filteredItems, {
       maxCount: countFromPayload(payload, "addedOrderItemCount"),
     });

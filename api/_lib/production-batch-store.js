@@ -263,7 +263,32 @@ export async function saveProductionBatch({ snapshot, userId, changedOrderItemId
     throw batchError;
   }
 
-  if (!changedOrderItemIdSet) {
+  if (changedOrderItemIdSet) {
+    const changedOrderItemIds = [...changedOrderItemIdSet];
+    const { error: deleteChangedBatchItemsError } = await supabase
+      .from("batch_items")
+      .delete()
+      .eq("batch_id", snapshot.batch.id)
+      .eq("workspace_id", snapshot.batch.workspaceId)
+      .in("order_item_id", changedOrderItemIds);
+
+    if (deleteChangedBatchItemsError) {
+      throw deleteChangedBatchItemsError;
+    }
+
+    const changedBatchItems = rows.batchItems.filter((batchItem) => (
+      changedOrderItemIdSet.has(batchItem.order_item_id)
+    ));
+    if (changedBatchItems.length) {
+      const { error: batchItemsError } = await supabase
+        .from("batch_items")
+        .insert(changedBatchItems);
+
+      if (batchItemsError) {
+        throw batchItemsError;
+      }
+    }
+  } else {
     const { error: deleteBatchItemsError } = await supabase
       .from("batch_items")
       .delete()
