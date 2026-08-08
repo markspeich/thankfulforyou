@@ -81,6 +81,29 @@ function customizationUrl(item) {
   return typeof option?.value === "string" ? option.value.trim() : "";
 }
 
+function noteFieldsWithFonts(normalized) {
+  const fields = normalized?.source?.personalizationResponses ?? [];
+  const selections = normalized?.source?.customerFontSelections ?? [];
+  const lineCount = normalized?.text ? String(normalized.text).split("\n").length : 0;
+  const textFields = fields
+    .filter((response) => !/\s+font$/i.test(String(response?.name ?? "")))
+    .slice(0, lineCount);
+  const existingNames = new Set(fields.map((response) => String(response?.name ?? "").toLowerCase()));
+  const fontFieldsByTextField = new Map();
+  for (const selection of selections) {
+    const label = textFields[selection?.lineIndex]?.name;
+    const name = label ? `${label} Font` : "";
+    if (name && selection?.name && !existingNames.has(name.toLowerCase())) {
+      fontFieldsByTextField.set(textFields[selection.lineIndex], { name, value: selection.name });
+    }
+  }
+  return fields.flatMap((response) => (
+    fontFieldsByTextField.has(response)
+      ? [response, fontFieldsByTextField.get(response)]
+      : [response]
+  ));
+}
+
 function emitDiagnostic(diagnostics, level, event, context) {
   try {
     Promise.resolve(diagnostics?.[level]?.(event, context)).catch(() => {});
@@ -476,7 +499,7 @@ export function createAmazonImportService({
                     block: buildAmazonNoteBlock({
                       productTitle: item.name,
                       orderItemId: item.external_order_item_id,
-                      fields: normalized?.source?.personalizationResponses ?? [],
+                      fields: noteFieldsWithFonts(normalized),
                     }),
                   });
                 }
@@ -501,6 +524,7 @@ export function createAmazonImportService({
                   requestedShipmentService: shipment.requested_shipment_service,
                   shippingRuleId: shipment.shipping_rule_id,
                   packages: shipment.packages,
+                  items: shipment.items,
                   signal,
                 }));
               }
