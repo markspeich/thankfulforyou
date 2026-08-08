@@ -175,6 +175,22 @@ select exists (
   throw new Error("Timed out waiting for the projection race transaction to sleep.");
 }
 
+function waitForDatabaseLockWait(databaseContainerId, minimumWaiters = 1) {
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    const result = executeDatabaseSql(databaseContainerId, String.raw`
+\pset tuples_only on
+\pset format unaligned
+select count(*) >= ${minimumWaiters}
+  from pg_catalog.pg_stat_activity
+  where wait_event_type = 'Lock'
+    and state = 'active';
+`);
+    expect(result.status, result.stderr || result.stdout).toBe(0);
+    if (result.stdout.trim() === "t") return;
+  }
+  throw new Error(`Timed out waiting for ${minimumWaiters} projection race lock waiters.`);
+}
+
 async function assertLegacyArchivedOrderExcluded(row) {
   const config = await generateSupabaseWorktreeConfig();
   const databaseContainer = spawnCommand("docker", [
@@ -689,6 +705,147 @@ execute function public.${holdFunctionName}();
     } finally {
       const cleanupResult = executeDatabaseSql(databaseContainerId, `
 drop trigger if exists ${holdTriggerName} on public.order_items;
+drop function if exists public.${holdFunctionName}();
+`);
+      expect(cleanupResult.status, cleanupResult.stderr || cleanupResult.stdout).toBe(0);
+    }
+  }, 30_000);
+
+  it("orders workspace and group locks consistently during concurrent cross-workspace moves", async () => {
+    // Break caught: an order move holds group A while waiting for workspace B as a batch move does the inverse.
+    const suffix = randomUUID().slice(0, 8);
+    const workspaceIds = [randomUUID(), randomUUID()].sort();
+    const [sourceWorkspaceId, targetWorkspaceId] = workspaceIds;
+    const supabase = createSupabaseAdminClient();
+    const { error: workspaceError } = await supabase.from("workspaces").insert([
+      { id: sourceWorkspaceId, name: `Projection Move Source ${suffix}` },
+      { id: targetWorkspaceId, name: `Projection Move Target ${suffix}` },
+    ]);
+    expect(workspaceError).toBeNull();
+    disposableWorkspaceIds.add(sourceWorkspaceId);
+    disposableWorkspaceIds.add(targetWorkspaceId);
+
+    const batchId = await createTestBatch(`Projection Move Batch ${suffix}`, sourceWorkspaceId);
+    const orderNumber = `PROJECTION-MOVE-${suffix}`;
+    const groupId = `order:${orderNumber}`;
+    const orderItemId = `projection-move-${suffix}`;
+    const { error: orderError } = await supabase.from("order_items").insert({
+      id: orderItemId,
+      workspace_id: sourceWorkspaceId,
+      status: "open",
+      order_number: orderNumber,
+      buyer_name: `Projection Move ${suffix}`,
+      transaction_id: `projection-move-${suffix}`,
+      quantity: 1,
+      source_json: {},
+    });
+    expect(orderError).toBeNull();
+
+    const { data: initialVisibility, error: initialVisibilityError } = await supabase
+      .from("order_group_batch_visibility")
+      .select("workspace_id, batch_id, group_id")
+      .eq("workspace_id", sourceWorkspaceId)
+      .eq("batch_id", batchId)
+      .eq("group_id", groupId)
+      .single();
+    expect(initialVisibilityError).toBeNull();
+    expect(initialVisibility).not.toBeNull();
+
+    const databaseContainerId = await getLocalDatabaseContainerId();
+    const holdTriggerName = "zz_test_hold_order_group_visibility_move";
+    const holdFunctionName = "test_hold_order_group_visibility_move";
+    const setupResult = executeDatabaseSql(databaseContainerId, `
+create or replace function public.${holdFunctionName}()
+returns trigger
+language plpgsql
+security invoker
+set search_path = ''
+as $hold$
+begin
+  perform pg_catalog.pg_sleep(3);
+  return null;
+end;
+$hold$;
+
+create trigger ${holdTriggerName}
+after update on public.order_group_batch_visibility
+for each row
+when (
+  new.workspace_id = ${quoteSqlLiteral(sourceWorkspaceId)}::uuid
+  and new.batch_id = ${quoteSqlLiteral(batchId)}::uuid
+  and new.group_id = ${quoteSqlLiteral(groupId)}
+)
+execute function public.${holdFunctionName}();
+`);
+    expect(setupResult.status, setupResult.stderr || setupResult.stdout).toBe(0);
+
+    try {
+      const visibilityHoldPromise = createSupabaseAdminClient()
+        .from("order_group_batch_visibility")
+        .update({ updated_at: new Date().toISOString() })
+        .eq("workspace_id", sourceWorkspaceId)
+        .eq("batch_id", batchId)
+        .eq("group_id", groupId)
+        .then((result) => result);
+
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      waitForDatabaseSleep(databaseContainerId);
+
+      const orderMovePromise = createSupabaseAdminClient()
+        .from("order_items")
+        .update({ workspace_id: targetWorkspaceId })
+        .eq("workspace_id", sourceWorkspaceId)
+        .eq("id", orderItemId)
+        .then((result) => result);
+
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      waitForDatabaseLockWait(databaseContainerId);
+
+      const workspaceLockProbe = executeDatabaseSql(databaseContainerId, String.raw`
+\pset tuples_only on
+\pset format unaligned
+select pg_catalog.pg_try_advisory_xact_lock(
+  pg_catalog.hashtextextended(
+    'order-group-projection-workspace|' || ${quoteSqlLiteral(targetWorkspaceId)}::uuid::text,
+    0
+  )
+);
+`);
+      expect(workspaceLockProbe.status, workspaceLockProbe.stderr || workspaceLockProbe.stdout).toBe(0);
+
+      const batchMovePromise = createSupabaseAdminClient()
+        .from("production_batches")
+        .update({ workspace_id: targetWorkspaceId })
+        .eq("workspace_id", sourceWorkspaceId)
+        .eq("id", batchId)
+        .then((result) => result);
+
+      const [visibilityHold, orderMove, batchMove] = await Promise.all([
+        visibilityHoldPromise,
+        orderMovePromise,
+        batchMovePromise,
+      ]);
+      expect(workspaceLockProbe.stdout.trim()).toBe("f");
+      expect(visibilityHold.error).toBeNull();
+      expect(orderMove.error).toBeNull();
+      expect(batchMove.error).toBeNull();
+
+      const { data: movedVisibility, error: movedVisibilityError } = await supabase
+        .from("order_group_batch_visibility")
+        .select("workspace_id, batch_id, group_id")
+        .eq("workspace_id", targetWorkspaceId)
+        .eq("batch_id", batchId)
+        .eq("group_id", groupId)
+        .single();
+      expect(movedVisibilityError).toBeNull();
+      expect(movedVisibility).toEqual({
+        workspace_id: targetWorkspaceId,
+        batch_id: batchId,
+        group_id: groupId,
+      });
+    } finally {
+      const cleanupResult = executeDatabaseSql(databaseContainerId, `
+drop trigger if exists ${holdTriggerName} on public.order_group_batch_visibility;
 drop function if exists public.${holdFunctionName}();
 `);
       expect(cleanupResult.status, cleanupResult.stderr || cleanupResult.stdout).toBe(0);
