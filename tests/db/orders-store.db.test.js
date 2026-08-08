@@ -217,6 +217,167 @@ afterEach(async () => {
 });
 
 describe("orders store database integration", () => {
+  it("transactionally maintains compact workspace order-group summaries", async () => {
+    // Break caught: source mutations leave the compact group projection stale or leak another workspace.
+    const suffix = randomUUID().slice(0, 8);
+    const workspaceId = await createDisposableWorkspace(`Projection ${suffix}`);
+    const otherWorkspaceId = await createDisposableWorkspace(`Projection Other ${suffix}`);
+    const orderNumber = `PROJECTION-${suffix}`;
+    const groupId = `order:${orderNumber}`;
+    const firstItemId = `projection-${suffix}-first`;
+    const secondItemId = `projection-${suffix}-second`;
+    const supabase = createSupabaseAdminClient();
+
+    const { error: insertError } = await supabase.from("order_items").insert([
+      {
+        id: firstItemId,
+        workspace_id: workspaceId,
+        status: "open",
+        order_number: orderNumber,
+        buyer_name: `Projection Buyer ${suffix}`,
+        transaction_id: `projection-${suffix}-first`,
+        quantity: 1,
+        source_json: { rawCustomization: { diagnostic: "must-not-leak" } },
+        created_at: "2026-01-01T00:00:00.000Z",
+      },
+      {
+        id: secondItemId,
+        workspace_id: workspaceId,
+        status: "open",
+        order_number: orderNumber,
+        buyer_name: `Projection Buyer ${suffix}`,
+        transaction_id: `projection-${suffix}-second`,
+        quantity: 1,
+        source_json: {},
+        created_at: "2026-02-01T00:00:00.000Z",
+      },
+      {
+        id: `projection-${suffix}-other`,
+        workspace_id: otherWorkspaceId,
+        status: "complete",
+        order_number: orderNumber,
+        buyer_name: `Other Projection Buyer ${suffix}`,
+        transaction_id: `projection-${suffix}-other`,
+        quantity: 1,
+        source_json: {},
+        created_at: "2027-01-01T00:00:00.000Z",
+      },
+    ]);
+    expect(insertError).toBeNull();
+
+    const readSummary = async () => supabase
+      .from("order_group_summaries")
+      .select("*")
+      .eq("workspace_id", workspaceId)
+      .eq("group_id", groupId)
+      .maybeSingle();
+
+    const { data: initialSummary, error: initialError } = await readSummary();
+    expect(initialError).toBeNull();
+    expect(initialSummary).toMatchObject({
+      workspace_id: workspaceId,
+      group_id: groupId,
+      order_number: orderNumber,
+      buyer_name: `Projection Buyer ${suffix}`,
+      group_status: "open",
+      is_in_active_batch: false,
+    });
+    expect(JSON.stringify(initialSummary)).not.toContain("must-not-leak");
+    expect(initialSummary).not.toHaveProperty("source_json");
+    expect(initialSummary).not.toHaveProperty("design_lines");
+    expect(initialSummary).not.toHaveProperty("cached_build_json");
+    const initialSortKey = initialSummary.sort_key;
+
+    const { data: isolatedSummary, error: isolatedError } = await supabase
+      .from("order_group_summaries")
+      .select("workspace_id, group_status, buyer_name")
+      .eq("workspace_id", otherWorkspaceId)
+      .eq("group_id", groupId)
+      .single();
+    expect(isolatedError).toBeNull();
+    expect(isolatedSummary).toEqual({
+      workspace_id: otherWorkspaceId,
+      group_status: "complete",
+      buyer_name: `Other Projection Buyer ${suffix}`,
+    });
+
+    const { error: firstCompleteError } = await supabase
+      .from("order_items")
+      .update({ status: "complete" })
+      .eq("workspace_id", workspaceId)
+      .eq("id", firstItemId);
+    expect(firstCompleteError).toBeNull();
+    expect((await readSummary()).data?.group_status).toBe("open");
+
+    const { error: secondCompleteError } = await supabase
+      .from("order_items")
+      .update({ status: "complete" })
+      .eq("workspace_id", workspaceId)
+      .eq("id", secondItemId);
+    expect(secondCompleteError).toBeNull();
+    expect((await readSummary()).data?.group_status).toBe("complete");
+
+    const batchId = await createTestBatch(`Projection Batch ${suffix}`, workspaceId);
+    const { data: membership, error: membershipError } = await supabase
+      .from("batch_items")
+      .insert({
+        workspace_id: workspaceId,
+        batch_id: batchId,
+        order_item_id: firstItemId,
+        batch_position: 0,
+        status: "active",
+      })
+      .select("id")
+      .single();
+    expect(membershipError).toBeNull();
+    expect((await readSummary()).data?.is_in_active_batch).toBe(true);
+
+    const { error: archivedError } = await supabase
+      .from("batch_items")
+      .update({ status: "archived" })
+      .eq("id", membership.id);
+    expect(archivedError).toBeNull();
+    expect((await readSummary()).data?.is_in_active_batch).toBe(false);
+
+    const { error: reactivatedError } = await supabase
+      .from("batch_items")
+      .update({ status: "active" })
+      .eq("id", membership.id);
+    expect(reactivatedError).toBeNull();
+    expect((await readSummary()).data?.is_in_active_batch).toBe(true);
+
+    const { error: membershipDeleteError } = await supabase
+      .from("batch_items")
+      .delete()
+      .eq("id", membership.id);
+    expect(membershipDeleteError).toBeNull();
+    expect((await readSummary()).data?.is_in_active_batch).toBe(false);
+
+    const { error: reorderError } = await supabase
+      .from("order_items")
+      .update({ created_at: "2028-01-01T00:00:00.000Z" })
+      .eq("workspace_id", workspaceId)
+      .eq("id", firstItemId);
+    expect(reorderError).toBeNull();
+    expect((await readSummary()).data?.sort_key).not.toBe(initialSortKey);
+
+    const { error: firstDeleteError } = await supabase
+      .from("order_items")
+      .delete()
+      .eq("workspace_id", workspaceId)
+      .eq("id", firstItemId);
+    expect(firstDeleteError).toBeNull();
+    expect((await readSummary()).data).not.toBeNull();
+
+    const { error: finalDeleteError } = await supabase
+      .from("order_items")
+      .delete()
+      .eq("workspace_id", workspaceId)
+      .eq("id", secondItemId);
+    expect(finalDeleteError).toBeNull();
+    expect((await readSummary()).data).toBeNull();
+  }, 30_000);
+
   it("keeps empty-search discovery and group hydration index-bounded after a deep cursor", async () => {
     // Break caught: empty Orders pages scan every historical item before applying the cursor and limit.
     const suffix = randomUUID().slice(0, 8);
