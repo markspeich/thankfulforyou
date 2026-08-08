@@ -127,6 +127,54 @@ function flattenPlanNodes(node) {
   return [node, ...(node.Plans || []).flatMap(flattenPlanNodes)];
 }
 
+async function getLocalDatabaseContainerId() {
+  const config = await generateSupabaseWorktreeConfig();
+  const databaseContainer = spawnCommand("docker", [
+    "ps",
+    "--filter", `label=com.supabase.cli.project=${config.projectId}`,
+    "--filter", "name=supabase_db_",
+    "--format", "{{.ID}}",
+  ], { encoding: "utf8" });
+  expect(databaseContainer.status, databaseContainer.stderr).toBe(0);
+
+  const databaseContainerId = databaseContainer.stdout.trim();
+  expect(databaseContainerId).toMatch(/^[a-f0-9]+$/i);
+  return databaseContainerId;
+}
+
+function executeDatabaseSql(databaseContainerId, sql) {
+  return spawnCommand("docker", [
+    "exec",
+    "-i",
+    databaseContainerId,
+    "psql",
+    "-X",
+    "-q",
+    "-v", "ON_ERROR_STOP=1",
+    "-U", "postgres",
+    "-d", "postgres",
+    "-f", "-",
+  ], { encoding: "utf8", input: sql });
+}
+
+function waitForDatabaseSleep(databaseContainerId) {
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    const result = executeDatabaseSql(databaseContainerId, String.raw`
+\pset tuples_only on
+\pset format unaligned
+select exists (
+  select 1
+  from pg_catalog.pg_stat_activity
+  where wait_event = 'PgSleep'
+    and state = 'active'
+);
+`);
+    expect(result.status, result.stderr || result.stdout).toBe(0);
+    if (result.stdout.trim() === "t") return;
+  }
+  throw new Error("Timed out waiting for the projection race transaction to sleep.");
+}
+
 async function assertLegacyArchivedOrderExcluded(row) {
   const config = await generateSupabaseWorktreeConfig();
   const databaseContainer = spawnCommand("docker", [
@@ -227,6 +275,8 @@ describe("orders store database integration", () => {
     const firstItemId = `projection-${suffix}-first`;
     const secondItemId = `projection-${suffix}-second`;
     const supabase = createSupabaseAdminClient();
+    const firstBatchId = await createTestBatch(`Projection Batch A ${suffix}`, workspaceId);
+    const secondBatchId = await createTestBatch(`Projection Batch B ${suffix}`, workspaceId);
 
     const { error: insertError } = await supabase.from("order_items").insert([
       {
@@ -280,13 +330,38 @@ describe("orders store database integration", () => {
       order_number: orderNumber,
       buyer_name: `Projection Buyer ${suffix}`,
       group_status: "open",
-      is_in_active_batch: false,
     });
+    expect(initialSummary).not.toHaveProperty("is_in_active_batch");
     expect(JSON.stringify(initialSummary)).not.toContain("must-not-leak");
     expect(initialSummary).not.toHaveProperty("source_json");
     expect(initialSummary).not.toHaveProperty("design_lines");
     expect(initialSummary).not.toHaveProperty("cached_build_json");
     const initialSortKey = initialSummary.sort_key;
+
+    const readVisibility = async (batchId) => supabase
+      .from("order_group_batch_visibility")
+      .select("*")
+      .eq("workspace_id", workspaceId)
+      .eq("batch_id", batchId)
+      .eq("group_id", groupId)
+      .maybeSingle();
+
+    expect((await readVisibility(firstBatchId)).data).toMatchObject({
+      workspace_id: workspaceId,
+      batch_id: firstBatchId,
+      group_id: groupId,
+      group_status: "open",
+      is_in_batch: false,
+      sort_key: initialSortKey,
+    });
+    expect((await readVisibility(secondBatchId)).data).toMatchObject({
+      workspace_id: workspaceId,
+      batch_id: secondBatchId,
+      group_id: groupId,
+      group_status: "open",
+      is_in_batch: false,
+      sort_key: initialSortKey,
+    });
 
     const { data: isolatedSummary, error: isolatedError } = await supabase
       .from("order_group_summaries")
@@ -316,42 +391,70 @@ describe("orders store database integration", () => {
       .eq("id", secondItemId);
     expect(secondCompleteError).toBeNull();
     expect((await readSummary()).data?.group_status).toBe("complete");
+    expect((await readVisibility(firstBatchId)).data?.group_status).toBe("complete");
+    expect((await readVisibility(secondBatchId)).data?.group_status).toBe("complete");
 
-    const batchId = await createTestBatch(`Projection Batch ${suffix}`, workspaceId);
-    const { data: membership, error: membershipError } = await supabase
+    const { data: firstMembership, error: firstMembershipError } = await supabase
       .from("batch_items")
       .insert({
         workspace_id: workspaceId,
-        batch_id: batchId,
+        batch_id: firstBatchId,
         order_item_id: firstItemId,
         batch_position: 0,
         status: "active",
       })
       .select("id")
       .single();
-    expect(membershipError).toBeNull();
-    expect((await readSummary()).data?.is_in_active_batch).toBe(true);
+    expect(firstMembershipError).toBeNull();
+    expect((await readVisibility(firstBatchId)).data?.is_in_batch).toBe(true);
+    expect((await readVisibility(secondBatchId)).data?.is_in_batch).toBe(false);
+
+    const { data: secondMembership, error: secondMembershipError } = await supabase
+      .from("batch_items")
+      .insert({
+        workspace_id: workspaceId,
+        batch_id: secondBatchId,
+        order_item_id: secondItemId,
+        batch_position: 0,
+        status: "active",
+      })
+      .select("id")
+      .single();
+    expect(secondMembershipError).toBeNull();
+    expect((await readVisibility(firstBatchId)).data?.is_in_batch).toBe(true);
+    expect((await readVisibility(secondBatchId)).data?.is_in_batch).toBe(true);
 
     const { error: archivedError } = await supabase
       .from("batch_items")
       .update({ status: "archived" })
-      .eq("id", membership.id);
+      .eq("id", firstMembership.id);
     expect(archivedError).toBeNull();
-    expect((await readSummary()).data?.is_in_active_batch).toBe(false);
+    expect((await readVisibility(firstBatchId)).data?.is_in_batch).toBe(false);
+    expect((await readVisibility(secondBatchId)).data?.is_in_batch).toBe(true);
 
     const { error: reactivatedError } = await supabase
       .from("batch_items")
       .update({ status: "active" })
-      .eq("id", membership.id);
+      .eq("id", firstMembership.id);
     expect(reactivatedError).toBeNull();
-    expect((await readSummary()).data?.is_in_active_batch).toBe(true);
+    expect((await readVisibility(firstBatchId)).data?.is_in_batch).toBe(true);
+    expect((await readVisibility(secondBatchId)).data?.is_in_batch).toBe(true);
 
     const { error: membershipDeleteError } = await supabase
       .from("batch_items")
       .delete()
-      .eq("id", membership.id);
+      .eq("id", firstMembership.id);
     expect(membershipDeleteError).toBeNull();
-    expect((await readSummary()).data?.is_in_active_batch).toBe(false);
+    expect((await readVisibility(firstBatchId)).data?.is_in_batch).toBe(false);
+    expect((await readVisibility(secondBatchId)).data?.is_in_batch).toBe(true);
+
+    const { error: secondMembershipDeleteError } = await supabase
+      .from("batch_items")
+      .delete()
+      .eq("id", secondMembership.id);
+    expect(secondMembershipDeleteError).toBeNull();
+    expect((await readVisibility(firstBatchId)).data?.is_in_batch).toBe(false);
+    expect((await readVisibility(secondBatchId)).data?.is_in_batch).toBe(false);
 
     const { error: reorderError } = await supabase
       .from("order_items")
@@ -359,7 +462,10 @@ describe("orders store database integration", () => {
       .eq("workspace_id", workspaceId)
       .eq("id", firstItemId);
     expect(reorderError).toBeNull();
-    expect((await readSummary()).data?.sort_key).not.toBe(initialSortKey);
+    const reorderedSortKey = (await readSummary()).data?.sort_key;
+    expect(reorderedSortKey).not.toBe(initialSortKey);
+    expect((await readVisibility(firstBatchId)).data?.sort_key).toBe(reorderedSortKey);
+    expect((await readVisibility(secondBatchId)).data?.sort_key).toBe(reorderedSortKey);
 
     const { error: firstDeleteError } = await supabase
       .from("order_items")
@@ -376,6 +482,127 @@ describe("orders store database integration", () => {
       .eq("id", secondItemId);
     expect(finalDeleteError).toBeNull();
     expect((await readSummary()).data).toBeNull();
+    expect((await readVisibility(firstBatchId)).data).toBeNull();
+    expect((await readVisibility(secondBatchId)).data).toBeNull();
+  }, 30_000);
+
+  it("serializes concurrent member refreshes before publishing group aggregates", async () => {
+    // Break caught: a blocked upsert publishes an aggregate computed before a concurrent member commits.
+    const suffix = randomUUID().slice(0, 8);
+    const workspaceId = await createDisposableWorkspace(`Projection Race ${suffix}`);
+    const batchId = await createTestBatch(`Projection Race Batch ${suffix}`, workspaceId);
+    const orderNumber = `PROJECTION-RACE-${suffix}`;
+    const groupId = `order:${orderNumber}`;
+    const firstItemId = `projection-race-${suffix}-first`;
+    const secondItemId = `projection-race-${suffix}-second`;
+    const supabase = createSupabaseAdminClient();
+    const { error: insertError } = await supabase.from("order_items").insert([
+      {
+        id: firstItemId,
+        workspace_id: workspaceId,
+        status: "open",
+        order_number: orderNumber,
+        buyer_name: `Projection Race ${suffix}`,
+        transaction_id: `projection-race-${suffix}-first`,
+        quantity: 1,
+        source_json: {},
+      },
+      {
+        id: secondItemId,
+        workspace_id: workspaceId,
+        status: "open",
+        order_number: orderNumber,
+        buyer_name: `Projection Race ${suffix}`,
+        transaction_id: `projection-race-${suffix}-second`,
+        quantity: 1,
+        source_json: {},
+      },
+    ]);
+    expect(insertError).toBeNull();
+
+    const databaseContainerId = await getLocalDatabaseContainerId();
+    const holdTriggerName = "zz_test_hold_order_group_projection_refresh";
+    const holdFunctionName = "test_hold_order_group_projection_refresh";
+    const setupResult = executeDatabaseSql(databaseContainerId, `
+create or replace function public.${holdFunctionName}()
+returns trigger
+language plpgsql
+security invoker
+set search_path = ''
+as $hold$
+begin
+  perform pg_catalog.pg_sleep(3);
+  return null;
+end;
+$hold$;
+
+create trigger ${holdTriggerName}
+after update of status on public.order_items
+for each row
+when (new.id = ${quoteSqlLiteral(firstItemId)})
+execute function public.${holdFunctionName}();
+`);
+    expect(setupResult.status, setupResult.stderr || setupResult.stdout).toBe(0);
+
+    try {
+      const firstUpdatePromise = createSupabaseAdminClient()
+        .from("order_items")
+        .update({ status: "complete" })
+        .eq("workspace_id", workspaceId)
+        .eq("id", firstItemId)
+        .then((result) => result);
+
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      waitForDatabaseSleep(databaseContainerId);
+
+      const secondUpdatePromise = createSupabaseAdminClient()
+        .from("order_items")
+        .update({ status: "complete" })
+        .eq("workspace_id", workspaceId)
+        .eq("id", secondItemId)
+        .then((result) => result);
+
+      const [firstUpdate, secondUpdate] = await Promise.all([
+        firstUpdatePromise,
+        secondUpdatePromise,
+      ]);
+      expect(firstUpdate.error).toBeNull();
+      expect(secondUpdate.error).toBeNull();
+
+      const [{ data: sourceItems, error: sourceError }, { data: summary, error: summaryError }, { data: visibility, error: visibilityError }] = await Promise.all([
+        supabase
+          .from("order_items")
+          .select("id, status")
+          .eq("workspace_id", workspaceId)
+          .eq("order_number", orderNumber)
+          .order("id"),
+        supabase
+          .from("order_group_summaries")
+          .select("group_status")
+          .eq("workspace_id", workspaceId)
+          .eq("group_id", groupId)
+          .single(),
+        supabase
+          .from("order_group_batch_visibility")
+          .select("group_status")
+          .eq("workspace_id", workspaceId)
+          .eq("batch_id", batchId)
+          .eq("group_id", groupId)
+          .single(),
+      ]);
+      expect(sourceError).toBeNull();
+      expect(sourceItems.map((item) => item.status)).toEqual(["complete", "complete"]);
+      expect(summaryError).toBeNull();
+      expect(summary?.group_status).toBe("complete");
+      expect(visibilityError).toBeNull();
+      expect(visibility?.group_status).toBe("complete");
+    } finally {
+      const cleanupResult = executeDatabaseSql(databaseContainerId, `
+drop trigger if exists ${holdTriggerName} on public.order_items;
+drop function if exists public.${holdFunctionName}();
+`);
+      expect(cleanupResult.status, cleanupResult.stderr || cleanupResult.stdout).toBe(0);
+    }
   }, 30_000);
 
   it("keeps empty-search discovery and group hydration index-bounded after a deep cursor", async () => {

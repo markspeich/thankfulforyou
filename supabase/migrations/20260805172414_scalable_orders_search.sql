@@ -5,16 +5,125 @@ create table if not exists public.order_group_summaries (
   order_number text,
   buyer_name text,
   group_status text not null check (group_status in ('open', 'skipped', 'complete')),
-  is_in_active_batch boolean not null default false,
   ship_by_date date,
   updated_at timestamptz not null default now(),
   primary key (workspace_id, group_id)
 );
 
+create table if not exists public.order_group_batch_visibility (
+  workspace_id uuid not null references public.workspaces(id) on delete cascade,
+  batch_id uuid not null references public.production_batches(id) on delete cascade,
+  group_id text not null,
+  sort_key text not null,
+  group_status text not null check (group_status in ('open', 'skipped', 'complete')),
+  is_in_batch boolean not null,
+  updated_at timestamptz not null default now(),
+  primary key (workspace_id, batch_id, group_id),
+  foreign key (workspace_id, group_id)
+    references public.order_group_summaries(workspace_id, group_id)
+    on delete cascade
+);
+
 alter table public.order_group_summaries enable row level security;
+alter table public.order_group_batch_visibility enable row level security;
 
 revoke all on table public.order_group_summaries from public, anon, authenticated;
 grant all on table public.order_group_summaries to service_role;
+revoke all on table public.order_group_batch_visibility from public, anon, authenticated;
+grant all on table public.order_group_batch_visibility to service_role;
+
+create or replace function public.refresh_order_group_batch_visibility(
+  p_workspace_id uuid,
+  p_group_id text,
+  p_batch_id uuid default null
+)
+returns void
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+begin
+  if p_workspace_id is null or p_group_id is null then
+    return;
+  end if;
+
+  perform pg_catalog.pg_advisory_xact_lock(
+    pg_catalog.hashtextextended(
+      'order-group-projection|' || p_workspace_id::text || '|' || p_group_id,
+      0
+    )
+  );
+
+  delete from public.order_group_batch_visibility visibility
+  where visibility.workspace_id = p_workspace_id
+    and visibility.group_id = p_group_id
+    and (p_batch_id is null or visibility.batch_id = p_batch_id)
+    and (
+      not exists (
+        select 1
+        from public.order_group_summaries summaries
+        where summaries.workspace_id = p_workspace_id
+          and summaries.group_id = p_group_id
+      )
+      or not exists (
+        select 1
+        from public.production_batches batches
+        where batches.workspace_id = p_workspace_id
+          and batches.id = visibility.batch_id
+      )
+    );
+
+  insert into public.order_group_batch_visibility (
+    workspace_id,
+    batch_id,
+    group_id,
+    sort_key,
+    group_status,
+    is_in_batch,
+    updated_at
+  )
+  select
+    summaries.workspace_id,
+    batches.id,
+    summaries.group_id,
+    summaries.sort_key,
+    summaries.group_status,
+    exists (
+      select 1
+      from public.order_items orders
+      join public.batch_items active_membership
+        on active_membership.workspace_id = summaries.workspace_id
+       and active_membership.batch_id = batches.id
+       and active_membership.order_item_id = orders.id
+       and active_membership.status = 'active'
+      where orders.workspace_id = summaries.workspace_id
+        and (
+          case
+            when nullif(btrim(orders.order_number), '') is not null
+              then 'order:' || orders.order_number
+            else 'item:' || orders.id
+          end
+        ) = summaries.group_id
+    ),
+    now()
+  from public.order_group_summaries summaries
+  join public.production_batches batches
+    on batches.workspace_id = summaries.workspace_id
+  where summaries.workspace_id = p_workspace_id
+    and summaries.group_id = p_group_id
+    and (p_batch_id is null or batches.id = p_batch_id)
+  on conflict (workspace_id, batch_id, group_id) do update
+    set sort_key = excluded.sort_key,
+        group_status = excluded.group_status,
+        is_in_batch = excluded.is_in_batch,
+        updated_at = excluded.updated_at;
+end;
+$$;
+
+revoke all on function public.refresh_order_group_batch_visibility(uuid, text, uuid)
+  from public, anon, authenticated;
+grant execute on function public.refresh_order_group_batch_visibility(uuid, text, uuid)
+  to service_role;
 
 create or replace function public.refresh_order_group_summary(
   p_workspace_id uuid,
@@ -30,6 +139,13 @@ begin
     return;
   end if;
 
+  perform pg_catalog.pg_advisory_xact_lock(
+    pg_catalog.hashtextextended(
+      'order-group-projection|' || p_workspace_id::text || '|' || p_group_id,
+      0
+    )
+  );
+
   insert into public.order_group_summaries (
     workspace_id,
     group_id,
@@ -37,7 +153,6 @@ begin
     order_number,
     buyer_name,
     group_status,
-    is_in_active_batch,
     ship_by_date,
     updated_at
   )
@@ -61,13 +176,6 @@ begin
       when bool_and(orders.status = 'skipped') then 'skipped'
       else 'open'
     end,
-    bool_or(exists (
-      select 1
-      from public.batch_items active_membership
-      where active_membership.workspace_id = p_workspace_id
-        and active_membership.order_item_id = orders.id
-        and active_membership.status = 'active'
-    )),
     min(orders.ship_by_date),
     now()
   from public.order_items orders
@@ -85,7 +193,6 @@ begin
         order_number = excluded.order_number,
         buyer_name = excluded.buyer_name,
         group_status = excluded.group_status,
-        is_in_active_batch = excluded.is_in_active_batch,
         ship_by_date = excluded.ship_by_date,
         updated_at = excluded.updated_at;
 
@@ -94,6 +201,8 @@ begin
     where summaries.workspace_id = p_workspace_id
       and summaries.group_id = p_group_id;
   end if;
+
+  perform public.refresh_order_group_batch_visibility(p_workspace_id, p_group_id);
 end;
 $$;
 
@@ -126,17 +235,18 @@ begin
     end;
   end if;
 
-  if tg_op = 'DELETE'
-    or (
-      tg_op = 'UPDATE'
-      and (new.workspace_id, new_group_id) is distinct from (old.workspace_id, old_group_id)
-    )
-  then
+  if tg_op = 'DELETE' then
     perform public.refresh_order_group_summary(old.workspace_id, old_group_id);
-  end if;
-
-  if tg_op = 'INSERT' or tg_op = 'UPDATE' then
+  elsif tg_op = 'INSERT' then
     perform public.refresh_order_group_summary(new.workspace_id, new_group_id);
+  elsif (new.workspace_id, new_group_id) is not distinct from (old.workspace_id, old_group_id) then
+    perform public.refresh_order_group_summary(new.workspace_id, new_group_id);
+  elsif (old.workspace_id::text, old_group_id) < (new.workspace_id::text, new_group_id) then
+    perform public.refresh_order_group_summary(old.workspace_id, old_group_id);
+    perform public.refresh_order_group_summary(new.workspace_id, new_group_id);
+  else
+    perform public.refresh_order_group_summary(new.workspace_id, new_group_id);
+    perform public.refresh_order_group_summary(old.workspace_id, old_group_id);
   end if;
 
   return null;
@@ -161,8 +271,11 @@ as $$
 declare
   old_group_id text;
   new_group_id text;
+  old_batch_id uuid;
+  new_batch_id uuid;
 begin
   if tg_op <> 'INSERT' then
+    old_batch_id := old.batch_id;
     select case
       when nullif(btrim(orders.order_number), '') is not null then 'order:' || orders.order_number
       else 'item:' || orders.id
@@ -175,6 +288,7 @@ begin
   end if;
 
   if tg_op <> 'DELETE' then
+    new_batch_id := new.batch_id;
     select case
       when nullif(btrim(orders.order_number), '') is not null then 'order:' || orders.order_number
       else 'item:' || orders.id
@@ -186,20 +300,65 @@ begin
 
   end if;
 
-  if old_group_id is not null
-    and (
-      tg_op = 'DELETE'
-      or (
-        tg_op = 'UPDATE'
-        and (new.workspace_id, new_group_id) is distinct from (old.workspace_id, old_group_id)
-      )
-    )
-  then
-    perform public.refresh_order_group_summary(old.workspace_id, old_group_id);
-  end if;
-
-  if new_group_id is not null and (tg_op = 'INSERT' or tg_op = 'UPDATE') then
-    perform public.refresh_order_group_summary(new.workspace_id, new_group_id);
+  if tg_op = 'DELETE' and old_group_id is not null then
+    perform public.refresh_order_group_batch_visibility(
+      old.workspace_id,
+      old_group_id,
+      old_batch_id
+    );
+  elsif tg_op = 'INSERT' and new_group_id is not null then
+    perform public.refresh_order_group_batch_visibility(
+      new.workspace_id,
+      new_group_id,
+      new_batch_id
+    );
+  elsif old_group_id is null and new_group_id is not null then
+    perform public.refresh_order_group_batch_visibility(
+      new.workspace_id,
+      new_group_id,
+      new_batch_id
+    );
+  elsif new_group_id is null and old_group_id is not null then
+    perform public.refresh_order_group_batch_visibility(
+      old.workspace_id,
+      old_group_id,
+      old_batch_id
+    );
+  elsif (new.workspace_id, new_group_id) is not distinct from (old.workspace_id, old_group_id) then
+    if new_batch_id is distinct from old_batch_id then
+      perform public.refresh_order_group_batch_visibility(
+        old.workspace_id,
+        old_group_id,
+        old_batch_id
+      );
+    end if;
+    perform public.refresh_order_group_batch_visibility(
+      new.workspace_id,
+      new_group_id,
+      new_batch_id
+    );
+  elsif (old.workspace_id::text, old_group_id) < (new.workspace_id::text, new_group_id) then
+    perform public.refresh_order_group_batch_visibility(
+      old.workspace_id,
+      old_group_id,
+      old_batch_id
+    );
+    perform public.refresh_order_group_batch_visibility(
+      new.workspace_id,
+      new_group_id,
+      new_batch_id
+    );
+  else
+    perform public.refresh_order_group_batch_visibility(
+      new.workspace_id,
+      new_group_id,
+      new_batch_id
+    );
+    perform public.refresh_order_group_batch_visibility(
+      old.workspace_id,
+      old_group_id,
+      old_batch_id
+    );
   end if;
 
   return null;
@@ -214,6 +373,59 @@ grant execute on function public.refresh_order_group_summary_from_batch_item()
 create trigger refresh_order_group_summary_after_batch_item_change
 after insert or update or delete on public.batch_items
 for each row execute function public.refresh_order_group_summary_from_batch_item();
+
+create or replace function public.refresh_order_group_visibility_from_production_batch()
+returns trigger
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+declare
+  summary record;
+begin
+  if tg_op <> 'INSERT' then
+    for summary in
+      select visibility.workspace_id, visibility.group_id
+      from public.order_group_batch_visibility visibility
+      where visibility.workspace_id = old.workspace_id
+        and visibility.batch_id = old.id
+      order by visibility.workspace_id, visibility.group_id
+    loop
+      perform public.refresh_order_group_batch_visibility(
+        summary.workspace_id,
+        summary.group_id,
+        old.id
+      );
+    end loop;
+  end if;
+
+  if tg_op <> 'DELETE' then
+    for summary in
+      select summaries.workspace_id, summaries.group_id
+      from public.order_group_summaries summaries
+      where summaries.workspace_id = new.workspace_id
+      order by summaries.workspace_id, summaries.group_id
+    loop
+      perform public.refresh_order_group_batch_visibility(
+        summary.workspace_id,
+        summary.group_id,
+        new.id
+      );
+    end loop;
+  end if;
+
+  return null;
+end;
+$$;
+
+revoke all on function public.refresh_order_group_visibility_from_production_batch()
+  from public, anon, authenticated;
+grant execute on function public.refresh_order_group_visibility_from_production_batch()
+  to service_role;
+
+create trigger refresh_order_group_visibility_after_production_batch_change
+after insert or delete or update of workspace_id on public.production_batches
+for each row execute function public.refresh_order_group_visibility_from_production_batch();
 
 -- Supports empty-search keyset scans in newest-first group order.
 create index if not exists order_items_workspace_newest_group_idx
@@ -259,22 +471,98 @@ create index if not exists batch_items_active_membership_idx
   on public.batch_items (workspace_id, batch_id, order_item_id)
   where status = 'active';
 
--- Supports per-group projection refreshes without scanning unrelated batch memberships.
-create index if not exists batch_items_active_order_membership_idx
-  on public.batch_items (workspace_id, order_item_id)
-  where status = 'active';
+-- Backfill set-wise so the migration does not retain one advisory lock per historical group.
+insert into public.order_group_summaries (
+  workspace_id,
+  group_id,
+  sort_key,
+  order_number,
+  buyer_name,
+  group_status,
+  ship_by_date,
+  updated_at
+)
+select
+  orders.workspace_id,
+  case
+    when nullif(btrim(orders.order_number), '') is not null then 'order:' || orders.order_number
+    else 'item:' || orders.id
+  end,
+  to_char(max(orders.created_at) at time zone 'UTC', 'YYYYMMDDHH24MISSUS')
+    || ':' || max(
+      case
+        when nullif(btrim(orders.order_number), '') ~ '^[0-9]+$'
+          then '3:' || lpad(btrim(orders.order_number), 64, '0')
+        when nullif(btrim(orders.order_number), '') is not null
+          then '2:' || lower(btrim(orders.order_number))
+        else '1:'
+      end
+    ),
+  (array_agg(orders.order_number order by orders.created_at, orders.id))[1],
+  (array_agg(orders.buyer_name order by orders.created_at, orders.id))[1],
+  case
+    when bool_and(orders.status = 'complete') then 'complete'
+    when bool_and(orders.status = 'skipped') then 'skipped'
+    else 'open'
+  end,
+  min(orders.ship_by_date),
+  now()
+from public.order_items orders
+group by
+  orders.workspace_id,
+  case
+    when nullif(btrim(orders.order_number), '') is not null then 'order:' || orders.order_number
+    else 'item:' || orders.id
+  end
+on conflict (workspace_id, group_id) do update
+  set sort_key = excluded.sort_key,
+      order_number = excluded.order_number,
+      buyer_name = excluded.buyer_name,
+      group_status = excluded.group_status,
+      ship_by_date = excluded.ship_by_date,
+      updated_at = excluded.updated_at;
 
--- Build the initial projection only after its source lookup indexes are available.
-select public.refresh_order_group_summary(existing.workspace_id, existing.group_id)
-from (
-  select distinct
-    orders.workspace_id,
-    case
-      when nullif(btrim(orders.order_number), '') is not null then 'order:' || orders.order_number
-      else 'item:' || orders.id
-    end as group_id
-  from public.order_items orders
-) existing;
+insert into public.order_group_batch_visibility (
+  workspace_id,
+  batch_id,
+  group_id,
+  sort_key,
+  group_status,
+  is_in_batch,
+  updated_at
+)
+select
+  summaries.workspace_id,
+  batches.id,
+  summaries.group_id,
+  summaries.sort_key,
+  summaries.group_status,
+  exists (
+    select 1
+    from public.order_items orders
+    join public.batch_items active_membership
+      on active_membership.workspace_id = summaries.workspace_id
+     and active_membership.batch_id = batches.id
+     and active_membership.order_item_id = orders.id
+     and active_membership.status = 'active'
+    where orders.workspace_id = summaries.workspace_id
+      and (
+        case
+          when nullif(btrim(orders.order_number), '') is not null
+            then 'order:' || orders.order_number
+          else 'item:' || orders.id
+        end
+      ) = summaries.group_id
+  ),
+  now()
+from public.order_group_summaries summaries
+join public.production_batches batches
+  on batches.workspace_id = summaries.workspace_id
+on conflict (workspace_id, batch_id, group_id) do update
+  set sort_key = excluded.sort_key,
+      group_status = excluded.group_status,
+      is_in_batch = excluded.is_in_batch,
+      updated_at = excluded.updated_at;
 
 create or replace function public.list_workspace_order_summaries(
   p_workspace_id uuid,
