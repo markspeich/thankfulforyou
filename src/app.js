@@ -7650,7 +7650,13 @@ async function updateCheckedDatabaseOrdersStatus({
       }
     }
     checkedDatabaseOrderIds.clear();
-    applyOrderItemsStatusDelta(payload);
+    if (nextFilter) {
+      databaseOrdersMutationVersion += 1;
+      invalidateDatabaseOrders();
+      await loadDatabaseOrders({ force: true });
+    } else {
+      applyOrderItemsStatusDelta(payload);
+    }
     updateWorkflowAlert(successMessage, "success");
   } catch (error) {
     handleOrdersMutationError(

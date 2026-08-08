@@ -1074,6 +1074,7 @@ test("skips and reopens checked orders from the Orders column menu", async ({ pa
   await installProductionBatchRoutes(page, { onGet: () => { productionBatchGetCount += 1; } });
   const posts = [];
   let ordersGetCount = 0;
+  const compactQueries = [];
   let ordersPayload = {
     orders: buildOrdersPayload().orders.map((order) => ({
       ...order,
@@ -1096,7 +1097,14 @@ test("skips and reopens checked orders from the Orders column menu", async ({ pa
   await installOrdersWorkspaceRoutes(page, {
     ordersPayload,
     posts,
-    onGet: () => { ordersGetCount += 1; },
+    onGet: (request) => {
+      ordersGetCount += 1;
+      const url = new URL(request.url());
+      compactQueries.push({
+        status: url.searchParams.get("status"),
+        cursor: url.searchParams.get("cursor"),
+      });
+    },
     postBody: (post) => {
       if (post.action === "skipOrders") {
         Object.assign(ordersPayload, buildStatusPayload("skipped"));
@@ -1137,6 +1145,8 @@ test("skips and reopens checked orders from the Orders column menu", async ({ pa
 
   await expect.poll(() => posts.some((post) => post.action === "reopenOrders" && post.orderIds.includes("order:1001") && post.orderIds.includes("order:1002"))).toBe(true);
   await expect(page.locator("#databaseOrdersStatusFilter")).toHaveValue("open");
+  await expect.poll(() => ordersGetCount).toBe(3);
+  expect(compactQueries.at(-1)).toEqual({ status: "open", cursor: null });
 });
 
 test("loads database orders on initial app startup", async ({ page }) => {
