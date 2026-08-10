@@ -424,6 +424,7 @@ test("Amazon import failure details remain actionable in the operation dialog", 
         existingItems: 2,
         alreadyProcessedShipments: 1,
         customizationNeeded: 2,
+        warnings: 0,
         failed: 1,
         failures: [{
           orderNumber: "111-0318024-9415409",
@@ -452,9 +453,10 @@ test("Amazon import failure details remain actionable in the operation dialog", 
     "Existing items",
     "Already processed",
     "Needs review",
+    "Warnings",
     "Failed",
   ]);
-  await expect(dialog.locator("#pasteSummaryCounts dd")).toHaveText(["3", "4", "2", "1", "2", "1"]);
+  await expect(dialog.locator("#pasteSummaryCounts dd")).toHaveText(["3", "4", "2", "1", "2", "0", "1"]);
   await expect(dialog.getByRole("button", { name: "Close paste summary" })).toBeVisible();
 });
 
