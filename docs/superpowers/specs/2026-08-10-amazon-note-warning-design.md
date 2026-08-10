@@ -19,7 +19,7 @@ The importer retains shipment-level atomicity for the database write: all normal
 The terminal `complete` event includes the existing count fields plus:
 
 - `warnings`: non-negative count of non-blocking ShipStation synchronization warnings.
-- `warningDetails`: a bounded list, at most ten entries, using only `{ orderNumber, stage, summary }`.
+- `warningDetails`: the complete list of safe per-shipment warning records, using only `{ orderNumber, stage, summary }` with no fixed count cap.
 
 `stage` is initially `notes_update`. `summary` is selected from a fixed public vocabulary. For the known note-size error, it is `ShipStation Notes to Buyer is too long to update.` The public event must never contain existing note text, item text, buyer data, raw ShipStation responses, or error messages.
 
@@ -39,7 +39,7 @@ Existing persisted order items remain eligible for this repair flow. A retry sti
 
 ## Operator Experience
 
-When `failed` is zero, the completion dialog title remains `Amazon Import Complete`, even if `warnings` is nonzero. Its metrics include `Warnings` and `Failed`. The description states that app import completed with ShipStation synchronization warnings and uses the safe detail list to identify each Amazon order and action, for example: `Order 114-7445306-8228220: Notes to Buyer could not be updated because the note is too long.`
+When `failed` is zero, the completion dialog title remains `Amazon Import Complete`, even if `warnings` is nonzero. Its metrics include `Warnings` and `Failed`. The description states that app import completed with ShipStation synchronization warnings and uses every safe detail to identify each Amazon order and action, without a fixed detail-count cap, for example: `Order 114-7445306-8228220: Notes to Buyer could not be updated because the note is too long.`
 
 When `failed` is nonzero, the current failure presentation remains, but imported/existing metrics and warning details remain visible. An overall request/stream failure remains `Amazon Import Failed` and does not present unverified completion metrics.
 
@@ -49,7 +49,7 @@ Diagnostics retain the exact server-side `RangeError` or ShipStation error metad
 
 ## Test Coverage
 
-- Unit-test the result parser for warning count/detail shape, bounded-list validation, and rejection of unsafe warning fields.
+- Unit-test the result parser for warning count/detail shape, preservation beyond ten entries, and rejection of unsafe warning fields.
 - Unit-test the importer with an oversized Notes to Buyer payload: all shipment items persist, `warnings` is one at `notes_update`, `failed` is zero, no tag request occurs, and subsequent shipments continue.
 - Unit-test tag failure after persistence as a `tag_update` warning.
 - Verify a retry treats app items as existing and can write notes/tag without duplicate database rows.

@@ -181,7 +181,7 @@ test("a held Etsy import disables Amazon until workspace teardown", async ({ pag
   await expect.poll(() => page.evaluate(() => sessionStorage.getItem("etsy-test-aborted"))).toBe("true");
 });
 
-test("Amazon warning-only completion shows every safe note and tag warning with all seven metrics", async ({ page }) => {
+test("Amazon warning-only completion shows every safe warning beyond ten with all seven metrics", async ({ page }) => {
   await session(page);
   const gets = await routes(page);
   await amazonStream(page);
@@ -214,34 +214,21 @@ test("Amazon warning-only completion shows every safe note and tag warning with 
   }, {
     ...completion,
     importedItems: 6,
-    warnings: 3,
-    warningDetails: [
-      {
-        orderNumber: "114-7445306-8228220",
-        stage: "notes_update",
-        summary: "ShipStation Notes to Buyer is too long to update.",
-      },
-      {
-        orderNumber: "111-0000002-0000002",
-        stage: "notes_update",
-        summary: "ShipStation synchronization could not be completed.",
-      },
-      {
-        orderNumber: "111-0000003-0000003",
-        stage: "tag_update",
-        summary: "ShipStation synchronization could not be completed.",
-      },
-    ],
+    warnings: 11,
+    warningDetails: Array.from({ length: 11 }, (_, index) => ({
+      orderNumber: `111-${String(index + 1).padStart(7, "0")}-${String(index + 1).padStart(7, "0")}`,
+      stage: index === 0 ? "notes_update" : "tag_update",
+      summary: index === 0
+        ? "ShipStation Notes to Buyer is too long to update."
+        : "ShipStation synchronization could not be completed.",
+    })),
   });
   await expect(dialog.locator("#pasteSummaryTitle")).toHaveText("Amazon Import Complete");
   await expect(dialog.locator("#pasteSummaryDescription")).toContainText(
-    "Amazon order 114-7445306-8228220 was imported, but ShipStation Notes to Buyer could not be updated because the note is too long.",
+    "Amazon order 111-0000001-0000001 was imported, but ShipStation Notes to Buyer could not be updated because the note is too long.",
   );
   await expect(dialog.locator("#pasteSummaryDescription")).toContainText(
-    "Amazon order 111-0000002-0000002 was imported, but ShipStation Notes to Buyer could not be updated.",
-  );
-  await expect(dialog.locator("#pasteSummaryDescription")).toContainText(
-    "Amazon order 111-0000003-0000003 was imported, but the ShipStation processed tag could not be added.",
+    "Amazon order 111-0000011-0000011 was imported, but the ShipStation processed tag could not be added.",
   );
   await expect(dialog.locator("#pasteSummaryCounts dt")).toHaveText([
     "Shipments processed",
@@ -252,7 +239,7 @@ test("Amazon warning-only completion shows every safe note and tag warning with 
     "Warnings",
     "Failed",
   ]);
-  await expect(dialog.locator("#pasteSummaryCounts dd")).toHaveText(["3", "6", "2", "1", "2", "3", "0"]);
+  await expect(dialog.locator("#pasteSummaryCounts dd")).toHaveText(["3", "6", "2", "1", "2", "11", "0"]);
   await expect.poll(gets).toBeGreaterThan(1);
   await expect(page.locator(".database-order-row.is-selected")).toContainText("Order 1001");
   await expect(page.locator(".amazon-import-button")).toHaveText("Import Amazon");

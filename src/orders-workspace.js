@@ -296,7 +296,6 @@ const SAFE_AMAZON_IMPORT_WARNING_SUMMARIES = Object.freeze({
   noteSize: "ShipStation Notes to Buyer is too long to update.",
   synchronization: "ShipStation synchronization could not be completed.",
 });
-const MAX_AMAZON_IMPORT_WARNING_DETAILS = 10;
 
 export function getAmazonImportFailureDescription(summary = {}) {
   let failed;
@@ -348,9 +347,7 @@ export function getAmazonImportWarningDescription(summary = {}) {
   if (warnings === 0) return null;
 
   try {
-    const warningDetails = Array.isArray(summary?.warningDetails)
-      ? summary.warningDetails.slice(0, MAX_AMAZON_IMPORT_WARNING_DETAILS)
-      : [];
+    const warningDetails = Array.isArray(summary?.warningDetails) ? summary.warningDetails : [];
     const descriptions = warningDetails.flatMap((warning) => {
       if (
         !warning

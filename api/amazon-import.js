@@ -27,7 +27,6 @@ const SAFE_AUTH_ERROR_MESSAGES = Object.freeze({
 const SAFE_SHIPSTATION_ERROR_CODES = new Set(["configuration", "invalid_response", "aborted", "temporary", "rate_limited", "request_failed"]);
 const SAFE_SHIPSTATION_REQUEST_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const MAX_PUBLIC_FAILURES = 10;
-const MAX_PUBLIC_WARNINGS = 10;
 const SAFE_ORDER_NUMBER = /^\d{3}-\d{7}-\d{7}$/;
 const SAFE_FAILURE_STAGES = new Set([
   "item_start",
@@ -83,7 +82,6 @@ function safeWarnings(value) {
   if (!Array.isArray(value)) return undefined;
   const warnings = [];
   for (const warning of value) {
-    if (warnings.length >= MAX_PUBLIC_WARNINGS) break;
     if (
       !warning
       || typeof warning !== "object"

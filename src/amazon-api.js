@@ -58,7 +58,6 @@ const ERROR_KEYS = ["code", "message", "type"];
 const FAILURE_KEYS = ["orderNumber", "reasonCode", "stage", "summary"];
 const WARNING_KEYS = ["orderNumber", "stage", "summary"];
 const MAX_FAILURES = 10;
-const MAX_WARNINGS = 10;
 const SAFE_ORDER_NUMBER = /^\d{3}-\d{7}-\d{7}$/;
 const SAFE_FAILURE_STAGES = new Set([
   "item_start",
@@ -121,7 +120,7 @@ function parseFailures(value, failed) {
 }
 
 function parseWarningDetails(value, warnings) {
-  if (!Array.isArray(value) || value.length > MAX_WARNINGS || value.length > warnings) return null;
+  if (!Array.isArray(value) || value.length > warnings) return null;
   const warningDetails = [];
   for (const warning of value) {
     if (

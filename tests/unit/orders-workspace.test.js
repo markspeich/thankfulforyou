@@ -476,6 +476,24 @@ describe("Amazon workspace descriptors", () => {
     ].join(" "));
   });
 
+  it("formats every safe Amazon warning beyond ten without a generic fallback", () => {
+    // Break caught: the operation dialog hides order/action context after the tenth safe warning.
+    const warningDetails = Array.from({ length: 11 }, (_, index) => ({
+      orderNumber: `111-${String(index + 1).padStart(7, "0")}-${String(index + 1).padStart(7, "0")}`,
+      stage: "tag_update",
+      summary: "ShipStation synchronization could not be completed.",
+    }));
+
+    const description = getAmazonImportWarningDescription({ warnings: 11, warningDetails });
+
+    expect(description).toContain(
+      "Amazon order 111-0000011-0000011 was imported, but the ShipStation processed tag could not be added.",
+    );
+    expect(description).not.toContain(
+      "One or more Amazon orders were imported, but ShipStation synchronization could not be completed.",
+    );
+  });
+
   it("uses a fixed warning description for malformed or untrusted Amazon warning details", () => {
     // Break caught: warning fields inject customer or upstream data into the successful completion dialog.
     const fallback = "One or more Amazon orders were imported, but ShipStation synchronization could not be completed.";

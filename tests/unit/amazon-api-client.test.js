@@ -107,9 +107,14 @@ describe("Amazon API browser client", () => {
     expect(seen).toEqual([completion]);
   });
 
-  it("delivers a safe bounded completion warning record unchanged", async () => {
-    // Break caught: the browser client rejects the server's safe note-sync warning before the operation dialog can use it.
-    const warningCompletion = { type: "complete", processedShipments: 0, importedItems: 6, existingItems: 0, alreadyProcessedShipments: 0, customizationNeeded: 0, warnings: 1, failed: 0, warningDetails: [{ orderNumber: "114-7445306-8228220", stage: "notes_update", summary: "ShipStation Notes to Buyer is too long to update." }] };
+  it("delivers every safe completion warning record beyond ten unchanged", async () => {
+    // Break caught: the browser parser rejects safe warning context from later shipments in a large batch.
+    const warningDetails = Array.from({ length: 11 }, (_, index) => ({
+      orderNumber: `114-${String(index + 1).padStart(7, "0")}-${String(index + 1).padStart(7, "0")}`,
+      stage: index % 2 === 0 ? "notes_update" : "tag_update",
+      summary: "ShipStation synchronization could not be completed.",
+    }));
+    const warningCompletion = { type: "complete", processedShipments: 0, importedItems: 11, existingItems: 0, alreadyProcessedShipments: 0, customizationNeeded: 0, warnings: 11, failed: 0, warningDetails };
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(stream([
       `${JSON.stringify(warningCompletion)}\n`,
     ]))));
@@ -120,8 +125,8 @@ describe("Amazon API browser client", () => {
     expect(seen).toEqual([warningCompletion]);
   });
 
-  it("rejects malformed, unsafe, oversized, or raw completion warning details", async () => {
-    // Break caught: customer data, provider errors, or an unbounded warning list crosses the browser parsing boundary.
+  it("rejects malformed, unsafe, or raw completion warning details", async () => {
+    // Break caught: customer data or provider errors cross the browser parsing boundary.
     const safeWarning = {
       orderNumber: "114-7445306-8228220",
       stage: "notes_update",
@@ -129,7 +134,6 @@ describe("Amazon API browser client", () => {
     };
     const invalidCompletions = [
       { ...complete, warnings: 1, warningDetails: "not-an-array" },
-      { ...complete, warnings: 11, warningDetails: Array.from({ length: 11 }, () => safeWarning) },
       { ...complete, warnings: 1, warningDetails: [{ ...safeWarning, orderNumber: "Buyer Daphne Private" }] },
       { ...complete, warnings: 1, warningDetails: [{ ...safeWarning, stage: "private_stage" }] },
       { ...complete, warnings: 1, warningDetails: [{ ...safeWarning, summary: "PRIVATE PROVIDER ERROR" }] },

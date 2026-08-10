@@ -196,9 +196,14 @@ describe("Amazon import API", () => {
     expect(res.chunks.join("")).not.toContain("PRIVATE VALUE");
   });
 
-  it("streams a safe bounded completion warning record", async () => {
-    // Break caught: a safe notes-update warning is dropped before the browser can display the import outcome.
-    const warningCompletion = { type: "complete", processedShipments: 0, importedItems: 6, existingItems: 0, alreadyProcessedShipments: 0, customizationNeeded: 0, warnings: 1, failed: 0, warningDetails: [{ orderNumber: "114-7445306-8228220", stage: "notes_update", summary: "ShipStation Notes to Buyer is too long to update." }] };
+  it("streams every safe completion warning record beyond ten", async () => {
+    // Break caught: the API boundary truncates safe warning context from later shipments in a large batch.
+    const warningDetails = Array.from({ length: 11 }, (_, index) => ({
+      orderNumber: `114-${String(index + 1).padStart(7, "0")}-${String(index + 1).padStart(7, "0")}`,
+      stage: index % 2 === 0 ? "notes_update" : "tag_update",
+      summary: "ShipStation synchronization could not be completed.",
+    }));
+    const warningCompletion = { type: "complete", processedShipments: 0, importedItems: 11, existingItems: 0, alreadyProcessedShipments: 0, customizationNeeded: 0, warnings: 11, failed: 0, warningDetails };
     const res = response();
 
     await createAmazonImportHandler({

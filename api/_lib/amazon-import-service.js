@@ -10,7 +10,6 @@ const PROCESSED_TAG = "Amazon Customization Imported";
 const CUSTOMIZED_URL_OPTION = "CustomizedURL";
 const HEARTBEAT_INTERVAL_MS = 5 * 60 * 1000;
 const MAX_PUBLIC_FAILURES = 10;
-const MAX_PUBLIC_WARNINGS = 10;
 const SAFE_PUBLIC_FAILURE_STAGES = new Set([
   "item_start",
   "customization_fetch",
@@ -620,9 +619,7 @@ export function createAmazonImportService({
                   stage: warningStage,
                   error,
                 });
-                if (publicWarning && warningDetails.length < MAX_PUBLIC_WARNINGS) {
-                  warningDetails.push(publicWarning);
-                }
+                if (publicWarning) warningDetails.push(publicWarning);
               }
             } catch (error) {
               if (isGlobalFailure(error, signal)) throw error;

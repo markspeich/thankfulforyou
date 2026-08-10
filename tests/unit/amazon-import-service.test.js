@@ -653,8 +653,8 @@ describe("Amazon import service", () => {
     expect(f.store.releaseAmazonImportLock).toHaveBeenCalledOnce();
   });
 
-  it("caps public synchronization warning records at ten while retaining the total warning count", async () => {
-    // Break caught: a large warning batch can grow a public completion payload without bound or undercount warnings.
+  it("retains every safe synchronization warning record beyond ten", async () => {
+    // Break caught: warning detail caps discard order/action context from later shipments in a large batch.
     const failure = new ShipStationError("invalid_response", {
       validation: {
         reasonCode: "invalid_field_value",
@@ -675,8 +675,8 @@ describe("Amazon import service", () => {
     expect(result.importedItems).toBe(11);
     expect(result.warnings).toBe(11);
     expect(result.failed).toBe(0);
-    expect(result.warningDetails).toHaveLength(10);
-    expect(result.warningDetails).toEqual(Array.from({ length: 10 }, (_, index) => ({
+    expect(result.warningDetails).toHaveLength(11);
+    expect(result.warningDetails).toEqual(Array.from({ length: 11 }, (_, index) => ({
       orderNumber: `111-${String(index + 1).padStart(7, "0")}-${String(index + 1).padStart(7, "0")}`,
       stage: "notes_update",
       summary: "ShipStation synchronization could not be completed.",
