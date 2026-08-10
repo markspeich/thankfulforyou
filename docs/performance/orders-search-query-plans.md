@@ -137,31 +137,9 @@ Non-empty substring search was explicitly allowed to remain a separately
 measured full-scan path in this release, so its scans and temporary spill are a
 documented optimization candidate rather than a new trigram-index request.
 
-## Historical corrective design for empty search
+## Retired corrective design
 
-The smallest design that preserves the current cursor semantics without a
-denormalized search projection or maintenance trigger is:
-
-1. Split the migrated function into an empty-search fast path and the existing
-   non-empty substring-search path.
-2. Add a newest-first expression index on `order_items` beginning with
-   `workspace_id`, followed by `created_at DESC`, the normalized numeric / text /
-   null order sort expression, normalized group id, and `id DESC`.
-3. Add a group-member expression index beginning with `workspace_id` and the
-   exact `order:<order_number>` / `item:<id>` group-id expression, followed by
-   `created_at DESC, id DESC`. Use it for lifecycle aggregation and page
-   hydration instead of joining a computed group id to a workspace-wide scan.
-4. In the empty-search branch, scan the newest-first index and accept only the
-   newest representative row for each group using the group-member index.
-   Apply the keyset predicate before page hydration, evaluate lifecycle and
-   batch membership per candidate group, and stop at `requested_limit + 1`.
-5. Keep the current full-scan branch for non-empty substring search until its
-   measured latency becomes an operator problem.
-
-This revision needs two additive expression indexes and a replacement of the
-SQL function body. It does not require a new table, projection, trigger, or
-extension. Because `20260805172414_scalable_orders_search.sql` has not been
-applied to production, the same generated migration can be revised before
-approval; no second migration file is required. Acceptance evidence should show
-first-page and deep-cursor base scans staying near the page size on this fixture,
-with no workspace-wide `order_items` or `designs` scan in the empty-search path.
+The preceding baseline originally proposed an index-only correction. It is
+superseded and non-actionable: the current branch uses the projection-backed
+summary and batch-visibility paging paths described in the final verification
+section. No change is proposed by this historical note.
