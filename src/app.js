@@ -6758,19 +6758,24 @@ async function hydrateSelectedDatabaseOrderDetail(orderId = selectedDatabaseOrde
   }
 
   const selectionGeneration = databaseOrderDetailGeneration;
+  const mutationVersion = databaseOrdersMutationVersion;
   try {
     const payload = await runProductionBatchRequestWithSessionRefresh((accessToken) => fetchWorkspaceOrderDetail({
       orderId,
       batchId: getActiveProductionBatchId() || null,
       accessToken,
     }));
-    if (selectionGeneration !== databaseOrderDetailGeneration || selectedDatabaseOrderId !== orderId) {
+    if (selectionGeneration !== databaseOrderDetailGeneration
+      || mutationVersion !== databaseOrdersMutationVersion
+      || selectedDatabaseOrderId !== orderId) {
       return;
     }
     selectedDatabaseOrderDetail = payload?.order?.id === orderId ? payload.order : null;
     renderSelectedDatabaseOrderItems();
   } catch (error) {
-    if (selectionGeneration === databaseOrderDetailGeneration && error?.name !== "AbortError") {
+    if (selectionGeneration === databaseOrderDetailGeneration
+      && mutationVersion === databaseOrdersMutationVersion
+      && error?.name !== "AbortError") {
       selectedDatabaseOrderDetail = null;
       renderSelectedDatabaseOrderItems();
     }

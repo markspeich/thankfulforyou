@@ -547,6 +547,46 @@ test("keeps the latest selected Orders detail when earlier detail requests finis
   await expect(workspace.locator(".database-order-items-panel .editor-meta")).toContainText("Grace Hopper");
 });
 
+test("does not let a stale selected Orders detail overwrite an add-to-batch delta", async ({ page }) => {
+  await installSupabaseSession(page);
+  const productionBatchOrderItems = [];
+  await installProductionBatchRoutes(page, { orderItems: productionBatchOrderItems });
+  const posts = [];
+  await installOrdersWorkspaceRoutes(page, {
+    posts,
+    onPost(post) {
+      if (post.action === "addOrdersToProductionBatch") {
+        productionBatchOrderItems.push(buildAdaProductionBatchOrderItem());
+      }
+    },
+    postBody: {
+      addedOrderItemCount: 1,
+      addedOrderItemIds: ["item-1"],
+    },
+  });
+  let releaseStaleDetail;
+  let staleDetailFulfilled = false;
+  const staleDetail = buildOrdersPayload().orders[0];
+  await page.route("**/api/orders?*view=detail*", async (route) => {
+    await new Promise((resolve) => { releaseStaleDetail = resolve; });
+    await route.fulfill({ json: { order: staleDetail } });
+    staleDetailFulfilled = true;
+  });
+
+  await page.goto("/");
+
+  const workspace = page.getByRole("region", { name: "Orders workspace" });
+  await expect.poll(() => typeof releaseStaleDetail).toBe("function");
+  await workspace.getByLabel("Order actions", { exact: true }).click();
+  await workspace.getByRole("menu", { name: "Selected order actions" }).getByRole("button", { name: "Add to Production Batch" }).click();
+  await expect.poll(() => posts.some((post) => post.action === "addOrdersToProductionBatch")).toBe(true);
+  await expect(workspace.locator(".database-order-item-status")).toHaveText(["Already in active batch", "Already in active batch"]);
+
+  releaseStaleDetail();
+  await expect.poll(() => staleDetailFulfilled).toBe(true);
+  await expect(workspace.locator(".database-order-item-status")).toHaveText(["Already in active batch", "Already in active batch"]);
+});
+
 test("identifies Etsy and Amazon in selected imported order headers", async ({ page }) => {
   await installSupabaseSession(page);
   await installProductionBatchRoutes(page);
