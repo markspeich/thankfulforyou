@@ -6170,6 +6170,10 @@ function applyAddedOrderItemsDelta(payload) {
   const addedIdSet = new Set(addedIds);
   if (!addedIdSet.size) return 0;
 
+  const selectedOrderItems = selectedDatabaseOrderDetail?.items
+    || databaseOrders.find((order) => order.id === selectedDatabaseOrderId)?.items
+    || [];
+  const selectedOrderIsAffected = selectedOrderItems.some((item) => addedIdSet.has(item.id));
   databaseOrders = databaseOrders.map((order) => {
     const items = (order.items || []).map((item) => (
       addedIdSet.has(item.id)
@@ -6184,10 +6188,6 @@ function applyAddedOrderItemsDelta(payload) {
     return { ...order, status, items, isInActiveBatch: items.some((item) => item.isInActiveBatch) };
   }).filter(shouldRetainDatabaseOrderAfterKnownMutation);
 
-  const selectedOrderItems = selectedDatabaseOrderDetail?.items
-    || databaseOrders.find((order) => order.id === selectedDatabaseOrderId)?.items
-    || [];
-  const selectedOrderIsAffected = selectedOrderItems.some((item) => addedIdSet.has(item.id));
   if (selectedOrderIsAffected) {
     databaseOrderDetailGeneration += 1;
   }

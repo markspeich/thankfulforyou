@@ -587,6 +587,50 @@ test("does not let a stale selected Orders detail overwrite an add-to-batch delt
   await expect(workspace.locator(".database-order-item-status")).toHaveText(["Already in active batch", "Already in active batch"]);
 });
 
+test("does not restore a filtered-out selected order from a stale detail after adding it to the batch", async ({ page }) => {
+  await installSupabaseSession(page);
+  const productionBatchOrderItems = [];
+  await installProductionBatchRoutes(page, { orderItems: productionBatchOrderItems });
+  const posts = [];
+  await installOrdersWorkspaceRoutes(page, {
+    posts,
+    onPost(post) {
+      if (post.action === "addOrdersToProductionBatch") {
+        productionBatchOrderItems.push(buildAdaProductionBatchOrderItem());
+      }
+    },
+    postBody: {
+      addedOrderItemCount: 1,
+      addedOrderItemIds: ["item-1"],
+    },
+  });
+  const detailReleases = [];
+  const fulfilledDetailIndexes = [];
+  const staleDetail = buildOrdersPayload().orders[0];
+  await page.route("**/api/orders?*view=detail*", async (route) => {
+    const detailIndex = detailReleases.length;
+    await new Promise((resolve) => { detailReleases.push(resolve); });
+    await route.fulfill({ json: { order: staleDetail } });
+    fulfilledDetailIndexes.push(detailIndex);
+  });
+
+  await page.goto("/");
+
+  const workspace = page.getByRole("region", { name: "Orders workspace" });
+  await expect.poll(() => detailReleases).toHaveLength(1);
+  await page.locator("#databaseOrdersBatchFilter").selectOption("notInBatch");
+  await expect(workspace.getByRole("button", { name: "Order 1001" })).toBeVisible();
+  await expect.poll(() => detailReleases).toHaveLength(2);
+  await workspace.getByLabel("Order actions", { exact: true }).click();
+  await workspace.getByRole("menu", { name: "Selected order actions" }).getByRole("button", { name: "Add to Production Batch" }).click();
+  await expect.poll(() => posts.some((post) => post.action === "addOrdersToProductionBatch")).toBe(true);
+  await expect(workspace.getByText("No order selected.")).toBeVisible();
+
+  detailReleases[1]();
+  await expect.poll(() => fulfilledDetailIndexes).toContain(1);
+  await expect(workspace.getByText("No order selected.")).toBeVisible();
+});
+
 test("identifies Etsy and Amazon in selected imported order headers", async ({ page }) => {
   await installSupabaseSession(page);
   await installProductionBatchRoutes(page);
