@@ -104,7 +104,7 @@ Add new read contracts without switching the browser to them yet:
 
 ### Task 2: Adopt compact list and detail hydration in the Orders browser
 
-**Status:** `Not started`
+**Status:** `Complete`
 
 Switch the Orders workspace to the new contracts while still loading all order groups:
 
@@ -119,7 +119,7 @@ Switch the Orders workspace to the new contracts while still loading all order g
 
 ### Task 3: Add cursor pagination and simple server-side search
 
-**Status:** `Not started`
+**Status:** `Complete`
 
 Add the database and API paging behavior without specialized search infrastructure:
 
@@ -134,7 +134,7 @@ Add the database and API paging behavior without specialized search infrastructu
 
 ### Task 4: Add incremental browser loading
 
-**Status:** `Not started`
+**Status:** `Complete`
 
 Connect the Orders workspace to the paginated API:
 
@@ -149,7 +149,7 @@ Connect the Orders workspace to the paginated API:
 
 ### Task 5: Verify and review the complete local implementation
 
-**Status:** `Not started`
+**Status:** `In progress`
 
 Run the full pre-deployment verification sequence:
 
@@ -160,6 +160,32 @@ Run the full pre-deployment verification sequence:
 - Review for unbounded empty-search work, geometry leakage, cursor mismatches, browser races, unnecessary indexes, and Production Batch coupling.
 
 **Complete when:** all relevant checks pass, every retained index has plan evidence, the exact migration path is documented, and no unresolved high-risk review findings remain.
+
+The former pre-projection empty-search blocker is superseded. The final
+projection-backed migration has exact public-function test evidence for every
+lifecycle × batch-filter empty-search path after a deep cursor: each uses its
+expected projection index, applies `limit + 1`, and permits only PostgreSQL's
+one-row index-executor lookahead. See
+`docs/performance/orders-search-query-plans.md` for the complete boundedness
+matrix and the clear separation from older measurements.
+
+Task 5 is not complete yet. The currently documented performance figures are
+pre-projection baseline measurements; final projection-backed
+`EXPLAIN (ANALYZE, BUFFERS)` timing/buffer evidence has not been collected.
+The remaining local reset, focused tests, unit/browser tests, production build,
+and final controller review must run before this task can move to `Complete`.
+Nonempty workspace-wide search is intentionally not page-work-bounded and must
+be assessed separately from empty-search pagination.
+
+### Local migration handoff
+
+The exact migration path is
+`supabase/migrations/20260805172414_scalable_orders_search.sql`. It is
+additive: it introduces the projection-backed paging support and the
+`SECURITY INVOKER` list function without removing or rewriting production data.
+Production project `oezjskcygvfyezvoulzw` remains unchanged. Applying this
+migration to production requires separate explicit approval; after approval,
+verify production migration history and representative production query plans.
 
 ### Task 6: Apply and verify the production migration
 
