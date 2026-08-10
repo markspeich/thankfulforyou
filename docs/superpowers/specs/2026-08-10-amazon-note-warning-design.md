@@ -16,10 +16,12 @@ The importer retains shipment-level atomicity for the database write: all normal
 
 ## Result Contract
 
-The terminal `complete` event includes the existing count fields plus:
+The public browser completion event includes the existing count fields plus:
 
 - `warnings`: non-negative count of non-blocking ShipStation synchronization warnings.
 - `warningDetails`: the complete list of safe per-shipment warning records, using only `{ orderNumber, stage, summary }` with no fixed count cap.
+
+On the wire, warning details are sent before completion in bounded `warning_details` NDJSON frames. The terminal `complete` record carries counts and bounded failure details but no warning-detail array, so it remains below the browser's existing 256 KiB per-record safety limit. The browser validates and accumulates warning frames in stream order and exposes the complete `warningDetails` list only when a valid terminal completion record is followed by a successful end of stream. It must not expose partial warning data when the stream fails or ends without completion.
 
 `stage` is initially `notes_update`. `summary` is selected from a fixed public vocabulary. For the known note-size error, it is `ShipStation Notes to Buyer is too long to update.` The public event must never contain existing note text, item text, buyer data, raw ShipStation responses, or error messages.
 
@@ -49,7 +51,7 @@ Diagnostics retain the exact server-side `RangeError` or ShipStation error metad
 
 ## Test Coverage
 
-- Unit-test the result parser for warning count/detail shape, preservation beyond ten entries, and rejection of unsafe warning fields.
+- Unit-test the result parser for warning count/detail shape, preservation beyond ten entries, rejection of unsafe warning fields, and reconstruction of roughly 2,200 details without increasing the per-record safety limit.
 - Unit-test the importer with an oversized Notes to Buyer payload: all shipment items persist, `warnings` is one at `notes_update`, `failed` is zero, no tag request occurs, and subsequent shipments continue.
 - Unit-test tag failure after persistence as a `tag_update` warning.
 - Verify a retry treats app items as existing and can write notes/tag without duplicate database rows.

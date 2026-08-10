@@ -1,10 +1,12 @@
 # Amazon Note Synchronization Warning Implementation Plan
 
+> **Superseded warning-detail transport instructions (approved 2026-08-10):** The original ten-detail cap described below in Task 1 and Task 2 is no longer valid. The approved requirement is to preserve every validated safe warning detail without a fixed total-count cap. To keep the browser's 256 KiB per-record safety limit, the API streams warning details in bounded `warning_details` NDJSON frames before a detail-free terminal `complete` record. The browser validates and accumulates those frames in stream order, then delivers one terminal completion event with the full `warningDetails` list only after the stream ends successfully. Historical cap language remains below only as a record of the original plan and must not be implemented.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Persist valid Amazon order items when ShipStation note or tag synchronization fails, reporting safe non-blocking warnings in completion feedback.
 
-**Architecture:** Make transactional app persistence the shipment's durable success boundary, then execute ShipStation Notes to Buyer and processed-tag side effects. Extend the strict NDJSON completion contract with bounded sanitized warning details and render warnings without changing a zero-failure import into an error.
+**Architecture:** Make transactional app persistence the shipment's durable success boundary, then execute ShipStation Notes to Buyer and processed-tag side effects. Extend the strict NDJSON stream with sanitized warning-detail frames whose individual record size is bounded while the total validated warning count is not, and render warnings without changing a zero-failure import into an error.
 
 **Tech Stack:** Node.js ESM, Supabase RPC, ShipStation API client, vanilla browser JavaScript, Vitest, Playwright.
 
@@ -45,7 +47,7 @@ Expected: FAIL because warnings are currently extra completion fields.
 
 - [ ] **Step 3: Implement exact sanitization and parsing**
 
-Add `warnings` to completion numeric fields. Add `safeWarnings`/`parseWarningDetails` with a limit of ten and exact keys `{ orderNumber, stage, summary }`. Accept only stages `notes_update`/`tag_update` and fixed summaries `ShipStation Notes to Buyer is too long to update.` and `ShipStation synchronization could not be completed.`. Add four completion-key variants: base, failures, warning details, both.
+**Superseded historical instruction:** Add `warnings` to completion numeric fields. Add `safeWarnings`/`parseWarningDetails` with a limit of ten and exact keys `{ orderNumber, stage, summary }`. Accept only stages `notes_update`/`tag_update` and fixed summaries `ShipStation Notes to Buyer is too long to update.` and `ShipStation synchronization could not be completed.`. Add four completion-key variants: base, failures, warning details, both. **Do not implement the ten-detail limit or terminal warning-detail variants; use the approved bounded-frame transport described at the top of this plan.**
 
 - [ ] **Step 4: Add rejection tests and rerun**
 
@@ -86,7 +88,7 @@ Expected: FAIL because current note work precedes persistence and increments `fa
 
 - [ ] **Step 4: Reorder and isolate ShipStation work**
 
-After item normalization/enrichment, call `importAmazonOrderItemsTransactional`, update imported/existing/customization counts, and emit `item.persisted`. Then run note build/append/update in a nested synchronization `try`. Convert a `RangeError` to the fixed note-size warning; map other synchronization errors to the generic fixed warning. Emit `shipment.warning`, increment `warnings`, append no more than ten detail records, and skip tagging on a note warning. Attempt tag only after notes succeed; convert tag failure to a `tag_update` warning. Increment `processedShipments` only after persistence, notes, and tag all succeed. Keep pre-persistence and persistence errors in the existing failure path.
+After item normalization/enrichment, call `importAmazonOrderItemsTransactional`, update imported/existing/customization counts, and emit `item.persisted`. Then run note build/append/update in a nested synchronization `try`. Convert a `RangeError` to the fixed note-size warning; map other synchronization errors to the generic fixed warning. Emit `shipment.warning`, increment `warnings`, retain every validated detail record with no fixed total cap, and skip tagging on a note warning. Attempt tag only after notes succeed; convert tag failure to a `tag_update` warning. Increment `processedShipments` only after persistence, notes, and tag all succeed. Keep pre-persistence and persistence errors in the existing failure path. The original instruction to append no more than ten details is superseded by the approved bounded-frame transport described at the top of this plan.
 
 - [ ] **Step 5: Extend diagnostics safely**
 

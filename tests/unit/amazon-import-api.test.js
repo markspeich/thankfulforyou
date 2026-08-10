@@ -196,7 +196,7 @@ describe("Amazon import API", () => {
     expect(res.chunks.join("")).not.toContain("PRIVATE VALUE");
   });
 
-  it("streams every safe completion warning record beyond ten", async () => {
+  it("streams every safe warning record beyond ten before terminal completion", async () => {
     // Break caught: the API boundary truncates safe warning context from later shipments in a large batch.
     const warningDetails = Array.from({ length: 11 }, (_, index) => ({
       orderNumber: `114-${String(index + 1).padStart(7, "0")}-${String(index + 1).padStart(7, "0")}`,
@@ -216,7 +216,71 @@ describe("Amazon import API", () => {
       }),
     })({ method: "POST" }, res);
 
-    expect(res.chunks).toEqual([`${JSON.stringify(warningCompletion)}\n`]);
+    expect(res.chunks).toEqual([
+      `${JSON.stringify({ type: "warning_details", warningDetails })}\n`,
+      `${JSON.stringify({
+        type: "complete",
+        processedShipments: 0,
+        importedItems: 11,
+        existingItems: 0,
+        alreadyProcessedShipments: 0,
+        customizationNeeded: 0,
+        warnings: 11,
+        failed: 0,
+      })}\n`,
+    ]);
+  });
+
+  it("streams about 2200 safe warning details without exceeding the browser record boundary", async () => {
+    // Break caught: an uncapped terminal warningDetails array exceeds the browser's 256 KiB NDJSON record limit.
+    const warningDetails = Array.from({ length: 2_200 }, (_, index) => ({
+      orderNumber: `114-${String(index + 1).padStart(7, "0")}-${String(index + 1).padStart(7, "0")}`,
+      stage: index % 2 === 0 ? "notes_update" : "tag_update",
+      summary: "ShipStation synchronization could not be completed.",
+    }));
+    const warningCompletion = {
+      type: "complete",
+      processedShipments: 0,
+      importedItems: 2_200,
+      existingItems: 0,
+      alreadyProcessedShipments: 0,
+      customizationNeeded: 0,
+      warnings: 2_200,
+      failed: 0,
+      warningDetails,
+    };
+    const res = response();
+
+    await createAmazonImportHandler({
+      resolveAuth: vi.fn().mockResolvedValue({ workspaceId: "workspace-1", userId: "user-1" }),
+      serviceFactory: () => ({
+        prepare: async ({ onProgress }) => ({
+          run: async () => onProgress(warningCompletion),
+          release: vi.fn(),
+        }),
+      }),
+    })({ method: "POST" }, res);
+
+    const encoder = new TextEncoder();
+    expect(res.chunks.length).toBeGreaterThan(1);
+    expect(Math.max(...res.chunks.map((chunk) => encoder.encode(chunk).byteLength)))
+      .toBeLessThanOrEqual(256 * 1024);
+    expect(JSON.parse(res.chunks.at(-1))).toEqual({
+      type: "complete",
+      processedShipments: 0,
+      importedItems: 2_200,
+      existingItems: 0,
+      alreadyProcessedShipments: 0,
+      customizationNeeded: 0,
+      warnings: 2_200,
+      failed: 0,
+    });
+
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(res.chunks.join(""))));
+    const events = [];
+    await importAmazonOrders({ onEvent: (event) => events.push(event) });
+
+    expect(events).toEqual([warningCompletion]);
   });
 
   it("emits completion frames that preserve valid details through the browser parser and omit fallback IDs", async () => {

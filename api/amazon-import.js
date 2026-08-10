@@ -47,6 +47,7 @@ const SAFE_WARNING_SUMMARIES = new Set([
   "ShipStation Notes to Buyer is too long to update.",
   "ShipStation synchronization could not be completed.",
 ]);
+const MAX_PUBLIC_WARNINGS_PER_FRAME = 100;
 
 
 const PROGRESS_STAGES = new Set(["fetching_shipments", "processing_shipments"]);
@@ -119,9 +120,23 @@ function safeProgressFrame(event) {
   }
   const failures = event.type === "complete" ? safeFailures(event.failures) : undefined;
   if (failures) frame.failures = failures;
-  const warningDetails = event.type === "complete" ? safeWarnings(event.warningDetails) : undefined;
-  if (warningDetails) frame.warningDetails = warningDetails;
   return frame;
+}
+
+function safeProgressFrames(event) {
+  const terminalFrame = safeProgressFrame(event);
+  if (event?.type !== "complete") return [terminalFrame];
+
+  const warningDetails = safeWarnings(event.warningDetails) || [];
+  const frames = [];
+  for (let index = 0; index < warningDetails.length; index += MAX_PUBLIC_WARNINGS_PER_FRAME) {
+    frames.push({
+      type: "warning_details",
+      warningDetails: warningDetails.slice(index, index + MAX_PUBLIC_WARNINGS_PER_FRAME),
+    });
+  }
+  frames.push(terminalFrame);
+  return frames;
 }
 
 function publicError(error) {
@@ -307,7 +322,9 @@ export function createAmazonImportHandler({
         async onProgress(event) {
           if (!streaming) return;
           try {
-            await writeNdjson(res, safeProgressFrame(event), { signal });
+            for (const frame of safeProgressFrames(event)) {
+              await writeNdjson(res, frame, { signal });
+            }
           } catch (error) {
             transportFailed = true;
             throw error;

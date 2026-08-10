@@ -56,8 +56,10 @@ const COMPLETE_WITH_FAILURES_AND_WARNING_DETAILS_KEYS = [
 const PROGRESS_KEYS = ["processed", "stage", "total", "type"];
 const ERROR_KEYS = ["code", "message", "type"];
 const FAILURE_KEYS = ["orderNumber", "reasonCode", "stage", "summary"];
+const WARNING_DETAILS_KEYS = ["type", "warningDetails"];
 const WARNING_KEYS = ["orderNumber", "stage", "summary"];
 const MAX_FAILURES = 10;
+const MAX_WARNING_DETAILS_PER_FRAME = 100;
 const SAFE_ORDER_NUMBER = /^\d{3}-\d{7}-\d{7}$/;
 const SAFE_FAILURE_STAGES = new Set([
   "item_start",
@@ -142,6 +144,11 @@ function parseWarningDetails(value, warnings) {
   return warningDetails;
 }
 
+function parseWarningDetailsFrame(value) {
+  if (!Array.isArray(value) || value.length === 0 || value.length > MAX_WARNING_DETAILS_PER_FRAME) return null;
+  return parseWarningDetails(value, value.length);
+}
+
 function parseEvent(record) {
   let event;
   try {
@@ -176,6 +183,12 @@ function parseEvent(record) {
       };
     }
     throw publicImportError();
+  }
+
+  if (event.type === "warning_details" && hasExactKeys(event, WARNING_DETAILS_KEYS)) {
+    const warningDetails = parseWarningDetailsFrame(event.warningDetails);
+    if (!warningDetails) throw publicImportError();
+    return { type: "warning_details", warningDetails };
   }
 
   const hasFailures = event.type === "complete" && (
@@ -264,6 +277,7 @@ export async function importAmazonOrders({
   let pending = new Uint8Array();
   let terminalSeen = false;
   let terminalEvent = null;
+  const streamedWarningDetails = [];
   let completed = false;
 
   const notify = async (bytes) => {
@@ -280,9 +294,19 @@ export async function importAmazonOrders({
     if (!record.trim()) return;
     if (terminalSeen) throw publicImportError();
     const event = parseEvent(record);
+    if (event.type === "warning_details") {
+      streamedWarningDetails.push(...event.warningDetails);
+      return;
+    }
     if (event.type === "complete") {
+      if (streamedWarningDetails.length && Object.hasOwn(event, "warningDetails")) {
+        throw publicImportError();
+      }
+      if (streamedWarningDetails.length > event.warnings) throw publicImportError();
       terminalSeen = true;
-      terminalEvent = event;
+      terminalEvent = streamedWarningDetails.length
+        ? { ...event, warningDetails: streamedWarningDetails }
+        : event;
       return;
     }
     await onEvent(event);
