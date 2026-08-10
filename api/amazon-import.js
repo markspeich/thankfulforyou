@@ -27,6 +27,7 @@ const SAFE_AUTH_ERROR_MESSAGES = Object.freeze({
 const SAFE_SHIPSTATION_ERROR_CODES = new Set(["configuration", "invalid_response", "aborted", "temporary", "rate_limited", "request_failed"]);
 const SAFE_SHIPSTATION_REQUEST_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const MAX_PUBLIC_FAILURES = 10;
+const MAX_PUBLIC_WARNINGS = 10;
 const SAFE_ORDER_NUMBER = /^\d{3}-\d{7}-\d{7}$/;
 const SAFE_FAILURE_STAGES = new Set([
   "item_start",
@@ -42,6 +43,11 @@ const SAFE_FAILURE_VALIDATIONS = [
   { reasonCode: "required_field", summary: "Package weight is required." },
   { reasonCode: "invalid_field_value", summary: "The selected shipping service is invalid." },
 ];
+const SAFE_WARNING_STAGES = new Set(["notes_update", "tag_update"]);
+const SAFE_WARNING_SUMMARIES = new Set([
+  "ShipStation Notes to Buyer is too long to update.",
+  "ShipStation synchronization could not be completed.",
+]);
 
 
 const PROGRESS_STAGES = new Set(["fetching_shipments", "processing_shipments"]);
@@ -73,11 +79,33 @@ function safeFailures(value) {
   return failures;
 }
 
+function safeWarnings(value) {
+  if (!Array.isArray(value)) return undefined;
+  const warnings = [];
+  for (const warning of value) {
+    if (warnings.length >= MAX_PUBLIC_WARNINGS) break;
+    if (
+      !warning
+      || typeof warning !== "object"
+      || typeof warning.orderNumber !== "string"
+      || !SAFE_ORDER_NUMBER.test(warning.orderNumber)
+      || !SAFE_WARNING_STAGES.has(warning.stage)
+      || !SAFE_WARNING_SUMMARIES.has(warning.summary)
+    ) continue;
+    warnings.push({
+      orderNumber: warning.orderNumber,
+      stage: warning.stage,
+      summary: warning.summary,
+    });
+  }
+  return warnings;
+}
+
 function safeProgressFrame(event) {
   const numericFields = event?.type === "progress"
     ? ["processed", "total"]
     : event?.type === "complete"
-      ? ["processedShipments", "importedItems", "existingItems", "alreadyProcessedShipments", "customizationNeeded", "failed"]
+      ? ["processedShipments", "importedItems", "existingItems", "alreadyProcessedShipments", "customizationNeeded", "warnings", "failed"]
       : [];
   if (!numericFields.length) return {};
 
@@ -89,6 +117,8 @@ function safeProgressFrame(event) {
   }
   const failures = event.type === "complete" ? safeFailures(event.failures) : undefined;
   if (failures) frame.failures = failures;
+  const warningDetails = event.type === "complete" ? safeWarnings(event.warningDetails) : undefined;
+  if (warningDetails) frame.warningDetails = warningDetails;
   return frame;
 }
 

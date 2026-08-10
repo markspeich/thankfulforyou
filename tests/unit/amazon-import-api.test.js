@@ -166,6 +166,24 @@ describe("Amazon import API", () => {
     expect(res.chunks.join("")).not.toContain("PRIVATE VALUE");
   });
 
+  it("streams a safe bounded completion warning record", async () => {
+    // Break caught: a safe notes-update warning is dropped before the browser can display the import outcome.
+    const warningCompletion = { type: "complete", processedShipments: 0, importedItems: 6, existingItems: 0, alreadyProcessedShipments: 0, customizationNeeded: 0, warnings: 1, failed: 0, warningDetails: [{ orderNumber: "114-7445306-8228220", stage: "notes_update", summary: "ShipStation Notes to Buyer is too long to update." }] };
+    const res = response();
+
+    await createAmazonImportHandler({
+      resolveAuth: vi.fn().mockResolvedValue({ workspaceId: "workspace-1", userId: "user-1" }),
+      serviceFactory: () => ({
+        prepare: async ({ onProgress }) => ({
+          run: async () => onProgress(warningCompletion),
+          release: vi.fn(),
+        }),
+      }),
+    })({ method: "POST" }, res);
+
+    expect(res.chunks).toEqual([`${JSON.stringify(warningCompletion)}\n`]);
+  });
+
   it("emits completion frames that preserve valid details through the browser parser and omit fallback IDs", async () => {
     // Break caught: the server accepts an identifier grammar that makes its own completion frame fail browser parsing.
     const completion = {
@@ -175,6 +193,7 @@ describe("Amazon import API", () => {
       existingItems: 0,
       alreadyProcessedShipments: 0,
       customizationNeeded: 0,
+      warnings: 0,
       failed: 1,
     };
     const cases = [
