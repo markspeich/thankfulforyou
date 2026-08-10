@@ -446,6 +446,66 @@ describe("Amazon import service", () => {
     expect(JSON.stringify(result)).not.toContain("PRIVATE SHIPSTATION TAG ERROR");
   });
 
+  it.each([
+    ["notes_update", new ShipStationError("configuration")],
+    ["notes_update", new ShipStationError("authentication")],
+    ["notes_update", new ShipStationError("request_failed", { statusCode: 401 })],
+    ["notes_update", new ShipStationError("request_failed", { statusCode: 403 })],
+    ["tag_update", new ShipStationError("configuration")],
+    ["tag_update", new ShipStationError("authentication")],
+    ["tag_update", new ShipStationError("request_failed", { statusCode: 401 })],
+    ["tag_update", new ShipStationError("request_failed", { statusCode: 403 })],
+  ])("keeps persisted %s ShipStation credential failures as warnings and continues", async (stage, failure) => {
+    // Break caught: a ShipStation credential/configuration error after persistence aborts the run before later shipments import.
+    const f = fixture({
+      shipments: [
+        shipment("warning", {
+          external_order_id: "111-0000001-0000001",
+          items: [item("warning-item", { customizedUrl: "https://amazon.example/customization" })],
+        }),
+        shipment("later", { external_order_id: "111-0000002-0000002" }),
+      ],
+    });
+    if (stage === "notes_update") f.client.updateNotesToBuyer.mockRejectedValueOnce(failure);
+    else f.client.addShipmentTag.mockRejectedValueOnce(failure);
+
+    const result = await run(f);
+
+    expect(f.store.importAmazonOrderItemsTransactional).toHaveBeenCalledTimes(2);
+    expect(f.client.addShipmentTag.mock.calls.map(([request]) => request.shipmentId)).toContain("later");
+    expect(result).toMatchObject({
+      processedShipments: 1,
+      importedItems: 2,
+      warnings: 1,
+      failed: 0,
+      warningDetails: [{
+        orderNumber: "111-0000001-0000001",
+        stage,
+        summary: "ShipStation synchronization could not be completed.",
+      }],
+    });
+  });
+
+  it.each([
+    ["cancellation", new DOMException("Aborted", "AbortError")],
+    ["lease loss", new AmazonImportError("import_lock_lost", "Lease lost", 409)],
+    ["inactive import", new AmazonImportError("import_not_active", "Import inactive", 409)],
+  ])("still aborts after persistence on %s", async (_label, failure) => {
+    // Break caught: broad post-persistence warning handling swallows cancellation or import-lease state failures.
+    const f = fixture({
+      shipments: [
+        shipment("fatal-sync", { external_order_id: "111-0000001-0000001" }),
+        shipment("must-not-run", { external_order_id: "111-0000002-0000002" }),
+      ],
+    });
+    f.client.addShipmentTag.mockRejectedValueOnce(failure);
+
+    await expect(run(f)).rejects.toBe(failure);
+
+    expect(f.store.importAmazonOrderItemsTransactional).toHaveBeenCalledOnce();
+    expect(f.events.some((event) => event.type === "complete")).toBe(false);
+  });
+
   it("retries persisted items as existing when a prior notes update warned", async () => {
     // Break caught: retrying an untagged shipment creates duplicate order items instead of finishing its ShipStation synchronization.
     const retryShipment = shipment("retry-warning", {
@@ -727,8 +787,8 @@ describe("Amazon import service", () => {
     }]);
   });
 
-  it("emits a safe run failure without changing release behavior", async () => {
-    // Break caught: globally fatal shipment errors escape without the current safe stage or disrupt lock release.
+  it("emits a safe shipment warning for post-persistence authentication failure without changing release behavior", async () => {
+    // Break caught: post-persistence authentication warnings are misreported as run failures or disrupt lock release.
     const calls = [];
     const diagnostics = createAmazonImportDiagnostics({
       logger: flattenDiagnosticLogger({
@@ -754,11 +814,11 @@ describe("Amazon import service", () => {
     });
     f.client.updateNotesToBuyer.mockRejectedValueOnce(failure);
 
-    await expect(run(f)).rejects.toBe(failure);
+    await expect(run(f)).resolves.toMatchObject({ importedItems: 1, warnings: 1, failed: 0 });
 
-    expect(calls.filter(({ event }) => event === "amazon_import.run.failed")).toEqual([{
+    expect(calls.filter(({ event }) => event === "amazon_import.shipment.warning")).toEqual([{
       level: "error",
-      event: "amazon_import.run.failed",
+      event: "amazon_import.shipment.warning",
       context: {
         runId: "run-global",
         workspaceId: "workspace-1",
@@ -772,6 +832,7 @@ describe("Amazon import service", () => {
         requestId: "request-global",
       },
     }]);
+    expect(calls.filter(({ event }) => event === "amazon_import.run.failed")).toEqual([]);
     expect(f.store.releaseAmazonImportLock).toHaveBeenCalledOnce();
     expect(JSON.stringify(calls)).not.toContain("AUTHORIZATION SECRET");
     expect(JSON.stringify(calls)).not.toContain("AUTHORIZATION STACK SECRET");
@@ -1641,7 +1702,7 @@ describe("Amazon import service", () => {
     });
   });
 
-  it("rethrows global listing and ShipStation authentication failures and always releases", async () => {
+  it("rethrows a global listing failure and always releases", async () => {
     const listingFailure = new Error("listing unavailable");
     const listing = fixture();
     listing.client.iteratePendingShipments.mockImplementation(async function* () {
@@ -1650,27 +1711,6 @@ describe("Amazon import service", () => {
 
     await expect(run(listing)).rejects.toBe(listingFailure);
     expect(listing.store.releaseAmazonImportLock).toHaveBeenCalledOnce();
-
-    const authFailure = Object.assign(new Error("upstream unauthorized"), {
-      code: "request_failed",
-      statusCode: 401,
-    });
-    const auth = fixture({
-      shipments: [
-        shipment("auth", {
-          items: [item("auth-item", {
-            customizedUrl: "https://zme-caps.amazon.com/auth.zip",
-          })],
-        }),
-        shipment("must-not-run"),
-      ],
-    });
-    auth.client.updateNotesToBuyer.mockRejectedValue(authFailure);
-
-    await expect(run(auth)).rejects.toBe(authFailure);
-    expect(auth.store.importAmazonOrderItemsTransactional).toHaveBeenCalledOnce();
-    expect(auth.client.addShipmentTag).not.toHaveBeenCalled();
-    expect(auth.store.releaseAmazonImportLock).toHaveBeenCalledOnce();
   });
 
   it("terminates on caller abort and releases the matching lock owner", async () => {

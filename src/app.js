@@ -6612,7 +6612,7 @@ async function startAmazonImport() {
         completeOperationDialog({
           title: amazonImportFailed ? "Operation Failed" : "Amazon Import Complete",
           description: amazonImportFailed
-            ? getAmazonImportFailureDescription(amazonImportResult)
+            ? [getAmazonImportFailureDescription(amazonImportResult), amazonImportWarningDescription].filter(Boolean).join(" ")
             : [getAmazonImportSummary(amazonImportResult), amazonImportWarningDescription].filter(Boolean).join(" "),
           metrics: [
             { label: "Shipments processed", value: amazonImportResult.processedShipments },

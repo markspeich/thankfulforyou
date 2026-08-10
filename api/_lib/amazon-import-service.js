@@ -69,6 +69,10 @@ function isGlobalFailure(error, signal) {
     && (error?.statusCode === 401 || error?.statusCode === 403);
 }
 
+function isImportLifecycleFailure(error, signal) {
+  return isAbort(error, signal) || error instanceof AmazonImportError;
+}
+
 function isProcessed(shipment) {
   return shipment?.tags?.some((tag) => (
     tag === PROCESSED_TAG
@@ -602,7 +606,7 @@ export function createAmazonImportService({
                   processedTagUpdated: true,
                 });
               } catch (error) {
-                if (isGlobalFailure(error, signal)) throw error;
+                if (isImportLifecycleFailure(error, signal)) throw error;
                 const warningStage = currentStage === "tag_update" ? "tag_update" : "notes_update";
                 emitDiagnostic(diagnostics, "error", "shipment.warning", {
                   ...shipmentContext,

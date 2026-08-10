@@ -448,6 +448,34 @@ describe("Amazon workspace descriptors", () => {
     );
   });
 
+  it("formats every safe Amazon note and tag warning with order and action context", () => {
+    // Break caught: only the first safe warning is shown, or generic note/tag warnings lose the affected action.
+    expect(getAmazonImportWarningDescription({
+      warnings: 3,
+      warningDetails: [
+        {
+          orderNumber: "111-0000001-0000001",
+          stage: "notes_update",
+          summary: "ShipStation Notes to Buyer is too long to update.",
+        },
+        {
+          orderNumber: "111-0000002-0000002",
+          stage: "notes_update",
+          summary: "ShipStation synchronization could not be completed.",
+        },
+        {
+          orderNumber: "111-0000003-0000003",
+          stage: "tag_update",
+          summary: "ShipStation synchronization could not be completed.",
+        },
+      ],
+    })).toBe([
+      "Amazon order 111-0000001-0000001 was imported, but ShipStation Notes to Buyer could not be updated because the note is too long.",
+      "Amazon order 111-0000002-0000002 was imported, but ShipStation Notes to Buyer could not be updated.",
+      "Amazon order 111-0000003-0000003 was imported, but the ShipStation processed tag could not be added.",
+    ].join(" "));
+  });
+
   it("uses a fixed warning description for malformed or untrusted Amazon warning details", () => {
     // Break caught: warning fields inject customer or upstream data into the successful completion dialog.
     const fallback = "One or more Amazon orders were imported, but ShipStation synchronization could not be completed.";
@@ -461,7 +489,6 @@ describe("Amazon workspace descriptors", () => {
       { orderNumber: hostileValues[0], stage: "notes_update", summary: "ShipStation Notes to Buyer is too long to update." },
       { orderNumber: "114-7445306-8228220", stage: hostileValues[1], summary: "ShipStation Notes to Buyer is too long to update." },
       { orderNumber: "114-7445306-8228220", stage: "notes_update", summary: hostileValues[2] },
-      { orderNumber: "114-7445306-8228220", stage: "tag_update", summary: "ShipStation synchronization could not be completed." },
     ];
 
     for (const warning of invalidDetails) {
