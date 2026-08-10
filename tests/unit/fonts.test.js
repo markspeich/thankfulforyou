@@ -1,286 +1,58 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-
 import {
-  BUILTIN_FONT_DEFINITIONS,
   buildFontOptions,
+  getFontLibraryOptions,
+  getFontRenderingIssue,
+  getSelectableFontOptions,
   normalizeFontRecord,
   registerBrowserFont,
-  resolveFontOption,
+  registerBrowserFonts,
 } from "../../src/fonts.js";
 
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
+afterEach(() => vi.unstubAllGlobals());
 
 describe("font registry", () => {
-  it("keeps built-in fonts first and appends uploaded workspace fonts", () => {
-    const options = buildFontOptions([
-      {
-        id: "font-1",
-        display_name: "Clinic Sans",
-        family_name: "ClinicSans",
-        public_url: "https://example.test/font.otf",
-        file_format: "otf",
-        version: 1,
-      },
-    ]);
+  const active = { id: "candlepin", display_name: "Candlepin", family_name: "CandlepinReplacement", public_url: "https://example.test/candlepin/v2.otf", file_format: "otf", version: 2 };
+  const archived = { id: "somekind", display_name: "Somekind", family_name: "Somekind", public_url: "https://example.test/somekind/v1.ttf", archived_at: "2026-08-05T00:00:00Z" };
 
-    expect(options.map((font) => font.id).slice(0, 3)).toEqual(["candlepin", "skywalk", "somekind"]);
-    expect(options.at(-1)).toMatchObject({
-      id: "font-1",
-      label: "Clinic Sans",
-      family: "ClinicSans",
-      url: "https://example.test/font.otf",
-      exportPath: "https://example.test/font.otf",
-      isUploaded: true,
-    });
+  it("normalizes seeded and uploaded records without origin-specific runtime state", () => {
+    expect(normalizeFontRecord({ ...active, is_builtin: true })).toEqual(normalizeFontRecord(active));
   });
 
-  it("lets workspace records override built-in font fallback definitions", () => {
-    const options = buildFontOptions([
-      {
-        id: "candlepin",
-        display_name: "Candlepin Shop Version",
-        family_name: "WorkspaceFont_Candlepin_Shop_Version",
-        public_url: "https://example.test/workspace-fonts/candlepin/v2/Candlepin-Shop.otf",
-        file_format: "otf",
-        version: 2,
-        is_builtin: true,
-      },
-    ]);
-
-    expect(options.map((font) => font.id).slice(0, 3)).toEqual(["candlepin", "skywalk", "somekind"]);
-    expect(options[0]).toMatchObject({
-      id: "candlepin",
-      label: "Candlepin Shop Version",
-      family: "WorkspaceFont_Candlepin_Shop_Version",
-      url: "https://example.test/workspace-fonts/candlepin/v2/Candlepin-Shop.otf",
-      exportPath: "https://example.test/workspace-fonts/candlepin/v2/Candlepin-Shop.otf",
-      version: 2,
-      isBuiltin: true,
-      isUploaded: false,
-      bridgingEnabled: true,
-    });
+  it("uses a replacement seeded font family and versioned URL", () => {
+    expect(buildFontOptions([active])[0]).toMatchObject({ id: "candlepin", family: "CandlepinReplacement", url: "https://example.test/candlepin/v2.otf", version: 2 });
   });
 
-  it("normalizes the per-font bridging setting from workspace records", () => {
-    const option = normalizeFontRecord({
-      id: "font-1",
-      display_name: "Connected Script",
-      family_name: "ConnectedScript",
-      public_url: "https://example.test/connected.otf",
-      file_format: "otf",
-      version: 1,
-      bridging_enabled: false,
-    });
-
-    expect(option).toMatchObject({
-      id: "font-1",
-      bridgingEnabled: false,
-    });
+  it("excludes archived fonts from new assignments but retains the current archived reference", () => {
+    const options = buildFontOptions([active, archived], { includeArchived: true });
+    expect(getSelectableFontOptions(options).map((font) => font.id)).toEqual(["candlepin"]);
+    expect(getSelectableFontOptions(options, "somekind").at(-1)).toMatchObject({ id: "somekind", label: "Somekind (archived)", isArchived: true });
   });
 
-  it("keeps bundled built-in fonts active when a workspace built-in row was deleted", () => {
-    const options = buildFontOptions([
-      {
-        id: "candlepin",
-        display_name: "Candlepin Shop Version",
-        family_name: "WorkspaceFont_Candlepin_Shop_Version",
-        public_url: "https://example.test/workspace-fonts/candlepin/v2/Candlepin-Shop.otf",
-        file_format: "otf",
-        version: 2,
-        is_builtin: true,
-        deleted_at: "2026-06-14T00:00:00.000Z",
-      },
-    ], { includeDeleted: true });
-
-    expect(options[0]).toMatchObject({
-      id: "candlepin",
-      label: "Candlepin Laser",
-      family: "CandlepinLaser",
-      url: "public/fonts/Candlepin-Laser.otf",
-      isBuiltin: true,
-    });
-    expect(options[0].isDeleted).not.toBe(true);
+  it("preserves a missing reference as a non-selectable warning", () => {
+    expect(getSelectableFontOptions(buildFontOptions([active]), "missing").at(-1)).toMatchObject({ id: "missing", isMissing: true });
   });
 
-  it("excludes deleted uploaded fonts from normal choices", () => {
-    const options = buildFontOptions([
-      {
-        id: "font-1",
-        display_name: "Deleted",
-        family_name: "Deleted",
-        public_url: "https://example.test/font.otf",
-        file_format: "otf",
-        version: 1,
-        deleted_at: "2026-06-01T00:00:00.000Z",
-      },
-    ]);
-
-    expect(options.some((font) => font.id === "font-1")).toBe(false);
+  it("shows archived records in the library only when requested", () => {
+    const options = buildFontOptions([active, archived], { includeArchived: true });
+    expect(getFontLibraryOptions(options).map((font) => font.id)).toEqual(["candlepin"]);
+    expect(getFontLibraryOptions(options, { showArchived: true }).map((font) => font.id)).toEqual(["candlepin", "somekind"]);
   });
 
-  it("can resolve a deleted font for an existing design", () => {
-    const record = normalizeFontRecord({
-      id: "font-1",
-      display_name: "Old Font",
-      family_name: "OldFont",
-      public_url: "https://example.test/font.otf",
-      file_format: "otf",
-      version: 2,
-      deleted_at: "2026-06-01T00:00:00.000Z",
-    }, { includeDeleted: true });
-
-    const option = resolveFontOption("font-1", [...BUILTIN_FONT_DEFINITIONS, record]);
-    expect(option.label).toBe("Old Font (deleted)");
-    expect(option.isDeleted).toBe(true);
+  it("registers a replaced seeded font and replaces its prior browser face", async () => {
+    const added = []; const deleted = [];
+    class Face { constructor(family, source) { this.family = family; this.source = source; } async load() { return this; } }
+    vi.stubGlobal("FontFace", Face);
+    vi.stubGlobal("document", { fonts: { add: (face) => added.push(face), delete: (face) => deleted.push(face) } });
+    await registerBrowserFont({ family: "CandlepinReplacement", url: "https://example.test/candlepin/v1.otf" });
+    await registerBrowserFont({ family: "CandlepinReplacement", url: "https://example.test/candlepin/v2.otf" });
+    expect(added).toHaveLength(2); expect(deleted).toEqual([added[0]]); expect(added[1].source).toContain("v2.otf");
   });
 
-  it("returns only active fonts as selectable choices unless the current font is deleted", async () => {
-    const { getSelectableFontOptions } = await import("../../src/fonts.js");
-    const options = buildFontOptions([
-      {
-        id: "font-active",
-        display_name: "Active Font",
-        family_name: "ActiveFont",
-        public_url: "https://example.test/active.otf",
-        file_format: "otf",
-      },
-      {
-        id: "font-deleted",
-        display_name: "Deleted Font",
-        family_name: "DeletedFont",
-        public_url: "https://example.test/deleted.otf",
-        file_format: "otf",
-        deleted_at: "2026-06-14T00:00:00.000Z",
-      },
-    ], { includeDeleted: true });
-
-    expect(getSelectableFontOptions(options).map((font) => font.id)).not.toContain("font-deleted");
-    expect(getSelectableFontOptions(options, "font-deleted").at(-1)).toMatchObject({
-      id: "font-deleted",
-      label: "Deleted Font (deleted)",
-      isDeleted: true,
-    });
-  });
-
-  it("keeps a missing selected font id available so saved designs do not silently fall back", async () => {
-    const { getSelectableFontOptions } = await import("../../src/fonts.js");
-
-    const options = getSelectableFontOptions(BUILTIN_FONT_DEFINITIONS, "quincy");
-
-    expect(options.at(-1)).toMatchObject({
-      id: "quincy",
-      label: "Missing font (quincy)",
-      isMissing: true,
-    });
-  });
-
-  it("registers uploaded fonts with a stylesheet when the FontFace constructor is unavailable", async () => {
-    const appended = [];
-
-    vi.stubGlobal("FontFace", undefined);
-    vi.stubGlobal("document", {
-      createElement(tagName) {
-        return {
-          tagName: tagName.toUpperCase(),
-          dataset: {},
-          remove: vi.fn(),
-          textContent: "",
-        };
-      },
-      head: {
-        appendChild(element) {
-          appended.push(element);
-        },
-      },
-    });
-
-    const style = await registerBrowserFont({
-      family: "WorkspaceFont_Quincy_Laser",
-      url: "http://127.0.0.1:57320/storage/v1/object/public/workspace-fonts/quincy.otf",
-    });
-
-    expect(style).toBe(appended[0]);
-    expect(style.textContent).toContain('@font-face');
-    expect(style.textContent).toContain('font-family: "WorkspaceFont_Quincy_Laser"');
-    expect(style.textContent).toContain('quincy.otf');
-  });
-  it("falls back to a stylesheet when FontFace loading fails", async () => {
-    const appended = [];
-    const deletedFaces = [];
-
-    class FailingFontFaceStub {
-      constructor(family, source) {
-        this.family = family;
-        this.source = source;
-      }
-
-      async load() {
-        throw new Error("Font load failed");
-      }
-    }
-
-    vi.stubGlobal("FontFace", FailingFontFaceStub);
-    vi.stubGlobal("document", {
-      createElement(tagName) {
-        return {
-          tagName: tagName.toUpperCase(),
-          dataset: {},
-          remove: vi.fn(),
-          textContent: "",
-        };
-      },
-      fonts: {
-        delete(face) {
-          deletedFaces.push(face);
-          return true;
-        },
-      },
-      head: {
-        appendChild(element) {
-          appended.push(element);
-        },
-      },
-    });
-
-    const style = await registerBrowserFont({
-      family: "WorkspaceFont_Quincy_Laser",
-      url: "http://127.0.0.1:57320/storage/v1/object/public/workspace-fonts/quincy.otf",
-    });
-
-    expect(style).toBe(appended[0]);
-    expect(style.textContent).toContain('font-family: "WorkspaceFont_Quincy_Laser"');
-  });
-  it("hides deleted fonts from the font library unless requested", async () => {
-    const { getFontLibraryOptions } = await import("../../src/fonts.js");
-    const options = buildFontOptions([
-      {
-        id: "font-active",
-        display_name: "Active Font",
-        family_name: "ActiveFont",
-        public_url: "https://example.test/active.otf",
-        file_format: "otf",
-      },
-      {
-        id: "font-deleted",
-        display_name: "Deleted Font",
-        family_name: "DeletedFont",
-        public_url: "https://example.test/deleted.otf",
-        file_format: "otf",
-        deleted_at: "2026-06-14T00:00:00.000Z",
-      },
-    ], { includeDeleted: true });
-
-    expect(getFontLibraryOptions(options).map((font) => font.id)).not.toContain("font-deleted");
-    expect(getFontLibraryOptions(options, { showDeleted: true }).map((font) => font.id)).toContain("font-deleted");
-  });
-
-  it("replaces a previously registered browser font face for the same family", async () => {
-    const addedFaces = [];
-    const deletedFaces = [];
-
-    class FontFaceStub {
+  it("replaces the browser face by stable font id when a replacement changes family", async () => {
+    const added = [];
+    const deleted = [];
+    class Face {
       constructor(family, source) {
         this.family = family;
         this.source = source;
@@ -290,31 +62,85 @@ describe("font registry", () => {
         return this;
       }
     }
-
-    vi.stubGlobal("FontFace", FontFaceStub);
+    vi.stubGlobal("FontFace", Face);
     vi.stubGlobal("document", {
       fonts: {
-        add(face) {
-          addedFaces.push(face);
-        },
-        delete(face) {
-          deletedFaces.push(face);
-          return true;
-        },
+        add: (face) => added.push(face),
+        delete: (face) => deleted.push(face),
       },
     });
 
     await registerBrowserFont({
-      family: "WorkspaceFont_Sophia_Font_Regular",
-      url: "https://example.test/sophia/v1/SophiaFont-Regular.otf",
+      id: "candlepin",
+      family: "CandlepinLaser",
+      url: "https://example.test/candlepin/v1.otf",
     });
     await registerBrowserFont({
-      family: "WorkspaceFont_Sophia_Font_Regular",
-      url: "https://example.test/sophia/v2/SophiaFont-Regular.otf",
+      id: "candlepin",
+      family: "WorkspaceFont_Candlepin_Shop_Version",
+      url: "https://example.test/candlepin/v2.otf",
     });
 
-    expect(addedFaces).toHaveLength(2);
-    expect(deletedFaces).toEqual([addedFaces[0]]);
-    expect(addedFaces[1].source).toBe('url("https://example.test/sophia/v2/SophiaFont-Regular.otf")');
+    expect(deleted).toEqual([added[0]]);
+    expect(added[1]).toMatchObject({
+      family: "WorkspaceFont_Candlepin_Shop_Version",
+      source: 'url("https://example.test/candlepin/v2.otf")',
+    });
+  });
+
+  it("exposes a font load failure rather than silently registering a fallback", async () => {
+    class FailingFace { async load() { throw new Error("asset unavailable"); } }
+    vi.stubGlobal("FontFace", FailingFace); vi.stubGlobal("document", { fonts: { add: vi.fn(), delete: vi.fn() } });
+    await expect(registerBrowserFont({ family: "Broken", url: "https://example.test/broken.otf" })).rejects.toThrow("asset unavailable");
+  });
+
+  it("keeps an unresolvable registry row visible and reports its registration failure", async () => {
+    const [font] = buildFontOptions([{
+      id: "missing-asset",
+      display_name: "Missing Asset",
+      family_name: "MissingAsset",
+      public_url: null,
+      storage_path: null,
+    }]);
+
+    expect(font).toMatchObject({ id: "missing-asset", url: "", exportPath: "" });
+    const [result] = await registerBrowserFonts([font]);
+    expect(result.status).toBe("rejected");
+    expect(result.reason).toEqual(expect.objectContaining({
+      message: expect.stringContaining("no resolvable asset"),
+    }));
+  });
+
+  it("blocks rendering when a selected font is missing, unresolvable, or failed to load", () => {
+    const settings = {
+      text: "Ada",
+      lines: [{ kind: "text", fontId: "candlepin" }],
+    };
+
+    expect(getFontRenderingIssue(settings, [])).toMatchObject({
+      fontId: "candlepin",
+      reason: "missing",
+    });
+    expect(getFontRenderingIssue(settings, [{
+      ...buildFontOptions([active])[0],
+      loadError: "Candlepin failed to load. asset unavailable",
+    }])).toMatchObject({
+      fontId: "candlepin",
+      reason: "load-failed",
+    });
+    expect(getFontRenderingIssue(settings, buildFontOptions([{
+      ...active,
+      public_url: null,
+    }]))).toMatchObject({
+      fontId: "candlepin",
+      reason: "unresolvable",
+    });
+  });
+
+  it("allows archived fonts with registered browser and export assets", () => {
+    expect(getFontRenderingIssue({
+      text: "RN",
+      lines: [{ kind: "text", fontId: "somekind" }],
+    }, buildFontOptions([archived], { includeArchived: true }))).toBeNull();
   });
 });

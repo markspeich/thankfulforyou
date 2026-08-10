@@ -1,21 +1,3 @@
-@font-face {
-  font-family: "CandlepinLaser";
-  src: url("../public/fonts/Candlepin-Laser.otf") format("opentype");
-  font-display: swap;
-}
-
-@font-face {
-  font-family: "SkywalkLaser";
-  src: url("../public/fonts/SkywalkLaserRegular.otf") format("opentype");
-  font-display: swap;
-}
-
-@font-face {
-  font-family: "Somekind";
-  src: url("../public/fonts/Somekind.ttf") format("truetype");
-  font-display: swap;
-}
-
 :root {
   --ink: #1c2024;
   --muted: #66727f;
@@ -3844,7 +3826,6 @@ button:disabled {
 }
 
 .backing-letter {
-  font-family: "CandlepinLaser", "Segoe Script", cursive;
   fill: var(--blue);
   stroke: var(--blue);
   stroke-linejoin: round;
@@ -3853,7 +3834,6 @@ button:disabled {
 }
 
 .face-letter {
-  font-family: "CandlepinLaser", "Segoe Script", cursive;
   fill: var(--white-acrylic);
   stroke: rgba(190, 205, 211, 0.7);
   stroke-width: 0.35;

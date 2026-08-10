@@ -47,6 +47,7 @@ import { shouldUsePostStretchBackingOffset, shouldUseRasterTextPreview } from ".
 import { findPairOffsetPx } from "./bridge-geometry.js";
 import {
   buildSettingsSignature,
+  cachedBuildMatchesResolvedFontAssets,
   getSettingsSignatureCandidates,
 } from "./order-signatures.js";
 import {
@@ -93,6 +94,7 @@ import {
 import {
   getEtsyConnectionActionDescriptor,
   getEtsyImportSummary,
+  getAmazonImportFailureDescription,
   getAmazonImportSummary,
   getOrderItemCustomizationWarning,
   getCheckedOrderIdsForBulkAction,
@@ -131,10 +133,12 @@ import {
 import {
   buildFontOptions,
   createWorkspaceFont,
-  deleteWorkspaceFont,
+  archiveWorkspaceFont,
   getFontLibraryOptions,
+  getFontRenderingIssue,
   getSelectableFontOptions,
   loadWorkspaceFontOptions,
+  restoreWorkspaceFont,
   registerBrowserFonts,
   replaceWorkspaceFont,
   resolveFontOption,
@@ -235,7 +239,7 @@ const sizeGuideWorkspaceButton = document.querySelector("#sizeGuideWorkspaceButt
 const productionBatchLogoutButton = document.querySelector("#productionBatchLogoutButton");
 const navCollapseButton = document.querySelector("#navCollapseButton");
 const fontLibraryList = document.querySelector("#fontLibraryList");
-const showDeletedFontsInput = document.querySelector("#showDeletedFontsInput");
+const showArchivedFontsInput = document.querySelector("#showArchivedFontsInput");
 const newFontUploadButton = document.querySelector("#newFontUploadButton");
 const fontFileInput = document.querySelector("#fontFileInput");
 const fontDisplayNameInput = document.querySelector("#fontDisplayNameInput");
@@ -246,7 +250,7 @@ const selectedFontName = document.querySelector("#selectedFontName");
 const selectedFontMeta = document.querySelector("#selectedFontMeta");
 const selectedFontPreview = document.querySelector("#selectedFontPreview");
 const replaceFontButton = document.querySelector("#replaceFontButton");
-const deleteFontButton = document.querySelector("#deleteFontButton");
+const archiveFontButton = document.querySelector("#archiveFontButton");
 const fontEditorStatus = document.querySelector("#fontEditorStatus");
 const fontUsedByPresetsList = document.querySelector("#fontUsedByPresetsList");
 const fontUsedByPresetsEmptyState = document.querySelector("#fontUsedByPresetsEmptyState");
@@ -553,7 +557,9 @@ let databaseOrdersSearchTerm = "";
 let databaseOrdersStatusFilterValue = "open";
 let databaseOrdersBatchFilterValue = "all";
 let selectedFontId = "candlepin";
-let showDeletedFonts = false;
+let fontDisplayNameDraft = null;
+let showArchivedFonts = false;
+let fontRegistryLoadError = "";
 let fixedDesignRecords = [];
 let selectedFixedDesignId = initialAppRoute.workspace === "fixedDesigns" ? initialAppRoute.itemId : null;
 let fixedDesignSearchTerm = "";
@@ -962,7 +968,21 @@ function getFontOption(fontId) {
 }
 
 function getCanvasFont(fontSizePx, fontId) {
-  return `${fontSizePx}px "${getFontOption(fontId).family}", "Segoe Script", cursive`;
+  return `${fontSizePx}px "${getFontOption(fontId).family}"`;
+}
+
+function getSettingsFontRenderingIssue(settings) {
+  return getFontRenderingIssue(settings, FONT_OPTIONS);
+}
+
+function updateConnectionStatusFromFontIssue(issue) {
+  const registryDetail = fontRegistryLoadError ? ` ${fontRegistryLoadError}` : "";
+  const loadDetail = issue?.detail ? ` ${issue.detail}` : "";
+  updateConnectionStatus(
+    "error",
+    "Font unavailable",
+    `${issue?.label || "The selected font"} cannot be rendered with its selected asset.${loadDetail}${registryDetail} Open Fonts to repair the asset or select an available font before previewing, saving, analyzing, or exporting.`,
+  );
 }
 
 function setFontOptions(fontOptions) {
@@ -975,10 +995,28 @@ function setFontOptions(fontOptions) {
 
 async function refreshWorkspaceFonts(accessToken = null) {
   try {
-    setFontOptions(await loadWorkspaceFontOptions({ accessToken, includeDeleted: true }));
-    await registerBrowserFonts(FONT_OPTIONS.filter((font) => font.isUploaded && !font.isDeleted));
-  } catch {
-    setFontOptions(buildFontOptions());
+    fontRegistryLoadError = "";
+    setFontOptions(await loadWorkspaceFontOptions({ accessToken, includeArchived: true }));
+    const results = await registerBrowserFonts(FONT_OPTIONS);
+    setFontOptions(FONT_OPTIONS.map((font, index) => {
+      const result = results[index];
+      if (result?.status !== "rejected") {
+        return font;
+      }
+      const detail = result.reason instanceof Error && result.reason.message
+        ? ` ${result.reason.message}`
+        : "";
+      return {
+        ...font,
+        label: `${font.label} (load failed)`,
+        loadError: `${font.displayName || font.label} failed to load.${detail}`,
+      };
+    }));
+  } catch (error) {
+    setFontOptions([]);
+    fontRegistryLoadError = error instanceof Error
+      ? `Font registry failed to load: ${error.message}`
+      : "Font registry failed to load.";
   }
   renderFontWorkspace();
 }
@@ -1120,11 +1158,15 @@ function applyFontBridgePolicy(lineSettings) {
 
   const font = getFontOption(lineSettings.fontId);
   const fontBridgingEnabled = font.bridgingEnabled !== false;
+  const fontAssetFingerprint = font.isMissing
+    ? `${lineSettings.fontId}|missing`
+    : `${font.id}|${font.version || 1}|${font.exportPath || font.url || "missing"}`;
   return {
     ...lineSettings,
     bridgeMm: fontBridgingEnabled ? lineSettings.bridgeMm : 0,
     lineBridgeMm: fontBridgingEnabled ? lineSettings.lineBridgeMm : 0,
     fontBridgingEnabled,
+    fontAssetFingerprint,
   };
 }
 
@@ -1505,17 +1547,23 @@ function toSignatureCandidates(signature) {
   return typeof signature === "string" && signature ? [signature] : [];
 }
 
-function getStoredBuildForSignature(cachedBuild, previousCompletedBuild, signature) {
+function getStoredBuildForSignature(cachedBuild, previousCompletedBuild, signature, settings = null) {
   const signatureCandidates = toSignatureCandidates(signature);
   if (!signatureCandidates.length) {
     return null;
   }
 
-  if (signatureCandidates.includes(cachedBuild?.signature)) {
+  if (
+    signatureCandidates.includes(cachedBuild?.signature)
+    && (!settings || cachedBuildMatchesResolvedFontAssets(cachedBuild, settings))
+  ) {
     return structuredClone(cachedBuild);
   }
 
-  if (signatureCandidates.includes(previousCompletedBuild?.signature)) {
+  if (
+    signatureCandidates.includes(previousCompletedBuild?.signature)
+    && (!settings || cachedBuildMatchesResolvedFontAssets(previousCompletedBuild, settings))
+  ) {
     return structuredClone(previousCompletedBuild);
   }
 
@@ -1530,12 +1578,17 @@ function getOrderSettingsSignatureCandidates(order) {
   return order ? getSettingsSignatureCandidates(order.settings) : [];
 }
 
-function getCachedBuild(order, signature = getOrderSettingsSignatureCandidates(order)) {
+function getCachedBuild(order, signature = getOrderSettingsSignatureCandidates(order), settings = order?.settings) {
   if (!order?.cachedBuild) {
     return null;
   }
 
-  return enrichCachedBuildForOrder(order, getStoredBuildForSignature(order.cachedBuild, null, signature));
+  return enrichCachedBuildForOrder(order, getStoredBuildForSignature(
+    order.cachedBuild,
+    null,
+    signature,
+    settings,
+  ));
 }
 
 function getBuildForSignature(order, signature) {
@@ -1544,7 +1597,12 @@ function getBuildForSignature(order, signature) {
     return null;
   }
 
-  const storedBuild = getStoredBuildForSignature(order.cachedBuild, order.previousCompletedBuild, signatureCandidates);
+  const storedBuild = getStoredBuildForSignature(
+    order.cachedBuild,
+    order.previousCompletedBuild,
+    signatureCandidates,
+    order.settings,
+  );
   if (storedBuild) {
     return enrichCachedBuildForOrder(order, storedBuild);
   }
@@ -1555,6 +1613,7 @@ function getBuildForSignature(order, signature) {
     && signatureCandidates.includes(order.savedSettingsSignature)
     && order.capturedLayout.analysis
     && typeof order.capturedLayout.analysis === "object"
+    && cachedBuildMatchesResolvedFontAssets({ layout: order.capturedLayout }, order.settings)
   ) {
     const layout = structuredClone(order.capturedLayout);
     const analysis = structuredClone(order.capturedLayout.analysis);
@@ -1601,6 +1660,7 @@ function buildExportPayload(layout, analysis = layout?.analysis || null, source 
       heightMm: layout.heightMm,
       backingMm: layout.backingMm,
       weldExportedDesign: layout.weldExportedDesign,
+      letters: Array.isArray(layout.letters) ? layout.letters : [],
       fixedSvgs: Array.isArray(layout.fixedSvgs) ? layout.fixedSvgs : [],
       colorName,
       quantity,
@@ -1850,7 +1910,7 @@ function createPresetEditorFontField(ruleKey, fontId) {
     option.value = font.id;
     option.textContent = font.label;
     option.selected = font.id === fontId;
-    option.disabled = Boolean(font.isDeleted);
+    option.disabled = Boolean(font.isMissing);
     select.append(option);
   });
 
@@ -3779,16 +3839,19 @@ function hydrateStoredOrder(order, index) {
     cachedBuild,
     previousCompletedBuild,
     savedSettingsSignature,
+    settings,
   );
   const completedSettingsBuild = getStoredBuildForSignature(
     cachedBuild,
     previousCompletedBuild,
     completedSettingsSignature,
+    settings,
   );
   const pendingCompletedBuild = getStoredBuildForSignature(
     cachedBuild,
     previousCompletedBuild,
     abandonedPendingSignature,
+    settings,
   );
 
   if (abandonedPendingSignature) {
@@ -5813,7 +5876,8 @@ function getDatabaseOrderItemDesignText(item) {
     : typeof item?.text === "string" && item.text.trim()
       ? item.text.trim()
       : "";
-  return directText || "No design text";
+  const compactText = typeof item?.designText === "string" ? item.designText.trim() : "";
+  return directText || compactText || "No design text";
 }
 
 function getDatabaseOrderItemColorText(item) {
@@ -6164,7 +6228,6 @@ function updateDatabaseOrdersFromPayload(payload, options = {}) {
   return true;
 }
 
-
 function applyAddedOrderItemsDelta(payload) {
   const addedIds = Array.isArray(payload?.addedOrderItemIds) ? payload.addedOrderItemIds : [];
   const addedIdSet = new Set(addedIds);
@@ -6208,6 +6271,26 @@ function applyAddedOrderItemsDelta(payload) {
   loadedDatabaseOrdersKey = (getActiveProductionBatchId() || "") + "|" + databaseOrdersStatusFilterValue;
   renderDatabaseOrdersWorkspace();
   return addedIdSet.size;
+}
+
+async function persistPendingProductionBatchEdits() {
+  const shouldPersist = batchPersistenceTimeoutId != null
+    || productionBatchAutosavePending
+    || productionBatchAutosaveInFlight
+    || orders.some((order) => typeof order?.saveErrorMessage === "string" && order.saveErrorMessage);
+  saveActiveOrderDraft();
+  clearProductionBatchAutosaveTimeout();
+  await waitForProductionBatchAutosaveIdle();
+  const snapshotKey = buildProductionBatchSaveKey(buildProductionBatchSnapshot());
+  if (!snapshotKey || snapshotKey === lastProductionBatchSaveKey) return true;
+  if (!isProductionBatchSyncEnabled()) {
+    throw new Error("Unable to save pending Production Batch edits.");
+  }
+  if (!shouldPersist) return true;
+  productionBatchAutosavePending = false;
+  const saved = await saveBatchSnapshotToRemote({ degradeOnFailure: false });
+  if (!saved) throw new Error("Unable to save pending Production Batch edits.");
+  return true;
 }
 
 function applyOrderItemsStatusDelta(payload) {
@@ -6579,9 +6662,12 @@ async function startAmazonImport() {
       amazonImporting = false;
       renderEtsyImportUi();
       if (amazonImportResult) {
+        const amazonImportFailed = amazonImportResult.failed > 0;
         completeOperationDialog({
-          title: "Amazon Import Complete",
-          description: getAmazonImportSummary(amazonImportResult),
+          title: amazonImportFailed ? "Operation Failed" : "Amazon Import Complete",
+          description: amazonImportFailed
+            ? getAmazonImportFailureDescription(amazonImportResult)
+            : getAmazonImportSummary(amazonImportResult),
           metrics: [
             { label: "Shipments processed", value: amazonImportResult.processedShipments },
             { label: "Items imported", value: amazonImportResult.importedItems },
@@ -6774,7 +6860,14 @@ async function hydrateSelectedDatabaseOrderDetail(orderId = selectedDatabaseOrde
     if (selectionGeneration !== databaseOrderDetailGeneration || selectedDatabaseOrderId !== orderId) {
       return;
     }
-    selectedDatabaseOrderDetail = payload?.order?.id === orderId ? payload.order : null;
+    if (Object.hasOwn(payload || {}, "order") && payload?.order?.id !== orderId) {
+      selectedDatabaseOrderDetail = null;
+      selectedDatabaseOrderId = null;
+      writeAppRoute({ replace: true, workspace: "databaseOrders", itemId: null });
+      renderDatabaseOrdersWorkspace();
+      return;
+    }
+    selectedDatabaseOrderDetail = payload.order;
     renderSelectedDatabaseOrderItems();
   } catch (error) {
     if (selectionGeneration === databaseOrderDetailGeneration && error?.name !== "AbortError") {
@@ -7393,6 +7486,7 @@ async function addDatabaseOrderItemToBatch(item, button = null) {
   render();
 
   try {
+    await persistPendingProductionBatchEdits();
     const accessToken = await resolveProductionBatchMutationAccessToken();
     const payload = await runProductionBatchRequestWithSessionRefresh((requestToken) => addOrderItemToProductionBatch({
       batchId,
@@ -7401,7 +7495,7 @@ async function addDatabaseOrderItemToBatch(item, button = null) {
       accessToken: requestToken,
     }), accessToken);
 
-    await refreshProductionBatchSnapshot(productionBatchAccessToken);
+    await refreshProductionBatchSnapshot(accessToken);
     applyAddedOrderItemsDelta(payload);
     updateWorkflowAlert(buildAddedToBatchMessage(payload), "success");
     completeOperationDialog({ title: "Order Item Added", description: buildAddedToBatchMessage(payload), metrics: [{ label: "Selected", value: 1 }, { label: "Added", value: countFromPayload(payload, "addedOrderItemCount") }, { label: "Already in batch", value: Math.max(0, 1 - countFromPayload(payload, "addedOrderItemCount")) }] });
@@ -7446,6 +7540,7 @@ async function updateDatabaseOrderItemStatus({
   render();
 
   try {
+    await persistPendingProductionBatchEdits();
     const accessToken = await resolveProductionBatchMutationAccessToken();
     const payload = await runProductionBatchRequestWithSessionRefresh((requestToken) => updateOrderItemLifecycleStatus({
       action,
@@ -7547,6 +7642,7 @@ async function updateDatabaseOrderStatus({
   render();
 
   try {
+    await persistPendingProductionBatchEdits();
     const accessToken = await resolveProductionBatchMutationAccessToken();
     const payload = await runProductionBatchRequestWithSessionRefresh((requestToken) => updateOrderItemLifecycleStatus({
       action,
@@ -7655,6 +7751,7 @@ async function updateCheckedDatabaseOrdersStatus({
   render();
 
   try {
+    await persistPendingProductionBatchEdits();
     const accessToken = await resolveProductionBatchMutationAccessToken();
     const payload = await runProductionBatchRequestWithSessionRefresh((requestToken) => updateOrderItemLifecycleStatus({
       action,
@@ -7769,6 +7866,7 @@ async function addCheckedDatabaseOrdersToBatch() {
   render();
 
   try {
+    await persistPendingProductionBatchEdits();
     const accessToken = await resolveProductionBatchMutationAccessToken();
     const payload = await runProductionBatchRequestWithSessionRefresh((requestToken) => addOrdersToProductionBatch({
       batchId,
@@ -7780,7 +7878,7 @@ async function addCheckedDatabaseOrdersToBatch() {
       [...checkedDatabaseOrderIds].filter((orderId) => !orderIds.includes(orderId)),
     );
 
-    await refreshProductionBatchSnapshot(productionBatchAccessToken);
+    await refreshProductionBatchSnapshot(accessToken);
     applyAddedOrderItemsDelta(payload);
     checkedDatabaseOrderIds = nextCheckedOrderIds;
     renderDatabaseOrdersWorkspace();
@@ -7819,6 +7917,7 @@ async function addSelectedDatabaseOrderToBatch() {
   render();
 
   try {
+    await persistPendingProductionBatchEdits();
     const accessToken = await resolveProductionBatchMutationAccessToken();
     const payload = await runProductionBatchRequestWithSessionRefresh((requestToken) => addOrdersToProductionBatch({
       batchId,
@@ -7827,7 +7926,7 @@ async function addSelectedDatabaseOrderToBatch() {
       accessToken: requestToken,
     }), accessToken);
 
-    await refreshProductionBatchSnapshot(productionBatchAccessToken);
+    await refreshProductionBatchSnapshot(accessToken);
     applyAddedOrderItemsDelta(payload);
     selectedOrderActionsMenu?.removeAttribute("open");
     updateWorkflowAlert(buildAddedToBatchMessage(payload), "success");
@@ -8640,7 +8739,7 @@ function createFontField(lineIndex, fontId) {
     option.value = font.id;
     option.textContent = font.label;
     option.selected = font.id === fontId;
-    option.disabled = Boolean(font.isDeleted);
+    option.disabled = Boolean(font.isMissing);
     select.append(option);
   });
 
@@ -9213,7 +9312,7 @@ function hasCompletedEditingState(order, settings = getCurrentSettings()) {
 }
 
 function canCompleteActiveOrder(order) {
-  if (!orderHasRenderableDesign(order)) {
+  if (!orderHasRenderableDesign(order) || getSettingsFontRenderingIssue(order.settings)) {
     return false;
   }
 
@@ -9258,7 +9357,7 @@ function getSavedCachedBuild(order) {
 }
 
 function isOrderReadyForExport(order) {
-  if (order?.saveErrorMessage) {
+  if (order?.saveErrorMessage || getSettingsFontRenderingIssue(order?.settings)) {
     return false;
   }
 
@@ -9550,7 +9649,7 @@ function hideInitialBatchLoading() {
 }
 
 function getFontMetaLabel(font) {
-  const kind = font.isBuiltin ? "Built-in production font" : "Uploaded workspace font";
+  const kind = font.isArchived ? "Archived" : "Available";
   const format = font.fileFormat ? font.fileFormat.toUpperCase() : "font";
   const version = font.version ? `v${font.version}` : "v1";
   return `${kind} · ${format} · ${version}`;
@@ -10179,11 +10278,11 @@ function renderFontWorkspace() {
   }
 
   const selectedFont = getFontOption(selectedFontId);
-  if (showDeletedFontsInput) {
-    showDeletedFontsInput.checked = showDeletedFonts;
+  if (showArchivedFontsInput) {
+    showArchivedFontsInput.checked = showArchivedFonts;
   }
   fontLibraryList.replaceChildren();
-  getFontLibraryOptions(FONT_OPTIONS, { showDeleted: showDeletedFonts }).forEach((font) => {
+  getFontLibraryOptions(FONT_OPTIONS, { showArchived: showArchivedFonts }).forEach((font) => {
     const row = document.createElement("article");
     row.className = "font-library-row size-preset-row";
     row.classList.toggle("is-selected", font.id === selectedFont.id);
@@ -10197,7 +10296,7 @@ function renderFontWorkspace() {
     row.querySelector(".font-library-name").textContent = font.label;
     const preview = row.querySelector(".font-library-preview");
     preview.textContent = font.label;
-    preview.style.fontFamily = `"${font.family}", "Segoe Script", cursive`;
+    preview.style.fontFamily = `"${font.family}"`;
     row.addEventListener("click", () => {
       selectedFontId = font.id;
       renderFontWorkspace();
@@ -10216,8 +10315,12 @@ function renderFontWorkspace() {
 
   selectedFontName.textContent = selectedFont.label;
   selectedFontMeta.textContent = getFontMetaLabel(selectedFont);
-  fontDisplayNameInput.value = selectedFont.displayName || selectedFont.label;
+  const persistedDisplayName = selectedFont.displayName || selectedFont.label;
+  fontDisplayNameInput.value = fontDisplayNameDraft?.fontId === selectedFont.id
+    ? fontDisplayNameDraft.value
+    : persistedDisplayName;
   fontDisplayNameInput.disabled = false;
+  updateSaveFontDisplayNameButton();
   if (fontBridgingEnabledInput) {
     fontBridgingEnabledInput.checked = selectedFont.bridgingEnabled !== false;
     fontBridgingEnabledInput.disabled = false;
@@ -10226,13 +10329,19 @@ function renderFontWorkspace() {
     fontPreviewTextInput.value = fontPreviewText;
   }
   selectedFontPreview.textContent = fontPreviewText;
-  selectedFontPreview.style.fontFamily = `"${selectedFont.family}", "Segoe Script", cursive`;
+  selectedFontPreview.style.fontFamily = `"${selectedFont.family}"`;
   replaceFontButton.disabled = false;
-  deleteFontButton.disabled = Boolean(selectedFont.isBuiltin);
-  delete fontEditorStatus.dataset.state;
-  fontEditorStatus.textContent = selectedFont.isBuiltin
-    ? "Original production fonts can be replaced with a new version while keeping their stable design and preset references."
-    : "Uploaded fonts can be replaced with a new version or deleted from future selections.";
+  archiveFontButton.disabled = false;
+  archiveFontButton.setAttribute("aria-label", selectedFont.isArchived ? "Restore font" : "Archive font");
+  archiveFontButton.querySelector(".editor-action-label").textContent = selectedFont.isArchived ? "Restore Font" : "Archive Font";
+  if (fontRegistryLoadError || selectedFont.loadError) {
+    setFontEditorStatus(fontRegistryLoadError || selectedFont.loadError, "error");
+  } else {
+    delete fontEditorStatus.dataset.state;
+    fontEditorStatus.textContent = selectedFont.isArchived
+      ? "Archived fonts remain available to existing designs and presets. Restore this font to use it in new assignments."
+      : "This font can be replaced with a new version or archived from future selections.";
+  }
   renderFontUsedByPresets();
 }
 
@@ -10586,6 +10695,7 @@ async function handleSaveFontDisplayName() {
     await updateWorkspaceFontSettings(selectedFont.id, { displayName, bridgingEnabled }, {
       accessToken: productionBatchAccessToken,
     });
+    fontDisplayNameDraft = null;
     await refreshWorkspaceFonts(productionBatchAccessToken);
     selectedFontId = selectedFont.id;
     renderFontWorkspace();
@@ -10620,16 +10730,25 @@ async function handleFontBridgingEnabledChange() {
   }
 }
 
-async function handleDeleteSelectedFont() {
+async function handleArchiveSelectedFont() {
   const selectedFont = getFontOption(selectedFontId);
-  if (selectedFont.isBuiltin) {
+  if (selectedFont.isArchived) {
+    try {
+      setFontEditorStatus("Restoring font...", "pending");
+      await restoreWorkspaceFont(selectedFont.id, { accessToken: productionBatchAccessToken });
+      await refreshWorkspaceFonts(productionBatchAccessToken);
+      renderLineControls(getActiveOrder()?.settings || getCurrentSettings());
+      setFontEditorStatus("Font restored.", "success");
+    } catch (error) {
+      setFontEditorStatus(error instanceof Error ? error.message : "Unable to restore font.", "error");
+    }
     return;
   }
 
   const confirmed = await showConfirmationDialog({
-    title: "Delete Font?",
-    description: `Delete ${selectedFont.label} from future font selections? Existing saved designs may still reference it.`,
-    confirmLabel: "Delete Font",
+    title: "Archive Font?",
+    description: `Archive ${selectedFont.label} from new font selections? Existing saved designs and presets will continue to use it.`,
+    confirmLabel: "Archive Font",
     isDanger: true,
   });
   if (!confirmed) {
@@ -10637,14 +10756,14 @@ async function handleDeleteSelectedFont() {
   }
 
   try {
-    setFontEditorStatus("Deleting font...", "pending");
-    await deleteWorkspaceFont(selectedFont.id, { accessToken: productionBatchAccessToken });
+    setFontEditorStatus("Archiving font...", "pending");
+    await archiveWorkspaceFont(selectedFont.id, { accessToken: productionBatchAccessToken });
     selectedFontId = "candlepin";
     await refreshWorkspaceFonts(productionBatchAccessToken);
     renderLineControls(getActiveOrder()?.settings || getCurrentSettings());
-    setFontEditorStatus("Font deleted from future selections.", "success");
+    setFontEditorStatus("Font archived from future selections.", "success");
   } catch (error) {
-    setFontEditorStatus(error instanceof Error ? error.message : "Unable to delete font.", "error");
+    setFontEditorStatus(error instanceof Error ? error.message : "Unable to archive font.", "error");
   }
 }
 
@@ -11066,6 +11185,15 @@ async function captureActiveOrder({ advanceToNext = false } = {}) {
   if (!orderHasRenderableDesign(order)) {
     return;
   }
+  const fontIssue = getSettingsFontRenderingIssue(order.settings);
+  if (fontIssue) {
+    lastLayout = null;
+    renderPreviewGuideOnly();
+    updateFittedTextHeightOutputs(null);
+    updateConnectionStatusFromFontIssue(fontIssue);
+    renderOrderList();
+    return;
+  }
   const layout = buildOrderLayout(order.settings);
   const signature = buildSettingsSignature(order.settings);
   const requestId = crypto.randomUUID();
@@ -11202,22 +11330,6 @@ async function captureActiveOrder({ advanceToNext = false } = {}) {
     persistBatchState();
     renderOrderList();
   }
-}
-
-async function checkFonts() {
-  await Promise.all(
-    FONT_OPTIONS.map(async (font) => {
-      try {
-        const response = await fetch(font.url, { cache: "no-store" });
-        if (!response.ok) {
-          throw new Error("Font file not found");
-        }
-        await document.fonts.load(`120px "${font.family}"`);
-      } catch {
-        // Fall back to the browser script font when a production font is unavailable.
-      }
-    }),
-  );
 }
 
 function measureCharacter(character, fontSizeMm, fontId, horizontalScale = 1) {
@@ -12278,7 +12390,19 @@ function render() {
     return;
   }
 
-  const cachedBuild = getCachedBuild(activeOrder, signature);
+  const fontIssue = getSettingsFontRenderingIssue(settings);
+  if (fontIssue) {
+    lastLayout = null;
+    renderPreviewGuideOnly();
+    updateFittedTextHeightOutputs(null);
+    updateConnectionStatusFromFontIssue(fontIssue);
+    updateCaptureButtonState(activeOrder);
+    downloadButton.disabled = true;
+    copyButton.disabled = true;
+    return;
+  }
+
+  const cachedBuild = getCachedBuild(activeOrder, getSettingsSignatureCandidates(settings), settings);
   if (cachedBuild) {
     renderPreviewFromLayout({
       ...cachedBuild.layout,
@@ -12903,6 +13027,7 @@ fontPreviewTextInput?.addEventListener("input", () => {
   selectedFontPreview.textContent = fontPreviewText;
 });
 fontDisplayNameInput?.addEventListener("input", () => {
+  fontDisplayNameDraft = { fontId: selectedFontId, value: fontDisplayNameInput.value };
   updateSaveFontDisplayNameButton();
 });
 saveFontDisplayNameButton?.addEventListener("click", () => {
@@ -12911,12 +13036,12 @@ saveFontDisplayNameButton?.addEventListener("click", () => {
 fontBridgingEnabledInput?.addEventListener("change", () => {
   void handleFontBridgingEnabledChange();
 });
-showDeletedFontsInput?.addEventListener("change", () => {
-  showDeletedFonts = Boolean(showDeletedFontsInput.checked);
+showArchivedFontsInput?.addEventListener("change", () => {
+  showArchivedFonts = Boolean(showArchivedFontsInput.checked);
   renderFontWorkspace();
 });
-deleteFontButton?.addEventListener("click", () => {
-  void handleDeleteSelectedFont();
+archiveFontButton?.addEventListener("click", () => {
+  void handleArchiveSelectedFont();
 });
 fixedDesignUploadButton?.addEventListener("click", () => {
   openFixedDesignUploadDialog();
@@ -13345,7 +13470,7 @@ consumeEtsyOAuthReturnStatus();
 setActiveWorkspace(activeWorkspace, { updateRoute: false });
 setNavCollapsed(navCollapsed);
 renderProductionBatchLogoutButton();
-await Promise.all([checkFonts(), loadPresetRegistry()]);
+await loadPresetRegistry();
 renderPresetOptions();
 renderBoundingSizePresetOptions(boundingSizePresetInput);
 renderBoundingSizePresetOptions(presetBoundingSizePresetInput);
@@ -13354,8 +13479,8 @@ renderSizePresetEditorPreview();
 renderPresetEditorDraft();
 updateBackingOutput();
 productionBatchAccessToken = await bootstrapProductionBatchAccess();
+await refreshWorkspaceFonts(productionBatchAccessToken);
 const startupTasks = [
-  refreshWorkspaceFonts(productionBatchAccessToken),
   productionBatchAccessToken
     ? restoreInitialBatchState(productionBatchAccessToken)
     : Promise.resolve({ source: null, count: 0 }),
@@ -13363,7 +13488,7 @@ const startupTasks = [
 if (initialAppRoute.workspace === "fixedDesigns") {
   startupTasks.push(refreshWorkspaceFixedDesigns(productionBatchAccessToken));
 }
-const [, restoredBatch] = await Promise.all(startupTasks);
+const [restoredBatch] = await Promise.all(startupTasks);
 if (productionBatchAccessToken && !fixedDesignsLoaded && restoredOrdersIncludeFixedSvgs()) {
   await refreshWorkspaceFixedDesigns(productionBatchAccessToken);
 }

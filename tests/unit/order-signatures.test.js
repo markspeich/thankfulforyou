@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  buildPreFontAssetSettingsSignature,
   buildSettingsSignature,
+  cachedBuildMatchesResolvedFontAssets,
   getSettingsSignatureCandidates,
 } from "../../src/order-signatures.js";
 
@@ -64,6 +66,112 @@ describe("order signatures", () => {
       ...baseSettings,
       lines: [{ ...baseSettings.lines[0], fontBridgingEnabled: true }],
     })).not.toBe(buildSettingsSignature(baseSettings));
+  });
+
+  it("changes the current settings signature when a stable font id resolves to a new asset", () => {
+    const baseSettings = {
+      text: "Ada",
+      presetId: "preset-a1f4c8e2b601",
+      backingMm: 3.1,
+      weldExportedDesign: true,
+      lines: [
+        {
+          fontId: "candlepin",
+          fontAssetFingerprint: "candlepin|1|public/fonts/Candlepin-Laser.otf",
+          bridgeMm: 0.5,
+          lineBridgeMm: 0.5,
+          offsetXMm: 0,
+          fontSizeMm: 34,
+          horizontalScale: 1,
+          verticalScale: 1,
+          lockTextHeight: false,
+        },
+      ],
+    };
+
+    const replacementSignature = buildSettingsSignature({
+      ...baseSettings,
+      lines: [{
+        ...baseSettings.lines[0],
+        fontAssetFingerprint: "candlepin|2|workspaces/primary/fonts/candlepin/v2/Candlepin-Shop.otf",
+      }],
+    });
+
+    expect(replacementSignature).not.toBe(buildSettingsSignature(baseSettings));
+    expect(JSON.parse(replacementSignature).lines[0]).toMatchObject({
+      fontId: "candlepin",
+      fontAssetFingerprint: "candlepin|2|workspaces/primary/fonts/candlepin/v2/Candlepin-Shop.otf",
+    });
+  });
+
+  it("keeps the pre-font-asset v4 signature as a compatibility candidate", () => {
+    const settings = {
+      text: "Ada",
+      presetId: "preset-a1f4c8e2b601",
+      boundingSizePresetId: "size-2-2x1-5",
+      boundingSizePresetFingerprint: "size-2-2x1-5|2.2|1.5|1.6|1.1|1.25",
+      backingMm: 3.1,
+      weldExportedDesign: true,
+      lines: [{
+        fontId: "candlepin",
+        fontAssetFingerprint: "candlepin|2|workspaces/primary/fonts/candlepin/v2/Candlepin-Shop.otf",
+        bridgeMm: 0.5,
+        lineBridgeMm: 0.5,
+        offsetXMm: 0,
+        fontSizeMm: 34,
+        horizontalScale: 1,
+        verticalScale: 1,
+        lockTextHeight: false,
+      }],
+    };
+
+    expect(getSettingsSignatureCandidates(settings)).toContain(
+      buildPreFontAssetSettingsSignature(settings),
+    );
+  });
+
+  it("accepts a legacy cached build only while its letter paths match the resolved font asset", () => {
+    const build = {
+      layout: {
+        letters: [{
+          character: "A",
+          fontId: "candlepin",
+          fontPath: "public/fonts/Candlepin-Laser.otf",
+        }],
+      },
+    };
+    const settings = {
+      text: "Ada",
+      lines: [{
+        fontId: "candlepin",
+        fontAssetFingerprint: "candlepin|1|public/fonts/Candlepin-Laser.otf",
+      }],
+    };
+
+    expect(cachedBuildMatchesResolvedFontAssets(build, settings)).toBe(true);
+    expect(cachedBuildMatchesResolvedFontAssets(build, {
+      ...settings,
+      lines: [{
+        ...settings.lines[0],
+        fontAssetFingerprint: "candlepin|2|workspaces/primary/fonts/candlepin/v2/Candlepin-Shop.otf",
+      }],
+    })).toBe(false);
+  });
+
+  it("rejects analyzed legacy text geometry when its font asset cannot be verified from letters", () => {
+    expect(cachedBuildMatchesResolvedFontAssets({
+      layout: { letters: [] },
+      analysis: {
+        exportFacePath: "M0 0 L10 0 L10 10 Z",
+        backingPath: "M-1 -1 L11 -1 L11 11 Z",
+      },
+    }, {
+      text: "Saved Linked",
+      lines: [{
+        fontId: "candlepin",
+        fontAssetFingerprint: "candlepin|1|public/fonts/Candlepin-Laser.otf",
+      }],
+    })).toBe(false);
   });
 
   it("returns both current and legacy signatures for compatibility", () => {

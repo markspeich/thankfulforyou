@@ -24,7 +24,7 @@ describe("Amazon customer fonts", () => {
     expect(selections.map(formatCustomerFontSelection)).toEqual(["Line 1 Font: Skywalk", "Line 2 Font: Somekind"]);
   });
 
-  it("resolves built-in aliases and workspace display names case-insensitively", () => {
+  it("resolves seeded aliases and workspace display names case-insensitively", () => {
     expect(resolveCustomerFontId(" skyWALK ", fonts)).toBe("skywalk");
     expect(resolveCustomerFontId("Candlepin", fonts)).toBe("candlepin");
     expect(resolveCustomerFontId("my custom font", fonts)).toBe("font-custom");

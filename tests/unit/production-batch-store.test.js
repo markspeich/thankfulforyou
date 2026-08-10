@@ -141,6 +141,13 @@ function createSelectChain(table) {
       });
     },
     then(resolve) {
+      if (table === "batch_items") {
+        return Promise.resolve({
+          data: supabaseMock.batchItems || [{ order_item_id: "order-1", batch_position: 0, status: "active" }],
+          error: null,
+        }).then(resolve);
+      }
+
       if (table === "size_guides") {
         return Promise.resolve({
           data: supabaseMock.sizeGuides,
@@ -242,6 +249,7 @@ describe("production batch store", () => {
   });
 
   it("only saves changed design data for scoped saves without writing batch membership", async () => {
+    supabaseMock.batchItems = [{ order_item_id: "order-2", batch_position: 1, status: "active" }];
     const { saveProductionBatch } = await import("../../api/_lib/production-batch-store.js");
 
     await saveProductionBatch({

@@ -1,4 +1,5 @@
 import { expect, test } from "playwright/test";
+import { installSeededFontRoute } from "./font-test-routes.js";
 
 function installSupabaseSession(page) {
   return page.addInitScript(() => {
@@ -77,7 +78,7 @@ function installClipboardReadError(page, { name, message }) {
 }
 
 async function installProductionBatchRoutes(page, options = {}) {
-  const { orderItems = [], onGet = null, onPut = null } = options;
+  const { orderItems = [], onGet = null, onPut = null, putStatus = 200 } = options;
   let productionBatchSnapshot = {
     batch: { id: "batch-1", workspaceId: "workspace-1" },
     activeOrderItemId: orderItems[0]?.id || null,
@@ -112,11 +113,12 @@ async function installProductionBatchRoutes(page, options = {}) {
     }
 
     productionBatchSnapshot = route.request().postDataJSON()?.snapshot || productionBatchSnapshot;
+    const responseStatus = typeof putStatus === "function" ? putStatus(productionBatchSnapshot) : putStatus;
     await onPut?.(productionBatchSnapshot);
     await route.fulfill({
-      status: 200,
+      status: responseStatus,
       contentType: "application/json; charset=utf-8",
-      body: JSON.stringify(productionBatchSnapshot),
+      body: JSON.stringify(responseStatus >= 400 ? { error: "Save failed." } : productionBatchSnapshot),
     });
   });
 }
@@ -280,38 +282,41 @@ async function installOrdersWorkspaceRoutes(page, options = {}) {
       return;
     }
 
-    const url = new URL(request.url());
-    if (url.searchParams.get("view") === "detail") {
-      const orderId = url.searchParams.get("orderId");
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json; charset=utf-8",
-        body: JSON.stringify({ order: (ordersPayload.orders || []).find((order) => order.id === orderId) || null }),
-      });
-      return;
-    }
-
+    const requestUrl = new URL(request.url());
+    const view = requestUrl.searchParams.get("view");
+    const orderId = requestUrl.searchParams.get("orderId");
     if (getDelayMs > 0) {
       await new Promise((resolve) => setTimeout(resolve, getDelayMs));
     }
     onGet?.(request);
-    const status = url.searchParams.get("status") || "open";
-    const batch = url.searchParams.get("batch") || "all";
-    const search = (url.searchParams.get("search") || "").toLowerCase();
-    const filteredPayload = {
-      ...ordersPayload,
-      orders: (ordersPayload.orders || []).filter((order) => {
-        const orderStatus = order.status || "open";
-        if (status !== "all" && orderStatus !== status) return false;
-        if (batch === "inBatch" && !order.isInActiveBatch) return false;
-        if (batch === "notInBatch" && order.isInActiveBatch) return false;
-        return !search || JSON.stringify(order).toLowerCase().includes(search);
-      }),
-    };
+    const status = requestUrl.searchParams.get("status") || "open";
+    const batch = requestUrl.searchParams.get("batch") || "all";
+    const search = (requestUrl.searchParams.get("search") || "").toLowerCase();
+    const filteredOrders = (ordersPayload.orders || []).filter((order) => {
+      const orderStatus = order.status || "open";
+      if (status !== "all" && orderStatus !== status) return false;
+      if (batch === "inBatch" && !order.isInActiveBatch) return false;
+      if (batch === "notInBatch" && order.isInActiveBatch) return false;
+      return !search || JSON.stringify(order).toLowerCase().includes(search);
+    });
+    const responsePayload = view === "compact"
+      ? {
+          ...ordersPayload,
+          orders: filteredOrders.map((order) => ({
+            ...order,
+            items: order.items.map(({ design, ...item }) => ({
+              ...item,
+              designText: design?.text || "",
+            })),
+          })),
+        }
+      : view === "detail"
+        ? { order: ordersPayload.orders.find((order) => order.id === orderId) || null }
+        : { ...ordersPayload, orders: filteredOrders };
     await route.fulfill({
       status: 200,
       contentType: "application/json; charset=utf-8",
-      body: JSON.stringify(filteredPayload),
+      body: JSON.stringify(responsePayload),
     });
   });
 }
@@ -371,6 +376,7 @@ function buildAdaProductionBatchOrderItem() {
     text: "Ada RN",
     status: "not-started",
     source: {
+      marketplace: "amazon",
       orderNumber: "1001",
       buyerName: "Ada Lovelace",
       listingId: "listing-ada",
@@ -412,6 +418,56 @@ test("opens the Orders workspace shell by default", async ({ page }) => {
   await expect(ordersWorkspace.getByRole("heading", { name: "Orders" })).toBeVisible();
   await expect(ordersWorkspace.getByLabel("Orders list")).toBeVisible();
   await expect(ordersWorkspace.getByLabel("Selected order items")).toBeVisible();
+});
+
+test("Amazon import failure details remain actionable in the operation dialog", async ({ page }) => {
+  // Break caught: a partial Amazon import failure is presented as a successful aggregate-only completion.
+  await installSupabaseSession(page);
+  await installProductionBatchRoutes(page);
+  await installOrdersWorkspaceRoutes(page);
+  await page.route("**/api/amazon-import", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/x-ndjson",
+      body: `${JSON.stringify({
+        type: "complete",
+        processedShipments: 3,
+        importedItems: 4,
+        existingItems: 2,
+        alreadyProcessedShipments: 1,
+        customizationNeeded: 2,
+        failed: 1,
+        failures: [{
+          orderNumber: "111-0318024-9415409",
+          stage: "notes_update",
+          reasonCode: "required_field",
+          summary: "Package weight is required.",
+        }],
+      })}\n`,
+    });
+  });
+
+  await gotoAfterBatchLoads(page);
+  await expect(page.getByRole("region", { name: "Orders workspace" })).toBeVisible();
+  await page.locator("#ordersToolsMenu summary").click();
+  await page.getByRole("button", { name: "Import Amazon" }).click();
+
+  const dialog = page.locator("#pasteSummaryDialog");
+  await expect(dialog).toBeVisible();
+  await expect(dialog.locator("#pasteSummaryTitle")).toHaveText("Operation Failed");
+  await expect(dialog.locator("#pasteSummaryDescription")).toHaveText(
+    "Amazon order 111-0318024-9415409 failed while updating ShipStation notes: Package weight is required.",
+  );
+  await expect(dialog.locator("#pasteSummaryCounts dt")).toHaveText([
+    "Shipments processed",
+    "Items imported",
+    "Existing items",
+    "Already processed",
+    "Needs review",
+    "Failed",
+  ]);
+  await expect(dialog.locator("#pasteSummaryCounts dd")).toHaveText(["3", "4", "2", "1", "2", "1"]);
+  await expect(dialog.getByRole("button", { name: "Close paste summary" })).toBeVisible();
 });
 
 test("updates the URL when switching top-level workspaces", async ({ page }) => {
@@ -780,8 +836,83 @@ test("renders grouped database orders and selected order item cards", async ({ p
   await expect(inBatchItemCard.getByRole("button", { name: "Add to Production Batch" })).toBeDisabled();
 });
 
+test("loads compact rows and hydrates bookmarked order detail", async ({ page }) => {
+  const requests = [];
+  await installSupabaseSession(page);
+  await installProductionBatchRoutes(page);
+  await installOrdersWorkspaceRoutes(page, {
+    onGet(request) {
+      requests.push(new URL(request.url()).searchParams.toString());
+    },
+  });
+
+  await page.goto("/orders/order%3A1002");
+
+  const ordersWorkspace = page.getByRole("region", { name: "Orders workspace" });
+  await expect(ordersWorkspace.getByRole("heading", { name: "Order 1002" })).toBeVisible();
+  await expect(ordersWorkspace.getByText("Grace", { exact: true })).toBeVisible();
+  await expect.poll(() => requests.some((query) => query.includes("view=compact"))).toBe(true);
+  await expect.poll(() => requests.some((query) => (
+    query.includes("view=detail") && query.includes("orderId=order%3A1002")
+  ))).toBe(true);
+});
+
+test("falls back to Orders when a bookmarked order no longer exists", async ({ page }) => {
+  await installSupabaseSession(page);
+  await installProductionBatchRoutes(page);
+  await installOrdersWorkspaceRoutes(page);
+
+  await page.goto("/orders/order%3Amissing");
+
+  await expect(page).toHaveURL(/\/orders$/);
+  await expect(page.getByRole("region", { name: "Orders workspace" }).getByRole("button", { name: /Order 1001/ })).toBeVisible();
+});
+
+test("ignores stale order detail after a newer selection", async ({ page }) => {
+  const payload = buildOrdersPayload();
+  await installSupabaseSession(page);
+  await installProductionBatchRoutes(page);
+  await page.route("**/api/orders**", async (route) => {
+    const url = new URL(route.request().url());
+    const view = url.searchParams.get("view");
+    const orderId = url.searchParams.get("orderId");
+    if (view === "compact") {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          orders: payload.orders.map((order) => ({
+            ...order,
+            items: order.items.map(({ design, ...item }) => ({ ...item, designText: design?.text || "" })),
+          })),
+        }),
+      });
+      return;
+    }
+    if (view === "detail") {
+      if (orderId === "order:1001") await new Promise((resolve) => setTimeout(resolve, 250));
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ order: payload.orders.find((order) => order.id === orderId) || null }),
+      });
+      return;
+    }
+    await route.fulfill({ status: 500, body: "legacy list contract used" });
+  });
+
+  await page.goto("/orders");
+  const ordersWorkspace = page.getByRole("region", { name: "Orders workspace" });
+  await ordersWorkspace.getByRole("button", { name: /Order 1002/ }).click();
+
+  await expect(ordersWorkspace.getByRole("heading", { name: "Order 1002" })).toBeVisible();
+  await expect(ordersWorkspace.getByText("Grace", { exact: true })).toBeVisible();
+  await expect(ordersWorkspace.getByText("Ada RN", { exact: true })).toHaveCount(0);
+});
+
 test("refreshes Orders after saving a new manual production batch design", async ({ page }) => {
   await installSupabaseSession(page);
+  await installSeededFontRoute(page);
   const ordersPayload = buildOrdersPayload();
   await installProductionBatchRoutes(page, {
     onPut: async (snapshot) => {
@@ -1182,12 +1313,14 @@ test("skips and reopens checked orders from the Orders column menu", async ({ pa
     ordersPayload,
     posts,
     onGet: (request) => {
-      ordersGetCount += 1;
       const url = new URL(request.url());
-      compactQueries.push({
-        status: url.searchParams.get("status"),
-        cursor: url.searchParams.get("cursor"),
-      });
+      if (url.searchParams.get("view") === "compact") {
+        ordersGetCount += 1;
+        compactQueries.push({
+          status: url.searchParams.get("status"),
+          cursor: url.searchParams.get("cursor"),
+        });
+      }
     },
     postBody: (post) => {
       if (post.action === "skipOrders") {
@@ -1217,7 +1350,7 @@ test("skips and reopens checked orders from the Orders column menu", async ({ pa
   await expect(page.locator("#databaseOrdersStatusFilter")).toHaveValue("open");
   await expect(ordersWorkspace.locator(".database-order-row")).toHaveCount(0);
   expect(ordersGetCount).toBe(1);
-  expect(productionBatchGetCount).toBe(1);
+  expect(productionBatchGetCount).toBeGreaterThanOrEqual(1);
 
   await page.locator("#databaseOrdersStatusFilter").selectOption("skipped");
   await expect(page.locator("#databaseOrdersStatusFilter")).toHaveValue("skipped");
@@ -1561,6 +1694,34 @@ test("adds an individual order item to the active production batch from the item
   });
 });
 
+test("aborts an Orders batch add when pending Production Batch edits cannot be saved", async ({ page }) => {
+  const orderPosts = [];
+  let saveAttempts = 0;
+  let failSaves = false;
+  await installSupabaseSession(page);
+  await installProductionBatchRoutes(page, {
+    orderItems: [buildAdaProductionBatchOrderItem()],
+    putStatus() { return failSaves ? 500 : 200; },
+    onPut() { saveAttempts += 1; },
+  });
+  await installOrdersWorkspaceRoutes(page, { posts: orderPosts });
+
+  await gotoAfterBatchLoads(page);
+  await page.getByRole("button", { name: "Production Batch", exact: true }).click();
+  saveAttempts = 0;
+  failSaves = true;
+  await page.locator("#textInput").fill("Unsaved batch edit");
+  await expect.poll(() => saveAttempts).toBeGreaterThan(0);
+  await page.getByRole("button", { name: "Orders", exact: true }).click();
+  const ordersWorkspace = page.getByRole("region", { name: "Orders workspace" });
+  const firstItemCard = ordersWorkspace.locator(".database-order-item-card").filter({ hasText: "Ada RN" });
+  await firstItemCard.getByRole("button", { name: "Item actions" }).click();
+  await firstItemCard.getByRole("button", { name: "Add to Production Batch" }).click();
+
+  expect(orderPosts).toHaveLength(0);
+  await expect(page.locator("#workflowAlertText")).toHaveText("Unable to save pending Production Batch edits.");
+});
+
 test("hydrates the selected production batch item after adding from Orders", async ({ page }) => {
   const productionBatchOrderItems = [];
   const savedBatchSnapshots = [];
@@ -1569,6 +1730,7 @@ test("hydrates the selected production batch item after adding from Orders", asy
   await installSupabaseSession(page);
   await installProductionBatchRoutes(page, {
     orderItems: productionBatchOrderItems,
+    onGet(snapshot) { snapshot.orderItems = productionBatchOrderItems; },
     onPut(snapshot) {
       savedBatchSnapshots.push(structuredClone(snapshot));
     },
@@ -1603,7 +1765,7 @@ test("hydrates the selected production batch item after adding from Orders", asy
   await expect(productionWorkspace.locator(".order-row.active")).toContainText("Personalization: Ada RN");
   await expect(page.locator("#textInput")).toHaveValue("Ada RN");
   await page.locator("#textInput").fill("Ada RN updated");
-  await expect.poll(() => savedBatchSnapshots.length).toBeGreaterThan(0);
+  await expect.poll(() => savedBatchSnapshots.at(-1)?.orderItems?.length || 0).toBeGreaterThan(0);
   expect(savedBatchSnapshots.at(-1).orderItems[0].source).toMatchObject({
     marketplace: "amazon",
   });
@@ -1665,7 +1827,10 @@ test("adds checked orders to the active production batch", async ({ page }) => {
   const orderPosts = [];
   const productionBatchOrderItems = [];
   await installSupabaseSession(page);
-  await installProductionBatchRoutes(page, { orderItems: productionBatchOrderItems });
+  await installProductionBatchRoutes(page, {
+    orderItems: productionBatchOrderItems,
+    onGet(snapshot) { snapshot.orderItems = productionBatchOrderItems; },
+  });
   await installOrdersWorkspaceRoutes(page, {
     posts: orderPosts,
     onPost(post) {

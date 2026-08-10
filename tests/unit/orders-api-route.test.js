@@ -105,6 +105,7 @@ describe("orders api route", () => {
     expect(listWorkspaceOrdersMock).not.toHaveBeenCalled();
     expect(response.statusCode).toBe(200);
     expect(response.body.orders[0].items[0]).toEqual({ id: "item-1", designText: "Ada\nRN" });
+    expect(response.body.nextCursor).toBeNull();
   });
 
   it("uses compact pagination defaults", async () => {

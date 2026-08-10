@@ -7,10 +7,9 @@ async function routes(page, connection = "connected", customizationNeeded = fals
   await page.route("**/api/production-batch?batchId=b", r => r.fulfill({ json: { batch: { id: "b", workspaceId: "w" }, activeOrderItemId: null, orderItems: [] } }));
   await page.route("**/api/orders**", r => {
     const url = new URL(r.request().url());
-    if (url.searchParams.get("view") === "detail") {
-      return r.fulfill({ json: { order: order(customizationNeeded) } });
-    }
-    gets++; return r.fulfill({ json: { orders: [order(customizationNeeded)] } });
+    if (url.searchParams.get("view") === "detail") return r.fulfill({ json: { order: order(customizationNeeded) } });
+    gets++;
+    return r.fulfill({ json: { orders: [order(customizationNeeded)] } });
   });
   await page.route("**/api/etsy-connection", r => r.fulfill({ json: r.request().method() === "POST" ? { authorizeUrl: "https://www.etsy.com/oauth/connect?state=test" } : { status: connection, shopName: "Badge Shop" } }));
   return () => gets;
@@ -64,10 +63,8 @@ test("import queues a forced refresh behind an in-flight Orders request", async 
   await session(page); await routes(page); await stream(page); await page.unroute("**/api/orders**");
   let releaseInitial; const initialReady = new Promise(resolve => { releaseInitial = resolve; }); let gets = 0;
   await page.route("**/api/orders**", async route => {
-    if (new URL(route.request().url()).searchParams.get("view") === "detail") {
-      await route.fulfill({ json: { order: order(false) } });
-      return;
-    }
+    const url = new URL(route.request().url());
+    if (url.searchParams.get("view") === "detail") return route.fulfill({ json: { order: order(false) } });
     gets += 1;
     if (gets === 2) await initialReady;
     const fresh = order(false); fresh.buyerName = gets < 3 ? "Stale Buyer" : "Fresh Buyer";

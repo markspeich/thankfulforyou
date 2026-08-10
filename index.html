@@ -834,8 +834,8 @@
               </div>
               <p class="batch-tools-note">Manage workspace fonts used by order designs and reusable presets.</p>
               <label class="checkbox-field font-library-filter">
-                <input id="showDeletedFontsInput" type="checkbox">
-                <span>Show deleted fonts</span>
+                <input id="showArchivedFontsInput" type="checkbox">
+                <span>Show archived fonts</span>
               </label>
               <div id="fontLibraryList" class="font-library-list" aria-label="Font library"></div>
             </aside>
@@ -845,14 +845,14 @@
                   <div>
                     <p class="eyebrow">Workspace Fonts</p>
                     <h2 id="selectedFontName">Candlepin Laser</h2>
-                    <p id="selectedFontMeta" class="editor-meta">Built-in production font</p>
+                    <p id="selectedFontMeta" class="editor-meta">Available font</p>
                   </div>
                   <div class="editor-actions">
                     <button id="replaceFontButton" class="editor-action-button" type="button" disabled>
                       <span class="editor-action-label">Upload New Version</span>
                     </button>
-                    <button id="deleteFontButton" class="editor-action-button editor-danger-button" type="button" aria-label="Delete font" disabled>
-                      <span class="editor-action-label">Delete Font</span>
+                    <button id="archiveFontButton" class="editor-action-button editor-danger-button" type="button" aria-label="Archive font" disabled>
+                      <span class="editor-action-label">Archive Font</span>
                     </button>
                   </div>
                 </div>
@@ -877,7 +877,7 @@
                     <textarea id="fontPreviewTextInput" rows="3" autocomplete="off"></textarea>
                   </label>
                   <div class="font-preview-sample" id="selectedFontPreview">Thankful For You</div>
-                  <p id="fontEditorStatus" class="note" aria-live="polite">Built-in fonts are protected from deletion.</p>
+                  <p id="fontEditorStatus" class="note" aria-live="polite">Select a font to manage its lifecycle.</p>
                   <section class="preset-assignment-card compact-preset-usage-card font-preset-usage-card" aria-labelledby="fontUsedByPresetsTitle">
                     <div class="preset-assignment-header">
                       <h3 id="fontUsedByPresetsTitle">Used by Presets</h3>

@@ -115,6 +115,116 @@ describe("Amazon import diagnostics", () => {
     });
   });
 
+  it("emits trusted ShipStation validation metadata and omits forged validation values", () => {
+    // Break caught: shipment diagnostics cannot distinguish a trusted validation failure from unsafe upstream data.
+    const trusted = new ShipStationError("invalid_response", {
+      validation: {
+        reasonCode: "required_field",
+        field: "package_weight",
+        summary: "Package weight is required.",
+      },
+    });
+    const forged = Object.assign(new Error("PRIVATE CUSTOMER TEXT"), {
+      name: "ShipStationError",
+      code: "invalid_response",
+      validation: {
+        reasonCode: "required_field",
+        field: "package_weight",
+        summary: "PRIVATE CUSTOMER TEXT",
+      },
+    });
+    const unsafe = new ShipStationError("invalid_response", {
+      validation: {
+        reasonCode: "required_field",
+        field: "package_weight",
+        summary: "Package weight is required.",
+      },
+    });
+    unsafe.validation = {
+      reasonCode: "required_field",
+      field: "package_weight",
+      summary: "PRIVATE CUSTOMER TEXT",
+    };
+
+    expect(safeAmazonImportError(trusted)).toMatchObject({
+      validationReasonCode: "required_field",
+      validationField: "package_weight",
+      validationSummary: "Package weight is required.",
+    });
+    expect(safeAmazonImportError(forged)).not.toHaveProperty("validationReasonCode");
+    expect(safeAmazonImportError(forged)).not.toHaveProperty("validationField");
+    expect(safeAmazonImportError(forged)).not.toHaveProperty("validationSummary");
+    expect(safeAmazonImportError(unsafe)).not.toHaveProperty("validationReasonCode");
+    expect(safeAmazonImportError(unsafe)).not.toHaveProperty("validationField");
+    expect(safeAmazonImportError(unsafe)).not.toHaveProperty("validationSummary");
+
+    const logger = { error: vi.fn() };
+    createAmazonImportDiagnostics({ logger }).error("shipment.failed", { error: trusted });
+    expect(logger.error.mock.calls[0][1].details).toMatchObject({
+      validationReasonCode: "required_field",
+      validationField: "package_weight",
+      validationSummary: "Package weight is required.",
+    });
+  });
+
+  it.each([
+    ["JSON", '{"message":"PRIVATE SHIPSTATION ERROR","field_value":"PRIVATE VALUE"}'],
+    ["plain text", "PRIVATE SHIPSTATION PLAIN TEXT RESPONSE"],
+  ])("emits the exact %s response body for a genuine ShipStation shipment failure", (_format, rawResponseBody) => {
+    // Break caught: trusted shipment diagnostics omit or alter the upstream response needed for production diagnosis.
+    const logger = { error: vi.fn() };
+    const error = new ShipStationError("invalid_response", { rawResponseBody });
+
+    createAmazonImportDiagnostics({ logger }).error("shipment.failed", { error });
+
+    expect(logger.error).toHaveBeenCalledWith("Amazon import diagnostic", expect.objectContaining({
+      event: "amazon_import.shipment.failed",
+      details: expect.objectContaining({ rawShipStationResponse: rawResponseBody }),
+    }));
+  });
+
+  it("does not accept a forged raw ShipStation response", () => {
+    // Break caught: arbitrary errors can inject private attacker-controlled content into the trusted raw-response field.
+    const logger = { error: vi.fn() };
+    const error = Object.assign(new Error("forged"), {
+      name: "ShipStationError",
+      code: "invalid_response",
+      rawResponseBody: "FORGED PRIVATE SHIPSTATION RESPONSE",
+    });
+
+    createAmazonImportDiagnostics({ logger }).error("shipment.failed", { error });
+
+    expect(logger.error.mock.calls[0][1].details).not.toHaveProperty("rawShipStationResponse");
+  });
+
+  it("omits a genuine ShipStation raw response when its getter throws", () => {
+    // Break caught: reading optional trusted diagnostic data turns a shipment failure into a logging failure.
+    const logger = { error: vi.fn() };
+    const error = new ShipStationError("invalid_response");
+    Object.defineProperty(error, "rawResponseBody", {
+      get() { throw new Error("PRIVATE RAW RESPONSE GETTER"); },
+    });
+    const diagnostics = createAmazonImportDiagnostics({ logger });
+
+    expect(() => diagnostics.error("shipment.failed", { error })).not.toThrow();
+    expect(logger.error.mock.calls[0][1].details).not.toHaveProperty("rawShipStationResponse");
+  });
+
+  it("omits validation metadata when a nested ShipStation validation getter throws", () => {
+    // Break caught: a hostile nested validation getter turns a shipment failure into a run-level failure.
+    const error = new ShipStationError("invalid_response");
+    error.validation = {
+      get reasonCode() { throw new Error("PRIVATE VALIDATION GETTER"); },
+      field: "package_weight",
+      summary: "Package weight is required.",
+    };
+
+    expect(() => safeAmazonImportError(error)).not.toThrow();
+    expect(safeAmazonImportError(error)).not.toHaveProperty("validationReasonCode");
+    expect(safeAmazonImportError(error)).not.toHaveProperty("validationField");
+    expect(safeAmazonImportError(error)).not.toHaveProperty("validationSummary");
+  });
+
   it("rejects secret-bearing and forged error identity fields", () => {
     const secretError = Object.assign(new Error("PRIVATE CUSTOMER TEXT"), {
       name: "SecretApiKeyError",

@@ -84,6 +84,91 @@ describe("Amazon API browser client", () => {
     ]);
   });
 
+  it("accepts a safe bounded failure array on an Amazon completion event", async () => {
+    // Break caught: the browser client rejects the server's safe failure details before the operation dialog can use them.
+    const completion = {
+      ...complete,
+      failed: 1,
+      failures: [{
+        orderNumber: "111-0318024-9415409",
+        stage: "notes_update",
+        reasonCode: "required_field",
+        summary: "Package weight is required.",
+      }],
+    };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(stream([
+      `${JSON.stringify(completion)}\n`,
+    ]))));
+    const seen = [];
+
+    await importAmazonOrders({ onEvent: (event) => seen.push(event) });
+
+    expect(seen).toEqual([completion]);
+  });
+
+  it("rejects a raw ShipStation response field before notifying browser listeners", async () => {
+    // Break caught: a raw server diagnostic field is accepted as part of a public browser completion record.
+    const rawResponseBody = '{"message":"PRIVATE SHIPSTATION ERROR","field_value":"PRIVATE VALUE"}';
+    const completion = {
+      ...complete,
+      failed: 1,
+      failures: [{
+        orderNumber: "111-0318024-9415409",
+        stage: "notes_update",
+        reasonCode: "required_field",
+        summary: "Package weight is required.",
+        rawShipStationResponse: rawResponseBody,
+      }],
+    };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(stream([
+      `${JSON.stringify(completion)}\n`,
+    ]))));
+    const onEvent = vi.fn();
+
+    let caught;
+    try {
+      await importAmazonOrders({ onEvent });
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toMatchObject({ message: "Unable to import Amazon orders." });
+    expect(JSON.stringify(caught)).not.toContain("PRIVATE SHIPSTATION ERROR");
+    expect(JSON.stringify(caught)).not.toContain("PRIVATE VALUE");
+    expect(onEvent).not.toHaveBeenCalled();
+  });
+
+  it("rejects malformed, unsafe, or oversized Amazon completion failure arrays", async () => {
+    // Break caught: customer data, upstream text, or an unbounded failure list crosses the browser parsing boundary.
+    const safeFailure = {
+      orderNumber: "111-0318024-9415409",
+      stage: "notes_update",
+      reasonCode: "required_field",
+      summary: "Package weight is required.",
+    };
+    const invalidFailureArrays = [
+      "not-an-array",
+      Array.from({ length: 11 }, () => safeFailure),
+      [{ ...safeFailure, orderNumber: "Buyer Daphne Private https://example.test/customization" }],
+      [{ ...safeFailure, orderNumber: "Buyer_Daphne_Private" }],
+      [{ ...safeFailure, stage: "private_stage" }],
+      [{ ...safeFailure, reasonCode: "private_reason" }],
+      [{ ...safeFailure, summary: "Package weight is required for Buyer Daphne Private." }],
+      [{ ...safeFailure, response: "PRIVATE UPSTREAM RESPONSE" }],
+    ];
+    const fetch = vi.fn();
+    vi.stubGlobal("fetch", fetch);
+
+    for (const failures of invalidFailureArrays) {
+      fetch.mockResolvedValueOnce(new Response(stream([
+        `${JSON.stringify({ ...complete, failed: 1, failures })}\n`,
+      ])));
+      const onEvent = vi.fn();
+      await expect(importAmazonOrders({ onEvent })).rejects.toThrow("Unable to import Amazon orders.");
+      expect(onEvent).not.toHaveBeenCalled();
+    }
+  });
+
   it("rejects malformed, unknown, or extra event fields before notifying listeners", async () => {
     const invalidEvents = [
       "not-json",

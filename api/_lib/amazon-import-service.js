@@ -4,10 +4,23 @@ import {
   summarizeAmazonCustomization,
 } from "./amazon-customization-normalizer.js";
 import { readShipStationConfig } from "./shipstation-client.js";
+import { safeAmazonImportError } from "./amazon-import-diagnostics.js";
 
 const PROCESSED_TAG = "Amazon Customization Imported";
 const CUSTOMIZED_URL_OPTION = "CustomizedURL";
 const HEARTBEAT_INTERVAL_MS = 5 * 60 * 1000;
+const MAX_PUBLIC_FAILURES = 10;
+const SAFE_PUBLIC_FAILURE_STAGES = new Set([
+  "item_start",
+  "customization_fetch",
+  "normalization",
+  "enrichment",
+  "notes_build",
+  "notes_update",
+  "persistence",
+  "tag_update",
+]);
+const SAFE_ORDER_NUMBER = /^\d{3}-\d{7}-\d{7}$/;
 
 export class AmazonImportError extends Error {
   constructor(code, message, statusCode = 500) {
@@ -68,6 +81,29 @@ function customizationUrl(item) {
   return typeof option?.value === "string" ? option.value.trim() : "";
 }
 
+function noteFieldsWithFonts(normalized) {
+  const fields = normalized?.source?.personalizationResponses ?? [];
+  const selections = normalized?.source?.customerFontSelections ?? [];
+  const lineCount = normalized?.text ? String(normalized.text).split("\n").length : 0;
+  const textFields = fields
+    .filter((response) => !/\s+font$/i.test(String(response?.name ?? "")))
+    .slice(0, lineCount);
+  const existingNames = new Set(fields.map((response) => String(response?.name ?? "").toLowerCase()));
+  const fontFieldsByTextField = new Map();
+  for (const selection of selections) {
+    const label = textFields[selection?.lineIndex]?.name;
+    const name = label ? `${label} Font` : "";
+    if (name && selection?.name && !existingNames.has(name.toLowerCase())) {
+      fontFieldsByTextField.set(textFields[selection.lineIndex], { name, value: selection.name });
+    }
+  }
+  return fields.flatMap((response) => (
+    fontFieldsByTextField.has(response)
+      ? [response, fontFieldsByTextField.get(response)]
+      : [response]
+  ));
+}
+
 function emitDiagnostic(diagnostics, level, event, context) {
   try {
     Promise.resolve(diagnostics?.[level]?.(event, context)).catch(() => {});
@@ -108,6 +144,26 @@ function itemDiagnosticContext(shipment, item) {
   return {
     ...shipmentDiagnosticContext(shipment),
     orderItemId: item?.external_order_item_id,
+  };
+}
+
+function publicShipmentFailure({ orderNumber, stage, error }) {
+  const {
+    validationReasonCode: reasonCode,
+    validationSummary: summary,
+  } = safeAmazonImportError(error);
+  if (
+    typeof orderNumber !== "string"
+    || !SAFE_ORDER_NUMBER.test(orderNumber)
+    || !SAFE_PUBLIC_FAILURE_STAGES.has(stage)
+    || !reasonCode
+    || !summary
+  ) return null;
+  return {
+    orderNumber,
+    stage,
+    reasonCode,
+    summary,
   };
 }
 
@@ -353,6 +409,7 @@ export function createAmazonImportService({
         let alreadyProcessedShipments = 0;
         let customizationNeeded = 0;
         let failed = 0;
+        const failures = [];
 
         for (let index = 0; index < shipments.length; index += 1) {
           const shipment = shipments[index];
@@ -442,7 +499,7 @@ export function createAmazonImportService({
                     block: buildAmazonNoteBlock({
                       productTitle: item.name,
                       orderItemId: item.external_order_item_id,
-                      fields: normalized?.source?.personalizationResponses ?? [],
+                      fields: noteFieldsWithFonts(normalized),
                     }),
                   });
                 }
@@ -462,6 +519,12 @@ export function createAmazonImportService({
                   shipTo: shipment.ship_to,
                   shipFrom: shipment.ship_from,
                   warehouseId: shipment.warehouse_id,
+                  carrierId: shipment.carrier_id,
+                  serviceCode: shipment.service_code,
+                  requestedShipmentService: shipment.requested_shipment_service,
+                  shippingRuleId: shipment.shipping_rule_id,
+                  packages: shipment.packages,
+                  items: shipment.items,
                   signal,
                 }));
               }
@@ -515,6 +578,12 @@ export function createAmazonImportService({
                 stage: currentStage,
                 error,
               });
+              const publicFailure = publicShipmentFailure({
+                orderNumber: shipmentContext.orderNumber,
+                stage: currentStage,
+                error,
+              });
+              if (publicFailure && failures.length < MAX_PUBLIC_FAILURES) failures.push(publicFailure);
               failed += 1;
             }
           }
@@ -543,6 +612,7 @@ export function createAmazonImportService({
           alreadyProcessedShipments,
           customizationNeeded,
           failed,
+          failures,
         };
         await awaitActive(() => onProgress(result));
         currentStage = null;

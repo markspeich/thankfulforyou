@@ -305,7 +305,6 @@ beforeAll(() => {
     );
   }
 });
-
 afterEach(async () => {
   const supabase = createSupabaseAdminClient();
   const cleanupErrors = [];

@@ -323,6 +323,63 @@ function normalizeAmazonCount(value) {
   return Number.isInteger(value) && value >= 0 && Number.isFinite(value) ? value : 0;
 }
 
+const AMAZON_IMPORT_FAILURE_FALLBACK = "One or more Amazon orders could not be imported. Please retry or check the production logs.";
+const SAFE_AMAZON_ORDER_NUMBER = /^\d{3}-\d{7}-\d{7}$/;
+const AMAZON_IMPORT_FAILURE_STAGE_DESCRIPTIONS = Object.freeze({
+  item_start: "while starting an Amazon order item",
+  customization_fetch: "while fetching Amazon customization details",
+  normalization: "while preparing Amazon order details",
+  enrichment: "while preparing the badge reel design",
+  notes_build: "while preparing ShipStation notes",
+  notes_update: "while updating ShipStation notes",
+  persistence: "while saving the Amazon order",
+  tag_update: "while updating the ShipStation shipment tag",
+});
+const SAFE_AMAZON_IMPORT_FAILURE_VALIDATIONS = Object.freeze([
+  Object.freeze({ reasonCode: "required_field", summary: "Package weight is required." }),
+  Object.freeze({ reasonCode: "invalid_field_value", summary: "The selected shipping service is invalid." }),
+]);
+
+export function getAmazonImportFailureDescription(summary = {}) {
+  let failed;
+  try {
+    failed = normalizeAmazonCount(summary?.failed);
+  } catch {
+    return null;
+  }
+  if (failed === 0) return null;
+
+  try {
+    const failure = Array.isArray(summary?.failures) ? summary.failures[0] : null;
+    if (!failure || typeof failure !== "object" || Array.isArray(failure)) {
+      return AMAZON_IMPORT_FAILURE_FALLBACK;
+    }
+    const orderNumber = failure.orderNumber;
+    const stageDescription = Object.hasOwn(AMAZON_IMPORT_FAILURE_STAGE_DESCRIPTIONS, failure.stage)
+      ? AMAZON_IMPORT_FAILURE_STAGE_DESCRIPTIONS[failure.stage]
+      : null;
+    const validation = SAFE_AMAZON_IMPORT_FAILURE_VALIDATIONS.find((candidate) => (
+      failure.reasonCode === candidate.reasonCode && failure.summary === candidate.summary
+    ));
+    if (
+      typeof orderNumber !== "string"
+      || !SAFE_AMAZON_ORDER_NUMBER.test(orderNumber)
+      || !stageDescription
+      || !validation
+    ) return AMAZON_IMPORT_FAILURE_FALLBACK;
+
+    const additionalFailures = failed - 1;
+    const additionalDescription = additionalFailures === 0
+      ? ""
+      : additionalFailures === 1
+        ? " One additional Amazon order failed."
+        : ` ${additionalFailures} additional Amazon orders failed.`;
+    return `Amazon order ${orderNumber} failed ${stageDescription}: ${validation.summary}${additionalDescription}`;
+  } catch {
+    return AMAZON_IMPORT_FAILURE_FALLBACK;
+  }
+}
+
 export function getAmazonImportSummary(summary = {}) {
   const processedShipments = normalizeAmazonCount(summary.processedShipments);
   const importedItems = normalizeAmazonCount(summary.importedItems);

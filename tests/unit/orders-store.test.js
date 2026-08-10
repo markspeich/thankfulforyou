@@ -263,7 +263,6 @@ afterEach(() => {
   resetDb();
   vi.resetModules();
 });
-
 describe("orders store", () => {
   it("lists a compact paginated RPC result without hydrating design details", async () => {
     // Break caught: the compact list falls back to unbounded table reads or leaks large design fields.

@@ -5,7 +5,8 @@ const listWorkspaceFontsMock = vi.fn();
 const createWorkspaceFontMock = vi.fn();
 const replaceWorkspaceFontMock = vi.fn();
 const updateWorkspaceFontSettingsMock = vi.fn();
-const deleteWorkspaceFontMock = vi.fn();
+const archiveWorkspaceFontMock = vi.fn();
+const restoreWorkspaceFontMock = vi.fn();
 
 vi.mock("../../api/_lib/production-batch-auth.js", () => ({
   resolveProductionBatchAuth: resolveProductionBatchAuthMock,
@@ -16,7 +17,8 @@ vi.mock("../../api/_lib/font-store.js", () => ({
   createWorkspaceFont: createWorkspaceFontMock,
   replaceWorkspaceFont: replaceWorkspaceFontMock,
   updateWorkspaceFontSettings: updateWorkspaceFontSettingsMock,
-  deleteWorkspaceFont: deleteWorkspaceFontMock,
+  archiveWorkspaceFont: archiveWorkspaceFontMock,
+  restoreWorkspaceFont: restoreWorkspaceFontMock,
 }));
 
 function createResponseRecorder() {
@@ -45,7 +47,8 @@ beforeEach(() => {
   createWorkspaceFontMock.mockReset();
   replaceWorkspaceFontMock.mockReset();
   updateWorkspaceFontSettingsMock.mockReset();
-  deleteWorkspaceFontMock.mockReset();
+  archiveWorkspaceFontMock.mockReset();
+  restoreWorkspaceFontMock.mockReset();
 });
 
 afterEach(() => {
@@ -62,12 +65,12 @@ describe("fonts api route", () => {
     await handler({
       method: "GET",
       headers: { authorization: "Bearer token-1" },
-      query: { includeDeleted: "true" },
+      query: { includeArchived: "true" },
     }, response);
 
     expect(listWorkspaceFontsMock).toHaveBeenCalledWith({
       workspaceId: "workspace-1",
-      includeDeleted: true,
+      includeArchived: true,
     });
     expect(response.statusCode).toBe(200);
     expect(response.body).toEqual({ fonts: [{ id: "font-1", display_name: "Clinic Sans" }] });
@@ -89,35 +92,40 @@ describe("fonts api route", () => {
     expect(response.body).toEqual({ error: "Font upload must include a file." });
   });
 
-  it("returns store errors for protected built-in delete requests", async () => {
+  it("archives any font regardless of its stable id", async () => {
     resolveProductionBatchAuthMock.mockResolvedValue({ userId: "user-1", workspaceId: "workspace-1" });
-    deleteWorkspaceFontMock.mockRejectedValue(Object.assign(new Error("Original production fonts cannot be deleted."), {
-      statusCode: 400,
-      expose: true,
-    }));
+    archiveWorkspaceFontMock.mockResolvedValue({ id: "candlepin", archived_at: "2026-08-05T00:00:00Z" });
     const { default: handler } = await import("../../api/fonts.js");
     const response = createResponseRecorder();
 
     await handler({
-      method: "DELETE",
+      method: "PATCH",
       headers: { authorization: "Bearer token-1" },
-      query: { fontId: "candlepin" },
+      query: { fontId: "candlepin" }, body: { lifecycle: "archive" },
     }, response);
 
-    expect(deleteWorkspaceFontMock).toHaveBeenCalledWith({
+    expect(archiveWorkspaceFontMock).toHaveBeenCalledWith({
       workspaceId: "workspace-1",
       fontId: "candlepin",
     });
-    expect(response.statusCode).toBe(400);
-    expect(response.body).toEqual({ error: "Original production fonts cannot be deleted." });
+    expect(response.statusCode).toBe(200);
+    expect(response.body.font.archived_at).toBeTruthy();
   });
 
-  it("routes built-in font replacement requests to the store", async () => {
+  it("restores an archived font", async () => {
+    resolveProductionBatchAuthMock.mockResolvedValue({ userId: "user-1", workspaceId: "workspace-1" });
+    restoreWorkspaceFontMock.mockResolvedValue({ id: "candlepin", archived_at: null });
+    const { default: handler } = await import("../../api/fonts.js"); const response = createResponseRecorder();
+    await handler({ method: "PATCH", headers: {}, query: { fontId: "candlepin" }, body: { lifecycle: "restore" } }, response);
+    expect(restoreWorkspaceFontMock).toHaveBeenCalledWith({ workspaceId: "workspace-1", fontId: "candlepin" });
+    expect(response.body).toEqual({ font: { id: "candlepin", archived_at: null } });
+  });
+
+  it("routes seeded font replacement requests to the store", async () => {
     resolveProductionBatchAuthMock.mockResolvedValue({ userId: "user-1", workspaceId: "workspace-1" });
     replaceWorkspaceFontMock.mockResolvedValue({
       id: "candlepin",
       display_name: "Candlepin Shop Version",
-      is_builtin: true,
       version: 2,
     });
     const { default: handler } = await import("../../api/fonts.js");
@@ -141,7 +149,6 @@ describe("fonts api route", () => {
       font: {
         id: "candlepin",
         display_name: "Candlepin Shop Version",
-        is_builtin: true,
         version: 2,
       },
     });
@@ -219,7 +226,7 @@ describe("fonts api route", () => {
     await handler({ method: "OPTIONS", headers: {}, query: {} }, response);
 
     expect(response.statusCode).toBe(405);
-    expect(response.headers.Allow).toBe("GET, POST, PUT, PATCH, DELETE");
+    expect(response.headers.Allow).toBe("GET, POST, PUT, PATCH");
     expect(response.body).toEqual({ error: "Method not allowed." });
   });
 });

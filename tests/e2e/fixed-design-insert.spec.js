@@ -1,5 +1,6 @@
 import { expect, test } from "playwright/test";
 import { buildLegacySettingsSignature } from "../../src/order-signatures.js";
+import { installSeededFontRoute } from "./font-test-routes.js";
 
 const FIRST_SVG = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 20 20\"><path d=\"M10 18 2 9a5 5 0 0 1 8-6 5 5 0 0 1 8 6Z\" fill=\"#0f766e\"/></svg>";
 const SECOND_SVG = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><circle cx=\"12\" cy=\"12\" r=\"10\" fill=\"#be123c\"/></svg>";
@@ -251,6 +252,7 @@ async function openPresetTools(page) {
 
 test.beforeEach(async ({ page }) => {
   await installSupabaseSession(page);
+  await installSeededFontRoute(page);
   await installProductionBatchRoutes(page);
   await installFixedDesignRoutes(page);
   await page.addInitScript(() => {
