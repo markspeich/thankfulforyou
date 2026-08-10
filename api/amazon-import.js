@@ -112,7 +112,11 @@ function safeProgressFrame(event) {
   const frame = { type: event.type };
   if (event.type === "progress" && PROGRESS_STAGES.has(event.stage)) frame.stage = event.stage;
   for (const field of numericFields) {
-    const value = event[field];
+    const value = event.type === "complete"
+      && field === "warnings"
+      && !Object.prototype.hasOwnProperty.call(event, field)
+      ? 0
+      : event[field];
     if (typeof value === "number" || value === null) frame[field] = value;
   }
   const failures = event.type === "complete" ? safeFailures(event.failures) : undefined;

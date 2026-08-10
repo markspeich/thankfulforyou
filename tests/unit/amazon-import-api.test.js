@@ -122,8 +122,38 @@ describe("Amazon import API", () => {
     expect(serviceFactory).toHaveBeenCalledWith(expect.objectContaining({ diagnostics, enrichItem }));
     expect(res.chunks).toEqual([
       '{"type":"progress","stage":"processing_shipments","processed":1,"total":2}\n',
-      '{"type":"complete","processedShipments":1,"importedItems":1,"existingItems":0,"alreadyProcessedShipments":0,"customizationNeeded":0,"failed":0}\n',
+      '{"type":"complete","processedShipments":1,"importedItems":1,"existingItems":0,"alreadyProcessedShipments":0,"customizationNeeded":0,"warnings":0,"failed":0}\n',
     ]);
+  });
+
+  it("defaults legacy completion warnings to zero before browser parsing", async () => {
+    // Break caught: an importer that has not yet emitted warnings causes the browser client to reject a successful import.
+    const legacyCompletion = {
+      type: "complete",
+      processedShipments: 1,
+      importedItems: 1,
+      existingItems: 0,
+      alreadyProcessedShipments: 0,
+      customizationNeeded: 0,
+      failed: 0,
+    };
+    const res = response();
+
+    await createAmazonImportHandler({
+      resolveAuth: vi.fn().mockResolvedValue({ workspaceId: "workspace-1", userId: "user-1" }),
+      serviceFactory: () => ({
+        prepare: async ({ onProgress }) => ({
+          run: async () => onProgress(legacyCompletion),
+          release: vi.fn(),
+        }),
+      }),
+    })({ method: "POST" }, res);
+
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(res.chunks.join(""))));
+    const events = [];
+    await importAmazonOrders({ onEvent: (event) => events.push(event) });
+
+    expect(events).toEqual([{ ...legacyCompletion, warnings: 0 }]);
   });
 
   it("streams trusted bounded completion failures without arbitrary error response content", async () => {
@@ -158,7 +188,7 @@ describe("Amazon import API", () => {
     })({ method: "POST" }, res);
 
     expect(res.chunks).toEqual([
-      '{"type":"complete","processedShipments":0,"importedItems":0,"existingItems":0,"alreadyProcessedShipments":0,"customizationNeeded":0,"failed":1,"failures":[{"orderNumber":"111-0318024-9415409","stage":"notes_update","reasonCode":"required_field","summary":"Package weight is required."}]}\n',
+      '{"type":"complete","processedShipments":0,"importedItems":0,"existingItems":0,"alreadyProcessedShipments":0,"customizationNeeded":0,"warnings":0,"failed":1,"failures":[{"orderNumber":"111-0318024-9415409","stage":"notes_update","reasonCode":"required_field","summary":"Package weight is required."}]}\n',
     ]);
     expect(res.chunks.join("")).not.toContain("PRIVATE UPSTREAM ERROR RESPONSE");
     expect(res.chunks.join("")).not.toContain("PRIVATE TOP LEVEL ERROR RESPONSE");
@@ -413,7 +443,7 @@ describe("Amazon import API", () => {
     });
     expect(res.chunks).toEqual([
       '{"type":"progress","processed":0,"total":1}\n',
-      '{"type":"complete","importedItems":1}\n',
+      '{"type":"complete","importedItems":1,"warnings":0}\n',
     ]);
     expect(res.ended).toBe(true);
     expect(consoleError).not.toHaveBeenCalled();
