@@ -59,6 +59,8 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 
 ## Current Production Requirements
 
+- Empty-search Orders pagination must remain page-bounded as history grows for every lifecycle and active-batch filter, including sparse `Complete`, `Skipped`, `In Batch`, and `Not in Batch` result sets. The database may maintain a transactionally refreshed, compact order-group search projection solely to meet this requirement. The projection must not expose raw customization diagnostics, design lines, cached geometry, or prior builds, and full design details must continue to come from the bounded detail route.
+
 - Authenticated app requests must silently recover from an expired Supabase access token by refreshing the session and retrying the failed request once. Operators should only be returned to sign-in when the session cannot be refreshed or the retried request is still unauthorized.
 - Authentication expiry must not leave an operation progress dialog spinning indefinitely. Every action must settle its dialog into either a completion state or a dismissible error state.
 
@@ -150,17 +152,22 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Font management should be workspace-wide so signed-in operators in the same Supabase workspace see and use the same uploaded fonts.
 - The `Fonts` workspace should allow uploading new font files from the operator's computer.
 - Uploaded fonts should be stored in Supabase so they remain available across sessions, operators, and deployments.
-- Uploaded fonts should be usable in order item designs and reusable presets anywhere the built-in production fonts are currently selectable.
+- Every workspace font should be usable in order item designs and reusable presets while that font is active.
 - Saved designs and presets that reference a custom font must preserve that font id even if the current font registry refresh cannot load the font record; the UI may show the font as missing, but it must not silently rewrite the line to Candlepin.
-- The three original production fonts, Candlepin, Skywalk, and Somekind, should not be immutable in the Fonts workspace. Operators should be able to manage them like other workspace fonts, including uploading new file versions while preserving each font's stable id for existing designs and presets.
-- Deleting an uploaded font should require an explicit in-app confirmation and should not silently break existing saved designs that already reference that font.
-- The `Fonts` page should hide deleted fonts by default and provide an unchecked `Show deleted fonts` checkbox that controls whether deleted fonts appear in the font library list.
+- No font should have special runtime behavior or permissions because it originated as a bundled, built-in, production, or uploaded font.
+- Candlepin, Skywalk, and Somekind should be inserted as ordinary seed rows when a new environment is built. Their stable ids should remain `candlepin`, `skywalk`, and `somekind`, but those ids must not grant special application behavior.
+- Fonts must never be physically deleted through the application. Operators should archive fonts that should no longer be assigned and should be able to restore archived fonts.
+- Archiving should be available for every font, including the initially seeded Candlepin, Skywalk, and Somekind fonts.
+- Archived fonts must remain loadable for browser preview, connectedness analysis, and export so active or archived presets and saved designs that already reference them continue to work.
+- New font assignments must offer only active fonts. When an existing preset or saved design references an archived font, its current archived selection should remain visible and resolvable but should not make that font available for other new assignments.
+- The `Fonts` page should hide archived fonts by default and provide an unchecked `Show archived fonts` checkbox that controls whether archived fonts appear in the font library list.
 - The `Fonts` workspace should allow overwriting any workspace font by uploading a new version while keeping the same font identity for designs and presets that reference it.
 - Replacing a font should use a new stored file version rather than reusing the exact same asset path, so previews, analysis, export, and CDN caches can resolve the updated font reliably.
 - Each workspace font should have a `Use bridging for this font` checkbox on the `Fonts` page. Bridging defaults on for existing fonts, but operators can turn it off for naturally connected cursive fonts so preview layout, completed analysis, export geometry, and cached builds do not add letter or line bridge overlap for that font. When bridging is off, letters should follow the font's natural glyph advance and built-in cursive connections rather than being repositioned by overlap/contact search.
 - The `Fonts` workspace font rows should use the same shared production workspace selector row style as the `Presets` and `Size Guides` workspaces.
 - The `Fonts` workspace editor should show a compact list of saved presets that use the selected font below the font editor, and each listed preset should link to that preset on the `Presets` page.
-- The `Fonts` workspace font rows should not emphasize whether a font originated as built-in or uploaded. Each row should show a small preview line with the font name rendered in that font.
+- The `Fonts` workspace must not label or distinguish fonts as built-in versus uploaded. Each row should show a small preview line with the font name rendered in that font.
+- If a font file cannot be loaded, the app should show an explicit font-load warning rather than silently presenting a fallback font as though it were the selected font.
 - The selected font editor should include a multi-line preview text field above the large preview. The default preview text should be the uppercase alphabet followed by the lowercase alphabet on the next line, and the large preview should render the current field contents in the selected font.
 - The selected font editor should save display-name changes through an explicit `Save` button that is enabled only while the display name has unsaved changes.
 - Allow horizontal-only stretching per line of text so operators can make a line wider without making it taller.
@@ -511,7 +518,7 @@ Future-facing product ideas and optional later-phase workflow enhancements are t
 - Local server startup output and Codex server-start responses should include the app server URL, the test operator login, the test operator password, and the local Supabase Studio URL for the active worktree.
 - In the current Windows Codex worktree environment, local server launch workflow should prefer a foreground or otherwise persistent terminal session over a detached hidden process, because detached launches may exit early and break browser connectivity.
 - Local app startup and initialization guidance should be documented as an explicit checklist so Codex can start `npm run start:local`, use the printed app URL, verify HTTP connectivity, open the built-in Codex browser, sign in with the seeded test operator, run local initialization, and verify `/api/batch-session` without improvising.
-- When the operator asks Codex to `finish this worktree`, Codex should treat that as the standard post-feature workflow: merge latest `main` into the current worktree and resolve conflicts, run appropriate verification, commit the worktree changes to the current feature branch, merge that feature branch into `main`, and push `main`.
+- When the operator asks Codex to `finish this worktree`, Codex should treat that as the standard post-feature workflow: merge latest `main` into the current worktree and resolve conflicts, run appropriate verification, commit the worktree changes to the current feature branch, identify and apply any additive checked-in migrations still needed by the production database, verify production migration history or schema, merge that feature branch into `main`, and push `main`. Required migrations should be applied before dependent code is pushed; destructive migrations still require separate explicit confirmation.
 
 ## Open Questions
 
@@ -676,6 +683,10 @@ For batch Etsy order sessions, the preferred workflow is:
 - The Orders workspace should provide a status filter with `Open`, `Skipped`, `Complete`, and `All` options.
 - The Orders workspace should show a compact lifecycle status indicator on each grouped order row and in the selected-order detail header, using the durable order status values `Open`, `Skipped`, and `Complete`; `Open` and `Complete` indicators must use clearly different colors so active work does not read as finished work.
 - The Orders workspace should provide a search field matching order number, buyer, listing, transaction, color, and design text.
+- Orders search must use case-insensitive substring matching across the entire authenticated workspace rather than only records already loaded in the browser.
+- Orders list and search responses must use deterministic cursor pagination, return no more than 50 complete order groups per page, and never split a multi-item order across pages.
+- Changing Orders search, lifecycle status, or batch-membership filters must reset pagination; loading another page must preserve checked orders and the selected order.
+- The initial scalable Orders search implementation must not add fuzzy matching, a denormalized search projection, or search-maintenance triggers; specialized search indexing should be added only after representative query measurements justify it.
 - The Orders workspace should provide a batch-membership filter for all orders, orders in the active batch, and orders not in the active batch.
 - The Orders workspace should provide a `Select all visible` checkbox that selects or clears every order currently shown after search, status, and batch filters. The checkbox should show an indeterminate state when only some visible orders are selected and should feed the existing `Add Checked to Production Batch` action.
 - Pasting Etsy line items should be idempotent by durable imported order-item id: items already present in the order database should not be re-imported, re-counted as new imports, reopened from `complete` to `open`, or have their existing design data overwritten. Production Batch paste may still add an existing open database item to the active batch when it is not already in that batch.

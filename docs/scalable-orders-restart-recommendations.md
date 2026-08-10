@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Restart the Orders query performance work with a deliberately smaller first release. The initial implementation should address unbounded list responses without introducing a search projection, database-maintenance triggers, or new Production Batch synchronization behavior.
+Restart the Orders query performance work with a deliberately smaller first release. The implemented empty-search paging path uses maintained order-summary and batch-visibility projections so its query work can remain bounded. This release still defers a separate nonempty substring-search projection, search-maintenance triggers, search extensions, and new Production Batch synchronization behavior.
 
 ## 3. Limit the first implementation
 
@@ -13,6 +13,7 @@ Implement only these changes:
 - Use one deterministic ordering and cursor contract for every page. The cursor must include the normalized order sort key and stable group id as a final tie-breaker, with explicit handling for manual orders and null order numbers.
 - Return compact list data without design lines, cached builds, previous builds, or export geometry.
 - Load the selected order's complete design and design lines through a separate, bounded detail request.
+- Use the implemented maintained paging-summary and batch-visibility projections only for empty-search cursor paging; their maintenance is part of this pagination implementation, not deferred search optimization.
 - Add only indexes that support a concrete list filter, ordering, join, or foreign-key operation and that improve representative query plans.
 - Add a visible `Load more` action or equivalent incremental-loading control.
 - Reset pagination when search or lifecycle status changes.
@@ -27,7 +28,7 @@ The first implementation is successful when empty-search list response size and 
 
 Move search filtering to the database when pagination is introduced so a search covers the entire workspace rather than only the pages currently loaded in the browser. Use the simplest query that preserves the existing matching behavior for order number, buyer, listing, transaction, color, and design text, even if that query remains slower than ordinary empty-search list loading.
 
-Do not add PGroonga, a denormalized search projection, search-maintenance triggers, or custom concurrency controls in this phase. Correct workspace-wide results are required; specialized search optimization is deferred.
+Do not add PGroonga, a denormalized **nonempty substring-search** projection, substring-search-maintenance triggers, or custom concurrency controls in this phase. The maintained empty-search paging-summary and batch-visibility projections are already implemented and are not part of this deferral. Correct workspace-wide results are required; specialized substring-search optimization is deferred.
 
 Measure search separately after bounded list loading is deployed. Capture representative production query timings and plans for:
 
@@ -65,7 +66,7 @@ Any required Production Batch behavior change should be handled as a separate ta
 
 ## 6. Use a staged migration and review process
 
-Develop and validate the database migration locally first. The migration should be additive and limited to the pagination query and directly supporting indexes. Every new index must map to a documented query predicate, ordering, join, or foreign-key operation; retain it only when representative `EXPLAIN` evidence demonstrates value.
+Develop and validate the database migration locally first. The migration should be additive and limited to the pagination query, its maintained paging-summary and batch-visibility projections, their required maintenance, and directly supporting indexes. Every new index must map to a documented query predicate, ordering, join, or foreign-key operation; retain it only when representative `EXPLAIN` evidence demonstrates value.
 
 Before production deployment:
 
@@ -127,14 +128,14 @@ Add the database and API paging behavior without specialized search infrastructu
 - Use one deterministic cursor based on normalized order sort key and stable group id.
 - Preserve manual-order and null-order-number behavior.
 - Move search filtering to the database so results cover the entire workspace.
-- Keep search as a simple query; do not add extensions, projections, or maintenance triggers.
+- Keep nonempty substring search as a simple query; do not add search extensions, a search projection, or search-maintenance triggers. The empty-search paging projections and their maintenance are implemented pagination infrastructure.
 - Add only plan-supported pagination, join, ordering, and foreign-key indexes.
 
 **Complete when:** database tests prove no group splits, cursor pages have no skips or duplicates, server search is workspace-wide and correct, empty-search first and deep pages are bounded, and a fresh local migration succeeds.
 
 ### Task 4: Add incremental browser loading
 
-**Status:** `Not started`
+**Status:** `Complete`
 
 Connect the Orders workspace to the paginated API:
 
@@ -149,7 +150,7 @@ Connect the Orders workspace to the paginated API:
 
 ### Task 5: Verify and review the complete local implementation
 
-**Status:** `Not started`
+**Status:** `In progress`
 
 Run the full pre-deployment verification sequence:
 
@@ -160,6 +161,32 @@ Run the full pre-deployment verification sequence:
 - Review for unbounded empty-search work, geometry leakage, cursor mismatches, browser races, unnecessary indexes, and Production Batch coupling.
 
 **Complete when:** all relevant checks pass, every retained index has plan evidence, the exact migration path is documented, and no unresolved high-risk review findings remain.
+
+The former pre-projection empty-search blocker is superseded. The final
+projection-backed migration has exact public-function test evidence for every
+lifecycle × batch-filter empty-search path after a deep cursor: each uses its
+expected projection index, applies `limit + 1`, and permits only PostgreSQL's
+one-row index-executor lookahead. See
+`docs/performance/orders-search-query-plans.md` for the complete boundedness
+matrix and the clear separation from older measurements.
+
+Task 5 is not complete yet. The currently documented performance figures are
+pre-projection baseline measurements; final projection-backed
+`EXPLAIN (ANALYZE, BUFFERS)` timing/buffer evidence has not been collected.
+The remaining local reset, focused tests, unit/browser tests, production build,
+and final controller review must run before this task can move to `Complete`.
+Nonempty workspace-wide search is intentionally not page-work-bounded and must
+be assessed separately from empty-search pagination.
+
+### Local migration handoff
+
+The exact migration path is
+`supabase/migrations/20260805172414_scalable_orders_search.sql`. It is
+additive: it introduces the projection-backed paging support and the
+`SECURITY INVOKER` list function without removing or rewriting production data.
+Production project `oezjskcygvfyezvoulzw` remains unchanged. Applying this
+migration to production requires separate explicit approval; after approval,
+verify production migration history and representative production query plans.
 
 ### Task 6: Apply and verify the production migration
 
@@ -176,7 +203,7 @@ This task requires separate explicit approval:
 
 ## Explicit non-goals for the first release
 
-- Search projections or search-maintenance triggers.
+- A nonempty substring-search projection or its maintenance triggers.
 - PGroonga or another new search extension.
 - Production Batch autosave or draft-state changes.
 - Order archival, deletion, or table partitioning.

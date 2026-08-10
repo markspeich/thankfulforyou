@@ -35,6 +35,18 @@ export function parseRemoteMigrationVersions(stdout) {
 }
 
 export function parseMigrationListOutput(stdout) {
+  try {
+    const parsed = JSON.parse(stdout);
+    if (Array.isArray(parsed?.migrations)) {
+      return parsed.migrations.map((row) => ({
+        local: String(row?.local || "").trim() || null,
+        remote: String(row?.remote || "").trim() || null,
+      }));
+    }
+  } catch {
+    // Older Supabase CLI versions print a table instead of JSON.
+  }
+
   const rows = [];
   for (const line of stdout.split(/\r?\n/)) {
     const match = /^\s*(\d{14})?\s*\|\s*(\d{14})?\s*\|/.exec(line);

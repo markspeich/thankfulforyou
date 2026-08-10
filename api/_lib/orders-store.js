@@ -237,8 +237,8 @@ function normalizeOrderItem(row, { design, lines, activeBatchItemIds }) {
   };
 }
 
-function normalizeCompactOrderItem(row, { design, activeBatchItemIds }) {
-  const source = row.source_json && typeof row.source_json === "object" ? row.source_json : {};
+function normalizeCompactRpcOrderItem(row) {
+  const source = row?.source_json && typeof row.source_json === "object" ? row.source_json : {};
 
   return {
     id: row.id,
@@ -254,10 +254,22 @@ function normalizeCompactOrderItem(row, { design, activeBatchItemIds }) {
     revision: Number.isInteger(row.revision) ? row.revision : null,
     updatedAt: row.updated_at ?? null,
     updatedBy: row.updated_by ?? null,
-    isInActiveBatch: activeBatchItemIds.has(row.id),
-    designId: design?.id ?? null,
-    designText: design?.design_text ?? "",
-    designProductionStatus: design?.production_status ?? null,
+    isInActiveBatch: Boolean(row.is_in_active_batch),
+    designId: row.design_id ?? null,
+    designText: row.design_text ?? "",
+    designProductionStatus: row.design_production_status ?? null,
+  };
+}
+
+function normalizeCompactRpcGroup(row) {
+  return {
+    id: row.group_id,
+    orderNumber: row.order_number ?? null,
+    buyerName: row.buyer_name ?? null,
+    status: row.group_status ?? "open",
+    isInActiveBatch: Boolean(row.is_in_active_batch),
+    shipByDate: row.ship_by_date ?? null,
+    items: Array.isArray(row.items) ? row.items.map(normalizeCompactRpcOrderItem) : [],
   };
 }
 
@@ -418,98 +430,45 @@ export async function listWorkspaceOrders({ workspaceId, activeBatchId = null, s
   return { orders: Array.from(groups.values()) };
 }
 
-function decodeOrderSummaryCursor(cursor) {
-  const normalized = normalizeString(cursor);
-  if (!normalized) {
-    return null;
-  }
-
-  try {
-    const parsed = JSON.parse(Buffer.from(normalized, "base64url").toString("utf8"));
-    if (
-      !parsed
-      || !Number.isInteger(parsed.groupRank)
-      || (parsed.groupRank !== 0 && parsed.groupRank !== 1)
-      || typeof parsed.orderKey !== "string"
-      || typeof parsed.groupId !== "string"
-      || !parsed.groupId
-    ) {
-      throw new Error("Invalid cursor shape.");
-    }
-    return parsed;
-  } catch {
-    throw Object.assign(new Error("Invalid orders cursor."), {
-      statusCode: 400,
-      expose: true,
-    });
-  }
-}
-
-function encodeOrderSummaryCursor(row) {
-  return Buffer.from(JSON.stringify({
-    groupRank: row.group_rank,
-    orderKey: row.order_key,
-    groupId: row.group_id,
-  })).toString("base64url");
-}
-
 export async function listWorkspaceOrderSummaries({
   workspaceId,
   activeBatchId = null,
   statusFilter = "open",
-  search = "",
-  cursor = null,
+  batchFilter = "all",
+  searchTerm = "",
   limit = 50,
+  cursor = null,
 }) {
   const supabase = createSupabaseAdminClient();
-  const decodedCursor = decodeOrderSummaryCursor(cursor);
-  const parsedLimit = Number.parseInt(limit, 10);
-  const pageLimit = Number.isInteger(parsedLimit) ? Math.min(Math.max(parsedLimit, 1), 50) : 50;
-  const { data, error } = await supabase.rpc("list_workspace_order_summaries_page", {
-    p_workspace_id: workspaceId,
-    p_status: statusFilter,
-    p_search: normalizeString(search),
-    p_active_batch_id: activeBatchId,
-    p_limit: pageLimit,
-    p_after_group_rank: decodedCursor?.groupRank ?? null,
-    p_after_order_key: decodedCursor?.orderKey ?? null,
-    p_after_group_id: decodedCursor?.groupId ?? null,
+  const normalizedStatusFilter = ["open", "complete", "skipped", "all"].includes(statusFilter)
+    ? statusFilter
+    : "open";
+  const normalizedBatchFilter = ["all", "inBatch", "notInBatch"].includes(batchFilter)
+    ? batchFilter
+    : "all";
+  const requestedLimit = Math.min(toPositiveInteger(limit, 50), 50);
+  const { data, error } = await supabase.rpc("list_workspace_order_summaries", {
+    p_workspace_id: normalizeString(workspaceId),
+    p_active_batch_id: nullableString(activeBatchId),
+    p_status_filter: normalizedStatusFilter,
+    p_batch_filter: normalizedBatchFilter,
+    p_search_term: normalizeString(searchTerm),
+    p_requested_limit: requestedLimit,
+    p_cursor_sort_key: cursor && typeof cursor.sortKey === "string" ? cursor.sortKey : null,
+    p_cursor_group_id: cursor && typeof cursor.groupId === "string" ? cursor.groupId : null,
   });
   if (error) throw error;
 
-  const rows = data || [];
-  const groups = new Map();
-  for (const row of rows) {
-    const activeBatchItemIds = new Set(row.is_in_active_batch ? [row.item_id] : []);
-    const design = row.design_id ? {
-      id: row.design_id,
-      design_text: row.design_text,
-      production_status: row.design_production_status,
-    } : null;
-    appendOrderItemToGroups(groups, normalizeCompactOrderItem({
-      id: row.item_id,
-      status: row.item_status,
-      order_number: row.order_number,
-      buyer_name: row.buyer_name,
-      listing_id: row.listing_id,
-      transaction_id: row.transaction_id,
-      imported_color: row.imported_color,
-      ship_by_date: row.ship_by_date,
-      quantity: row.quantity,
-      source_json: row.source_json,
-      revision: row.item_revision,
-      updated_at: row.item_updated_at,
-      updated_by: row.item_updated_by,
-    }, {
-      design,
-      activeBatchItemIds,
-    }));
-  }
-  const orders = Array.from(groups.values());
-  const lastRow = rows.at(-1);
+  const rows = Array.isArray(data) ? data : [];
+  const hasMore = rows.length > requestedLimit;
+  const pageRows = rows.slice(0, requestedLimit);
+  const cursorRow = hasMore ? pageRows.at(-1) : null;
   return {
-    orders,
-    nextCursor: lastRow?.has_more ? encodeOrderSummaryCursor(lastRow) : null,
+    orders: pageRows.map(normalizeCompactRpcGroup),
+    nextCursorValues: cursorRow
+      ? { sortKey: cursorRow.sort_key, groupId: cursorRow.group_id }
+      : null,
+    hasMore,
   };
 }
 

@@ -1,4 +1,5 @@
 import { expect, test } from "playwright/test";
+import { installSeededFontRoute } from "./font-test-routes.js";
 
 function installSupabaseSession(page) {
   return page.addInitScript(() => {
@@ -288,9 +289,20 @@ async function installOrdersWorkspaceRoutes(page, options = {}) {
       await new Promise((resolve) => setTimeout(resolve, getDelayMs));
     }
     onGet?.(request);
+    const status = requestUrl.searchParams.get("status") || "open";
+    const batch = requestUrl.searchParams.get("batch") || "all";
+    const search = (requestUrl.searchParams.get("search") || "").toLowerCase();
+    const filteredOrders = (ordersPayload.orders || []).filter((order) => {
+      const orderStatus = order.status || "open";
+      if (status !== "all" && orderStatus !== status) return false;
+      if (batch === "inBatch" && !order.isInActiveBatch) return false;
+      if (batch === "notInBatch" && order.isInActiveBatch) return false;
+      return !search || JSON.stringify(order).toLowerCase().includes(search);
+    });
     const responsePayload = view === "compact"
       ? {
-          orders: ordersPayload.orders.map((order) => ({
+          ...ordersPayload,
+          orders: filteredOrders.map((order) => ({
             ...order,
             items: order.items.map(({ design, ...item }) => ({
               ...item,
@@ -300,7 +312,7 @@ async function installOrdersWorkspaceRoutes(page, options = {}) {
         }
       : view === "detail"
         ? { order: ordersPayload.orders.find((order) => order.id === orderId) || null }
-        : ordersPayload;
+        : { ...ordersPayload, orders: filteredOrders };
     await route.fulfill({
       status: 200,
       contentType: "application/json; charset=utf-8",
@@ -559,6 +571,197 @@ test("updates and opens bookmarked Orders workspace order URLs", async ({ page }
   await expect(page).toHaveURL(/\/orders\/order%3A1001$/);
 });
 
+test("hydrates a bookmarked Orders detail that is outside the loaded compact page", async ({ page }) => {
+  await installSupabaseSession(page);
+  await installProductionBatchRoutes(page);
+  const detail = buildOrdersPayload().orders[1];
+  await installOrdersWorkspaceRoutes(page, {
+    ordersPayload: { orders: [buildOrdersPayload().orders[0]], nextCursor: "page-2", hasMore: true },
+  });
+  await page.route("**/api/orders?*view=detail*", async (route) => {
+    await route.fulfill({ json: { order: detail } });
+  });
+
+  await page.goto("/orders/order%3A1002");
+
+  const workspace = page.getByRole("region", { name: "Orders workspace" });
+  await expect(workspace.getByRole("heading", { name: "Order 1002" })).toBeVisible();
+  await expect(workspace.locator(".database-order-row")).toHaveCount(1);
+  await expect(workspace.locator(".database-order-row")).toContainText("Order 1001");
+});
+
+test("keeps the latest selected Orders detail when earlier detail requests finish late", async ({ page }) => {
+  await installSupabaseSession(page);
+  await installProductionBatchRoutes(page);
+  const compactPayload = buildOrdersPayload();
+  compactPayload.orders[1] = { ...compactPayload.orders[1], buyerName: "Compact placeholder" };
+  await installOrdersWorkspaceRoutes(page, { ordersPayload: compactPayload });
+  const releases = new Map();
+  const fulfilledOrderIds = [];
+  await page.route("**/api/orders?*view=detail*", async (route) => {
+    const orderId = new URL(route.request().url()).searchParams.get("orderId");
+    await new Promise((resolve) => releases.set(orderId, resolve));
+    const order = buildOrdersPayload().orders.find((candidate) => candidate.id === orderId);
+    await route.fulfill({ json: { order } });
+    fulfilledOrderIds.push(orderId);
+  });
+
+  await page.goto("/orders");
+  const workspace = page.getByRole("region", { name: "Orders workspace" });
+  await expect.poll(() => releases.has("order:1001")).toBe(true);
+  await workspace.getByRole("button", { name: "Order 1002" }).click();
+  await expect.poll(() => releases.has("order:1002")).toBe(true);
+  releases.get("order:1002")();
+  await expect(workspace.getByRole("heading", { name: "Order 1002" })).toBeVisible();
+  await expect(workspace.locator(".database-order-items-panel .editor-meta")).toContainText("Grace Hopper");
+  releases.get("order:1001")();
+  await expect.poll(() => fulfilledOrderIds.includes("order:1001")).toBe(true);
+  await expect(workspace.locator(".database-order-items-panel .editor-meta")).toContainText("Grace Hopper");
+});
+
+test("does not let a stale selected Orders detail overwrite an add-to-batch delta", async ({ page }) => {
+  await installSupabaseSession(page);
+  const productionBatchOrderItems = [];
+  await installProductionBatchRoutes(page, { orderItems: productionBatchOrderItems });
+  const posts = [];
+  await installOrdersWorkspaceRoutes(page, {
+    posts,
+    onPost(post) {
+      if (post.action === "addOrdersToProductionBatch") {
+        productionBatchOrderItems.push(buildAdaProductionBatchOrderItem());
+      }
+    },
+    postBody: {
+      addedOrderItemCount: 1,
+      addedOrderItemIds: ["item-1"],
+    },
+  });
+  let releaseStaleDetail;
+  let staleDetailFulfilled = false;
+  const staleDetail = buildOrdersPayload().orders[0];
+  await page.route("**/api/orders?*view=detail*", async (route) => {
+    await new Promise((resolve) => { releaseStaleDetail = resolve; });
+    await route.fulfill({ json: { order: staleDetail } });
+    staleDetailFulfilled = true;
+  });
+
+  await page.goto("/");
+
+  const workspace = page.getByRole("region", { name: "Orders workspace" });
+  await expect.poll(() => typeof releaseStaleDetail).toBe("function");
+  await workspace.getByLabel("Order actions", { exact: true }).click();
+  await workspace.getByRole("menu", { name: "Selected order actions" }).getByRole("button", { name: "Add to Production Batch" }).click();
+  await expect.poll(() => posts.some((post) => post.action === "addOrdersToProductionBatch")).toBe(true);
+  await expect(workspace.locator(".database-order-item-status")).toHaveText(["Already in active batch", "Already in active batch"]);
+
+  releaseStaleDetail();
+  await expect.poll(() => staleDetailFulfilled).toBe(true);
+  await expect(workspace.locator(".database-order-item-status")).toHaveText(["Already in active batch", "Already in active batch"]);
+});
+
+test("does not let a stale selected Orders detail overwrite a bulk reopen delta", async ({ page }) => {
+  await installSupabaseSession(page);
+  await installProductionBatchRoutes(page);
+  const posts = [];
+  const ordersPayload = buildOrdersPayload();
+  ordersPayload.orders[0] = {
+    ...ordersPayload.orders[0],
+    status: "skipped",
+    items: ordersPayload.orders[0].items.map((item) => ({
+      ...item,
+      status: "skipped",
+      isInActiveBatch: false,
+    })),
+  };
+  await installOrdersWorkspaceRoutes(page, {
+    ordersPayload,
+    posts,
+    postBody: (post) => {
+      if (post.action === "reopenOrders") {
+        ordersPayload.orders[0] = {
+          ...ordersPayload.orders[0],
+          status: "open",
+          items: ordersPayload.orders[0].items.map((item) => ({ ...item, status: "open" })),
+        };
+        return { orderItemIds: ["item-1", "item-2"], status: "open" };
+      }
+      return ordersPayload;
+    },
+  });
+  const detailReleases = [];
+  const fulfilledDetailIndexes = [];
+  const staleDetail = structuredClone(ordersPayload.orders[0]);
+  await page.route("**/api/orders?*view=detail*", async (route) => {
+    const detailIndex = detailReleases.length;
+    await new Promise((resolve) => { detailReleases.push(resolve); });
+    await route.fulfill({ json: { order: detailIndex === 1 ? staleDetail : ordersPayload.orders[0] } });
+    fulfilledDetailIndexes.push(detailIndex);
+  });
+
+  await page.goto("/");
+
+  const workspace = page.getByRole("region", { name: "Orders workspace" });
+  await expect.poll(() => detailReleases).toHaveLength(1);
+  await page.locator("#databaseOrdersStatusFilter").selectOption("skipped");
+  await expect.poll(() => detailReleases).toHaveLength(2);
+  await workspace.getByLabel("Select order 1001").check();
+  await workspace.getByLabel("Orders tools").click();
+  await workspace.getByRole("button", { name: "Reopen Orders" }).click();
+  await expect.poll(() => posts.some((post) => post.action === "reopenOrders")).toBe(true);
+  await expect.poll(() => detailReleases).toHaveLength(3);
+  detailReleases[2]();
+  await expect.poll(() => fulfilledDetailIndexes).toContain(2);
+  await expect(workspace.locator(".database-order-item-status")).toHaveText(["Not in active batch", "Not in active batch"]);
+
+  detailReleases[1]();
+  await expect.poll(() => fulfilledDetailIndexes).toContain(1);
+  await expect(workspace.locator(".database-order-item-status")).toHaveText(["Not in active batch", "Not in active batch"]);
+});
+
+test("does not restore a filtered-out selected order from a stale detail after adding it to the batch", async ({ page }) => {
+  await installSupabaseSession(page);
+  const productionBatchOrderItems = [];
+  await installProductionBatchRoutes(page, { orderItems: productionBatchOrderItems });
+  const posts = [];
+  await installOrdersWorkspaceRoutes(page, {
+    posts,
+    onPost(post) {
+      if (post.action === "addOrdersToProductionBatch") {
+        productionBatchOrderItems.push(buildAdaProductionBatchOrderItem());
+      }
+    },
+    postBody: {
+      addedOrderItemCount: 1,
+      addedOrderItemIds: ["item-1"],
+    },
+  });
+  const detailReleases = [];
+  const fulfilledDetailIndexes = [];
+  const staleDetail = buildOrdersPayload().orders[0];
+  await page.route("**/api/orders?*view=detail*", async (route) => {
+    const detailIndex = detailReleases.length;
+    await new Promise((resolve) => { detailReleases.push(resolve); });
+    await route.fulfill({ json: { order: staleDetail } });
+    fulfilledDetailIndexes.push(detailIndex);
+  });
+
+  await page.goto("/");
+
+  const workspace = page.getByRole("region", { name: "Orders workspace" });
+  await expect.poll(() => detailReleases).toHaveLength(1);
+  await page.locator("#databaseOrdersBatchFilter").selectOption("notInBatch");
+  await expect(workspace.getByRole("button", { name: "Order 1001" })).toBeVisible();
+  await expect.poll(() => detailReleases).toHaveLength(2);
+  await workspace.getByLabel("Order actions", { exact: true }).click();
+  await workspace.getByRole("menu", { name: "Selected order actions" }).getByRole("button", { name: "Add to Production Batch" }).click();
+  await expect.poll(() => posts.some((post) => post.action === "addOrdersToProductionBatch")).toBe(true);
+  await expect(workspace.getByText("No order selected.")).toBeVisible();
+
+  detailReleases[1]();
+  await expect.poll(() => fulfilledDetailIndexes).toContain(1);
+  await expect(workspace.getByText("No order selected.")).toBeVisible();
+});
+
 test("identifies Etsy and Amazon in selected imported order headers", async ({ page }) => {
   await installSupabaseSession(page);
   await installProductionBatchRoutes(page);
@@ -784,6 +987,7 @@ test("ignores stale order detail after a newer selection", async ({ page }) => {
 
 test("refreshes Orders after saving a new manual production batch design", async ({ page }) => {
   await installSupabaseSession(page);
+  await installSeededFontRoute(page);
   const ordersPayload = buildOrdersPayload();
   await installProductionBatchRoutes(page, {
     onPut: async (snapshot) => {
@@ -846,63 +1050,175 @@ test("refreshes Orders after saving a new manual production batch design", async
 
   await expect(ordersWorkspace.getByText("Manual Order: Manual Bob")).toBeVisible();
 });
-test("filters database orders by search text, batch membership, and status", async ({ page }) => {
+test("debounces server-filtered order searches and ignores an older response", async ({ page }) => {
   await installSupabaseSession(page);
   await installProductionBatchRoutes(page);
-  const requestedOrderUrls = [];
-  const ordersPayload = {
-    orders: [
-      ...buildOrdersPayload().orders.map((order) => ({ ...order, status: "open" })),
-      {
-        id: "order:1003",
-        orderNumber: "1003",
-        buyerName: "Katherine Johnson",
-        status: "complete",
-        isInActiveBatch: false,
-        items: [{
-          id: "item-1003",
-          listingTitle: "Retired badge reel",
-          status: "complete",
-          isInActiveBatch: false,
-          design: {
-            text: "Katherine RN",
-            lines: [{ lineIndex: 0, text: "Katherine RN", fontId: "candlepin" }],
-          },
-        }],
-      },
-    ],
+  const initialPayload = {
+    orders: [{
+      id: "order:initial",
+      orderNumber: "1000",
+      buyerName: "Initial order",
+      status: "open",
+      isInActiveBatch: false,
+      items: [],
+    }],
+    nextCursor: "initial-cursor",
+    hasMore: true,
   };
-  await installOrdersWorkspaceRoutes(page, { ordersPayload });
+  const responseFor = (id, buyerName) => ({
+    orders: [{
+      id,
+      orderNumber: id.replace("order:", ""),
+      buyerName,
+      status: "open",
+      isInActiveBatch: false,
+      items: [],
+    }],
+    nextCursor: null,
+    hasMore: false,
+  });
+  const requestedSearches = [];
+  const requestedFilters = [];
+  let resolveAdaResponse;
+  let resolveGraceResponse;
   await page.route("**/api/orders**", async (route) => {
-    requestedOrderUrls.push(route.request().url());
-    await route.fallback();
+    const url = new URL(route.request().url());
+    if (url.searchParams.get("view") === "detail") {
+      await route.fulfill({ json: { order: null } });
+      return;
+    }
+    const search = url.searchParams.get("search");
+    const status = url.searchParams.get("status");
+    const batch = url.searchParams.get("batch");
+    if (!search && status === "open" && batch === "all") {
+      await route.fulfill({ status: 200, contentType: "application/json; charset=utf-8", body: JSON.stringify(initialPayload) });
+      return;
+    }
+    requestedSearches.push({ search, cursor: url.searchParams.get("cursor") });
+    requestedFilters.push({ status, batch, search, cursor: url.searchParams.get("cursor") });
+    await new Promise((resolve) => {
+      if (search === "ada") resolveAdaResponse = () => resolve(route.fulfill({ status: 200, contentType: "application/json; charset=utf-8", body: JSON.stringify(responseFor("order:ada", "Ada Lovelace")) }));
+      if (search === "grace") resolveGraceResponse = () => resolve(route.fulfill({ status: 200, contentType: "application/json; charset=utf-8", body: JSON.stringify(responseFor("order:grace", "Grace Hopper")) }));
+      if (search !== "ada" && search !== "grace") resolve(route.fulfill({ status: 200, contentType: "application/json; charset=utf-8", body: JSON.stringify({ orders: [], nextCursor: null, hasMore: false }) }));
+    });
   });
 
   await page.goto("/");
 
   const ordersWorkspace = page.locator("#databaseOrdersWorkspace");
-  await expect(ordersWorkspace.locator(".database-order-row")).toHaveCount(2);
-  const openStatus = ordersWorkspace.locator(".database-order-row .database-order-status").first();
-  await expect(openStatus).toHaveText("Open");
-  await expect(openStatus).toHaveCSS("color", "rgb(30, 64, 175)");
-  await expect(openStatus).toHaveCSS("background-color", "rgb(239, 246, 255)");
+  await expect(ordersWorkspace.locator(".database-order-row")).toContainText("Initial order");
 
+  await page.locator("#databaseOrdersSearchInput").fill("ada");
+  await expect.poll(() => requestedSearches.map(({ search }) => search)).toEqual(["ada"]);
   await page.locator("#databaseOrdersSearchInput").fill("grace");
-  await expect(ordersWorkspace.locator(".database-order-row")).toHaveCount(1);
-  await expect(ordersWorkspace.locator(".database-order-row")).toContainText("Order 1002");
+  await expect.poll(() => requestedSearches.map(({ search }) => search)).toEqual(["ada", "grace"]);
+  expect(requestedSearches).toEqual([
+    { search: "ada", cursor: null },
+    { search: "grace", cursor: null },
+  ]);
 
-  await page.locator("#databaseOrdersSearchInput").fill("");
+  resolveGraceResponse();
+  await expect(ordersWorkspace.locator(".database-order-row")).toContainText("Grace Hopper");
+  resolveAdaResponse();
+  await expect(ordersWorkspace.locator(".database-order-row")).toContainText("Grace Hopper");
+  await expect(ordersWorkspace.locator(".database-order-row")).not.toContainText("Ada Lovelace");
+
   await page.locator("#databaseOrdersBatchFilter").selectOption("notInBatch");
-  await expect(ordersWorkspace.locator(".database-order-row")).toHaveCount(1);
-  await expect(ordersWorkspace.locator(".database-order-row")).not.toContainText("Order 1002");
-
+  await expect.poll(() => requestedFilters.some((query) => query.batch === "notInBatch" && query.cursor === null)).toBe(true);
   await page.locator("#databaseOrdersStatusFilter").selectOption("complete");
-  await expect.poll(() => requestedOrderUrls.some((url) => url.includes("status=complete"))).toBe(true);
-  await expect(ordersWorkspace.locator(".database-order-row")).toContainText("Order 1003");
-  const completeStatus = ordersWorkspace.locator(".database-order-row .database-order-status");
-  await expect(completeStatus).toHaveText("Complete");
-  await expect(completeStatus).toHaveCSS("color", "rgb(39, 103, 73)");
-  await expect(completeStatus).toHaveCSS("background-color", "rgb(237, 249, 242)");
+  await expect.poll(() => requestedFilters.some((query) => query.status === "complete" && query.cursor === null)).toBe(true);
+});
+
+test("appends another Orders page without losing the current rows, selection, checks, or scroll position", async ({ page }) => {
+  await installSupabaseSession(page);
+  await installProductionBatchRoutes(page);
+  const createOrders = (start, count) => Array.from({ length: count }, (_, index) => {
+    const orderNumber = String(start + index);
+    return {
+      id: `order:${orderNumber}`,
+      orderNumber,
+      buyerName: `Buyer ${orderNumber}`,
+      status: "open",
+      isInActiveBatch: false,
+      items: [{ id: `item:${orderNumber}`, isInActiveBatch: false }],
+    };
+  });
+  const firstPage = createOrders(1001, 50);
+  const secondPage = createOrders(1051, 3);
+  await page.route("**/api/orders**", async (route) => {
+    const cursor = new URL(route.request().url()).searchParams.get("cursor");
+    const response = cursor === "page-1"
+      ? { orders: secondPage, nextCursor: null, hasMore: false }
+      : { orders: firstPage, nextCursor: "page-1", hasMore: true };
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify(response),
+    });
+  });
+
+  await page.goto("/");
+
+  const ordersWorkspace = page.getByRole("region", { name: "Orders workspace" });
+  const ordersList = ordersWorkspace.getByLabel("Orders list");
+  await expect(ordersList.locator(".database-order-row")).toHaveCount(50);
+  await ordersWorkspace.getByLabel("Select order 1001").check();
+  await ordersWorkspace.getByRole("button", { name: "Order 1002" }).click();
+  const scrollTopBeforeAppend = await ordersList.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+    return element.scrollTop;
+  });
+  expect(scrollTopBeforeAppend).toBeGreaterThan(0);
+
+  await ordersWorkspace.getByRole("button", { name: "Load more orders" }).click();
+
+  await expect(ordersList.locator(".database-order-row")).toHaveCount(53);
+  await expect(ordersWorkspace.getByRole("button", { name: "Order 1001" })).toBeVisible();
+  await expect(ordersWorkspace.getByRole("button", { name: "Order 1053" })).toBeVisible();
+  await expect(ordersWorkspace.getByLabel("Select order 1001")).toBeChecked();
+  await expect(ordersWorkspace.getByRole("button", { name: "Order 1002" })).toHaveAttribute("aria-pressed", "true");
+  await expect.poll(() => ordersList.evaluate((element) => element.scrollTop)).toBe(scrollTopBeforeAppend);
+  await expect(ordersWorkspace.getByRole("button", { name: "Load more orders" })).toHaveCount(0);
+});
+
+test("keeps the loaded Orders page visible and offers retry when appending fails", async ({ page }) => {
+  await installSupabaseSession(page);
+  await installProductionBatchRoutes(page);
+  const firstPage = Array.from({ length: 50 }, (_, index) => ({
+    id: `order:${1001 + index}`,
+    orderNumber: String(1001 + index),
+    buyerName: `Buyer ${1001 + index}`,
+    status: "open",
+    isInActiveBatch: false,
+    items: [{ id: `item:${1001 + index}`, isInActiveBatch: false }],
+  }));
+  let appendAttempts = 0;
+  await page.route("**/api/orders**", async (route) => {
+    const cursor = new URL(route.request().url()).searchParams.get("cursor");
+    if (cursor === "page-1") {
+      appendAttempts += 1;
+      if (appendAttempts === 1) {
+        await route.fulfill({ status: 500, contentType: "application/json; charset=utf-8", body: JSON.stringify({ error: "Page two failed." }) });
+        return;
+      }
+      await route.fulfill({ status: 200, contentType: "application/json; charset=utf-8", body: JSON.stringify({ orders: [{ id: "order:1051", orderNumber: "1051", buyerName: "Buyer 1051", status: "open", isInActiveBatch: false, items: [{ id: "item:1051", isInActiveBatch: false }] }], nextCursor: null, hasMore: false }) });
+      return;
+    }
+    await route.fulfill({ status: 200, contentType: "application/json; charset=utf-8", body: JSON.stringify({ orders: firstPage, nextCursor: "page-1", hasMore: true }) });
+  });
+
+  await page.goto("/");
+
+  const ordersWorkspace = page.getByRole("region", { name: "Orders workspace" });
+  const ordersList = ordersWorkspace.getByLabel("Orders list");
+  await expect(ordersList.locator(".database-order-row")).toHaveCount(50);
+  await ordersWorkspace.getByRole("button", { name: "Load more orders" }).click();
+  await expect(ordersList.locator(".database-order-row")).toHaveCount(50);
+  await expect(ordersWorkspace.getByRole("button", { name: "Retry loading more orders" })).toBeVisible();
+
+  await ordersWorkspace.getByRole("button", { name: "Retry loading more orders" }).click();
+  await expect(ordersList.locator(".database-order-row")).toHaveCount(51);
+  await expect(ordersWorkspace.getByRole("button", { name: "Retry loading more orders" })).toHaveCount(0);
 });
 
 test("skips and reopens an order item from the Orders screen", async ({ page }) => {
@@ -1048,6 +1364,7 @@ test("skips and reopens checked orders from the Orders column menu", async ({ pa
   await installProductionBatchRoutes(page, { onGet: () => { productionBatchGetCount += 1; } });
   const posts = [];
   let ordersGetCount = 0;
+  const compactQueries = [];
   let ordersPayload = {
     orders: buildOrdersPayload().orders.map((order) => ({
       ...order,
@@ -1071,7 +1388,14 @@ test("skips and reopens checked orders from the Orders column menu", async ({ pa
     ordersPayload,
     posts,
     onGet: (request) => {
-      if (new URL(request.url()).searchParams.get("view") === "compact") ordersGetCount += 1;
+      const url = new URL(request.url());
+      if (url.searchParams.get("view") === "compact") {
+        ordersGetCount += 1;
+        compactQueries.push({
+          status: url.searchParams.get("status"),
+          cursor: url.searchParams.get("cursor"),
+        });
+      }
     },
     postBody: (post) => {
       if (post.action === "skipOrders") {
@@ -1113,6 +1437,8 @@ test("skips and reopens checked orders from the Orders column menu", async ({ pa
 
   await expect.poll(() => posts.some((post) => post.action === "reopenOrders" && post.orderIds.includes("order:1001") && post.orderIds.includes("order:1002"))).toBe(true);
   await expect(page.locator("#databaseOrdersStatusFilter")).toHaveValue("open");
+  await expect.poll(() => ordersGetCount).toBe(3);
+  expect(compactQueries.at(-1)).toEqual({ status: "open", cursor: null });
 });
 
 test("loads database orders on initial app startup", async ({ page }) => {
@@ -1243,12 +1569,19 @@ test("shows an Orders paste summary with imported and duplicate counts", async (
 
 test("keeps Orders paste available while workspace orders are loading", async ({ page }) => {
   const orderPosts = [];
+  const ordersPayload = buildOrdersPayload();
   await installSupabaseSession(page);
   await installClipboardText(page, buildClipboardPayload());
   await installProductionBatchRoutes(page);
   await installOrdersWorkspaceRoutes(page, {
     getDelayMs: 5000,
     posts: orderPosts,
+    ordersPayload,
+    onPost(post) {
+      if (post.action === "importClipboardItems") {
+        ordersPayload.orders = buildOrdersPayloadWithImportedOrder().orders;
+      }
+    },
     postBody: buildOrdersPayloadWithImportedOrder(),
   });
 
@@ -1481,7 +1814,10 @@ test("hydrates the selected production batch item after adding from Orders", asy
     ordersPayload,
     onPost(post) {
       if (post.action === "addOrderItemToProductionBatch") {
-        productionBatchOrderItems.push(buildAdaProductionBatchOrderItem());
+        productionBatchOrderItems.push({
+          ...buildAdaProductionBatchOrderItem(),
+          source: { ...buildAdaProductionBatchOrderItem().source, marketplace: "amazon" },
+        });
       }
     },
     postBody: {
@@ -1592,13 +1928,13 @@ test("adds checked orders to the active production batch", async ({ page }) => {
   await expect(ordersWorkspace.getByLabel("Select order 1002")).toBeChecked();
 
   await page.locator("#databaseOrdersSearchInput").fill("ada");
+  await expect(ordersWorkspace.locator(".database-order-row")).toHaveCount(1);
   await ordersWorkspace.getByLabel("Select all visible").uncheck();
   await expect(ordersWorkspace.getByLabel("Select order 1001")).not.toBeChecked();
   await page.locator("#databaseOrdersSearchInput").fill("");
-  await expect(ordersWorkspace.getByLabel("Select order 1002")).toBeChecked();
-  await expect.poll(() => (
-    ordersWorkspace.getByLabel("Select all visible").evaluate((input) => input.indeterminate)
-  )).toBe(true);
+  await expect(ordersWorkspace.locator(".database-order-row")).toHaveCount(2);
+  await expect(ordersWorkspace.getByLabel("Select order 1002")).not.toBeChecked();
+  await expect(ordersWorkspace.getByLabel("Select all visible")).not.toBeChecked();
 
   await ordersWorkspace.getByLabel("Select all visible").check();
   await ordersWorkspace.getByLabel("Orders tools").click();
@@ -1612,6 +1948,7 @@ test("adds checked orders to the active production batch", async ({ page }) => {
     statusFilter: "open",
   });
 
+  await page.locator("#pasteSummaryDoneButton").click();
   await page.getByRole("button", { name: "Production Batch", exact: true }).click();
   const productionWorkspace = page.getByRole("region", { name: "Order items workspace" });
   await expect(productionWorkspace.locator(".order-row.active")).toContainText("Personalization: Ada RN");

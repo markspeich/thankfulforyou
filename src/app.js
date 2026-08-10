@@ -47,6 +47,7 @@ import { shouldUsePostStretchBackingOffset, shouldUseRasterTextPreview } from ".
 import { findPairOffsetPx } from "./bridge-geometry.js";
 import {
   buildSettingsSignature,
+  cachedBuildMatchesResolvedFontAssets,
   getSettingsSignatureCandidates,
 } from "./order-signatures.js";
 import {
@@ -91,7 +92,6 @@ import {
   runAuthenticatedRequest,
 } from "./authenticated-request.js";
 import {
-  filterGroupedOrders,
   getEtsyConnectionActionDescriptor,
   getEtsyImportSummary,
   getAmazonImportFailureDescription,
@@ -103,8 +103,9 @@ import {
   getOrderItemStatusDescriptor,
   getOrderLifecycleStatusDescriptor,
   getOrderItemListingText as getDatabaseOrderItemListingText,
-  getSelectedGroupedOrder,
+  getOrdersRetryLoadOptions,
   getVisibleOrderSelectionState,
+  mergeOrdersPageState,
   normalizeOrdersWorkspaceState,
 } from "./orders-workspace.js";
 import {
@@ -133,10 +134,12 @@ import {
 import {
   buildFontOptions,
   createWorkspaceFont,
-  deleteWorkspaceFont,
+  archiveWorkspaceFont,
   getFontLibraryOptions,
+  getFontRenderingIssue,
   getSelectableFontOptions,
   loadWorkspaceFontOptions,
+  restoreWorkspaceFont,
   registerBrowserFonts,
   replaceWorkspaceFont,
   resolveFontOption,
@@ -237,7 +240,7 @@ const sizeGuideWorkspaceButton = document.querySelector("#sizeGuideWorkspaceButt
 const productionBatchLogoutButton = document.querySelector("#productionBatchLogoutButton");
 const navCollapseButton = document.querySelector("#navCollapseButton");
 const fontLibraryList = document.querySelector("#fontLibraryList");
-const showDeletedFontsInput = document.querySelector("#showDeletedFontsInput");
+const showArchivedFontsInput = document.querySelector("#showArchivedFontsInput");
 const newFontUploadButton = document.querySelector("#newFontUploadButton");
 const fontFileInput = document.querySelector("#fontFileInput");
 const fontDisplayNameInput = document.querySelector("#fontDisplayNameInput");
@@ -248,7 +251,7 @@ const selectedFontName = document.querySelector("#selectedFontName");
 const selectedFontMeta = document.querySelector("#selectedFontMeta");
 const selectedFontPreview = document.querySelector("#selectedFontPreview");
 const replaceFontButton = document.querySelector("#replaceFontButton");
-const deleteFontButton = document.querySelector("#deleteFontButton");
+const archiveFontButton = document.querySelector("#archiveFontButton");
 const fontEditorStatus = document.querySelector("#fontEditorStatus");
 const fontUsedByPresetsList = document.querySelector("#fontUsedByPresetsList");
 const fontUsedByPresetsEmptyState = document.querySelector("#fontUsedByPresetsEmptyState");
@@ -312,6 +315,10 @@ const databaseOrdersStatusFilter = document.querySelector("#databaseOrdersStatus
 const databaseOrdersBatchFilter = document.querySelector("#databaseOrdersBatchFilter");
 const selectVisibleOrdersInput = document.querySelector("#selectVisibleOrdersInput");
 const databaseOrdersListShell = document.querySelector(".database-orders-list-shell");
+const databaseOrdersListState = document.querySelector("#databaseOrdersListState");
+const databaseOrdersListStatus = document.querySelector("#databaseOrdersListStatus");
+const databaseOrdersLoadMoreButton = document.querySelector("#databaseOrdersLoadMoreButton");
+const databaseOrdersRetryButton = document.querySelector("#databaseOrdersRetryButton");
 const databaseOrderItemsShell = document.querySelector(".database-order-items-shell");
 const selectedDatabaseOrderTitle = document.querySelector(".database-order-items-panel .editor-header h2");
 const selectedDatabaseOrderMeta = document.querySelector(".database-order-items-panel .editor-meta");
@@ -519,10 +526,19 @@ const initialAppRoute = readAppRoute();
 let activeWorkspace = initialAppRoute.workspace;
 let databaseOrders = [];
 let selectedDatabaseOrderId = initialAppRoute.workspace === "databaseOrders" ? initialAppRoute.itemId : null;
+let selectedDatabaseOrderDetail = null;
+let databaseOrderDetailGeneration = 0;
 let checkedDatabaseOrderIds = new Set();
 let databaseOrdersLoading = false;
+let databaseOrdersLoadingMode = "idle";
+let databaseOrdersLoadError = null;
+let databaseOrdersFailedLoadingMode = null;
+let databaseOrdersNextCursor = null;
+let databaseOrdersHasMore = false;
+let databaseOrdersRequestGeneration = 0;
+let databaseOrdersLoadController = null;
+let databaseOrdersSearchDebounceId = null;
 let etsyConnection = null;
-let databaseOrdersForceReloadRequested = false;
 let databaseOrdersLoadPromise = null;
 let etsyConnectionLoading = false;
 let etsyImporting = false;
@@ -537,13 +553,14 @@ let amazonSessionRequest = null;
 let databaseOrdersImporting = false;
 let ordersDatabaseMutationInFlight = false;
 let databaseOrdersMutationVersion = 0;
-let databaseOrderDetailRequestVersion = 0;
 let loadedDatabaseOrdersKey = null;
 let databaseOrdersSearchTerm = "";
 let databaseOrdersStatusFilterValue = "open";
 let databaseOrdersBatchFilterValue = "all";
 let selectedFontId = "candlepin";
-let showDeletedFonts = false;
+let fontDisplayNameDraft = null;
+let showArchivedFonts = false;
+let fontRegistryLoadError = "";
 let fixedDesignRecords = [];
 let selectedFixedDesignId = initialAppRoute.workspace === "fixedDesigns" ? initialAppRoute.itemId : null;
 let fixedDesignSearchTerm = "";
@@ -952,7 +969,21 @@ function getFontOption(fontId) {
 }
 
 function getCanvasFont(fontSizePx, fontId) {
-  return `${fontSizePx}px "${getFontOption(fontId).family}", "Segoe Script", cursive`;
+  return `${fontSizePx}px "${getFontOption(fontId).family}"`;
+}
+
+function getSettingsFontRenderingIssue(settings) {
+  return getFontRenderingIssue(settings, FONT_OPTIONS);
+}
+
+function updateConnectionStatusFromFontIssue(issue) {
+  const registryDetail = fontRegistryLoadError ? ` ${fontRegistryLoadError}` : "";
+  const loadDetail = issue?.detail ? ` ${issue.detail}` : "";
+  updateConnectionStatus(
+    "error",
+    "Font unavailable",
+    `${issue?.label || "The selected font"} cannot be rendered with its selected asset.${loadDetail}${registryDetail} Open Fonts to repair the asset or select an available font before previewing, saving, analyzing, or exporting.`,
+  );
 }
 
 function setFontOptions(fontOptions) {
@@ -965,10 +996,28 @@ function setFontOptions(fontOptions) {
 
 async function refreshWorkspaceFonts(accessToken = null) {
   try {
-    setFontOptions(await loadWorkspaceFontOptions({ accessToken, includeDeleted: true }));
-    await registerBrowserFonts(FONT_OPTIONS.filter((font) => font.isUploaded && !font.isDeleted));
-  } catch {
-    setFontOptions(buildFontOptions());
+    fontRegistryLoadError = "";
+    setFontOptions(await loadWorkspaceFontOptions({ accessToken, includeArchived: true }));
+    const results = await registerBrowserFonts(FONT_OPTIONS);
+    setFontOptions(FONT_OPTIONS.map((font, index) => {
+      const result = results[index];
+      if (result?.status !== "rejected") {
+        return font;
+      }
+      const detail = result.reason instanceof Error && result.reason.message
+        ? ` ${result.reason.message}`
+        : "";
+      return {
+        ...font,
+        label: `${font.label} (load failed)`,
+        loadError: `${font.displayName || font.label} failed to load.${detail}`,
+      };
+    }));
+  } catch (error) {
+    setFontOptions([]);
+    fontRegistryLoadError = error instanceof Error
+      ? `Font registry failed to load: ${error.message}`
+      : "Font registry failed to load.";
   }
   renderFontWorkspace();
 }
@@ -1110,11 +1159,15 @@ function applyFontBridgePolicy(lineSettings) {
 
   const font = getFontOption(lineSettings.fontId);
   const fontBridgingEnabled = font.bridgingEnabled !== false;
+  const fontAssetFingerprint = font.isMissing
+    ? `${lineSettings.fontId}|missing`
+    : `${font.id}|${font.version || 1}|${font.exportPath || font.url || "missing"}`;
   return {
     ...lineSettings,
     bridgeMm: fontBridgingEnabled ? lineSettings.bridgeMm : 0,
     lineBridgeMm: fontBridgingEnabled ? lineSettings.lineBridgeMm : 0,
     fontBridgingEnabled,
+    fontAssetFingerprint,
   };
 }
 
@@ -1495,17 +1548,23 @@ function toSignatureCandidates(signature) {
   return typeof signature === "string" && signature ? [signature] : [];
 }
 
-function getStoredBuildForSignature(cachedBuild, previousCompletedBuild, signature) {
+function getStoredBuildForSignature(cachedBuild, previousCompletedBuild, signature, settings = null) {
   const signatureCandidates = toSignatureCandidates(signature);
   if (!signatureCandidates.length) {
     return null;
   }
 
-  if (signatureCandidates.includes(cachedBuild?.signature)) {
+  if (
+    signatureCandidates.includes(cachedBuild?.signature)
+    && (!settings || cachedBuildMatchesResolvedFontAssets(cachedBuild, settings))
+  ) {
     return structuredClone(cachedBuild);
   }
 
-  if (signatureCandidates.includes(previousCompletedBuild?.signature)) {
+  if (
+    signatureCandidates.includes(previousCompletedBuild?.signature)
+    && (!settings || cachedBuildMatchesResolvedFontAssets(previousCompletedBuild, settings))
+  ) {
     return structuredClone(previousCompletedBuild);
   }
 
@@ -1520,12 +1579,17 @@ function getOrderSettingsSignatureCandidates(order) {
   return order ? getSettingsSignatureCandidates(order.settings) : [];
 }
 
-function getCachedBuild(order, signature = getOrderSettingsSignatureCandidates(order)) {
+function getCachedBuild(order, signature = getOrderSettingsSignatureCandidates(order), settings = order?.settings) {
   if (!order?.cachedBuild) {
     return null;
   }
 
-  return enrichCachedBuildForOrder(order, getStoredBuildForSignature(order.cachedBuild, null, signature));
+  return enrichCachedBuildForOrder(order, getStoredBuildForSignature(
+    order.cachedBuild,
+    null,
+    signature,
+    settings,
+  ));
 }
 
 function getBuildForSignature(order, signature) {
@@ -1534,7 +1598,12 @@ function getBuildForSignature(order, signature) {
     return null;
   }
 
-  const storedBuild = getStoredBuildForSignature(order.cachedBuild, order.previousCompletedBuild, signatureCandidates);
+  const storedBuild = getStoredBuildForSignature(
+    order.cachedBuild,
+    order.previousCompletedBuild,
+    signatureCandidates,
+    order.settings,
+  );
   if (storedBuild) {
     return enrichCachedBuildForOrder(order, storedBuild);
   }
@@ -1545,6 +1614,7 @@ function getBuildForSignature(order, signature) {
     && signatureCandidates.includes(order.savedSettingsSignature)
     && order.capturedLayout.analysis
     && typeof order.capturedLayout.analysis === "object"
+    && cachedBuildMatchesResolvedFontAssets({ layout: order.capturedLayout }, order.settings)
   ) {
     const layout = structuredClone(order.capturedLayout);
     const analysis = structuredClone(order.capturedLayout.analysis);
@@ -1591,6 +1661,7 @@ function buildExportPayload(layout, analysis = layout?.analysis || null, source 
       heightMm: layout.heightMm,
       backingMm: layout.backingMm,
       weldExportedDesign: layout.weldExportedDesign,
+      letters: Array.isArray(layout.letters) ? layout.letters : [],
       fixedSvgs: Array.isArray(layout.fixedSvgs) ? layout.fixedSvgs : [],
       colorName,
       quantity,
@@ -1840,7 +1911,7 @@ function createPresetEditorFontField(ruleKey, fontId) {
     option.value = font.id;
     option.textContent = font.label;
     option.selected = font.id === fontId;
-    option.disabled = Boolean(font.isDeleted);
+    option.disabled = Boolean(font.isMissing);
     select.append(option);
   });
 
@@ -3769,16 +3840,19 @@ function hydrateStoredOrder(order, index) {
     cachedBuild,
     previousCompletedBuild,
     savedSettingsSignature,
+    settings,
   );
   const completedSettingsBuild = getStoredBuildForSignature(
     cachedBuild,
     previousCompletedBuild,
     completedSettingsSignature,
+    settings,
   );
   const pendingCompletedBuild = getStoredBuildForSignature(
     cachedBuild,
     previousCompletedBuild,
     abandonedPendingSignature,
+    settings,
   );
 
   if (abandonedPendingSignature) {
@@ -5834,37 +5908,6 @@ function getDatabaseOrderItemFlattenedLines(item) {
   return lineText.length ? lineText.join(" / ") : getDatabaseOrderItemDesignText(item);
 }
 
-async function hydrateSelectedDatabaseOrder(orderId) {
-  const normalizedOrderId = typeof orderId === "string" ? orderId.trim() : "";
-  if (!normalizedOrderId || !productionBatchAccessToken) return false;
-
-  const requestVersion = ++databaseOrderDetailRequestVersion;
-  try {
-    const payload = await fetchWorkspaceOrderDetail({
-      orderId: normalizedOrderId,
-      batchId: getActiveProductionBatchId() || null,
-      accessToken: productionBatchAccessToken,
-    });
-    if (requestVersion !== databaseOrderDetailRequestVersion || selectedDatabaseOrderId !== normalizedOrderId) {
-      return false;
-    }
-    if (!payload?.order) {
-      selectedDatabaseOrderId = null;
-      writeAppRoute({ replace: true, workspace: "databaseOrders", itemId: null });
-      renderDatabaseOrdersWorkspace();
-      return false;
-    }
-    databaseOrders = databaseOrders.map((order) => order.id === normalizedOrderId ? payload.order : order);
-    renderSelectedDatabaseOrderItems();
-    return true;
-  } catch (error) {
-    if (requestVersion === databaseOrderDetailRequestVersion && selectedDatabaseOrderId === normalizedOrderId) {
-      updateWorkflowAlert(error instanceof Error ? error.message : "Unable to load order detail.", "error");
-    }
-    return false;
-  }
-}
-
 function createDatabaseOrderRowImageStack(order) {
   const items = getDatabaseOrderItems(order);
   const stack = document.createElement("span");
@@ -6191,6 +6234,10 @@ function applyAddedOrderItemsDelta(payload) {
   const addedIdSet = new Set(addedIds);
   if (!addedIdSet.size) return 0;
 
+  const selectedOrderItems = selectedDatabaseOrderDetail?.items
+    || databaseOrders.find((order) => order.id === selectedDatabaseOrderId)?.items
+    || [];
+  const selectedOrderIsAffected = selectedOrderItems.some((item) => addedIdSet.has(item.id));
   databaseOrders = databaseOrders.map((order) => {
     const items = (order.items || []).map((item) => (
       addedIdSet.has(item.id)
@@ -6203,10 +6250,25 @@ function applyAddedOrderItemsDelta(payload) {
         ? "skipped"
         : "open";
     return { ...order, status, items, isInActiveBatch: items.some((item) => item.isInActiveBatch) };
-  });
+  }).filter(shouldRetainDatabaseOrderAfterKnownMutation);
+
+  if (selectedOrderIsAffected) {
+    databaseOrderDetailGeneration += 1;
+  }
+  if (selectedDatabaseOrderDetail) {
+    const items = (selectedDatabaseOrderDetail.items || []).map((item) => (
+      addedIdSet.has(item.id)
+        ? { ...item, status: item.status === "skipped" ? "open" : item.status, isInActiveBatch: true }
+        : item
+    ));
+    selectedDatabaseOrderDetail = {
+      ...selectedDatabaseOrderDetail,
+      items,
+      isInActiveBatch: items.some((item) => item.isInActiveBatch),
+    };
+  }
 
   databaseOrdersMutationVersion += 1;
-  databaseOrderDetailRequestVersion += 1;
   loadedDatabaseOrdersKey = (getActiveProductionBatchId() || "") + "|" + databaseOrdersStatusFilterValue;
   renderDatabaseOrdersWorkspace();
   return addedIdSet.size;
@@ -6252,7 +6314,7 @@ function applyOrderItemsStatusDelta(payload) {
       status: orderStatus,
       isInActiveBatch: items.some((item) => item.isInActiveBatch),
     };
-  });
+  }).filter(shouldRetainDatabaseOrderAfterKnownMutation);
 
   if (status === "skipped") {
     saveActiveOrderDraft();
@@ -6268,7 +6330,6 @@ function applyOrderItemsStatusDelta(payload) {
   }
 
   databaseOrdersMutationVersion += 1;
-  databaseOrderDetailRequestVersion += 1;
   loadedDatabaseOrdersKey = `${getActiveProductionBatchId() || ""}|${databaseOrdersStatusFilterValue}`;
   updateDatabaseOrdersState(normalizeOrdersWorkspaceState({
     orders: databaseOrders,
@@ -6309,14 +6370,9 @@ async function refreshOrdersAndProductionBatch({ payload = null, accessToken, re
     await refreshProductionBatchSnapshot(accessToken);
   }
 
-  if (payload) {
-    databaseOrdersMutationVersion += 1;
-  }
-
-  if (!updateDatabaseOrdersFromPayload(payload)) {
-    invalidateDatabaseOrders();
-    await loadDatabaseOrders({ force: true });
-  }
+  if (payload) databaseOrdersMutationVersion += 1;
+  invalidateDatabaseOrders();
+  await loadDatabaseOrders({ force: true });
 }
 function initializeEtsyImportUi() {
   if (!ordersImportActions) return;
@@ -6634,38 +6690,85 @@ async function startAmazonImport() {
   }
 }
 
-function loadDatabaseOrders({ force = false } = {}) {
-  if (databaseOrdersLoading) {
-    if (force) databaseOrdersForceReloadRequested = true;
-    return databaseOrdersLoadPromise || Promise.resolve();
-  }
-  const loadPromise = performDatabaseOrdersLoad({ force });
-  databaseOrdersLoadPromise = loadPromise.finally(async () => {
-    databaseOrdersLoadPromise = null;
-    if (databaseOrdersForceReloadRequested && productionBatchAccessToken && activeWorkspace === "databaseOrders") {
-      databaseOrdersForceReloadRequested = false;
-      await loadDatabaseOrders({ force: true });
-    }
-  });
-  return databaseOrdersLoadPromise;
+function getDatabaseOrdersQueryKey() {
+  return [
+    getActiveProductionBatchId(),
+    databaseOrdersStatusFilterValue,
+    databaseOrdersBatchFilterValue,
+    databaseOrdersSearchTerm.trim(),
+  ].join("|");
 }
 
-async function performDatabaseOrdersLoad({ force = false } = {}) {
+function resetDatabaseOrdersQuery({ debounce = false } = {}) {
+  if (databaseOrdersSearchDebounceId) {
+    window.clearTimeout(databaseOrdersSearchDebounceId);
+    databaseOrdersSearchDebounceId = null;
+  }
+  databaseOrdersNextCursor = null;
+  databaseOrdersHasMore = false;
+  databaseOrdersLoadError = null;
+  databaseOrdersRequestGeneration += 1;
+  databaseOrdersLoadController?.abort();
+  if (debounce) {
+    databaseOrdersSearchDebounceId = window.setTimeout(() => {
+      databaseOrdersSearchDebounceId = null;
+      void loadDatabaseOrders({ reset: true });
+    }, 250);
+    return;
+  }
+  void loadDatabaseOrders({ reset: true });
+}
+
+function retryDatabaseOrdersLoad() {
+  return loadDatabaseOrders(getOrdersRetryLoadOptions({
+    orders: databaseOrders,
+    failedLoadingMode: databaseOrdersFailedLoadingMode,
+  }));
+}
+
+function loadDatabaseOrders({ force = false, reset = false, append = false } = {}) {
+  const shouldReset = Boolean(force || reset || (!append && loadedDatabaseOrdersKey !== getDatabaseOrdersQueryKey()));
+  const shouldAppend = Boolean(append && !shouldReset);
+  if (!productionBatchAccessToken) {
+    return Promise.resolve();
+  }
+  if (!shouldReset && !shouldAppend && loadedDatabaseOrdersKey === getDatabaseOrdersQueryKey()) {
+    return databaseOrdersLoadPromise || Promise.resolve();
+  }
+  if (shouldAppend && (!databaseOrdersHasMore || !databaseOrdersNextCursor || databaseOrdersLoading)) {
+    return databaseOrdersLoadPromise || Promise.resolve();
+  }
+  if (shouldReset) {
+    databaseOrdersLoadController?.abort();
+  } else if (databaseOrdersLoading) {
+    return databaseOrdersLoadPromise || Promise.resolve();
+  }
+
+  const loadPromise = performDatabaseOrdersLoad({ reset: shouldReset, append: shouldAppend });
+  const trackedLoadPromise = loadPromise.finally(() => {
+    if (databaseOrdersLoadPromise === trackedLoadPromise) {
+      databaseOrdersLoadPromise = null;
+    }
+  });
+  databaseOrdersLoadPromise = trackedLoadPromise;
+  return trackedLoadPromise;
+}
+
+async function performDatabaseOrdersLoad({ reset, append }) {
   if (!productionBatchAccessToken) {
     return;
   }
 
   const batchId = productionBatchContext?.id || null;
-  const loadKey = `${batchId || ""}|${databaseOrdersStatusFilterValue}`;
-  if (!force && loadedDatabaseOrdersKey === loadKey) {
-    return;
-  }
-
-  if (force) {
-    invalidateDatabaseOrders();
-  }
-
+  const loadKey = getDatabaseOrdersQueryKey();
+  const controller = new AbortController();
+  const requestGeneration = databaseOrdersRequestGeneration + 1;
+  databaseOrdersRequestGeneration = requestGeneration;
+  databaseOrdersLoadController = controller;
   databaseOrdersLoading = true;
+  databaseOrdersLoadingMode = append ? "append" : "reset";
+  databaseOrdersLoadError = null;
+  databaseOrdersFailedLoadingMode = null;
   const loadMutationVersion = databaseOrdersMutationVersion;
   renderDatabaseOrdersWorkspace();
   updateWorkflowAlert("Loading orders...", "pending", { autoHideMs: 0 });
@@ -6674,30 +6777,55 @@ async function performDatabaseOrdersLoad({ force = false } = {}) {
     const payload = await runProductionBatchRequestWithSessionRefresh((accessToken) => fetchWorkspaceOrderSummaries({
       batchId,
       statusFilter: databaseOrdersStatusFilterValue,
+      batchFilter: databaseOrdersBatchFilterValue,
+      searchTerm: databaseOrdersSearchTerm,
+      limit: 50,
+      cursor: append ? databaseOrdersNextCursor : null,
       accessToken,
+      signal: controller.signal,
     }));
-    if (loadMutationVersion !== databaseOrdersMutationVersion) {
+    if (requestGeneration !== databaseOrdersRequestGeneration || loadMutationVersion !== databaseOrdersMutationVersion) {
       return;
     }
-    updateDatabaseOrdersState(normalizeOrdersWorkspaceState({
-      payload,
+    const nextState = mergeOrdersPageState({
+      currentOrders: databaseOrders,
+      incomingOrders: payload?.orders,
       selectedOrderId: selectedDatabaseOrderId,
       checkedOrderIds: checkedDatabaseOrderIds,
-    }));
+      nextCursor: payload?.nextCursor,
+      hasMore: payload?.hasMore,
+      reset,
+    });
+    updateDatabaseOrdersState({
+      ...nextState,
+      selectedOrderId: selectedDatabaseOrderId || nextState.selectedOrderId,
+    });
+    databaseOrdersNextCursor = nextState.nextCursor;
+    databaseOrdersHasMore = nextState.hasMore;
     loadedDatabaseOrdersKey = loadKey;
-    if (selectedDatabaseOrderId) {
-      void hydrateSelectedDatabaseOrder(selectedDatabaseOrderId);
-    }
     if (databaseOrders.length === 0) {
-      updateWorkflowAlert("No orders found in the workspace.", "pending");
+      updateWorkflowAlert("No orders match the current search and filters.", "pending");
     } else {
       updateWorkflowAlert("", "pending", { autoHideMs: 0 });
     }
+    if (selectedDatabaseOrderId) {
+      void hydrateSelectedDatabaseOrderDetail(selectedDatabaseOrderId);
+    }
   } catch (error) {
-    updateWorkflowAlert(error instanceof Error ? error.message : "Unable to load workspace orders.", "error");
+    if (requestGeneration === databaseOrdersRequestGeneration && error?.name !== "AbortError") {
+      databaseOrdersLoadError = error instanceof Error ? error : new Error("Unable to load workspace orders.");
+      databaseOrdersFailedLoadingMode = databaseOrdersLoadingMode;
+      updateWorkflowAlert(databaseOrdersLoadError.message, "error");
+    }
   } finally {
-    databaseOrdersLoading = false;
-    renderDatabaseOrdersWorkspace();
+    if (requestGeneration === databaseOrdersRequestGeneration) {
+      databaseOrdersLoading = false;
+      databaseOrdersLoadingMode = "idle";
+      if (databaseOrdersLoadController === controller) {
+        databaseOrdersLoadController = null;
+      }
+      renderDatabaseOrdersWorkspace();
+    }
   }
 }
 
@@ -6713,17 +6841,57 @@ function updateDatabaseOrderSelectionRows() {
   });
 }
 
+function getSelectedDatabaseOrder() {
+  if (selectedDatabaseOrderDetail?.id === selectedDatabaseOrderId) {
+    return selectedDatabaseOrderDetail;
+  }
+  return databaseOrders.find((order) => order.id === selectedDatabaseOrderId) || null;
+}
+
+async function hydrateSelectedDatabaseOrderDetail(orderId = selectedDatabaseOrderId) {
+  if (!productionBatchAccessToken || typeof orderId !== "string" || !orderId) {
+    return;
+  }
+
+  const selectionGeneration = databaseOrderDetailGeneration;
+  try {
+    const payload = await runProductionBatchRequestWithSessionRefresh((accessToken) => fetchWorkspaceOrderDetail({
+      orderId,
+      batchId: getActiveProductionBatchId() || null,
+      accessToken,
+    }));
+    if (selectionGeneration !== databaseOrderDetailGeneration || selectedDatabaseOrderId !== orderId) {
+      return;
+    }
+    if (Object.hasOwn(payload || {}, "order") && payload?.order?.id !== orderId) {
+      selectedDatabaseOrderDetail = null;
+      selectedDatabaseOrderId = null;
+      writeAppRoute({ replace: true, workspace: "databaseOrders", itemId: null });
+      renderDatabaseOrdersWorkspace();
+      return;
+    }
+    selectedDatabaseOrderDetail = payload.order;
+    renderSelectedDatabaseOrderItems();
+  } catch (error) {
+    if (selectionGeneration === databaseOrderDetailGeneration && error?.name !== "AbortError") {
+      selectedDatabaseOrderDetail = null;
+      renderSelectedDatabaseOrderItems();
+    }
+  }
+}
+
 function selectDatabaseOrder(orderId, options = {}) {
   const { updateRoute = true, replaceRoute = false } = options;
-  const order = databaseOrders.find((candidate) => candidate.id === orderId);
-  if (!order) {
+  if (typeof orderId !== "string" || !orderId) {
     return false;
   }
 
-  selectedDatabaseOrderId = order.id;
-  databaseOrderDetailRequestVersion += 1;
+  selectedDatabaseOrderId = orderId;
+  selectedDatabaseOrderDetail = null;
+  databaseOrderDetailGeneration += 1;
   updateDatabaseOrderSelectionRows();
   renderSelectedDatabaseOrderItems();
+  void hydrateSelectedDatabaseOrderDetail(orderId);
   if (updateRoute) {
     writeAppRoute({
       replace: replaceRoute,
@@ -6731,16 +6899,28 @@ function selectDatabaseOrder(orderId, options = {}) {
       itemId: selectedDatabaseOrderId,
     });
   }
-  void hydrateSelectedDatabaseOrder(selectedDatabaseOrderId);
   return true;
 }
 
 function getVisibleDatabaseOrders() {
-  return filterGroupedOrders(databaseOrders, {
-    searchTerm: databaseOrdersSearchTerm,
-    statusFilter: databaseOrdersStatusFilterValue,
-    batchFilter: databaseOrdersBatchFilterValue,
-  });
+  // Search and filter membership are determined by the compact Orders API.
+  return databaseOrders;
+}
+
+function shouldRetainDatabaseOrderAfterKnownMutation(order) {
+  const status = getOrderLifecycleStatusDescriptor(order).status;
+  if (databaseOrdersStatusFilterValue !== "all" && status !== databaseOrdersStatusFilterValue) {
+    return false;
+  }
+  if (databaseOrdersBatchFilterValue === "inBatch" && !order?.isInActiveBatch) {
+    return false;
+  }
+  if (databaseOrdersBatchFilterValue === "notInBatch" && order?.isInActiveBatch) {
+    return false;
+  }
+  // A status/batch mutation cannot change an order's search text, so its
+  // server-side search membership remains unchanged until the next reset.
+  return true;
 }
 
 function isDatabaseOrderItemSkipped(item) {
@@ -6774,6 +6954,47 @@ function canSkipDatabaseOrder(order) {
 
 function canReopenDatabaseOrder(order) {
   return isDatabaseOrderFullySkipped(order);
+}
+
+function getDatabaseOrdersEmptyMessage() {
+  if (databaseOrdersSearchTerm.trim()) {
+    return "No orders match your search.";
+  }
+  if (databaseOrdersStatusFilterValue !== "open" || databaseOrdersBatchFilterValue !== "all") {
+    return "No orders match the current filters.";
+  }
+  return "No orders loaded.";
+}
+
+function renderDatabaseOrdersListState() {
+  if (!databaseOrdersListState || !databaseOrdersListStatus || !databaseOrdersLoadMoreButton || !databaseOrdersRetryButton) {
+    return;
+  }
+
+  const isAppending = databaseOrdersLoading && databaseOrdersLoadingMode === "append";
+  const hasLoadedOrders = databaseOrders.length > 0;
+  const isAppendFailure = Boolean(databaseOrdersLoadError && databaseOrdersFailedLoadingMode === "append" && hasLoadedOrders);
+  let statusMessage = "";
+
+  if (databaseOrdersLoading) {
+    statusMessage = isAppending ? "Loading more orders..." : "Loading orders...";
+  } else if (databaseOrdersLoadError) {
+    statusMessage = isAppendFailure
+      ? `Unable to load more orders. ${databaseOrdersLoadError.message}`
+      : `Unable to load orders. ${databaseOrdersLoadError.message}`;
+  } else if (!hasLoadedOrders) {
+    statusMessage = getDatabaseOrdersEmptyMessage();
+  }
+
+  databaseOrdersListStatus.textContent = statusMessage;
+  databaseOrdersListStatus.hidden = !statusMessage;
+  databaseOrdersLoadMoreButton.hidden = !hasLoadedOrders || !databaseOrdersHasMore || Boolean(databaseOrdersLoadError);
+  databaseOrdersLoadMoreButton.disabled = isAppending;
+  databaseOrdersRetryButton.hidden = !databaseOrdersLoadError;
+  databaseOrdersRetryButton.disabled = databaseOrdersLoading;
+  databaseOrdersRetryButton.querySelector(".batch-tool-label").textContent = isAppendFailure
+    ? "Retry loading more orders"
+    : "Retry loading orders";
 }
 
 function getVisibleCheckedDatabaseOrders() {
@@ -6824,31 +7045,18 @@ function renderDatabaseOrdersWorkspace() {
     selectVisibleOrdersInput.disabled = databaseOrdersLoading || selectionState.visibleOrderCount === 0;
   }
 
-  if (databaseOrdersLoading) {
-    const loading = document.createElement("p");
-    loading.className = "batch-tools-note";
-    loading.textContent = "Loading orders...";
-    databaseOrdersListShell.append(loading);
-    restoreElementScrollState(databaseOrdersListShell, listScrollState);
-    renderSelectedDatabaseOrderItems();
-    return;
-  }
-
-  if (!databaseOrders.length) {
-    const empty = document.createElement("p");
-    empty.className = "batch-tools-note";
-    empty.textContent = "No orders loaded.";
-    databaseOrdersListShell.append(empty);
+  if ((databaseOrdersLoading && databaseOrdersLoadingMode !== "append")
+    || (databaseOrdersLoadError && databaseOrdersFailedLoadingMode !== "append")) {
+    renderDatabaseOrdersListState();
+    databaseOrdersListShell.append(databaseOrdersListState);
     restoreElementScrollState(databaseOrdersListShell, listScrollState);
     renderSelectedDatabaseOrderItems();
     return;
   }
 
   if (!visibleOrders.length) {
-    const empty = document.createElement("p");
-    empty.className = "batch-tools-note";
-    empty.textContent = "No orders match the current filters.";
-    databaseOrdersListShell.append(empty);
+    renderDatabaseOrdersListState();
+    databaseOrdersListShell.append(databaseOrdersListState);
     restoreElementScrollState(databaseOrdersListShell, listScrollState);
     renderSelectedDatabaseOrderItems();
     return;
@@ -6930,6 +7138,8 @@ function renderDatabaseOrdersWorkspace() {
     databaseOrdersListShell.append(row);
   });
 
+  renderDatabaseOrdersListState();
+  databaseOrdersListShell.append(databaseOrdersListState);
   restoreElementScrollState(databaseOrdersListShell, listScrollState);
   renderSelectedDatabaseOrderItems();
 }
@@ -7005,7 +7215,7 @@ function renderSelectedDatabaseOrderItems() {
 
   databaseOrderItemsShell.replaceChildren();
   const visibleOrders = getVisibleDatabaseOrders();
-  const selectedOrder = getSelectedGroupedOrder(visibleOrders, selectedDatabaseOrderId);
+  const selectedOrder = getSelectedDatabaseOrder();
 
   if (selectedDatabaseOrderTitle) {
     renderSelectedDatabaseOrderTitle(selectedOrder);
@@ -7474,7 +7684,7 @@ async function updateDatabaseOrderStatus({
 }
 
 async function skipSelectedDatabaseOrder() {
-  const selectedOrder = getSelectedGroupedOrder(getVisibleDatabaseOrders(), selectedDatabaseOrderId);
+  const selectedOrder = getSelectedDatabaseOrder();
   if (!canSkipDatabaseOrder(selectedOrder)) {
     return;
   }
@@ -7503,7 +7713,7 @@ async function skipSelectedDatabaseOrder() {
 }
 
 async function reopenSelectedDatabaseOrder() {
-  const selectedOrder = getSelectedGroupedOrder(getVisibleDatabaseOrders(), selectedDatabaseOrderId);
+  const selectedOrder = getSelectedDatabaseOrder();
   if (!canReopenDatabaseOrder(selectedOrder)) {
     return;
   }
@@ -7553,6 +7763,9 @@ async function updateCheckedDatabaseOrdersStatus({
       accessToken: requestToken,
     }), accessToken);
 
+    if (orderIds.includes(selectedDatabaseOrderId)) {
+      databaseOrderDetailGeneration += 1;
+    }
     if (nextFilter) {
       databaseOrdersStatusFilterValue = nextFilter;
       if (databaseOrdersStatusFilter) {
@@ -7560,7 +7773,13 @@ async function updateCheckedDatabaseOrdersStatus({
       }
     }
     checkedDatabaseOrderIds.clear();
-    applyOrderItemsStatusDelta(payload);
+    if (nextFilter) {
+      databaseOrdersMutationVersion += 1;
+      invalidateDatabaseOrders();
+      await loadDatabaseOrders({ force: true });
+    } else {
+      applyOrderItemsStatusDelta(payload);
+    }
     updateWorkflowAlert(successMessage, "success");
   } catch (error) {
     handleOrdersMutationError(
@@ -7687,7 +7906,7 @@ async function addCheckedDatabaseOrdersToBatch() {
 }
 
 async function addSelectedDatabaseOrderToBatch() {
-  const selectedOrder = getSelectedGroupedOrder(getVisibleDatabaseOrders(), selectedDatabaseOrderId);
+  const selectedOrder = getSelectedDatabaseOrder();
   const orderId = typeof selectedOrder?.id === "string" ? selectedOrder.id.trim() : "";
   const batchId = requireActiveProductionBatchId();
   if (!batchId || !orderId || !isDatabaseOrderBatchEligible(selectedOrder)) {
@@ -8526,7 +8745,7 @@ function createFontField(lineIndex, fontId) {
     option.value = font.id;
     option.textContent = font.label;
     option.selected = font.id === fontId;
-    option.disabled = Boolean(font.isDeleted);
+    option.disabled = Boolean(font.isMissing);
     select.append(option);
   });
 
@@ -9099,7 +9318,7 @@ function hasCompletedEditingState(order, settings = getCurrentSettings()) {
 }
 
 function canCompleteActiveOrder(order) {
-  if (!orderHasRenderableDesign(order)) {
+  if (!orderHasRenderableDesign(order) || getSettingsFontRenderingIssue(order.settings)) {
     return false;
   }
 
@@ -9144,7 +9363,7 @@ function getSavedCachedBuild(order) {
 }
 
 function isOrderReadyForExport(order) {
-  if (order?.saveErrorMessage) {
+  if (order?.saveErrorMessage || getSettingsFontRenderingIssue(order?.settings)) {
     return false;
   }
 
@@ -9436,7 +9655,7 @@ function hideInitialBatchLoading() {
 }
 
 function getFontMetaLabel(font) {
-  const kind = font.isBuiltin ? "Built-in production font" : "Uploaded workspace font";
+  const kind = font.isArchived ? "Archived" : "Available";
   const format = font.fileFormat ? font.fileFormat.toUpperCase() : "font";
   const version = font.version ? `v${font.version}` : "v1";
   return `${kind} · ${format} · ${version}`;
@@ -10065,11 +10284,11 @@ function renderFontWorkspace() {
   }
 
   const selectedFont = getFontOption(selectedFontId);
-  if (showDeletedFontsInput) {
-    showDeletedFontsInput.checked = showDeletedFonts;
+  if (showArchivedFontsInput) {
+    showArchivedFontsInput.checked = showArchivedFonts;
   }
   fontLibraryList.replaceChildren();
-  getFontLibraryOptions(FONT_OPTIONS, { showDeleted: showDeletedFonts }).forEach((font) => {
+  getFontLibraryOptions(FONT_OPTIONS, { showArchived: showArchivedFonts }).forEach((font) => {
     const row = document.createElement("article");
     row.className = "font-library-row size-preset-row";
     row.classList.toggle("is-selected", font.id === selectedFont.id);
@@ -10083,7 +10302,7 @@ function renderFontWorkspace() {
     row.querySelector(".font-library-name").textContent = font.label;
     const preview = row.querySelector(".font-library-preview");
     preview.textContent = font.label;
-    preview.style.fontFamily = `"${font.family}", "Segoe Script", cursive`;
+    preview.style.fontFamily = `"${font.family}"`;
     row.addEventListener("click", () => {
       selectedFontId = font.id;
       renderFontWorkspace();
@@ -10102,8 +10321,12 @@ function renderFontWorkspace() {
 
   selectedFontName.textContent = selectedFont.label;
   selectedFontMeta.textContent = getFontMetaLabel(selectedFont);
-  fontDisplayNameInput.value = selectedFont.displayName || selectedFont.label;
+  const persistedDisplayName = selectedFont.displayName || selectedFont.label;
+  fontDisplayNameInput.value = fontDisplayNameDraft?.fontId === selectedFont.id
+    ? fontDisplayNameDraft.value
+    : persistedDisplayName;
   fontDisplayNameInput.disabled = false;
+  updateSaveFontDisplayNameButton();
   if (fontBridgingEnabledInput) {
     fontBridgingEnabledInput.checked = selectedFont.bridgingEnabled !== false;
     fontBridgingEnabledInput.disabled = false;
@@ -10112,13 +10335,19 @@ function renderFontWorkspace() {
     fontPreviewTextInput.value = fontPreviewText;
   }
   selectedFontPreview.textContent = fontPreviewText;
-  selectedFontPreview.style.fontFamily = `"${selectedFont.family}", "Segoe Script", cursive`;
+  selectedFontPreview.style.fontFamily = `"${selectedFont.family}"`;
   replaceFontButton.disabled = false;
-  deleteFontButton.disabled = Boolean(selectedFont.isBuiltin);
-  delete fontEditorStatus.dataset.state;
-  fontEditorStatus.textContent = selectedFont.isBuiltin
-    ? "Original production fonts can be replaced with a new version while keeping their stable design and preset references."
-    : "Uploaded fonts can be replaced with a new version or deleted from future selections.";
+  archiveFontButton.disabled = false;
+  archiveFontButton.setAttribute("aria-label", selectedFont.isArchived ? "Restore font" : "Archive font");
+  archiveFontButton.querySelector(".editor-action-label").textContent = selectedFont.isArchived ? "Restore Font" : "Archive Font";
+  if (fontRegistryLoadError || selectedFont.loadError) {
+    setFontEditorStatus(fontRegistryLoadError || selectedFont.loadError, "error");
+  } else {
+    delete fontEditorStatus.dataset.state;
+    fontEditorStatus.textContent = selectedFont.isArchived
+      ? "Archived fonts remain available to existing designs and presets. Restore this font to use it in new assignments."
+      : "This font can be replaced with a new version or archived from future selections.";
+  }
   renderFontUsedByPresets();
 }
 
@@ -10472,6 +10701,7 @@ async function handleSaveFontDisplayName() {
     await updateWorkspaceFontSettings(selectedFont.id, { displayName, bridgingEnabled }, {
       accessToken: productionBatchAccessToken,
     });
+    fontDisplayNameDraft = null;
     await refreshWorkspaceFonts(productionBatchAccessToken);
     selectedFontId = selectedFont.id;
     renderFontWorkspace();
@@ -10506,16 +10736,25 @@ async function handleFontBridgingEnabledChange() {
   }
 }
 
-async function handleDeleteSelectedFont() {
+async function handleArchiveSelectedFont() {
   const selectedFont = getFontOption(selectedFontId);
-  if (selectedFont.isBuiltin) {
+  if (selectedFont.isArchived) {
+    try {
+      setFontEditorStatus("Restoring font...", "pending");
+      await restoreWorkspaceFont(selectedFont.id, { accessToken: productionBatchAccessToken });
+      await refreshWorkspaceFonts(productionBatchAccessToken);
+      renderLineControls(getActiveOrder()?.settings || getCurrentSettings());
+      setFontEditorStatus("Font restored.", "success");
+    } catch (error) {
+      setFontEditorStatus(error instanceof Error ? error.message : "Unable to restore font.", "error");
+    }
     return;
   }
 
   const confirmed = await showConfirmationDialog({
-    title: "Delete Font?",
-    description: `Delete ${selectedFont.label} from future font selections? Existing saved designs may still reference it.`,
-    confirmLabel: "Delete Font",
+    title: "Archive Font?",
+    description: `Archive ${selectedFont.label} from new font selections? Existing saved designs and presets will continue to use it.`,
+    confirmLabel: "Archive Font",
     isDanger: true,
   });
   if (!confirmed) {
@@ -10523,14 +10762,14 @@ async function handleDeleteSelectedFont() {
   }
 
   try {
-    setFontEditorStatus("Deleting font...", "pending");
-    await deleteWorkspaceFont(selectedFont.id, { accessToken: productionBatchAccessToken });
+    setFontEditorStatus("Archiving font...", "pending");
+    await archiveWorkspaceFont(selectedFont.id, { accessToken: productionBatchAccessToken });
     selectedFontId = "candlepin";
     await refreshWorkspaceFonts(productionBatchAccessToken);
     renderLineControls(getActiveOrder()?.settings || getCurrentSettings());
-    setFontEditorStatus("Font deleted from future selections.", "success");
+    setFontEditorStatus("Font archived from future selections.", "success");
   } catch (error) {
-    setFontEditorStatus(error instanceof Error ? error.message : "Unable to delete font.", "error");
+    setFontEditorStatus(error instanceof Error ? error.message : "Unable to archive font.", "error");
   }
 }
 
@@ -10853,7 +11092,7 @@ async function importFromClipboard({ clipboardText: providedClipboardText = null
       items: filteredItems,
       accessToken: requestToken,
     }), accessToken);
-    updateDatabaseOrdersFromPayload(payload);
+    await refreshOrdersAndProductionBatch({ accessToken: productionBatchAccessToken });
     appendImportedItemsToProductionBatch(filteredItems, {
       maxCount: countFromPayload(payload, "addedOrderItemCount"),
     });
@@ -10950,6 +11189,15 @@ async function captureActiveOrder({ advanceToNext = false } = {}) {
   order.text = textInput.value;
   order.settings = getCurrentSettings();
   if (!orderHasRenderableDesign(order)) {
+    return;
+  }
+  const fontIssue = getSettingsFontRenderingIssue(order.settings);
+  if (fontIssue) {
+    lastLayout = null;
+    renderPreviewGuideOnly();
+    updateFittedTextHeightOutputs(null);
+    updateConnectionStatusFromFontIssue(fontIssue);
+    renderOrderList();
     return;
   }
   const layout = buildOrderLayout(order.settings);
@@ -11088,22 +11336,6 @@ async function captureActiveOrder({ advanceToNext = false } = {}) {
     persistBatchState();
     renderOrderList();
   }
-}
-
-async function checkFonts() {
-  await Promise.all(
-    FONT_OPTIONS.map(async (font) => {
-      try {
-        const response = await fetch(font.url, { cache: "no-store" });
-        if (!response.ok) {
-          throw new Error("Font file not found");
-        }
-        await document.fonts.load(`120px "${font.family}"`);
-      } catch {
-        // Fall back to the browser script font when a production font is unavailable.
-      }
-    }),
-  );
 }
 
 function measureCharacter(character, fontSizeMm, fontId, horizontalScale = 1) {
@@ -12164,7 +12396,19 @@ function render() {
     return;
   }
 
-  const cachedBuild = getCachedBuild(activeOrder, signature);
+  const fontIssue = getSettingsFontRenderingIssue(settings);
+  if (fontIssue) {
+    lastLayout = null;
+    renderPreviewGuideOnly();
+    updateFittedTextHeightOutputs(null);
+    updateConnectionStatusFromFontIssue(fontIssue);
+    updateCaptureButtonState(activeOrder);
+    downloadButton.disabled = true;
+    copyButton.disabled = true;
+    return;
+  }
+
+  const cachedBuild = getCachedBuild(activeOrder, getSettingsSignatureCandidates(settings), settings);
   if (cachedBuild) {
     renderPreviewFromLayout({
       ...cachedBuild.layout,
@@ -12789,6 +13033,7 @@ fontPreviewTextInput?.addEventListener("input", () => {
   selectedFontPreview.textContent = fontPreviewText;
 });
 fontDisplayNameInput?.addEventListener("input", () => {
+  fontDisplayNameDraft = { fontId: selectedFontId, value: fontDisplayNameInput.value };
   updateSaveFontDisplayNameButton();
 });
 saveFontDisplayNameButton?.addEventListener("click", () => {
@@ -12797,12 +13042,12 @@ saveFontDisplayNameButton?.addEventListener("click", () => {
 fontBridgingEnabledInput?.addEventListener("change", () => {
   void handleFontBridgingEnabledChange();
 });
-showDeletedFontsInput?.addEventListener("change", () => {
-  showDeletedFonts = Boolean(showDeletedFontsInput.checked);
+showArchivedFontsInput?.addEventListener("change", () => {
+  showArchivedFonts = Boolean(showArchivedFontsInput.checked);
   renderFontWorkspace();
 });
-deleteFontButton?.addEventListener("click", () => {
-  void handleDeleteSelectedFont();
+archiveFontButton?.addEventListener("click", () => {
+  void handleArchiveSelectedFont();
 });
 fixedDesignUploadButton?.addEventListener("click", () => {
   openFixedDesignUploadDialog();
@@ -12947,7 +13192,13 @@ importClipboardButton.addEventListener("click", importFromClipboard);
 clearBatchButton.addEventListener("click", completeCurrentProductionBatch);
 databaseOrdersSearchInput?.addEventListener("input", () => {
   databaseOrdersSearchTerm = databaseOrdersSearchInput.value;
-  renderDatabaseOrdersWorkspace();
+  resetDatabaseOrdersQuery({ debounce: true });
+});
+databaseOrdersLoadMoreButton?.addEventListener("click", () => {
+  void loadDatabaseOrders({ append: true });
+});
+databaseOrdersRetryButton?.addEventListener("click", () => {
+  void retryDatabaseOrdersLoad();
 });
 presetSearchInput?.addEventListener("input", () => {
   presetLibrarySearchTerm = presetSearchInput.value;
@@ -12961,12 +13212,14 @@ databaseOrdersStatusFilter?.addEventListener("change", () => {
   selectedDatabaseOrderId = null;
   checkedDatabaseOrderIds.clear();
   invalidateDatabaseOrders();
-  renderDatabaseOrdersWorkspace();
-  void loadDatabaseOrders({ force: true });
+  resetDatabaseOrdersQuery();
 });
 databaseOrdersBatchFilter?.addEventListener("change", () => {
   databaseOrdersBatchFilterValue = databaseOrdersBatchFilter.value;
-  renderDatabaseOrdersWorkspace();
+  selectedDatabaseOrderId = null;
+  checkedDatabaseOrderIds.clear();
+  invalidateDatabaseOrders();
+  resetDatabaseOrdersQuery();
 });
 addSelectedOrderToBatchButton?.addEventListener("click", () => {
   void addSelectedDatabaseOrderToBatch();
@@ -13223,7 +13476,7 @@ consumeEtsyOAuthReturnStatus();
 setActiveWorkspace(activeWorkspace, { updateRoute: false });
 setNavCollapsed(navCollapsed);
 renderProductionBatchLogoutButton();
-await Promise.all([checkFonts(), loadPresetRegistry()]);
+await loadPresetRegistry();
 renderPresetOptions();
 renderBoundingSizePresetOptions(boundingSizePresetInput);
 renderBoundingSizePresetOptions(presetBoundingSizePresetInput);
@@ -13232,8 +13485,8 @@ renderSizePresetEditorPreview();
 renderPresetEditorDraft();
 updateBackingOutput();
 productionBatchAccessToken = await bootstrapProductionBatchAccess();
+await refreshWorkspaceFonts(productionBatchAccessToken);
 const startupTasks = [
-  refreshWorkspaceFonts(productionBatchAccessToken),
   productionBatchAccessToken
     ? restoreInitialBatchState(productionBatchAccessToken)
     : Promise.resolve({ source: null, count: 0 }),
@@ -13241,7 +13494,7 @@ const startupTasks = [
 if (initialAppRoute.workspace === "fixedDesigns") {
   startupTasks.push(refreshWorkspaceFixedDesigns(productionBatchAccessToken));
 }
-const [, restoredBatch] = await Promise.all(startupTasks);
+const [restoredBatch] = await Promise.all(startupTasks);
 if (productionBatchAccessToken && !fixedDesignsLoaded && restoredOrdersIncludeFixedSvgs()) {
   await refreshWorkspaceFixedDesigns(productionBatchAccessToken);
 }

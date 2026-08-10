@@ -261,7 +261,7 @@ describe("production batch api route", () => {
     });
   });
 
-  it("promotes scoped saves with new order items to full saves so batch membership persists", async () => {
+  it("keeps scoped saves scoped when their snapshot includes a new order item", async () => {
     resolveProductionBatchAuthMock.mockResolvedValue({
       userId: "user-1",
       workspaceId: "workspace-1",
@@ -303,7 +303,7 @@ describe("production batch api route", () => {
 
     expect(response.statusCode).toBe(200);
     expect(saveProductionBatchMock).toHaveBeenCalledWith({
-      changedOrderItemIds: null,
+      changedOrderItemIds: ["order-2"],
       userId: "user-1",
       snapshot: {
         batch: { id: "batch-1", workspaceId: "workspace-1" },

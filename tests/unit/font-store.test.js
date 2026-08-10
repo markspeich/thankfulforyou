@@ -6,7 +6,6 @@ import {
   ensureFontStorageBucket,
   normalizeUploadedFontFile,
   normalizeFontRow,
-  rejectBuiltinFontDeletion,
   rejectMissingFontReplacement,
   resolveUploadedFontDisplayName,
 } from "../../api/_lib/font-store.js";
@@ -55,19 +54,14 @@ describe("font store helpers", () => {
     })).toBe("Candlepin - Laser");
   });
 
-  it("allows built-in font replacement when a workspace row exists", () => {
-    expect(() => rejectMissingFontReplacement({ id: "candlepin", is_builtin: true }))
+  it("allows replacement for a seeded font record without origin-based policy", () => {
+    expect(() => rejectMissingFontReplacement({ id: "candlepin" }))
       .not.toThrow();
   });
 
   it("rejects replacing a font that has no workspace row", () => {
     expect(() => rejectMissingFontReplacement(null))
       .toThrow("Font not found.");
-  });
-
-  it("keeps original production fonts protected from deletion", () => {
-    expect(() => rejectBuiltinFontDeletion({ id: "candlepin", is_builtin: true }))
-      .toThrow("Original production fonts cannot be deleted.");
   });
 
   it("creates exposed http errors for api responses", () => {
@@ -98,6 +92,11 @@ describe("font store helpers", () => {
       id: "font-2",
       bridging_enabled: true,
     });
+  });
+
+  it("normalizes archived state without exposing obsolete origin metadata", () => {
+    expect(normalizeFontRow({ id: "candlepin", archived_at: "2026-08-05T00:00:00Z", is_builtin: true }))
+      .toMatchObject({ id: "candlepin", archived_at: "2026-08-05T00:00:00Z" });
   });
 
   it("creates the storage bucket when it is missing", async () => {

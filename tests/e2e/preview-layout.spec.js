@@ -1,5 +1,6 @@
 ﻿import { readFileSync } from "node:fs";
 import { expect, test } from "playwright/test";
+import { installSeededFontRoute } from "./font-test-routes.js";
 
 test.describe.configure({ mode: "serial" });
 
@@ -662,6 +663,7 @@ async function measurePreviewImageEdges(page, selector) {
   }, selector);
 }
 test.beforeEach(async ({ page, request }, testInfo) => {
+  await installSeededFontRoute(page);
   if (
     testInfo.title === PRODUCTION_BATCH_REMOTE_RESTORE_TEST_TITLE
     || testInfo.title === PRODUCTION_BATCH_CONFLICT_TEST_TITLE

@@ -13,10 +13,10 @@ function buildAuthHeaders(accessToken, headers = {}) {
   };
 }
 
-export async function fetchWorkspaceFonts({ accessToken = null, includeDeleted = false } = {}) {
+export async function fetchWorkspaceFonts({ accessToken = null, includeArchived = false } = {}) {
   const params = new URLSearchParams();
-  if (includeDeleted) {
-    params.set("includeDeleted", "true");
+  if (includeArchived) {
+    params.set("includeArchived", "true");
   }
   const response = await fetch(`/api/fonts${params.size ? `?${params}` : ""}`, {
     headers: buildAuthHeaders(accessToken, { Accept: "application/json" }),
@@ -84,16 +84,27 @@ export async function updateWorkspaceFontSettings(fontId, settingsPayload, { acc
   return payload.font;
 }
 
-export async function deleteWorkspaceFont(fontId, { accessToken = null } = {}) {
+export async function archiveWorkspaceFont(fontId, { accessToken = null } = {}) {
   const response = await fetch(`/api/fonts?fontId=${encodeURIComponent(fontId)}`, {
-    method: "DELETE",
-    headers: buildAuthHeaders(accessToken, { Accept: "application/json" }),
+    method: "PATCH",
+    headers: buildAuthHeaders(accessToken, { "Content-Type": "application/json", Accept: "application/json" }),
+    body: JSON.stringify({ lifecycle: "archive" }),
   });
   const payload = await readJsonOrFallback(response, {});
 
   if (!response.ok) {
-    throw new Error(payload.error || "Unable to delete font.");
+    throw new Error(payload.error || "Unable to archive font.");
   }
 
+  return payload.font;
+}
+
+export async function restoreWorkspaceFont(fontId, { accessToken = null } = {}) {
+  const response = await fetch(`/api/fonts?fontId=${encodeURIComponent(fontId)}`, {
+    method: "PATCH", headers: buildAuthHeaders(accessToken, { "Content-Type": "application/json", Accept: "application/json" }),
+    body: JSON.stringify({ lifecycle: "restore" }),
+  });
+  const payload = await readJsonOrFallback(response, {});
+  if (!response.ok) throw new Error(payload.error || "Unable to restore font.");
   return payload.font;
 }
