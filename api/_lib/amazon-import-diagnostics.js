@@ -231,6 +231,7 @@ function safeContext(context) {
     "existingItems",
     "alreadyProcessedShipments",
     "failed",
+    "warnings",
   ]) {
     const count = safeCount(context[key]);
     if (count != null) details[key] = count;

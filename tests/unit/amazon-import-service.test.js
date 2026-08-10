@@ -282,7 +282,7 @@ describe("Amazon import service", () => {
       { level: "info", event: "amazon_import.item.enriched", context: { runId: "run-123", workspaceId: "workspace-1", shipmentId: "shipment-safe", orderNumber: "order-shipment-safe", orderItemId: "item-safe", presetId: "preset-amazon", designLineCount: 1, selectionCount: 1, recognizedCount: 1, unknownCount: 0, effectiveFontIds: ["skywalk-internal"] } },
       { level: "info", event: "amazon_import.item.persisted", context: { runId: "run-123", workspaceId: "workspace-1", shipmentId: "shipment-safe", orderNumber: "order-shipment-safe", orderItemId: "item-safe", persistenceOutcome: "imported" } },
       { level: "info", event: "amazon_import.shipment.completed", context: { runId: "run-123", workspaceId: "workspace-1", shipmentId: "shipment-safe", orderNumber: "order-shipment-safe", importedItems: 1, existingItems: 0, notesUpdated: true, processedTagUpdated: true } },
-      { level: "info", event: "amazon_import.run.completed", context: { runId: "run-123", workspaceId: "workspace-1", processedShipments: 1, importedItems: 1, existingItems: 0, alreadyProcessedShipments: 0, customizationNeeded: 0, failed: 0 } },
+      { level: "info", event: "amazon_import.run.completed", context: { runId: "run-123", workspaceId: "workspace-1", processedShipments: 1, importedItems: 1, existingItems: 0, alreadyProcessedShipments: 0, customizationNeeded: 0, warnings: 0, failed: 0 } },
     ]);
     expect(result).toMatchObject({ processedShipments: 1, importedItems: 1, failed: 0 });
     const serialized = JSON.stringify(diagnosticEvents);
@@ -314,9 +314,7 @@ describe("Amazon import service", () => {
       if (normalized.source.amazonOrderItemId === "bad-item") throw failure;
       return normalized;
     })],
-    ["notes_update", (f, failure) => f.client.updateNotesToBuyer.mockRejectedValueOnce(failure)],
     ["persistence", (f, failure) => f.store.importAmazonOrderItemsTransactional.mockRejectedValueOnce(failure)],
-    ["tag_update", (f, failure) => f.client.addShipmentTag.mockRejectedValueOnce(failure)],
   ])("reports a safe %s shipment failure once and continues", async (stage, injectFailure) => {
     // Break caught: a shipment boundary failure is unattributed, leaks an error, or stops later shipments.
     const calls = [];
@@ -374,8 +372,125 @@ describe("Amazon import service", () => {
     expect(JSON.stringify(calls)).not.toContain("URL-SECRET");
   });
 
-  it("reports a trusted notes update validation failure without exposing arbitrary error data", async () => {
-    // Break caught: a safe ShipStation validation failure is lost from the import completion or leaks upstream error content.
+  it("persists an oversized-note shipment, records a safe warning, and continues", async () => {
+    // Break caught: a Notes to Buyer size limit prevents valid order items from importing or stops later shipments.
+    const overflowItems = Array.from({ length: 6 }, (_, index) => item(`overflow-${index + 1}`, {
+      customizedUrl: `https://zme-caps.amazon.com/overflow-${index + 1}.zip`,
+    }));
+    const appendNotes = vi.fn((input) => {
+      if (input.blocks.length === 6) {
+        throw new RangeError("ShipStation notes exceed 1000 characters");
+      }
+      return appendAmazonNoteBlocks(input);
+    });
+    const f = fixture({
+      appendNotes,
+      shipments: [
+        shipment("overflow", {
+          external_order_id: "114-7445306-8228220",
+          items: overflowItems,
+        }),
+        shipment("good"),
+      ],
+    });
+
+    const result = await run(f);
+
+    expect(f.store.importAmazonOrderItemsTransactional.mock.calls[0][0].items.map(({ id }) => id)).toEqual([
+      "amazon-order-item:overflow-1",
+      "amazon-order-item:overflow-2",
+      "amazon-order-item:overflow-3",
+      "amazon-order-item:overflow-4",
+      "amazon-order-item:overflow-5",
+      "amazon-order-item:overflow-6",
+    ]);
+    expect(f.client.addShipmentTag.mock.calls.map(([request]) => request.shipmentId)).toEqual(["good"]);
+    expect(result).toMatchObject({
+      processedShipments: 1,
+      importedItems: 7,
+      existingItems: 0,
+      warnings: 1,
+      failed: 0,
+      warningDetails: [{
+        orderNumber: "114-7445306-8228220",
+        stage: "notes_update",
+        summary: "ShipStation Notes to Buyer is too long to update.",
+      }],
+    });
+  });
+
+  it("treats a tag failure after persistence as a safe synchronization warning", async () => {
+    // Break caught: a tag synchronization error recategorizes persisted imports as failed or exposes provider data.
+    const f = fixture({
+      shipments: [shipment("tag-warning", {
+        external_order_id: "114-7445306-8228220",
+      })],
+    });
+    f.client.addShipmentTag.mockRejectedValueOnce(new Error("PRIVATE SHIPSTATION TAG ERROR"));
+
+    const result = await run(f);
+
+    expect(f.store.importAmazonOrderItemsTransactional).toHaveBeenCalledOnce();
+    expect(result).toMatchObject({
+      processedShipments: 0,
+      importedItems: 1,
+      existingItems: 0,
+      warnings: 1,
+      failed: 0,
+      warningDetails: [{
+        orderNumber: "114-7445306-8228220",
+        stage: "tag_update",
+        summary: "ShipStation synchronization could not be completed.",
+      }],
+    });
+    expect(JSON.stringify(result)).not.toContain("PRIVATE SHIPSTATION TAG ERROR");
+  });
+
+  it("retries persisted items as existing when a prior notes update warned", async () => {
+    // Break caught: retrying an untagged shipment creates duplicate order items instead of finishing its ShipStation synchronization.
+    const retryShipment = shipment("retry-warning", {
+      external_order_id: "114-7445306-8228220",
+      items: [item("retry-warning-item", {
+        customizedUrl: "https://zme-caps.amazon.com/retry-warning.zip",
+      })],
+    });
+    const first = fixture({
+      shipments: [retryShipment],
+      appendNotes: () => {
+        throw new RangeError("ShipStation notes exceed 1000 characters");
+      },
+    });
+
+    const firstResult = await run(first);
+
+    const second = fixture({
+      shipments: [retryShipment],
+      persistenceResult: {
+        importedOrderItemIds: [],
+        existingOrderItemIds: ["amazon-order-item:retry-warning-item"],
+      },
+    });
+    const secondResult = await run(second);
+
+    expect(firstResult).toMatchObject({
+      importedItems: 1,
+      existingItems: 0,
+      warnings: 1,
+      failed: 0,
+    });
+    expect(secondResult).toMatchObject({
+      processedShipments: 1,
+      importedItems: 0,
+      existingItems: 1,
+      warnings: 0,
+      failed: 0,
+    });
+    expect(second.client.updateNotesToBuyer).toHaveBeenCalledOnce();
+    expect(second.client.addShipmentTag).toHaveBeenCalledOnce();
+  });
+
+  it("reports a trusted notes update warning without exposing arbitrary error data", async () => {
+    // Break caught: a ShipStation notes synchronization error discards persisted items or leaks upstream error content.
     const rawResponseBody = '{"message":"PRIVATE SHIPSTATION ERROR","field_value":"PRIVATE VALUE"}';
     const diagnosticEvents = [];
     const diagnostics = createAmazonImportDiagnostics({
@@ -409,22 +524,22 @@ describe("Amazon import service", () => {
 
     expect(result).toMatchObject({
       processedShipments: 0,
-      importedItems: 0,
+      importedItems: 1,
       existingItems: 0,
       alreadyProcessedShipments: 0,
       customizationNeeded: 0,
-      failed: 1,
-      failures: [{
+      warnings: 1,
+      failed: 0,
+      warningDetails: [{
         orderNumber: "111-0318024-9415409",
         stage: "notes_update",
-        reasonCode: "required_field",
-        summary: "Package weight is required.",
+        summary: "ShipStation synchronization could not be completed.",
       }],
     });
     const serialized = JSON.stringify(result);
-    expect(diagnosticEvents.find(({ event }) => event === "amazon_import.shipment.failed")?.context)
+    expect(diagnosticEvents.find(({ event }) => event === "amazon_import.shipment.warning")?.context)
       .toMatchObject({ rawShipStationResponse: rawResponseBody });
-    expect(Object.keys(result.failures[0]).sort()).toEqual(["orderNumber", "reasonCode", "stage", "summary"]);
+    expect(Object.keys(result.warningDetails[0]).sort()).toEqual(["orderNumber", "stage", "summary"]);
     for (const secret of [
       "PRIVATE CUSTOMER ERROR MESSAGE",
       "PRIVATE UPSTREAM RESPONSE",
@@ -436,8 +551,8 @@ describe("Amazon import service", () => {
     }
   });
 
-  it("keeps a raw-response shipment failure unchanged when the server logger throws", async () => {
-    // Break caught: emitting the trusted raw response changes a shipment-level failure into a run-level failure.
+  it("keeps a raw-response shipment warning unchanged when the server logger throws", async () => {
+    // Break caught: emitting the trusted raw response changes a shipment-level warning into a run-level failure.
     const rawResponseBody = '{"message":"PRIVATE SHIPSTATION ERROR","field_value":"PRIVATE VALUE"}';
     const diagnostics = createAmazonImportDiagnostics({
       logger: {
@@ -468,19 +583,18 @@ describe("Amazon import service", () => {
 
     const result = await run(f);
 
-    expect(result).toMatchObject({ processedShipments: 0, failed: 1 });
-    expect(result.failures).toEqual([{
+    expect(result).toMatchObject({ processedShipments: 0, importedItems: 1, warnings: 1, failed: 0 });
+    expect(result.warningDetails).toEqual([{
       orderNumber: "111-0318024-9415409",
       stage: "notes_update",
-      reasonCode: "required_field",
-      summary: "Package weight is required.",
+      summary: "ShipStation synchronization could not be completed.",
     }]);
     expect(JSON.stringify(result)).not.toContain("PRIVATE SHIPSTATION ERROR");
     expect(f.store.releaseAmazonImportLock).toHaveBeenCalledOnce();
   });
 
-  it("caps public validation failure records at ten while retaining the total failed count", async () => {
-    // Break caught: a large failing batch can grow a public completion payload without bound or undercount failures.
+  it("caps public synchronization warning records at ten while retaining the total warning count", async () => {
+    // Break caught: a large warning batch can grow a public completion payload without bound or undercount warnings.
     const failure = new ShipStationError("invalid_response", {
       validation: {
         reasonCode: "invalid_field_value",
@@ -498,18 +612,19 @@ describe("Amazon import service", () => {
 
     const result = await run(f);
 
-    expect(result.failed).toBe(11);
-    expect(result.failures).toHaveLength(10);
-    expect(result.failures).toEqual(Array.from({ length: 10 }, (_, index) => ({
+    expect(result.importedItems).toBe(11);
+    expect(result.warnings).toBe(11);
+    expect(result.failed).toBe(0);
+    expect(result.warningDetails).toHaveLength(10);
+    expect(result.warningDetails).toEqual(Array.from({ length: 10 }, (_, index) => ({
       orderNumber: `111-${String(index + 1).padStart(7, "0")}-${String(index + 1).padStart(7, "0")}`,
       stage: "notes_update",
-      reasonCode: "invalid_field_value",
-      summary: "The selected shipping service is invalid.",
+      summary: "ShipStation synchronization could not be completed.",
     })));
   });
 
-  it("omits public failure details when ShipStation supplies a fallback order identifier", async () => {
-    // Break caught: a loose fallback identifier crosses the public boundary and is later rejected by the browser.
+  it("omits public warning details when ShipStation supplies a fallback order identifier", async () => {
+    // Break caught: a loose fallback identifier crosses the public warning boundary and is later rejected by the browser.
     const failure = new ShipStationError("invalid_response", {
       validation: {
         reasonCode: "required_field",
@@ -527,7 +642,7 @@ describe("Amazon import service", () => {
 
     const result = await run(f);
 
-    expect(result).toMatchObject({ failed: 1, failures: [] });
+    expect(result).toMatchObject({ importedItems: 1, warnings: 1, failed: 0, warningDetails: [] });
   });
 
   it("attributes note construction to the failing item and clears item context for shipment-wide work", async () => {
@@ -551,11 +666,11 @@ describe("Amazon import service", () => {
       })],
     });
 
-    await expect(run(f)).resolves.toMatchObject({ processedShipments: 0, failed: 1 });
+    await expect(run(f)).resolves.toMatchObject({ processedShipments: 0, importedItems: 2, warnings: 1, failed: 0 });
 
-    expect(calls.filter(({ event }) => event === "amazon_import.shipment.failed")).toEqual([{
+    expect(calls.filter(({ event }) => event === "amazon_import.shipment.warning")).toEqual([{
       level: "error",
-      event: "amazon_import.shipment.failed",
+      event: "amazon_import.shipment.warning",
       context: {
         runId: "run-notes-build",
         workspaceId: "workspace-1",
@@ -570,7 +685,7 @@ describe("Amazon import service", () => {
         requestId: null,
       },
     }]);
-    expect(f.store.importAmazonOrderItemsTransactional).not.toHaveBeenCalled();
+    expect(f.store.importAmazonOrderItemsTransactional).toHaveBeenCalledOnce();
   });
 
   it("attributes a fatal shipment-listing failure to shipment fetch", async () => {
@@ -1286,9 +1401,9 @@ describe("Amazon import service", () => {
     expect(f.store.importAmazonOrderItemsTransactional).toHaveBeenCalledOnce();
     expect(f.store.importAmazonOrderItemsTransactional.mock.calls[0][0].items.map(({ id }) => id))
       .toEqual(["amazon-order-item:first", "amazon-order-item:second"]);
-    expect(f.sequence.indexOf("notes:marker-content"))
-      .toBeLessThan(f.sequence.findIndex((entry) => entry.startsWith("persist:")));
     expect(f.sequence.findIndex((entry) => entry.startsWith("persist:")))
+      .toBeLessThan(f.sequence.indexOf("notes:marker-content"));
+    expect(f.sequence.indexOf("notes:marker-content"))
       .toBeLessThan(f.sequence.indexOf("tag:marker-content"));
     expect(result).toMatchObject({
       processedShipments: 1,
@@ -1297,7 +1412,7 @@ describe("Amazon import service", () => {
     });
   });
 
-  it("appends customized item blocks in shipment order, then persists once, then tags last", async () => {
+  it("persists customized items, then appends note blocks in shipment order and tags last", async () => {
     const shipmentItems = [
       item("first", {
         name: "First Reel",
@@ -1357,9 +1472,9 @@ describe("Amazon import service", () => {
       items: shipmentItems,
       signal: undefined,
     });
-    expect(f.sequence.indexOf("notes:ordered"))
-      .toBeLessThan(f.sequence.findIndex((entry) => entry.startsWith("persist:")));
     expect(f.sequence.findIndex((entry) => entry.startsWith("persist:")))
+      .toBeLessThan(f.sequence.indexOf("notes:ordered"));
+    expect(f.sequence.indexOf("notes:ordered"))
       .toBeLessThan(f.sequence.indexOf("tag:ordered"));
     expect(f.store.importAmazonOrderItemsTransactional).toHaveBeenCalledOnce();
     expect(result).toMatchObject({
@@ -1367,6 +1482,7 @@ describe("Amazon import service", () => {
       importedItems: 1,
       existingItems: 1,
       customizationNeeded: 0,
+      warnings: 0,
       failed: 0,
       failures: [],
     });
@@ -1476,7 +1592,8 @@ describe("Amazon import service", () => {
       importedItems: 1,
       existingItems: 0,
       customizationNeeded: 1,
-      failed: 1,
+      warnings: 1,
+      failed: 0,
     });
   });
 
@@ -1551,7 +1668,7 @@ describe("Amazon import service", () => {
     auth.client.updateNotesToBuyer.mockRejectedValue(authFailure);
 
     await expect(run(auth)).rejects.toBe(authFailure);
-    expect(auth.store.importAmazonOrderItemsTransactional).not.toHaveBeenCalled();
+    expect(auth.store.importAmazonOrderItemsTransactional).toHaveBeenCalledOnce();
     expect(auth.client.addShipmentTag).not.toHaveBeenCalled();
     expect(auth.store.releaseAmazonImportLock).toHaveBeenCalledOnce();
   });
@@ -1662,8 +1779,10 @@ describe("Amazon import service", () => {
       existingItems: 0,
       alreadyProcessedShipments: 0,
       customizationNeeded: 0,
+      warnings: 0,
       failed: 0,
       failures: [],
+      warningDetails: [],
     });
     expect(f.events.at(-1)).toEqual(result);
     const serialized = JSON.stringify(f.events);
