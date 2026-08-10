@@ -6184,6 +6184,19 @@ function applyAddedOrderItemsDelta(payload) {
     return { ...order, status, items, isInActiveBatch: items.some((item) => item.isInActiveBatch) };
   }).filter(shouldRetainDatabaseOrderAfterKnownMutation);
 
+  if (selectedDatabaseOrderDetail) {
+    const items = (selectedDatabaseOrderDetail.items || []).map((item) => (
+      addedIdSet.has(item.id)
+        ? { ...item, status: item.status === "skipped" ? "open" : item.status, isInActiveBatch: true }
+        : item
+    ));
+    selectedDatabaseOrderDetail = {
+      ...selectedDatabaseOrderDetail,
+      items,
+      isInActiveBatch: items.some((item) => item.isInActiveBatch),
+    };
+  }
+
   databaseOrdersMutationVersion += 1;
   loadedDatabaseOrdersKey = (getActiveProductionBatchId() || "") + "|" + databaseOrdersStatusFilterValue;
   renderDatabaseOrdersWorkspace();
