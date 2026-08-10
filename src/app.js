@@ -6184,6 +6184,13 @@ function applyAddedOrderItemsDelta(payload) {
     return { ...order, status, items, isInActiveBatch: items.some((item) => item.isInActiveBatch) };
   }).filter(shouldRetainDatabaseOrderAfterKnownMutation);
 
+  const selectedOrderItems = selectedDatabaseOrderDetail?.items
+    || databaseOrders.find((order) => order.id === selectedDatabaseOrderId)?.items
+    || [];
+  const selectedOrderIsAffected = selectedOrderItems.some((item) => addedIdSet.has(item.id));
+  if (selectedOrderIsAffected) {
+    databaseOrderDetailGeneration += 1;
+  }
   if (selectedDatabaseOrderDetail) {
     const items = (selectedDatabaseOrderDetail.items || []).map((item) => (
       addedIdSet.has(item.id)
@@ -6758,24 +6765,19 @@ async function hydrateSelectedDatabaseOrderDetail(orderId = selectedDatabaseOrde
   }
 
   const selectionGeneration = databaseOrderDetailGeneration;
-  const mutationVersion = databaseOrdersMutationVersion;
   try {
     const payload = await runProductionBatchRequestWithSessionRefresh((accessToken) => fetchWorkspaceOrderDetail({
       orderId,
       batchId: getActiveProductionBatchId() || null,
       accessToken,
     }));
-    if (selectionGeneration !== databaseOrderDetailGeneration
-      || mutationVersion !== databaseOrdersMutationVersion
-      || selectedDatabaseOrderId !== orderId) {
+    if (selectionGeneration !== databaseOrderDetailGeneration || selectedDatabaseOrderId !== orderId) {
       return;
     }
     selectedDatabaseOrderDetail = payload?.order?.id === orderId ? payload.order : null;
     renderSelectedDatabaseOrderItems();
   } catch (error) {
-    if (selectionGeneration === databaseOrderDetailGeneration
-      && mutationVersion === databaseOrdersMutationVersion
-      && error?.name !== "AbortError") {
+    if (selectionGeneration === databaseOrderDetailGeneration && error?.name !== "AbortError") {
       selectedDatabaseOrderDetail = null;
       renderSelectedDatabaseOrderItems();
     }
