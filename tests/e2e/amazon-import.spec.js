@@ -132,6 +132,7 @@ const completion = {
   existingItems: 2,
   alreadyProcessedShipments: 1,
   customizationNeeded: 2,
+  warnings: 0,
   failed: 0,
 };
 
@@ -180,7 +181,7 @@ test("a held Etsy import disables Amazon until workspace teardown", async ({ pag
   await expect.poll(() => page.evaluate(() => sessionStorage.getItem("etsy-test-aborted"))).toBe("true");
 });
 
-test("Amazon progress and all six completion metrics use the operation dialog", async ({ page }) => {
+test("Amazon warning-only completion uses the successful dialog and all seven metrics", async ({ page }) => {
   await session(page);
   const gets = await routes(page);
   await amazonStream(page);
@@ -210,17 +211,30 @@ test("Amazon progress and all six completion metrics use the operation dialog", 
   await page.evaluate(event => {
     pushAmazonEvent(event);
     closeAmazonStream();
-  }, completion);
+  }, {
+    ...completion,
+    importedItems: 6,
+    warnings: 1,
+    warningDetails: [{
+      orderNumber: "114-7445306-8228220",
+      stage: "notes_update",
+      summary: "ShipStation Notes to Buyer is too long to update.",
+    }],
+  });
   await expect(dialog.locator("#pasteSummaryTitle")).toHaveText("Amazon Import Complete");
+  await expect(dialog.locator("#pasteSummaryDescription")).toContainText(
+    "Amazon order 114-7445306-8228220 was imported, but ShipStation Notes to Buyer could not be updated because the note is too long.",
+  );
   await expect(dialog.locator("#pasteSummaryCounts dt")).toHaveText([
     "Shipments processed",
     "Items imported",
     "Existing items",
     "Already processed",
     "Needs review",
+    "Warnings",
     "Failed",
   ]);
-  await expect(dialog.locator("#pasteSummaryCounts dd")).toHaveText(["3", "4", "2", "1", "2", "0"]);
+  await expect(dialog.locator("#pasteSummaryCounts dd")).toHaveText(["3", "6", "2", "1", "2", "1", "0"]);
   await expect.poll(gets).toBeGreaterThan(1);
   await expect(page.locator(".database-order-row.is-selected")).toContainText("Order 1001");
   await expect(page.locator(".amazon-import-button")).toHaveText("Import Amazon");

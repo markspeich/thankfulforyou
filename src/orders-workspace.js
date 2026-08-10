@@ -291,6 +291,11 @@ const SAFE_AMAZON_IMPORT_FAILURE_VALIDATIONS = Object.freeze([
   Object.freeze({ reasonCode: "required_field", summary: "Package weight is required." }),
   Object.freeze({ reasonCode: "invalid_field_value", summary: "The selected shipping service is invalid." }),
 ]);
+const AMAZON_IMPORT_WARNING_FALLBACK = "One or more Amazon orders were imported, but ShipStation synchronization could not be completed.";
+const SAFE_AMAZON_IMPORT_WARNING = Object.freeze({
+  stage: "notes_update",
+  summary: "ShipStation Notes to Buyer is too long to update.",
+});
 
 export function getAmazonImportFailureDescription(summary = {}) {
   let failed;
@@ -332,12 +337,40 @@ export function getAmazonImportFailureDescription(summary = {}) {
   }
 }
 
+export function getAmazonImportWarningDescription(summary = {}) {
+  let warnings;
+  try {
+    warnings = normalizeAmazonCount(summary?.warnings);
+  } catch {
+    return null;
+  }
+  if (warnings === 0) return null;
+
+  try {
+    const warning = Array.isArray(summary?.warningDetails) ? summary.warningDetails[0] : null;
+    if (!warning || typeof warning !== "object" || Array.isArray(warning)) {
+      return AMAZON_IMPORT_WARNING_FALLBACK;
+    }
+    if (
+      typeof warning.orderNumber !== "string"
+      || !SAFE_AMAZON_ORDER_NUMBER.test(warning.orderNumber)
+      || warning.stage !== SAFE_AMAZON_IMPORT_WARNING.stage
+      || warning.summary !== SAFE_AMAZON_IMPORT_WARNING.summary
+    ) return AMAZON_IMPORT_WARNING_FALLBACK;
+
+    return `Amazon order ${warning.orderNumber} was imported, but ShipStation Notes to Buyer could not be updated because the note is too long.`;
+  } catch {
+    return AMAZON_IMPORT_WARNING_FALLBACK;
+  }
+}
+
 export function getAmazonImportSummary(summary = {}) {
   const processedShipments = normalizeAmazonCount(summary.processedShipments);
   const importedItems = normalizeAmazonCount(summary.importedItems);
   const existingItems = normalizeAmazonCount(summary.existingItems);
   const alreadyProcessedShipments = normalizeAmazonCount(summary.alreadyProcessedShipments);
   const customizationNeeded = normalizeAmazonCount(summary.customizationNeeded);
+  const warnings = normalizeAmazonCount(summary.warnings);
   const failed = normalizeAmazonCount(summary.failed);
   const noun = (count, singular, plural = `${singular}s`) => `${count} ${count === 1 ? singular : plural}`;
   return [
@@ -346,6 +379,7 @@ export function getAmazonImportSummary(summary = {}) {
     noun(existingItems, "existing item", "existing items"),
     noun(alreadyProcessedShipments, "already-processed shipment"),
     noun(customizationNeeded, "item needing customization", "items needing customization"),
+    noun(warnings, "warning", "warnings"),
     noun(failed, "failure", "failures"),
   ].join(", ") + ".";
 }
