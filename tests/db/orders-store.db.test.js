@@ -241,11 +241,47 @@ begin
     from public.list_workspace_order_summaries(
       p_workspace_id => ${quoteSqlLiteral(row.workspaceId)}::uuid,
       p_status_filter => 'open',
+      p_search_term => ''
+    )
+    where group_id = ${quoteSqlLiteral(`order:${row.orderNumber}`)}
+  ) then
+    raise exception 'legacy archived order was returned by the empty open filter';
+  end if;
+
+  if exists (
+    select 1
+    from public.list_workspace_order_summaries(
+      p_workspace_id => ${quoteSqlLiteral(row.workspaceId)}::uuid,
+      p_status_filter => 'skipped',
+      p_search_term => ''
+    )
+    where group_id = ${quoteSqlLiteral(`order:${row.orderNumber}`)}
+  ) then
+    raise exception 'legacy archived order was returned by the empty skipped filter';
+  end if;
+
+  if not exists (
+    select 1
+    from public.list_workspace_order_summaries(
+      p_workspace_id => ${quoteSqlLiteral(row.workspaceId)}::uuid,
+      p_status_filter => 'all',
+      p_search_term => ''
+    )
+    where group_id = ${quoteSqlLiteral(`order:${row.orderNumber}`)}
+  ) then
+    raise exception 'legacy archived order was absent from the all filter';
+  end if;
+
+  if exists (
+    select 1
+    from public.list_workspace_order_summaries(
+      p_workspace_id => ${quoteSqlLiteral(row.workspaceId)}::uuid,
+      p_status_filter => 'open',
       p_search_term => ${quoteSqlLiteral(row.buyerName)}
     )
     where group_id = ${quoteSqlLiteral(`order:${row.orderNumber}`)}
   ) then
-    raise exception 'legacy archived order was returned by the open filter';
+    raise exception 'legacy archived order was returned by the searched open filter';
   end if;
 end
 $test$;

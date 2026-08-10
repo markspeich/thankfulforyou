@@ -4,7 +4,7 @@ create table if not exists public.order_group_summaries (
   sort_key text not null,
   order_number text,
   buyer_name text,
-  group_status text not null check (group_status in ('open', 'skipped', 'complete')),
+  group_status text not null check (group_status in ('open', 'skipped', 'complete', 'archived')),
   ship_by_date date,
   updated_at timestamptz not null default now(),
   primary key (workspace_id, group_id)
@@ -15,7 +15,7 @@ create table if not exists public.order_group_batch_visibility (
   batch_id uuid not null references public.production_batches(id) on delete cascade,
   group_id text not null,
   sort_key text not null,
-  group_status text not null check (group_status in ('open', 'skipped', 'complete')),
+  group_status text not null check (group_status in ('open', 'skipped', 'complete', 'archived')),
   is_in_batch boolean not null,
   updated_at timestamptz not null default now(),
   primary key (workspace_id, batch_id, group_id),
@@ -228,6 +228,7 @@ begin
     case
       when bool_and(orders.status = 'complete') then 'complete'
       when bool_and(orders.status = 'skipped') then 'skipped'
+      when not bool_or(orders.status = 'open') then 'archived'
       else 'open'
     end,
     min(orders.ship_by_date),
@@ -615,6 +616,7 @@ select
   case
     when bool_and(orders.status = 'complete') then 'complete'
     when bool_and(orders.status = 'skipped') then 'skipped'
+    when not bool_or(orders.status = 'open') then 'archived'
     else 'open'
   end,
   min(orders.ship_by_date),
