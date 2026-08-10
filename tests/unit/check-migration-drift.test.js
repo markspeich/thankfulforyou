@@ -63,6 +63,22 @@ describe("migration drift check", () => {
     });
   });
 
+  it("parses Supabase migration list JSON output", () => {
+    const stdout = JSON.stringify({
+      migrations: [
+        { local: "20260601120000", remote: "20260601120000" },
+        { local: "20260615202827", remote: "" },
+        { local: "", remote: "20260619165154" },
+      ],
+    });
+
+    expect(parseMigrationListOutput(stdout)).toEqual([
+      { local: "20260601120000", remote: "20260601120000" },
+      { local: "20260615202827", remote: null },
+      { local: null, remote: "20260619165154" },
+    ]);
+  });
+
   it("reports local migration versions missing from production", () => {
     expect(findMissingMigrationVersions({
       localVersions: ["20260601120000", "20260615202827"],
