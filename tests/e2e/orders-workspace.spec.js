@@ -685,6 +685,7 @@ test("does not let a stale selected Orders detail overwrite a bulk reopen delta"
   await page.goto("/");
 
   const workspace = page.getByRole("region", { name: "Orders workspace" });
+  await expect.poll(() => detailReleases).toHaveLength(1);
   await page.locator("#databaseOrdersStatusFilter").selectOption("skipped");
   await expect.poll(() => detailReleases).toHaveLength(2);
   await workspace.getByLabel("Select order 1001").check();
