@@ -283,36 +283,6 @@ export async function saveProductionBatch({ snapshot, userId, changedOrderItemId
         throw batchItemsError;
       }
     }
-  } else {
-    const changedBatchItems = rows.batchItems.filter((batchItem) => (
-      changedOrderItemIdSet.has(batchItem.order_item_id)
-    ));
-
-    if (changedBatchItems.length) {
-      const changedOrderItemIds = changedBatchItems.map((batchItem) => batchItem.order_item_id);
-      const { data: existingBatchItems, error: existingBatchItemsError } = await supabase
-        .from("batch_items")
-        .select("order_item_id")
-        .eq("batch_id", snapshot.batch.id)
-        .eq("workspace_id", snapshot.batch.workspaceId)
-        .in("order_item_id", changedOrderItemIds);
-
-      if (existingBatchItemsError) {
-        throw existingBatchItemsError;
-      }
-
-      const existingOrderItemIds = new Set((existingBatchItems || []).map((batchItem) => batchItem.order_item_id));
-      const missingBatchItems = changedBatchItems.filter((batchItem) => !existingOrderItemIds.has(batchItem.order_item_id));
-      if (missingBatchItems.length) {
-        const { error: batchItemsError } = await supabase
-          .from("batch_items")
-          .insert(missingBatchItems);
-
-        if (batchItemsError) {
-          throw batchItemsError;
-        }
-      }
-    }
   }
 
   let savedDesigns = [];

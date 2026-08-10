@@ -7760,6 +7760,9 @@ async function updateCheckedDatabaseOrdersStatus({
       accessToken: requestToken,
     }), accessToken);
 
+    if (orderIds.includes(selectedDatabaseOrderId)) {
+      databaseOrderDetailGeneration += 1;
+    }
     if (nextFilter) {
       databaseOrdersStatusFilterValue = nextFilter;
       if (databaseOrdersStatusFilter) {

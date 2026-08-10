@@ -643,6 +643,64 @@ test("does not let a stale selected Orders detail overwrite an add-to-batch delt
   await expect(workspace.locator(".database-order-item-status")).toHaveText(["Already in active batch", "Already in active batch"]);
 });
 
+test("does not let a stale selected Orders detail overwrite a bulk reopen delta", async ({ page }) => {
+  await installSupabaseSession(page);
+  await installProductionBatchRoutes(page);
+  const posts = [];
+  const ordersPayload = buildOrdersPayload();
+  ordersPayload.orders[0] = {
+    ...ordersPayload.orders[0],
+    status: "skipped",
+    items: ordersPayload.orders[0].items.map((item) => ({
+      ...item,
+      status: "skipped",
+      isInActiveBatch: false,
+    })),
+  };
+  await installOrdersWorkspaceRoutes(page, {
+    ordersPayload,
+    posts,
+    postBody: (post) => {
+      if (post.action === "reopenOrders") {
+        ordersPayload.orders[0] = {
+          ...ordersPayload.orders[0],
+          status: "open",
+          items: ordersPayload.orders[0].items.map((item) => ({ ...item, status: "open" })),
+        };
+        return { orderItemIds: ["item-1", "item-2"], status: "open" };
+      }
+      return ordersPayload;
+    },
+  });
+  const detailReleases = [];
+  const fulfilledDetailIndexes = [];
+  const staleDetail = structuredClone(ordersPayload.orders[0]);
+  await page.route("**/api/orders?*view=detail*", async (route) => {
+    const detailIndex = detailReleases.length;
+    await new Promise((resolve) => { detailReleases.push(resolve); });
+    await route.fulfill({ json: { order: detailIndex === 1 ? staleDetail : ordersPayload.orders[0] } });
+    fulfilledDetailIndexes.push(detailIndex);
+  });
+
+  await page.goto("/");
+
+  const workspace = page.getByRole("region", { name: "Orders workspace" });
+  await page.locator("#databaseOrdersStatusFilter").selectOption("skipped");
+  await expect.poll(() => detailReleases).toHaveLength(2);
+  await workspace.getByLabel("Select order 1001").check();
+  await workspace.getByLabel("Orders tools").click();
+  await workspace.getByRole("button", { name: "Reopen Orders" }).click();
+  await expect.poll(() => posts.some((post) => post.action === "reopenOrders")).toBe(true);
+  await expect.poll(() => detailReleases).toHaveLength(3);
+  detailReleases[2]();
+  await expect.poll(() => fulfilledDetailIndexes).toContain(2);
+  await expect(workspace.locator(".database-order-item-status")).toHaveText(["Not in active batch", "Not in active batch"]);
+
+  detailReleases[1]();
+  await expect.poll(() => fulfilledDetailIndexes).toContain(1);
+  await expect(workspace.locator(".database-order-item-status")).toHaveText(["Not in active batch", "Not in active batch"]);
+});
+
 test("does not restore a filtered-out selected order from a stale detail after adding it to the batch", async ({ page }) => {
   await installSupabaseSession(page);
   const productionBatchOrderItems = [];
