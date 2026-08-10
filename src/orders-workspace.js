@@ -208,6 +208,54 @@ export function normalizeOrdersWorkspaceState({
   };
 }
 
+export function mergeOrdersPageState({
+  currentOrders,
+  incomingOrders,
+  selectedOrderId,
+  checkedOrderIds,
+  nextCursor = null,
+  hasMore = false,
+  reset = false,
+} = {}) {
+  const incoming = (Array.isArray(incomingOrders) ? incomingOrders : [])
+    .filter((order) => order && isNonEmptyString(order.id));
+  const current = (Array.isArray(currentOrders) ? currentOrders : [])
+    .filter((order) => order && isNonEmptyString(order.id));
+  const currentOrderIds = new Set(current.map((order) => order.id));
+  const incomingOrderIds = new Set();
+  const uniqueIncoming = incoming.filter((order) => {
+    if (currentOrderIds.has(order.id) || incomingOrderIds.has(order.id)) {
+      return false;
+    }
+    incomingOrderIds.add(order.id);
+    return true;
+  });
+  const orders = reset
+    ? incoming
+    : [
+      ...current,
+      ...uniqueIncoming,
+    ];
+
+  const normalized = normalizeOrdersWorkspaceState({
+    orders,
+    selectedOrderId,
+    checkedOrderIds,
+  });
+  return {
+    ...normalized,
+    nextCursor: isNonEmptyString(nextCursor) ? nextCursor : null,
+    hasMore: Boolean(hasMore),
+  };
+}
+
+export function getOrdersRetryLoadOptions({ orders, failedLoadingMode } = {}) {
+  if (failedLoadingMode === "append" && Array.isArray(orders) && orders.length > 0) {
+    return { append: true };
+  }
+  return { reset: true };
+}
+
 export function getCopyableSavedBuild(item) {
   const design = item?.design && typeof item.design === "object"
     ? item.design

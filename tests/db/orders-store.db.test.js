@@ -1,26 +1,44 @@
-import { beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { randomUUID } from "node:crypto";
+import { createClient } from "@supabase/supabase-js";
 
 import { createSupabaseAdminClient } from "../../api/_lib/supabase-admin.js";
 import {
   addOrderGroupsToProductionBatch,
   importWorkspaceOrderItems,
+  listWorkspaceOrderSummaries,
   listWorkspaceOrders,
   updateOrderGroupStatus,
 } from "../../api/_lib/orders-store.js";
 import { loadEnvFile } from "../../tools/env_file.mjs";
+import { spawnCommand } from "../../tools/supabase_env.mjs";
+import { generateSupabaseWorktreeConfig } from "../../tools/supabase_worktree_config.mjs";
 
 const PRIMARY_WORKSPACE_ID = "11111111-1111-4111-8111-111111111111";
 const PRIMARY_BATCH_ID = "22222222-2222-4222-8222-222222222222";
+const disposableWorkspaceIds = new Set();
+const disposableAuthUserIds = new Set();
 
-async function createTestBatch(name = "Orders Store DB Test Batch") {
+async function createDisposableWorkspace(name) {
+  const workspaceId = randomUUID();
+  const supabase = createSupabaseAdminClient();
+  const { error } = await supabase.from("workspaces").insert({ id: workspaceId, name });
+  expect(error).toBeNull();
+  disposableWorkspaceIds.add(workspaceId);
+  return workspaceId;
+}
+
+async function createTestBatch(
+  name = "Orders Store DB Test Batch",
+  workspaceId = PRIMARY_WORKSPACE_ID,
+) {
   const batchId = randomUUID();
   const supabase = createSupabaseAdminClient();
   const { error } = await supabase
     .from("production_batches")
     .insert({
       id: batchId,
-      workspace_id: PRIMARY_WORKSPACE_ID,
+      workspace_id: workspaceId,
       name,
       status: "active",
     });
@@ -29,26 +47,251 @@ async function createTestBatch(name = "Orders Store DB Test Batch") {
   return batchId;
 }
 
-async function listSummaryPage(supabase, overrides = {}) {
-  return supabase.rpc("list_workspace_order_summaries_page", {
-    p_workspace_id: PRIMARY_WORKSPACE_ID,
-    p_status: "open",
-    p_search: "",
-    p_active_batch_id: null,
-    p_limit: 50,
-    p_after_group_rank: null,
-    p_after_order_key: null,
-    p_after_group_id: null,
-    ...overrides,
-  });
+function quoteSqlLiteral(value) {
+  return `'${String(value).replaceAll("'", "''")}'`;
 }
 
-async function deleteOrderItemsByPrefix(supabase, prefix) {
-  const { error } = await supabase
-    .from("order_items")
-    .delete()
-    .like("id", `${prefix}%`);
-  expect(error).toBeNull();
+function quoteNullableSqlLiteral(value) {
+  return value == null ? "null" : quoteSqlLiteral(value);
+}
+
+async function executeExactOrdersSummaryFunction({
+  workspaceId,
+  activeBatchId = null,
+  statusFilter = "all",
+  batchFilter = "all",
+  cursorSortKey,
+  cursorGroupId,
+  limit = 5,
+}) {
+  const databaseContainerId = await getLocalDatabaseContainerId();
+
+  const analyzeResult = executeDatabaseSql(databaseContainerId, String.raw`
+analyze public.order_items;
+analyze public.designs;
+analyze public.order_group_summaries;
+analyze public.order_group_batch_visibility;
+`);
+  expect(analyzeResult.status, analyzeResult.stderr || analyzeResult.stdout).toBe(0);
+
+  // SET search_path keeps ordinary EXPLAIN at an opaque Function Scan, and the local
+  // Supabase image blocks auto_explain. Transaction-local index counters from the
+  // exact call therefore provide runtime plan evidence without cloning the function,
+  // stripping its settings, or constant-folding its production parameters.
+  const sql = String.raw`
+\set ON_ERROR_STOP on
+\pset tuples_only on
+\pset format unaligned
+begin;
+select coalesce(
+  jsonb_agg(to_jsonb(result) order by result.sort_key desc, result.group_id desc),
+  '[]'::jsonb
+)
+from public.list_workspace_order_summaries(
+  p_workspace_id => ${quoteSqlLiteral(workspaceId)}::uuid,
+  p_active_batch_id => ${quoteNullableSqlLiteral(activeBatchId)}::uuid,
+  p_status_filter => ${quoteSqlLiteral(statusFilter)},
+  p_batch_filter => ${quoteSqlLiteral(batchFilter)},
+  p_search_term => '',
+  p_requested_limit => ${limit},
+  p_cursor_sort_key => ${quoteNullableSqlLiteral(cursorSortKey)},
+  p_cursor_group_id => ${quoteNullableSqlLiteral(cursorGroupId)}
+) result;
+select coalesce(
+  jsonb_object_agg(
+    indexes.relname,
+    jsonb_build_object(
+      'scans', pg_catalog.pg_stat_get_xact_numscans(indexes.oid),
+      'tuplesRead', pg_catalog.pg_stat_get_xact_tuples_returned(indexes.oid)
+    )
+  ),
+  '{}'::jsonb
+)
+from pg_catalog.pg_class indexes
+join pg_catalog.pg_namespace schemas on schemas.oid = indexes.relnamespace
+where schemas.nspname = 'public'
+  and indexes.relname in (
+    'order_group_summaries_page_idx',
+    'order_group_summaries_status_page_idx',
+    'order_group_batch_visibility_page_idx',
+    'order_group_batch_visibility_status_page_idx',
+    'order_items_workspace_newest_group_idx',
+    'order_items_workspace_group_members_idx'
+  );
+rollback;
+`;
+  const exactResult = executeDatabaseSql(databaseContainerId, sql);
+  expect(
+    exactResult.status,
+    exactResult.stderr || exactResult.stdout,
+  ).toBe(0);
+
+  const outputLines = exactResult.stdout.trim().split(/\r?\n/).filter(Boolean);
+  expect(outputLines).toHaveLength(2);
+  return {
+    rows: JSON.parse(outputLines[0]),
+    indexDeltas: JSON.parse(outputLines[1]),
+  };
+}
+
+async function getLocalDatabaseContainerId() {
+  const config = await generateSupabaseWorktreeConfig();
+  const databaseContainer = spawnCommand("docker", [
+    "ps",
+    "--filter", `label=com.supabase.cli.project=${config.projectId}`,
+    "--filter", "name=supabase_db_",
+    "--format", "{{.ID}}",
+  ], { encoding: "utf8" });
+  expect(databaseContainer.status, databaseContainer.stderr).toBe(0);
+
+  const databaseContainerId = databaseContainer.stdout.trim();
+  expect(databaseContainerId).toMatch(/^[a-f0-9]+$/i);
+  return databaseContainerId;
+}
+
+function executeDatabaseSql(databaseContainerId, sql) {
+  return spawnCommand("docker", [
+    "exec",
+    "-i",
+    databaseContainerId,
+    "psql",
+    "-X",
+    "-q",
+    "-v", "ON_ERROR_STOP=1",
+    "-U", "postgres",
+    "-d", "postgres",
+    "-f", "-",
+  ], { encoding: "utf8", input: sql });
+}
+
+function waitForDatabaseSleep(databaseContainerId) {
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    const result = executeDatabaseSql(databaseContainerId, String.raw`
+\pset tuples_only on
+\pset format unaligned
+select exists (
+  select 1
+  from pg_catalog.pg_stat_activity
+  where wait_event = 'PgSleep'
+    and state = 'active'
+);
+`);
+    expect(result.status, result.stderr || result.stdout).toBe(0);
+    if (result.stdout.trim() === "t") return;
+  }
+  throw new Error("Timed out waiting for the projection race transaction to sleep.");
+}
+
+function waitForDatabaseLockWait(databaseContainerId, minimumWaiters = 1) {
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    const result = executeDatabaseSql(databaseContainerId, String.raw`
+\pset tuples_only on
+\pset format unaligned
+select count(*) >= ${minimumWaiters}
+  from pg_catalog.pg_stat_activity
+  where wait_event_type = 'Lock'
+    and state = 'active';
+`);
+    expect(result.status, result.stderr || result.stdout).toBe(0);
+    if (result.stdout.trim() === "t") return;
+  }
+  throw new Error(`Timed out waiting for ${minimumWaiters} projection race lock waiters.`);
+}
+
+async function assertLegacyArchivedOrderExcluded(row) {
+  const config = await generateSupabaseWorktreeConfig();
+  const databaseContainer = spawnCommand("docker", [
+    "ps",
+    "--filter", `label=com.supabase.cli.project=${config.projectId}`,
+    "--filter", "name=supabase_db_",
+    "--format", "{{.ID}}",
+  ], { encoding: "utf8" });
+  expect(databaseContainer.status, databaseContainer.stderr).toBe(0);
+
+  const databaseContainerId = databaseContainer.stdout.trim();
+  expect(databaseContainerId).toMatch(/^[a-f0-9]+$/i);
+
+  const assertionResult = spawnCommand("docker", [
+    "exec",
+    databaseContainerId,
+    "psql",
+    "-v", "ON_ERROR_STOP=1",
+    "-U", "postgres",
+    "-d", "postgres",
+    "-c",
+    `begin;
+alter table public.order_items drop constraint order_items_status_check;
+insert into public.order_items (
+  id, workspace_id, status, order_number, buyer_name, listing_id, transaction_id, quantity, source_json
+) values (
+  ${quoteSqlLiteral(row.id)},
+  ${quoteSqlLiteral(row.workspaceId)}::uuid,
+  'archived',
+  ${quoteSqlLiteral(row.orderNumber)},
+  ${quoteSqlLiteral(row.buyerName)},
+  'legacy',
+  ${quoteSqlLiteral(row.transactionId)},
+  1,
+  '{}'::jsonb
+);
+do $test$
+begin
+  if exists (
+    select 1
+    from public.list_workspace_order_summaries(
+      p_workspace_id => ${quoteSqlLiteral(row.workspaceId)}::uuid,
+      p_status_filter => 'open',
+      p_search_term => ''
+    )
+    where group_id = ${quoteSqlLiteral(`order:${row.orderNumber}`)}
+  ) then
+    raise exception 'legacy archived order was returned by the empty open filter';
+  end if;
+
+  if exists (
+    select 1
+    from public.list_workspace_order_summaries(
+      p_workspace_id => ${quoteSqlLiteral(row.workspaceId)}::uuid,
+      p_status_filter => 'skipped',
+      p_search_term => ''
+    )
+    where group_id = ${quoteSqlLiteral(`order:${row.orderNumber}`)}
+  ) then
+    raise exception 'legacy archived order was returned by the empty skipped filter';
+  end if;
+
+  if not exists (
+    select 1
+    from public.list_workspace_order_summaries(
+      p_workspace_id => ${quoteSqlLiteral(row.workspaceId)}::uuid,
+      p_status_filter => 'all',
+      p_search_term => ''
+    )
+    where group_id = ${quoteSqlLiteral(`order:${row.orderNumber}`)}
+  ) then
+    raise exception 'legacy archived order was absent from the all filter';
+  end if;
+
+  if exists (
+    select 1
+    from public.list_workspace_order_summaries(
+      p_workspace_id => ${quoteSqlLiteral(row.workspaceId)}::uuid,
+      p_status_filter => 'open',
+      p_search_term => ${quoteSqlLiteral(row.buyerName)}
+    )
+    where group_id = ${quoteSqlLiteral(`order:${row.orderNumber}`)}
+  ) then
+    raise exception 'legacy archived order was returned by the searched open filter';
+  end if;
+end
+$test$;
+rollback;
+`,
+  ], { encoding: "utf8" });
+  expect(
+    assertionResult.status,
+    assertionResult.stderr || assertionResult.stdout,
+  ).toBe(0);
 }
 
 beforeAll(() => {
@@ -62,180 +305,1266 @@ beforeAll(() => {
     );
   }
 });
+afterEach(async () => {
+  const supabase = createSupabaseAdminClient();
+  const cleanupErrors = [];
+  for (const userId of disposableAuthUserIds) {
+    const { error } = await supabase.auth.admin.deleteUser(userId);
+    if (error) cleanupErrors.push(error.message);
+  }
+  disposableAuthUserIds.clear();
+
+  for (const workspaceId of disposableWorkspaceIds) {
+    const { error } = await supabase.from("workspaces").delete().eq("id", workspaceId);
+    if (error) cleanupErrors.push(error.message);
+  }
+  disposableWorkspaceIds.clear();
+  expect(cleanupErrors).toEqual([]);
+});
 
 describe("orders store database integration", () => {
-  it("returns at most 50 whole order groups per compact page", async () => {
+  it("transactionally maintains compact workspace order-group summaries", async () => {
+    // Break caught: source mutations leave the compact group projection stale or leak another workspace.
     const suffix = randomUUID().slice(0, 8);
+    const workspaceId = await createDisposableWorkspace(`Projection ${suffix}`);
+    const otherWorkspaceId = await createDisposableWorkspace(`Projection Other ${suffix}`);
+    const orderNumber = `PROJECTION-${suffix}`;
+    const groupId = `order:${orderNumber}`;
+    const firstItemId = `projection-${suffix}-first`;
+    const secondItemId = `projection-${suffix}-second`;
     const supabase = createSupabaseAdminClient();
-    const orderItems = Array.from({ length: 51 }, (_, index) => ({
-      id: `page-${suffix}-${String(index).padStart(2, "0")}-a`,
-      workspace_id: PRIMARY_WORKSPACE_ID,
-      status: "open",
-      order_number: `PAGE-${suffix}-${String(index).padStart(2, "0")}`,
-      buyer_name: `Buyer ${index}`,
-    }));
-    orderItems.push({
-      id: `page-${suffix}-25-b`,
-      workspace_id: PRIMARY_WORKSPACE_ID,
-      status: "open",
-      order_number: `PAGE-${suffix}-25`,
-      buyer_name: "Second item buyer",
-    });
+    const firstBatchId = await createTestBatch(`Projection Batch A ${suffix}`, workspaceId);
+    const secondBatchId = await createTestBatch(`Projection Batch B ${suffix}`, workspaceId);
 
-    const { error: orderItemsError } = await supabase.from("order_items").insert(orderItems);
-    expect(orderItemsError).toBeNull();
-
-    const { data, error } = await listSummaryPage(supabase, { p_search: suffix });
-
-    expect(error).toBeNull();
-    const groupIds = [...new Set(data.map((row) => row.group_id))];
-    expect(groupIds).toHaveLength(50);
-    expect(data.filter((row) => row.group_id === `order:PAGE-${suffix}-25`))
-      .toHaveLength(2);
-    expect(data.every((row) => row.has_more === true)).toBe(true);
-    await deleteOrderItemsByPrefix(supabase, `page-${suffix}-`);
-  });
-
-  it("uses stable cursor boundaries for equal normalized keys and manual orders", async () => {
-    const suffix = randomUUID().slice(0, 8);
-    const supabase = createSupabaseAdminClient();
-    const items = [
-      { id: `boundary-${suffix}-upper`, order_number: `BOUNDARY-${suffix}` },
-      { id: `boundary-${suffix}-lower`, order_number: `boundary-${suffix}` },
-      { id: `boundary-${suffix}-manual-a`, order_number: null },
-      { id: `boundary-${suffix}-manual-b`, order_number: null },
-    ].map((item) => ({
-      ...item,
-      workspace_id: PRIMARY_WORKSPACE_ID,
-      status: "open",
-      buyer_name: `Boundary ${suffix}`,
-    }));
-    const { error: insertError } = await supabase.from("order_items").insert(items);
-    expect(insertError).toBeNull();
-
-    const first = await listSummaryPage(supabase, { p_search: `Boundary ${suffix}`, p_limit: 1 });
-    expect(first.error).toBeNull();
-    expect(first.data.map((row) => row.group_id)).toEqual([`order:boundary-${suffix}`]);
-
-    const boundary = first.data.at(-1);
-    const second = await listSummaryPage(supabase, {
-      p_search: `Boundary ${suffix}`,
-      p_limit: 1,
-      p_after_group_rank: boundary.group_rank,
-      p_after_order_key: boundary.order_key,
-      p_after_group_id: boundary.group_id,
-    });
-    expect(second.error).toBeNull();
-    expect(second.data.map((row) => row.group_id)).toEqual([`order:BOUNDARY-${suffix}`]);
-
-    const collected = [...first.data, ...second.data];
-    let cursor = second.data.at(-1);
-    while (cursor?.has_more) {
-      const page = await listSummaryPage(supabase, {
-        p_search: `Boundary ${suffix}`,
-        p_limit: 1,
-        p_after_group_rank: cursor.group_rank,
-        p_after_order_key: cursor.order_key,
-        p_after_group_id: cursor.group_id,
-      });
-      expect(page.error).toBeNull();
-      collected.push(...page.data);
-      cursor = page.data.at(-1);
-    }
-
-    expect(collected.map((row) => row.group_id)).toEqual([
-      `order:boundary-${suffix}`,
-      `order:BOUNDARY-${suffix}`,
-      `item:boundary-${suffix}-manual-a`,
-      `item:boundary-${suffix}-manual-b`,
-    ]);
-    await deleteOrderItemsByPrefix(supabase, `boundary-${suffix}-`);
-  });
-
-  it("searches the entire workspace across compact order fields and design text", async () => {
-    const suffix = randomUUID().slice(0, 8);
-    const supabase = createSupabaseAdminClient();
-    const fillerItems = Array.from({ length: 55 }, (_, index) => ({
-      id: `search-${suffix}-filler-${String(index).padStart(2, "0")}`,
-      workspace_id: PRIMARY_WORKSPACE_ID,
-      status: "open",
-      order_number: `A-${suffix}-${String(index).padStart(2, "0")}`,
-      buyer_name: "Unrelated buyer",
-    }));
-    const targetId = `search-${suffix}-target`;
-    const targetOrderNumber = `Z-${suffix}-rare-order`;
-    const { error: itemsError } = await supabase.from("order_items").insert([
-      ...fillerItems,
+    const { error: insertError } = await supabase.from("order_items").insert([
       {
-        id: targetId,
-        workspace_id: PRIMARY_WORKSPACE_ID,
+        id: firstItemId,
+        workspace_id: workspaceId,
         status: "open",
-        order_number: targetOrderNumber,
-        buyer_name: `Rare Buyer ${suffix}`,
-        listing_id: `rare-listing-${suffix}`,
-        transaction_id: `rare-transaction-${suffix}`,
-        imported_color: `Rare Color ${suffix}`,
+        order_number: orderNumber,
+        buyer_name: `Projection Buyer ${suffix}`,
+        transaction_id: `projection-${suffix}-first`,
+        quantity: 1,
+        source_json: { rawCustomization: { diagnostic: "must-not-leak" } },
+        created_at: "2026-01-01T00:00:00.000Z",
+      },
+      {
+        id: secondItemId,
+        workspace_id: workspaceId,
+        status: "open",
+        order_number: orderNumber,
+        buyer_name: `Projection Buyer ${suffix}`,
+        transaction_id: `projection-${suffix}-second`,
+        quantity: 1,
+        source_json: {},
+        created_at: "2026-02-01T00:00:00.000Z",
+      },
+      {
+        id: `projection-${suffix}-other`,
+        workspace_id: otherWorkspaceId,
+        status: "complete",
+        order_number: orderNumber,
+        buyer_name: `Other Projection Buyer ${suffix}`,
+        transaction_id: `projection-${suffix}-other`,
+        quantity: 1,
+        source_json: {},
+        created_at: "2027-01-01T00:00:00.000Z",
       },
     ]);
-    expect(itemsError).toBeNull();
-    const { error: designError } = await supabase.from("designs").insert({
-      workspace_id: PRIMARY_WORKSPACE_ID,
-      order_item_id: targetId,
-      design_text: `Rare Credentials ${suffix}`,
-    });
-    expect(designError).toBeNull();
-
-    const searches = [
-      targetOrderNumber,
-      `Rare Buyer ${suffix}`,
-      `rare-listing-${suffix}`,
-      `rare-transaction-${suffix}`,
-      `Rare Color ${suffix}`,
-      `Rare Credentials ${suffix}`,
-    ];
-    for (const search of searches) {
-      const { data, error } = await listSummaryPage(supabase, { p_search: search });
-      expect(error).toBeNull();
-      expect([...new Set(data.map((row) => row.group_id))]).toEqual([`order:${targetOrderNumber}`]);
-    }
-    await deleteOrderItemsByPrefix(supabase, `search-${suffix}-`);
-  });
-
-  it("traverses every matching group without skips or duplicates", async () => {
-    const suffix = randomUUID().slice(0, 8);
-    const supabase = createSupabaseAdminClient();
-    const expectedGroupIds = Array.from({ length: 73 }, (_, index) =>
-      `order:TRAVERSE-${suffix}-${String(index).padStart(2, "0")}`);
-    const { error: insertError } = await supabase.from("order_items").insert(
-      expectedGroupIds.map((groupId, index) => ({
-        id: `traverse-${suffix}-${String(index).padStart(2, "0")}`,
-        workspace_id: PRIMARY_WORKSPACE_ID,
-        status: "open",
-        order_number: groupId.slice("order:".length),
-        buyer_name: `Traversal ${suffix}`,
-      })),
-    );
     expect(insertError).toBeNull();
 
-    const traversed = [];
-    let cursor = null;
-    do {
-      const page = await listSummaryPage(supabase, {
-        p_search: `Traversal ${suffix}`,
-        p_limit: 7,
-        p_after_group_rank: cursor?.group_rank ?? null,
-        p_after_order_key: cursor?.order_key ?? null,
-        p_after_group_id: cursor?.group_id ?? null,
-      });
-      expect(page.error).toBeNull();
-      traversed.push(...new Set(page.data.map((row) => row.group_id)));
-      cursor = page.data.at(-1) || null;
-    } while (cursor?.has_more);
+    const readSummary = async () => supabase
+      .from("order_group_summaries")
+      .select("*")
+      .eq("workspace_id", workspaceId)
+      .eq("group_id", groupId)
+      .maybeSingle();
 
-    expect(traversed).toEqual(expectedGroupIds);
-    expect(new Set(traversed).size).toBe(traversed.length);
-    await deleteOrderItemsByPrefix(supabase, `traverse-${suffix}-`);
+    const { data: initialSummary, error: initialError } = await readSummary();
+    expect(initialError).toBeNull();
+    expect(initialSummary).toMatchObject({
+      workspace_id: workspaceId,
+      group_id: groupId,
+      order_number: orderNumber,
+      buyer_name: `Projection Buyer ${suffix}`,
+      group_status: "open",
+    });
+    expect(initialSummary).not.toHaveProperty("is_in_active_batch");
+    expect(JSON.stringify(initialSummary)).not.toContain("must-not-leak");
+    expect(initialSummary).not.toHaveProperty("source_json");
+    expect(initialSummary).not.toHaveProperty("design_lines");
+    expect(initialSummary).not.toHaveProperty("cached_build_json");
+    const initialSortKey = initialSummary.sort_key;
+
+    const readVisibility = async (batchId) => supabase
+      .from("order_group_batch_visibility")
+      .select("*")
+      .eq("workspace_id", workspaceId)
+      .eq("batch_id", batchId)
+      .eq("group_id", groupId)
+      .maybeSingle();
+
+    expect((await readVisibility(firstBatchId)).data).toMatchObject({
+      workspace_id: workspaceId,
+      batch_id: firstBatchId,
+      group_id: groupId,
+      group_status: "open",
+      is_in_batch: false,
+      sort_key: initialSortKey,
+    });
+    expect((await readVisibility(secondBatchId)).data).toMatchObject({
+      workspace_id: workspaceId,
+      batch_id: secondBatchId,
+      group_id: groupId,
+      group_status: "open",
+      is_in_batch: false,
+      sort_key: initialSortKey,
+    });
+
+    const { data: isolatedSummary, error: isolatedError } = await supabase
+      .from("order_group_summaries")
+      .select("workspace_id, group_status, buyer_name")
+      .eq("workspace_id", otherWorkspaceId)
+      .eq("group_id", groupId)
+      .single();
+    expect(isolatedError).toBeNull();
+    expect(isolatedSummary).toEqual({
+      workspace_id: otherWorkspaceId,
+      group_status: "complete",
+      buyer_name: `Other Projection Buyer ${suffix}`,
+    });
+
+    const { error: firstCompleteError } = await supabase
+      .from("order_items")
+      .update({ status: "complete" })
+      .eq("workspace_id", workspaceId)
+      .eq("id", firstItemId);
+    expect(firstCompleteError).toBeNull();
+    expect((await readSummary()).data?.group_status).toBe("open");
+
+    const { error: secondCompleteError } = await supabase
+      .from("order_items")
+      .update({ status: "complete" })
+      .eq("workspace_id", workspaceId)
+      .eq("id", secondItemId);
+    expect(secondCompleteError).toBeNull();
+    expect((await readSummary()).data?.group_status).toBe("complete");
+    expect((await readVisibility(firstBatchId)).data?.group_status).toBe("complete");
+    expect((await readVisibility(secondBatchId)).data?.group_status).toBe("complete");
+
+    const { data: firstMembership, error: firstMembershipError } = await supabase
+      .from("batch_items")
+      .insert({
+        workspace_id: workspaceId,
+        batch_id: firstBatchId,
+        order_item_id: firstItemId,
+        batch_position: 0,
+        status: "active",
+      })
+      .select("id")
+      .single();
+    expect(firstMembershipError).toBeNull();
+    expect((await readVisibility(firstBatchId)).data?.is_in_batch).toBe(true);
+    expect((await readVisibility(secondBatchId)).data?.is_in_batch).toBe(false);
+
+    const { data: secondMembership, error: secondMembershipError } = await supabase
+      .from("batch_items")
+      .insert({
+        workspace_id: workspaceId,
+        batch_id: secondBatchId,
+        order_item_id: secondItemId,
+        batch_position: 0,
+        status: "active",
+      })
+      .select("id")
+      .single();
+    expect(secondMembershipError).toBeNull();
+    expect((await readVisibility(firstBatchId)).data?.is_in_batch).toBe(true);
+    expect((await readVisibility(secondBatchId)).data?.is_in_batch).toBe(true);
+
+    const { error: archivedError } = await supabase
+      .from("batch_items")
+      .update({ status: "archived" })
+      .eq("id", firstMembership.id);
+    expect(archivedError).toBeNull();
+    expect((await readVisibility(firstBatchId)).data?.is_in_batch).toBe(false);
+    expect((await readVisibility(secondBatchId)).data?.is_in_batch).toBe(true);
+
+    const { error: reactivatedError } = await supabase
+      .from("batch_items")
+      .update({ status: "active" })
+      .eq("id", firstMembership.id);
+    expect(reactivatedError).toBeNull();
+    expect((await readVisibility(firstBatchId)).data?.is_in_batch).toBe(true);
+    expect((await readVisibility(secondBatchId)).data?.is_in_batch).toBe(true);
+
+    const { error: membershipDeleteError } = await supabase
+      .from("batch_items")
+      .delete()
+      .eq("id", firstMembership.id);
+    expect(membershipDeleteError).toBeNull();
+    expect((await readVisibility(firstBatchId)).data?.is_in_batch).toBe(false);
+    expect((await readVisibility(secondBatchId)).data?.is_in_batch).toBe(true);
+
+    const { error: secondMembershipDeleteError } = await supabase
+      .from("batch_items")
+      .delete()
+      .eq("id", secondMembership.id);
+    expect(secondMembershipDeleteError).toBeNull();
+    expect((await readVisibility(firstBatchId)).data?.is_in_batch).toBe(false);
+    expect((await readVisibility(secondBatchId)).data?.is_in_batch).toBe(false);
+
+    const { error: reorderError } = await supabase
+      .from("order_items")
+      .update({ created_at: "2028-01-01T00:00:00.000Z" })
+      .eq("workspace_id", workspaceId)
+      .eq("id", firstItemId);
+    expect(reorderError).toBeNull();
+    const reorderedSortKey = (await readSummary()).data?.sort_key;
+    expect(reorderedSortKey).not.toBe(initialSortKey);
+    expect((await readVisibility(firstBatchId)).data?.sort_key).toBe(reorderedSortKey);
+    expect((await readVisibility(secondBatchId)).data?.sort_key).toBe(reorderedSortKey);
+
+    const { error: firstDeleteError } = await supabase
+      .from("order_items")
+      .delete()
+      .eq("workspace_id", workspaceId)
+      .eq("id", firstItemId);
+    expect(firstDeleteError).toBeNull();
+    expect((await readSummary()).data).not.toBeNull();
+
+    const { error: finalDeleteError } = await supabase
+      .from("order_items")
+      .delete()
+      .eq("workspace_id", workspaceId)
+      .eq("id", secondItemId);
+    expect(finalDeleteError).toBeNull();
+    expect((await readSummary()).data).toBeNull();
+    expect((await readVisibility(firstBatchId)).data).toBeNull();
+    expect((await readVisibility(secondBatchId)).data).toBeNull();
+  }, 30_000);
+
+  it("serializes concurrent member refreshes before publishing group aggregates", async () => {
+    // Break caught: a blocked upsert publishes an aggregate computed before a concurrent member commits.
+    const suffix = randomUUID().slice(0, 8);
+    const workspaceId = await createDisposableWorkspace(`Projection Race ${suffix}`);
+    const batchId = await createTestBatch(`Projection Race Batch ${suffix}`, workspaceId);
+    const orderNumber = `PROJECTION-RACE-${suffix}`;
+    const groupId = `order:${orderNumber}`;
+    const firstItemId = `projection-race-${suffix}-first`;
+    const secondItemId = `projection-race-${suffix}-second`;
+    const supabase = createSupabaseAdminClient();
+    const { error: insertError } = await supabase.from("order_items").insert([
+      {
+        id: firstItemId,
+        workspace_id: workspaceId,
+        status: "open",
+        order_number: orderNumber,
+        buyer_name: `Projection Race ${suffix}`,
+        transaction_id: `projection-race-${suffix}-first`,
+        quantity: 1,
+        source_json: {},
+      },
+      {
+        id: secondItemId,
+        workspace_id: workspaceId,
+        status: "open",
+        order_number: orderNumber,
+        buyer_name: `Projection Race ${suffix}`,
+        transaction_id: `projection-race-${suffix}-second`,
+        quantity: 1,
+        source_json: {},
+      },
+    ]);
+    expect(insertError).toBeNull();
+
+    const databaseContainerId = await getLocalDatabaseContainerId();
+    const holdTriggerName = "zz_test_hold_order_group_projection_refresh";
+    const holdFunctionName = "test_hold_order_group_projection_refresh";
+    const setupResult = executeDatabaseSql(databaseContainerId, `
+create or replace function public.${holdFunctionName}()
+returns trigger
+language plpgsql
+security invoker
+set search_path = ''
+as $hold$
+begin
+  perform pg_catalog.pg_sleep(3);
+  return null;
+end;
+$hold$;
+
+create trigger ${holdTriggerName}
+after update of status on public.order_items
+for each row
+when (new.id = ${quoteSqlLiteral(firstItemId)})
+execute function public.${holdFunctionName}();
+`);
+    expect(setupResult.status, setupResult.stderr || setupResult.stdout).toBe(0);
+
+    try {
+      const firstUpdatePromise = createSupabaseAdminClient()
+        .from("order_items")
+        .update({ status: "complete" })
+        .eq("workspace_id", workspaceId)
+        .eq("id", firstItemId)
+        .then((result) => result);
+
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      waitForDatabaseSleep(databaseContainerId);
+
+      const secondUpdatePromise = createSupabaseAdminClient()
+        .from("order_items")
+        .update({ status: "complete" })
+        .eq("workspace_id", workspaceId)
+        .eq("id", secondItemId)
+        .then((result) => result);
+
+      const [firstUpdate, secondUpdate] = await Promise.all([
+        firstUpdatePromise,
+        secondUpdatePromise,
+      ]);
+      expect(firstUpdate.error).toBeNull();
+      expect(secondUpdate.error).toBeNull();
+
+      const [{ data: sourceItems, error: sourceError }, { data: summary, error: summaryError }, { data: visibility, error: visibilityError }] = await Promise.all([
+        supabase
+          .from("order_items")
+          .select("id, status")
+          .eq("workspace_id", workspaceId)
+          .eq("order_number", orderNumber)
+          .order("id"),
+        supabase
+          .from("order_group_summaries")
+          .select("group_status")
+          .eq("workspace_id", workspaceId)
+          .eq("group_id", groupId)
+          .single(),
+        supabase
+          .from("order_group_batch_visibility")
+          .select("group_status")
+          .eq("workspace_id", workspaceId)
+          .eq("batch_id", batchId)
+          .eq("group_id", groupId)
+          .single(),
+      ]);
+      expect(sourceError).toBeNull();
+      expect(sourceItems.map((item) => item.status)).toEqual(["complete", "complete"]);
+      expect(summaryError).toBeNull();
+      expect(summary?.group_status).toBe("complete");
+      expect(visibilityError).toBeNull();
+      expect(visibility?.group_status).toBe("complete");
+    } finally {
+      const cleanupResult = executeDatabaseSql(databaseContainerId, `
+drop trigger if exists ${holdTriggerName} on public.order_items;
+drop function if exists public.${holdFunctionName}();
+`);
+      expect(cleanupResult.status, cleanupResult.stderr || cleanupResult.stdout).toBe(0);
+    }
+  }, 30_000);
+
+  it("reconciles visibility after concurrent first group and batch creation", async () => {
+    // Break caught: concurrent creators each miss the other's uncommitted row and publish no pair.
+    const suffix = randomUUID().slice(0, 8);
+    const workspaceId = await createDisposableWorkspace(`Projection Creation Race ${suffix}`);
+    const orderNumber = `PROJECTION-CREATION-${suffix}`;
+    const groupId = `order:${orderNumber}`;
+    const orderItemId = `projection-creation-${suffix}`;
+    const batchId = randomUUID();
+    const databaseContainerId = await getLocalDatabaseContainerId();
+    const holdTriggerName = "zz_test_hold_order_group_projection_creation";
+    const holdFunctionName = "test_hold_order_group_projection_creation";
+    const setupResult = executeDatabaseSql(databaseContainerId, `
+create or replace function public.${holdFunctionName}()
+returns trigger
+language plpgsql
+security invoker
+set search_path = ''
+as $hold$
+begin
+  perform pg_catalog.pg_sleep(3);
+  return null;
+end;
+$hold$;
+
+create trigger ${holdTriggerName}
+after insert on public.order_items
+for each row
+when (new.id = ${quoteSqlLiteral(orderItemId)})
+execute function public.${holdFunctionName}();
+`);
+    expect(setupResult.status, setupResult.stderr || setupResult.stdout).toBe(0);
+
+    try {
+      const orderInsertPromise = createSupabaseAdminClient()
+        .from("order_items")
+        .insert({
+          id: orderItemId,
+          workspace_id: workspaceId,
+          status: "open",
+          order_number: orderNumber,
+          buyer_name: `Projection Creation ${suffix}`,
+          transaction_id: `projection-creation-${suffix}`,
+          quantity: 1,
+          source_json: {},
+        })
+        .then((result) => result);
+
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      waitForDatabaseSleep(databaseContainerId);
+
+      const batchInsertPromise = createSupabaseAdminClient()
+        .from("production_batches")
+        .insert({
+          id: batchId,
+          workspace_id: workspaceId,
+          name: `Projection Creation Batch ${suffix}`,
+          status: "active",
+        })
+        .then((result) => result);
+
+      const [orderInsert, batchInsert] = await Promise.all([
+        orderInsertPromise,
+        batchInsertPromise,
+      ]);
+      expect(orderInsert.error).toBeNull();
+      expect(batchInsert.error).toBeNull();
+
+      const { data: visibility, error: visibilityError } = await createSupabaseAdminClient()
+        .from("order_group_batch_visibility")
+        .select("workspace_id, batch_id, group_id, is_in_batch")
+        .eq("workspace_id", workspaceId)
+        .eq("batch_id", batchId)
+        .eq("group_id", groupId)
+        .maybeSingle();
+      expect(visibilityError).toBeNull();
+      expect(visibility).toEqual({
+        workspace_id: workspaceId,
+        batch_id: batchId,
+        group_id: groupId,
+        is_in_batch: false,
+      });
+    } finally {
+      const cleanupResult = executeDatabaseSql(databaseContainerId, `
+drop trigger if exists ${holdTriggerName} on public.order_items;
+drop function if exists public.${holdFunctionName}();
+`);
+      expect(cleanupResult.status, cleanupResult.stderr || cleanupResult.stdout).toBe(0);
+    }
+  }, 30_000);
+
+  it("orders workspace and group locks consistently during concurrent cross-workspace moves", async () => {
+    // Break caught: an order move holds group A while waiting for workspace B as a batch move does the inverse.
+    const suffix = randomUUID().slice(0, 8);
+    const workspaceIds = [randomUUID(), randomUUID()].sort();
+    const [sourceWorkspaceId, targetWorkspaceId] = workspaceIds;
+    const supabase = createSupabaseAdminClient();
+    const { error: workspaceError } = await supabase.from("workspaces").insert([
+      { id: sourceWorkspaceId, name: `Projection Move Source ${suffix}` },
+      { id: targetWorkspaceId, name: `Projection Move Target ${suffix}` },
+    ]);
+    expect(workspaceError).toBeNull();
+    disposableWorkspaceIds.add(sourceWorkspaceId);
+    disposableWorkspaceIds.add(targetWorkspaceId);
+
+    const batchId = await createTestBatch(`Projection Move Batch ${suffix}`, sourceWorkspaceId);
+    const orderNumber = `PROJECTION-MOVE-${suffix}`;
+    const groupId = `order:${orderNumber}`;
+    const orderItemId = `projection-move-${suffix}`;
+    const { error: orderError } = await supabase.from("order_items").insert({
+      id: orderItemId,
+      workspace_id: sourceWorkspaceId,
+      status: "open",
+      order_number: orderNumber,
+      buyer_name: `Projection Move ${suffix}`,
+      transaction_id: `projection-move-${suffix}`,
+      quantity: 1,
+      source_json: {},
+    });
+    expect(orderError).toBeNull();
+
+    const { data: initialVisibility, error: initialVisibilityError } = await supabase
+      .from("order_group_batch_visibility")
+      .select("workspace_id, batch_id, group_id")
+      .eq("workspace_id", sourceWorkspaceId)
+      .eq("batch_id", batchId)
+      .eq("group_id", groupId)
+      .single();
+    expect(initialVisibilityError).toBeNull();
+    expect(initialVisibility).not.toBeNull();
+
+    const databaseContainerId = await getLocalDatabaseContainerId();
+    const holdTriggerName = "zz_test_hold_order_group_visibility_move";
+    const holdFunctionName = "test_hold_order_group_visibility_move";
+    const setupResult = executeDatabaseSql(databaseContainerId, `
+create or replace function public.${holdFunctionName}()
+returns trigger
+language plpgsql
+security invoker
+set search_path = ''
+as $hold$
+begin
+  perform pg_catalog.pg_sleep(3);
+  return null;
+end;
+$hold$;
+
+create trigger ${holdTriggerName}
+after update on public.order_group_batch_visibility
+for each row
+when (
+  new.workspace_id = ${quoteSqlLiteral(sourceWorkspaceId)}::uuid
+  and new.batch_id = ${quoteSqlLiteral(batchId)}::uuid
+  and new.group_id = ${quoteSqlLiteral(groupId)}
+)
+execute function public.${holdFunctionName}();
+`);
+    expect(setupResult.status, setupResult.stderr || setupResult.stdout).toBe(0);
+
+    try {
+      const visibilityHoldPromise = createSupabaseAdminClient()
+        .from("order_group_batch_visibility")
+        .update({ updated_at: new Date().toISOString() })
+        .eq("workspace_id", sourceWorkspaceId)
+        .eq("batch_id", batchId)
+        .eq("group_id", groupId)
+        .then((result) => result);
+
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      waitForDatabaseSleep(databaseContainerId);
+
+      const orderMovePromise = createSupabaseAdminClient()
+        .from("order_items")
+        .update({ workspace_id: targetWorkspaceId })
+        .eq("workspace_id", sourceWorkspaceId)
+        .eq("id", orderItemId)
+        .then((result) => result);
+
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      waitForDatabaseLockWait(databaseContainerId);
+
+      const workspaceLockProbe = executeDatabaseSql(databaseContainerId, String.raw`
+\pset tuples_only on
+\pset format unaligned
+select pg_catalog.pg_try_advisory_xact_lock(
+  pg_catalog.hashtextextended(
+    'order-group-projection-workspace|' || ${quoteSqlLiteral(targetWorkspaceId)}::uuid::text,
+    0
+  )
+);
+`);
+      expect(workspaceLockProbe.status, workspaceLockProbe.stderr || workspaceLockProbe.stdout).toBe(0);
+
+      const batchMovePromise = createSupabaseAdminClient()
+        .from("production_batches")
+        .update({ workspace_id: targetWorkspaceId })
+        .eq("workspace_id", sourceWorkspaceId)
+        .eq("id", batchId)
+        .then((result) => result);
+
+      const [visibilityHold, orderMove, batchMove] = await Promise.all([
+        visibilityHoldPromise,
+        orderMovePromise,
+        batchMovePromise,
+      ]);
+      expect(workspaceLockProbe.stdout.trim()).toBe("f");
+      expect(visibilityHold.error).toBeNull();
+      expect(orderMove.error).toBeNull();
+      expect(batchMove.error).toBeNull();
+
+      const { data: movedVisibility, error: movedVisibilityError } = await supabase
+        .from("order_group_batch_visibility")
+        .select("workspace_id, batch_id, group_id")
+        .eq("workspace_id", targetWorkspaceId)
+        .eq("batch_id", batchId)
+        .eq("group_id", groupId)
+        .single();
+      expect(movedVisibilityError).toBeNull();
+      expect(movedVisibility).toEqual({
+        workspace_id: targetWorkspaceId,
+        batch_id: batchId,
+        group_id: groupId,
+      });
+    } finally {
+      const cleanupResult = executeDatabaseSql(databaseContainerId, `
+drop trigger if exists ${holdTriggerName} on public.order_group_batch_visibility;
+drop function if exists public.${holdFunctionName}();
+`);
+      expect(cleanupResult.status, cleanupResult.stderr || cleanupResult.stdout).toBe(0);
+    }
+  }, 30_000);
+
+  it("treats unknown and foreign batch ids as zero membership for empty not-in-batch search", async () => {
+    // Break caught: the projection path returns no rows while source search treats a missing batch as zero membership.
+    const suffix = randomUUID().slice(0, 8);
+    const workspaceId = await createDisposableWorkspace(`Missing Batch ${suffix}`);
+    const otherWorkspaceId = await createDisposableWorkspace(`Foreign Batch ${suffix}`);
+    const foreignBatchId = await createTestBatch(`Foreign Batch ${suffix}`, otherWorkspaceId);
+    const unknownBatchId = randomUUID();
+    const orderNumber = `MISSING-BATCH-${suffix}`;
+    const searchToken = `MissingBatchBuyer${suffix}`;
+    const supabase = createSupabaseAdminClient();
+    const { error } = await supabase.from("order_items").insert({
+      id: `missing-batch-${suffix}`,
+      workspace_id: workspaceId,
+      status: "open",
+      order_number: orderNumber,
+      buyer_name: searchToken,
+      quantity: 1,
+      source_json: {},
+    });
+    expect(error).toBeNull();
+
+    for (const activeBatchId of [unknownBatchId, foreignBatchId]) {
+      const emptyPage = await listWorkspaceOrderSummaries({
+        workspaceId,
+        activeBatchId,
+        statusFilter: "all",
+        batchFilter: "notInBatch",
+        searchTerm: "",
+      });
+      const searchedPage = await listWorkspaceOrderSummaries({
+        workspaceId,
+        activeBatchId,
+        statusFilter: "all",
+        batchFilter: "notInBatch",
+        searchTerm: searchToken,
+      });
+
+      expect(emptyPage.orders.map((order) => order.id)).toEqual([`order:${orderNumber}`]);
+      expect(searchedPage.orders.map((order) => order.id)).toEqual([`order:${orderNumber}`]);
+    }
   });
+
+  it("keeps empty-search discovery and group hydration index-bounded after a deep cursor", async () => {
+    // Break caught: empty Orders pages scan every historical item before applying the cursor and limit.
+    const suffix = randomUUID().slice(0, 8);
+    const testWorkspaceId = await createDisposableWorkspace(`Bounded Empty Search ${suffix}`);
+    const supabase = createSupabaseAdminClient();
+    const groupCount = 2400;
+    const rows = Array.from({ length: groupCount }, (_, offset) => {
+      const sequence = offset + 1;
+      return {
+        id: `bounded-${suffix}-${sequence}`,
+        workspace_id: testWorkspaceId,
+        status: [599, 590].includes(sequence)
+          ? "complete"
+          : [597, 589].includes(sequence)
+            ? "skipped"
+            : "open",
+        order_number: String(9_000_000_000 + sequence),
+        buyer_name: `Bounded Buyer ${sequence}`,
+        listing_id: `bounded-listing-${sequence}`,
+        transaction_id: `bounded-transaction-${sequence}`,
+        quantity: 1,
+        source_json: {},
+        created_at: new Date(Date.UTC(2025, 0, 1, 0, 0, sequence)).toISOString(),
+      };
+    });
+    const completeGroupNumber = String(9_000_000_000 + 599);
+    rows.push({
+      ...rows[598],
+      id: `bounded-${suffix}-599-sibling`,
+      transaction_id: `bounded-transaction-599-sibling`,
+      created_at: new Date(Date.UTC(2024, 11, 1)).toISOString(),
+    });
+
+    for (let offset = 0; offset < rows.length; offset += 250) {
+      const { error } = await supabase.from("order_items").insert(rows.slice(offset, offset + 250));
+      expect(error).toBeNull();
+    }
+    const designs = rows.map((row) => ({
+      workspace_id: testWorkspaceId,
+      order_item_id: row.id,
+      design_text: `Bounded design ${row.id}`,
+    }));
+    for (let offset = 0; offset < designs.length; offset += 250) {
+      const { error } = await supabase.from("designs").insert(designs.slice(offset, offset + 250));
+      expect(error).toBeNull();
+    }
+    const filterBatchId = await createTestBatch(`Bounded Filter ${suffix}`, testWorkspaceId);
+    const oppositeBatchId = await createTestBatch(`Bounded Opposite ${suffix}`, testWorkspaceId);
+    const { error: membershipError } = await supabase.from("batch_items").insert([
+      {
+        workspace_id: testWorkspaceId,
+        batch_id: filterBatchId,
+        order_item_id: `bounded-${suffix}-599`,
+        batch_position: 0,
+        status: "active",
+      },
+      {
+        workspace_id: testWorkspaceId,
+        batch_id: filterBatchId,
+        order_item_id: `bounded-${suffix}-589`,
+        batch_position: 1,
+        status: "active",
+      },
+      {
+        workspace_id: testWorkspaceId,
+        batch_id: filterBatchId,
+        order_item_id: `bounded-${suffix}-588`,
+        batch_position: 2,
+        status: "active",
+      },
+      {
+        workspace_id: testWorkspaceId,
+        batch_id: oppositeBatchId,
+        order_item_id: `bounded-${suffix}-598`,
+        batch_position: 0,
+        status: "active",
+      },
+    ]);
+    expect(membershipError).toBeNull();
+
+    const cursorSequence = 600;
+    const cursorOrderNumber = String(9_000_000_000 + cursorSequence);
+    const cursorSortKey = "20250101001000000000"
+      + ":3:"
+      + cursorOrderNumber.padStart(64, "0");
+    const cursorGroupId = `order:${cursorOrderNumber}`;
+    const page = await listWorkspaceOrderSummaries({
+      workspaceId: testWorkspaceId,
+      statusFilter: "all",
+      searchTerm: "",
+      limit: 5,
+      cursor: {
+        version: 1,
+        sortKey: cursorSortKey,
+        groupId: cursorGroupId,
+      },
+    });
+
+    expect(page.orders.map((order) => order.id)).toEqual([
+      `order:${completeGroupNumber}`,
+      "order:9000000598",
+      "order:9000000597",
+      "order:9000000596",
+      "order:9000000595",
+    ]);
+    expect(page.orders[0].items).toHaveLength(2);
+    expect(page.hasMore).toBe(true);
+
+    const firstPage = await listWorkspaceOrderSummaries({
+      workspaceId: testWorkspaceId,
+      statusFilter: "all",
+      searchTerm: "",
+      limit: 5,
+    });
+    expect(firstPage.orders.map((order) => order.id)).toEqual([
+      "order:9000002400",
+      "order:9000002399",
+      "order:9000002398",
+      "order:9000002397",
+      "order:9000002396",
+    ]);
+
+    const [completePage, skippedPage, inBatchPage, notInBatchPage] = await Promise.all([
+      listWorkspaceOrderSummaries({
+        workspaceId: testWorkspaceId,
+        statusFilter: "complete",
+        searchTerm: "",
+        limit: 1,
+        cursor: { version: 1, sortKey: cursorSortKey, groupId: cursorGroupId },
+      }),
+      listWorkspaceOrderSummaries({
+        workspaceId: testWorkspaceId,
+        statusFilter: "skipped",
+        searchTerm: "",
+        limit: 1,
+        cursor: { version: 1, sortKey: cursorSortKey, groupId: cursorGroupId },
+      }),
+      listWorkspaceOrderSummaries({
+        workspaceId: testWorkspaceId,
+        activeBatchId: filterBatchId,
+        statusFilter: "all",
+        batchFilter: "inBatch",
+        searchTerm: "",
+        limit: 1,
+        cursor: { version: 1, sortKey: cursorSortKey, groupId: cursorGroupId },
+      }),
+      listWorkspaceOrderSummaries({
+        workspaceId: testWorkspaceId,
+        activeBatchId: filterBatchId,
+        statusFilter: "all",
+        batchFilter: "notInBatch",
+        searchTerm: "",
+        limit: 1,
+        cursor: { version: 1, sortKey: cursorSortKey, groupId: cursorGroupId },
+      }),
+    ]);
+    expect(completePage.orders[0]).toMatchObject({
+      id: `order:${completeGroupNumber}`,
+      status: "complete",
+    });
+    expect(completePage.orders[0].items).toHaveLength(2);
+    expect(skippedPage.orders[0]).toMatchObject({ id: "order:9000000597", status: "skipped" });
+    expect(inBatchPage.orders[0].id).toBe(`order:${completeGroupNumber}`);
+    expect(inBatchPage.orders[0].isInActiveBatch).toBe(true);
+    expect(inBatchPage.orders[0].items).toHaveLength(2);
+    expect(notInBatchPage.orders[0].id).toBe("order:9000000598");
+
+    const lifecycleBatchCases = [
+      { statusFilter: "all", batchFilter: "all", expectedIndex: "order_group_summaries_page_idx", expectedIds: ["9000000599", "9000000598"] },
+      { statusFilter: "open", batchFilter: "all", expectedIndex: "order_group_summaries_status_page_idx", expectedIds: ["9000000598", "9000000596"] },
+      { statusFilter: "complete", batchFilter: "all", expectedIndex: "order_group_summaries_status_page_idx", expectedIds: ["9000000599", "9000000590"] },
+      { statusFilter: "skipped", batchFilter: "all", expectedIndex: "order_group_summaries_status_page_idx", expectedIds: ["9000000597", "9000000589"] },
+      { statusFilter: "all", batchFilter: "inBatch", expectedIndex: "order_group_batch_visibility_page_idx", expectedIds: ["9000000599", "9000000589"] },
+      { statusFilter: "open", batchFilter: "inBatch", expectedIndex: "order_group_batch_visibility_status_page_idx", expectedIds: ["9000000588"] },
+      { statusFilter: "complete", batchFilter: "inBatch", expectedIndex: "order_group_batch_visibility_status_page_idx", expectedIds: ["9000000599"] },
+      { statusFilter: "skipped", batchFilter: "inBatch", expectedIndex: "order_group_batch_visibility_status_page_idx", expectedIds: ["9000000589"] },
+      { statusFilter: "all", batchFilter: "notInBatch", expectedIndex: "order_group_batch_visibility_page_idx", expectedIds: ["9000000598", "9000000597"] },
+      { statusFilter: "open", batchFilter: "notInBatch", expectedIndex: "order_group_batch_visibility_status_page_idx", expectedIds: ["9000000598", "9000000596"] },
+      { statusFilter: "complete", batchFilter: "notInBatch", expectedIndex: "order_group_batch_visibility_status_page_idx", expectedIds: ["9000000590"] },
+      { statusFilter: "skipped", batchFilter: "notInBatch", expectedIndex: "order_group_batch_visibility_status_page_idx", expectedIds: ["9000000597"] },
+    ];
+
+    for (const testCase of lifecycleBatchCases) {
+      const exactExecution = await executeExactOrdersSummaryFunction({
+        workspaceId: testWorkspaceId,
+        activeBatchId: testCase.batchFilter === "all" ? null : filterBatchId,
+        statusFilter: testCase.statusFilter,
+        batchFilter: testCase.batchFilter,
+        cursorSortKey,
+        cursorGroupId,
+        limit: 1,
+      });
+      expect(exactExecution.rows.map((row) => row.group_id)).toEqual(
+        testCase.expectedIds.map((id) => `order:${id}`),
+      );
+      expect(exactExecution.rows.length, JSON.stringify(testCase)).toBeLessThanOrEqual(2);
+      expect(
+        exactExecution.indexDeltas[testCase.expectedIndex].scans,
+        JSON.stringify(testCase),
+      ).toBeGreaterThan(0);
+      // pg_stat_get_xact_tuples_returned counts the index AM's one-row lookahead
+      // even when the LIMIT node emits only limit + 1 candidate groups.
+      expect(
+        exactExecution.indexDeltas[testCase.expectedIndex].tuplesRead,
+        JSON.stringify({ testCase, indexDeltas: exactExecution.indexDeltas }, null, 2),
+      ).toBeLessThanOrEqual(3);
+      expect(exactExecution.indexDeltas.order_items_workspace_newest_group_idx).toEqual({
+        scans: 0,
+        tuplesRead: 0,
+      });
+    }
+  }, 60_000);
+
+  it("searches and paginates more than one thousand complete order groups without splitting a group", async () => {
+    // Break caught: compact Orders search reads only a browser-sized subset or paginates item rows.
+    const suffix = randomUUID().slice(0, 8);
+    const testWorkspaceId = await createDisposableWorkspace(`Scale Search ${suffix}`);
+    const boundaryOrderNumber = `99${String(Date.now()).slice(-8)}`;
+    const traversalToken = `Traverse${suffix}`;
+    const supabase = createSupabaseAdminClient();
+    const bulkRows = Array.from({ length: 1005 }, (_, index) => ({
+      id: `scale-${suffix}-${index}`,
+      workspace_id: testWorkspaceId,
+      status: ["open", "complete", "skipped"][index % 3],
+      order_number: index === 0
+        ? `MANUAL-${suffix}`
+        : index === 1
+          ? null
+          : `8${String(index).padStart(9, "0")}`,
+      buyer_name: `${traversalToken} Buyer ${index}`,
+      listing_id: `scale-listing-${index}`,
+      transaction_id: `scale-transaction-${index}`,
+      imported_color: index % 2 ? "Pink" : "Teal",
+      quantity: 1,
+      source_json: {},
+      created_at: new Date(Date.UTC(2025, 0, 1, 0, 0, index)).toISOString(),
+    }));
+    const specialRows = [
+      {
+        id: `scale-${suffix}-boundary-a`, workspace_id: testWorkspaceId, status: "open",
+        order_number: boundaryOrderNumber, buyer_name: "Boundary Buyer", listing_id: "boundary-a",
+        transaction_id: `boundary-a-${suffix}`, imported_color: "White", quantity: 1, source_json: {},
+      },
+      {
+        id: `scale-${suffix}-boundary-b`, workspace_id: testWorkspaceId, status: "open",
+        order_number: boundaryOrderNumber, buyer_name: "Boundary Buyer", listing_id: "boundary-b",
+        transaction_id: `boundary-b-${suffix}`, imported_color: "Black", quantity: 1, source_json: {},
+      },
+      {
+        id: `scale-${suffix}-boundary-next`, workspace_id: testWorkspaceId, status: "open",
+        order_number: `98${String(Date.now()).slice(-8)}`, buyer_name: "Boundary Buyer", listing_id: "boundary-next",
+        transaction_id: `boundary-next-${suffix}`, imported_color: "Gray", quantity: 1, source_json: {},
+        created_at: "2025-12-01T00:00:00.000Z",
+      },
+      {
+        id: `scale-${suffix}-old-complete`, workspace_id: testWorkspaceId, status: "complete",
+        order_number: "4118855809", buyer_name: "Historical Buyer", listing_id: "historical-listing",
+        transaction_id: `historical-${suffix}`, imported_color: "Navy", quantity: 1, source_json: {},
+        created_at: "2020-01-01T00:00:00.000Z",
+      },
+      {
+        id: `scale-${suffix}-buyer`, workspace_id: testWorkspaceId, status: "open",
+        order_number: `BUYER-${suffix}`, buyer_name: "Only NeedleBuyer Match", listing_id: "plain-listing",
+        transaction_id: `plain-buyer-${suffix}`, imported_color: "Plain", quantity: 1, source_json: {},
+      },
+      {
+        id: `scale-${suffix}-listing-id`, workspace_id: testWorkspaceId, status: "open",
+        order_number: `LISTING-ID-${suffix}`, buyer_name: "Plain", listing_id: "Only-NeedleListingId-Match",
+        transaction_id: `plain-listing-${suffix}`, imported_color: "Plain", quantity: 1, source_json: {},
+      },
+      {
+        id: `scale-${suffix}-listing-title`, workspace_id: testWorkspaceId, status: "open",
+        order_number: `LISTING-TITLE-${suffix}`, buyer_name: "Plain", listing_id: "plain",
+        transaction_id: `plain-title-${suffix}`, imported_color: "Plain", quantity: 1,
+        source_json: { marketplace: "amazon", listingTitle: "Only NeedleListingTitle Match", rawCustomization: { diagnostic: "must-not-leak" } },
+      },
+      {
+        id: `scale-${suffix}-transaction`, workspace_id: testWorkspaceId, status: "open",
+        order_number: `TRANSACTION-${suffix}`, buyer_name: "Plain", listing_id: "plain",
+        transaction_id: "Only-NeedleTransaction-Match", imported_color: "Plain", quantity: 1, source_json: {},
+      },
+      {
+        id: `scale-${suffix}-color`, workspace_id: testWorkspaceId, status: "open",
+        order_number: `COLOR-${suffix}`, buyer_name: "Plain", listing_id: "plain",
+        transaction_id: `plain-color-${suffix}`, imported_color: "Only NeedleColor Match", quantity: 1, source_json: {},
+      },
+      {
+        id: `scale-${suffix}-design`, workspace_id: testWorkspaceId, status: "open",
+        order_number: `DESIGN-${suffix}`, buyer_name: "Plain", listing_id: "plain",
+        transaction_id: `plain-design-${suffix}`, imported_color: "Plain", quantity: 1, source_json: {},
+      },
+      {
+        id: `scale-${suffix}-line`, workspace_id: testWorkspaceId, status: "open",
+        order_number: `LINE-${suffix}`, buyer_name: "Plain", listing_id: "plain",
+        transaction_id: `plain-line-${suffix}`, imported_color: "Plain", quantity: 1, source_json: {},
+      },
+      {
+        id: `scale-${suffix}-order-numeric`, workspace_id: testWorkspaceId, status: "open",
+        order_number: `77${String(Date.now()).slice(-8)}`, buyer_name: `Ordering-${suffix}`,
+        listing_id: "plain", transaction_id: `ordering-numeric-${suffix}`, imported_color: "Plain",
+        quantity: 1, source_json: {}, created_at: "2026-01-01T00:00:00.000Z",
+      },
+      {
+        id: `scale-${suffix}-order-nonnumeric`, workspace_id: testWorkspaceId, status: "open",
+        order_number: `CUSTOM-${suffix}`, buyer_name: `Ordering-${suffix}`,
+        listing_id: "plain", transaction_id: `ordering-nonnumeric-${suffix}`, imported_color: "Plain",
+        quantity: 1, source_json: {}, created_at: "2026-02-01T00:00:00.000Z",
+      },
+      {
+        id: `scale-${suffix}-order-null`, workspace_id: testWorkspaceId, status: "open",
+        order_number: null, buyer_name: `Ordering-${suffix}`,
+        listing_id: "plain", transaction_id: `ordering-null-${suffix}`, imported_color: "Plain",
+        quantity: 1, source_json: {}, created_at: "2026-03-01T00:00:00.000Z",
+      },
+      {
+        id: `scale-${suffix}-mixed-complete`, workspace_id: testWorkspaceId, status: "complete",
+        order_number: `MIXED-${suffix}`, buyer_name: "Mixed Group", listing_id: "plain",
+        transaction_id: `mixed-complete-${suffix}`, imported_color: "Plain", quantity: 1, source_json: {},
+      },
+      {
+        id: `scale-${suffix}-mixed-open`, workspace_id: testWorkspaceId, status: "open",
+        order_number: `MIXED-${suffix}`, buyer_name: "Mixed Group", listing_id: "plain",
+        transaction_id: `mixed-open-${suffix}`, imported_color: "Plain", quantity: 1, source_json: {},
+      },
+      {
+        id: `scale-${suffix}-skipped-a`, workspace_id: testWorkspaceId, status: "skipped",
+        order_number: `SKIPPED-${suffix}`, buyer_name: "Skipped Group", listing_id: "plain",
+        transaction_id: `skipped-a-${suffix}`, imported_color: "Plain", quantity: 1, source_json: {},
+      },
+      {
+        id: `scale-${suffix}-skipped-b`, workspace_id: testWorkspaceId, status: "skipped",
+        order_number: `SKIPPED-${suffix}`, buyer_name: "Skipped Group", listing_id: "plain",
+        transaction_id: `skipped-b-${suffix}`, imported_color: "Plain", quantity: 1, source_json: {},
+      },
+    ].map((row, index) => ({
+      created_at: new Date(Date.UTC(2026, 0, 1, 0, 0, index)).toISOString(),
+      ...row,
+    }));
+
+    for (let index = 0; index < bulkRows.length; index += 250) {
+      const { error } = await supabase.from("order_items").insert(bulkRows.slice(index, index + 250));
+      expect(error).toBeNull();
+    }
+    const { error: specialError } = await supabase.from("order_items").insert(specialRows);
+    expect(specialError).toBeNull();
+    const isolatedWorkspaceId = await createDisposableWorkspace(`Isolated ${suffix}`);
+    const { error: isolatedOrderError } = await supabase.from("order_items").insert({
+      id: `scale-${suffix}-other-workspace`,
+      workspace_id: isolatedWorkspaceId,
+      status: "open",
+      order_number: `OTHER-${suffix}`,
+      buyer_name: `Ordering-${suffix}`,
+      quantity: 1,
+      source_json: {},
+    });
+    expect(isolatedOrderError).toBeNull();
+    const filterBatchId = await createTestBatch(`Scale Filter ${suffix}`, testWorkspaceId);
+    const { error: membershipError } = await supabase.from("batch_items").insert({
+      workspace_id: testWorkspaceId,
+      batch_id: filterBatchId,
+      order_item_id: `scale-${suffix}-boundary-a`,
+      batch_position: 0,
+      status: "active",
+    });
+    expect(membershipError).toBeNull();
+
+    const designId = randomUUID();
+    const lineDesignId = randomUUID();
+    const { error: designsError } = await supabase.from("designs").insert([
+      { id: designId, workspace_id: testWorkspaceId, order_item_id: `scale-${suffix}-design`, design_text: "Only NeedleDesign Match" },
+      { id: lineDesignId, workspace_id: testWorkspaceId, order_item_id: `scale-${suffix}-line`, design_text: "Plain design" },
+    ]);
+    expect(designsError).toBeNull();
+    const { error: lineError } = await supabase.from("design_lines").insert({
+      workspace_id: testWorkspaceId,
+      design_id: lineDesignId,
+      line_index: 0,
+      text: "Only NeedleLine Match",
+      font_id: "skywalk",
+    });
+    expect(lineError).toBeNull();
+
+    const page = await listWorkspaceOrderSummaries({
+      workspaceId: testWorkspaceId,
+      statusFilter: "open",
+      limit: 50,
+    });
+    expect(page.orders).toHaveLength(50);
+    expect(page.hasMore).toBe(true);
+    expect(new Set(page.orders.map((order) => order.id)).size).toBe(50);
+    expect(JSON.stringify(page)).not.toContain("must-not-leak");
+
+    const boundaryPage = await listWorkspaceOrderSummaries({
+      workspaceId: testWorkspaceId,
+      statusFilter: "open",
+      searchTerm: "Boundary Buyer",
+      limit: 1,
+    });
+    expect(boundaryPage.orders).toHaveLength(1);
+    expect(boundaryPage.orders[0]).toMatchObject({ id: `order:${boundaryOrderNumber}` });
+    expect(boundaryPage.orders[0].items).toHaveLength(2);
+    const afterBoundary = await listWorkspaceOrderSummaries({
+      workspaceId: testWorkspaceId,
+      statusFilter: "open",
+      searchTerm: "Boundary Buyer",
+      limit: 1,
+      cursor: { version: 1, ...boundaryPage.nextCursorValues },
+    });
+    expect(afterBoundary.orders.map((order) => order.id)).not.toContain(`order:${boundaryOrderNumber}`);
+
+    const inBatch = await listWorkspaceOrderSummaries({
+      workspaceId: testWorkspaceId,
+      activeBatchId: filterBatchId,
+      statusFilter: "open",
+      batchFilter: "inBatch",
+      searchTerm: boundaryOrderNumber,
+      limit: 50,
+    });
+    expect(inBatch.orders).toHaveLength(1);
+    expect(inBatch.orders[0]).toMatchObject({
+      id: `order:${boundaryOrderNumber}`,
+      isInActiveBatch: true,
+    });
+    expect(inBatch.orders[0].items).toHaveLength(2);
+    const notInBatch = await listWorkspaceOrderSummaries({
+      workspaceId: testWorkspaceId,
+      activeBatchId: filterBatchId,
+      statusFilter: "open",
+      batchFilter: "notInBatch",
+      searchTerm: boundaryOrderNumber,
+      limit: 50,
+    });
+    expect(notInBatch.orders).toEqual([]);
+
+    const orderedKinds = await listWorkspaceOrderSummaries({
+      workspaceId: testWorkspaceId,
+      statusFilter: "open",
+      searchTerm: `Ordering-${suffix}`,
+      limit: 50,
+    });
+    expect(orderedKinds.orders.map((order) => order.id)).toEqual([
+      `item:scale-${suffix}-order-null`,
+      `order:CUSTOM-${suffix}`,
+      expect.stringMatching(/^order:77\d{8}$/),
+    ]);
+    expect(orderedKinds.orders.map((order) => order.id)).not.toContain(`order:OTHER-${suffix}`);
+
+    const otherWorkspace = await listWorkspaceOrderSummaries({
+      workspaceId: isolatedWorkspaceId,
+      statusFilter: "open",
+      searchTerm: `Ordering-${suffix}`,
+      limit: 50,
+    });
+    expect(otherWorkspace.orders.map((order) => order.id)).toEqual([`order:OTHER-${suffix}`]);
+
+    const mixedOpen = await listWorkspaceOrderSummaries({
+      workspaceId: testWorkspaceId,
+      statusFilter: "open",
+      searchTerm: `MIXED-${suffix}`,
+      limit: 50,
+    });
+    expect(mixedOpen.orders).toHaveLength(1);
+    expect(mixedOpen.orders[0]).toMatchObject({ id: `order:MIXED-${suffix}`, status: "open" });
+    expect(mixedOpen.orders[0].items.map((item) => item.status).sort()).toEqual(["complete", "open"]);
+    const mixedComplete = await listWorkspaceOrderSummaries({
+      workspaceId: testWorkspaceId,
+      statusFilter: "complete",
+      searchTerm: `MIXED-${suffix}`,
+      limit: 50,
+    });
+    expect(mixedComplete.orders).toEqual([]);
+
+    const skipped = await listWorkspaceOrderSummaries({
+      workspaceId: testWorkspaceId,
+      statusFilter: "skipped",
+      searchTerm: `SKIPPED-${suffix}`,
+      limit: 50,
+    });
+    expect(skipped.orders).toHaveLength(1);
+    expect(skipped.orders[0]).toMatchObject({ id: `order:SKIPPED-${suffix}`, status: "skipped" });
+    expect(skipped.orders[0].items).toHaveLength(2);
+
+    const traversedIds = [];
+    let traversalCursor = null;
+    do {
+      const traversalPage = await listWorkspaceOrderSummaries({
+        workspaceId: testWorkspaceId,
+        statusFilter: "all",
+        searchTerm: traversalToken,
+        limit: 50,
+        cursor: traversalCursor,
+      });
+      traversedIds.push(...traversalPage.orders.map((order) => order.id));
+      traversalCursor = traversalPage.nextCursorValues
+        ? { version: 1, ...traversalPage.nextCursorValues }
+        : null;
+      if (!traversalPage.hasMore) break;
+      expect(traversalCursor).not.toBeNull();
+      expect(traversedIds.length).toBeLessThanOrEqual(1005);
+    } while (traversalCursor);
+    expect(traversedIds).toHaveLength(1005);
+    expect(new Set(traversedIds).size).toBe(1005);
+
+    const anon = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+    const { error: anonRpcError } = await anon.rpc("list_workspace_order_summaries", {
+      p_workspace_id: testWorkspaceId,
+      p_status_filter: "open",
+      p_requested_limit: 1,
+    });
+    expect(anonRpcError).not.toBeNull();
+    const restrictedEmail = `orders-rpc-${suffix}@example.com`;
+    const restrictedPassword = "OrdersRpc123!";
+    const { data: createdUser, error: createUserError } = await supabase.auth.admin.createUser({
+      email: restrictedEmail,
+      password: restrictedPassword,
+      email_confirm: true,
+    });
+    expect(createUserError).toBeNull();
+    disposableAuthUserIds.add(createdUser.user.id);
+    const authenticated = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+    const { error: signInError } = await authenticated.auth.signInWithPassword({
+      email: restrictedEmail,
+      password: restrictedPassword,
+    });
+    expect(signInError).toBeNull();
+    const { error: authenticatedRpcError } = await authenticated.rpc("list_workspace_order_summaries", {
+      p_workspace_id: testWorkspaceId,
+      p_status_filter: "open",
+      p_requested_limit: 1,
+    });
+    expect(authenticatedRpcError).not.toBeNull();
+    for (const [term, expectedId] of [
+      ["needlebuyer", `order:BUYER-${suffix}`],
+      ["needlelistingid", `order:LISTING-ID-${suffix}`],
+      ["needlelistingtitle", `order:LISTING-TITLE-${suffix}`],
+      ["needletransaction", `order:TRANSACTION-${suffix}`],
+      ["needlecolor", `order:COLOR-${suffix}`],
+      ["needledesign", `order:DESIGN-${suffix}`],
+      ["needleline", `order:LINE-${suffix}`],
+    ]) {
+      const search = await listWorkspaceOrderSummaries({
+        workspaceId: testWorkspaceId,
+        statusFilter: "all",
+        searchTerm: term.toUpperCase(),
+        limit: 50,
+      });
+      expect(search.orders.map((order) => order.id)).toContain(expectedId);
+      expect(JSON.stringify(search)).not.toContain("must-not-leak");
+    }
+
+    for (const statusFilter of ["all", "complete"]) {
+      const historical = await listWorkspaceOrderSummaries({
+        workspaceId: testWorkspaceId,
+        statusFilter,
+        searchTerm: "4118855809",
+        limit: 50,
+      });
+      expect(historical.orders).toHaveLength(1);
+      expect(historical.orders[0]).toMatchObject({
+        id: "order:4118855809",
+        status: "complete",
+      });
+    }
+  }, 60_000);
+
+  it("treats LIKE metacharacters and both listing title keys as literal search data", async () => {
+    // Break caught: raw LIKE patterns broaden user searches or source_json.title is skipped.
+    const suffix = randomUUID().slice(0, 8);
+    const testWorkspaceId = await createDisposableWorkspace(`Literal Search ${suffix}`);
+    const supabase = createSupabaseAdminClient();
+    const rows = [
+      {
+        id: `literal-${suffix}-percent`, workspace_id: testWorkspaceId, status: "open",
+        order_number: `PERCENT-${suffix}`, buyer_name: `Literal 100% Match ${suffix}`,
+        listing_id: "plain", transaction_id: `percent-${suffix}`, quantity: 1, source_json: {},
+      },
+      {
+        id: `literal-${suffix}-percent-decoy`, workspace_id: testWorkspaceId, status: "open",
+        order_number: `PERCENT-DECOY-${suffix}`, buyer_name: `Literal 1000 Match ${suffix}`,
+        listing_id: "plain", transaction_id: `percent-decoy-${suffix}`, quantity: 1, source_json: {},
+      },
+      {
+        id: `literal-${suffix}-underscore`, workspace_id: testWorkspaceId, status: "open",
+        order_number: `UNDERSCORE-${suffix}`, buyer_name: `Literal under_score ${suffix}`,
+        listing_id: "plain", transaction_id: `underscore-${suffix}`, quantity: 1, source_json: {},
+      },
+      {
+        id: `literal-${suffix}-underscore-decoy`, workspace_id: testWorkspaceId, status: "open",
+        order_number: `UNDERSCORE-DECOY-${suffix}`, buyer_name: `Literal underXscore ${suffix}`,
+        listing_id: "plain", transaction_id: `underscore-decoy-${suffix}`, quantity: 1, source_json: {},
+      },
+      {
+        id: `literal-${suffix}-backslash`, workspace_id: testWorkspaceId, status: "open",
+        order_number: `BACKSLASH-${suffix}`, buyer_name: `Literal slash\\value ${suffix}`,
+        listing_id: "plain", transaction_id: `backslash-${suffix}`, quantity: 1, source_json: {},
+      },
+      {
+        id: `literal-${suffix}-backslash-decoy`, workspace_id: testWorkspaceId, status: "open",
+        order_number: `BACKSLASH-DECOY-${suffix}`, buyer_name: `Literal slashvalue ${suffix}`,
+        listing_id: "plain", transaction_id: `backslash-decoy-${suffix}`, quantity: 1, source_json: {},
+      },
+      {
+        id: `literal-${suffix}-source-title`, workspace_id: testWorkspaceId, status: "open",
+        order_number: `SOURCE-TITLE-${suffix}`, buyer_name: "Plain",
+        listing_id: "plain", transaction_id: `source-title-${suffix}`, quantity: 1,
+        source_json: { title: `Legacy listing title ${suffix}` },
+      },
+    ];
+    const { error } = await supabase.from("order_items").insert(rows);
+    expect(error).toBeNull();
+
+    for (const [searchTerm, expectedOrderId] of [
+      [`100% Match ${suffix}`, `order:PERCENT-${suffix}`],
+      [`under_score ${suffix}`, `order:UNDERSCORE-${suffix}`],
+      [`slash\\value ${suffix}`, `order:BACKSLASH-${suffix}`],
+      [`listing title ${suffix}`, `order:SOURCE-TITLE-${suffix}`],
+    ]) {
+      const page = await listWorkspaceOrderSummaries({
+        workspaceId: testWorkspaceId,
+        statusFilter: "open",
+        searchTerm,
+      });
+      expect(page.orders.map((order) => order.id)).toEqual([expectedOrderId]);
+    }
+  }, 30_000);
 
   it("imports order items to Orders without adding them to the production batch", async () => {
     const suffix = Date.now().toString(36);
@@ -535,4 +1864,17 @@ describe("orders store database integration", () => {
     expect(batchItemsError).toBeNull();
     expect(batchItems).toEqual([]);
   });
+
+  it("excludes legacy archived order items from the open filter", async () => {
+    // Break caught: a historical archived item is returned as open after the lifecycle change.
+    const suffix = randomUUID().slice(0, 8);
+    const archivedId = `legacy-${suffix}-archived`;
+    await assertLegacyArchivedOrderExcluded({
+      id: archivedId,
+      workspaceId: PRIMARY_WORKSPACE_ID,
+      orderNumber: `ARCHIVED-${suffix}`,
+      buyerName: `Legacy archived ${suffix}`,
+      transactionId: `archived-${suffix}`,
+    });
+  }, 30_000);
 });

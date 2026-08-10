@@ -46,6 +46,10 @@ function createResponseRecorder() {
   };
 }
 
+function encodeCursor(cursor) {
+  return Buffer.from(JSON.stringify(cursor)).toString("base64url");
+}
+
 beforeEach(() => {
   vi.resetModules();
   addOrderGroupsToProductionBatchMock.mockReset();
@@ -65,11 +69,12 @@ afterEach(() => {
 });
 
 describe("orders api route", () => {
-  it("returns the additive compact list contract without changing the legacy GET contract", async () => {
+  it("passes validated compact pagination parameters to the summaries store", async () => {
     resolveProductionBatchAuthMock.mockResolvedValue({ userId: "user-1", workspaceId: "workspace-1" });
     listWorkspaceOrderSummariesMock.mockResolvedValue({
       orders: [{ id: "order:1001", items: [{ id: "item-1", designText: "Ada\nRN" }] }],
-      nextCursor: "next-cursor",
+      nextCursorValues: null,
+      hasMore: false,
     });
     const { default: handler } = await import("../../api/orders.js");
     const response = createResponseRecorder();
@@ -79,10 +84,12 @@ describe("orders api route", () => {
       headers: { authorization: "Bearer token-1" },
       query: {
         view: "compact",
-        batchId: "batch-1",
-        status: "all",
-        search: "  Ada RN  ",
-        cursor: " cursor-1 ",
+        batchId: " batch-1 ",
+        status: " all ",
+        batch: " notInBatch ",
+        search: " 4118855809 ",
+        limit: "50",
+        cursor: encodeCursor({ version: 1, sortKey: "20260805000000000000:3:0000000000000000000000000000000000000000000000000000000000001001", groupId: "order:1001" }),
       },
     }, response);
 
@@ -90,14 +97,98 @@ describe("orders api route", () => {
       workspaceId: "workspace-1",
       activeBatchId: "batch-1",
       statusFilter: "all",
-      search: "Ada RN",
-      cursor: "cursor-1",
+      batchFilter: "notInBatch",
+      searchTerm: "4118855809",
       limit: 50,
+      cursor: { version: 1, sortKey: "20260805000000000000:3:0000000000000000000000000000000000000000000000000000000000001001", groupId: "order:1001" },
     });
     expect(listWorkspaceOrdersMock).not.toHaveBeenCalled();
     expect(response.statusCode).toBe(200);
     expect(response.body.orders[0].items[0]).toEqual({ id: "item-1", designText: "Ada\nRN" });
-    expect(response.body.nextCursor).toBe("next-cursor");
+    expect(response.body.nextCursor).toBeNull();
+  });
+
+  it("uses compact pagination defaults", async () => {
+    resolveProductionBatchAuthMock.mockResolvedValue({ userId: "user-1", workspaceId: "workspace-1" });
+    listWorkspaceOrderSummariesMock.mockResolvedValue({ orders: [], nextCursorValues: null, hasMore: false });
+    const { default: handler } = await import("../../api/orders.js");
+    const response = createResponseRecorder();
+
+    await handler({ method: "GET", headers: {}, query: { view: "compact" } }, response);
+
+    expect(listWorkspaceOrderSummariesMock).toHaveBeenCalledWith({
+      workspaceId: "workspace-1",
+      activeBatchId: null,
+      statusFilter: "open",
+      batchFilter: "all",
+      searchTerm: "",
+      limit: 50,
+      cursor: null,
+    });
+    expect(response.body).toEqual({ orders: [], nextCursor: null, hasMore: false });
+  });
+
+  it("serializes a store cursor without exposing its values", async () => {
+    const cursorValues = {
+      version: 1,
+      sortKey: "20260805000000000000:3:0000000000000000000000000000000000000000000000000000000000001050",
+      groupId: "order:1050",
+    };
+    resolveProductionBatchAuthMock.mockResolvedValue({ userId: "user-1", workspaceId: "workspace-1" });
+    listWorkspaceOrderSummariesMock
+      .mockResolvedValueOnce({
+        orders: Array.from({ length: 50 }, (_, index) => ({ id: `order:${index + 1001}` })),
+        nextCursorValues: cursorValues,
+        hasMore: true,
+      })
+      .mockResolvedValueOnce({ orders: [], nextCursorValues: null, hasMore: false });
+    const { default: handler } = await import("../../api/orders.js");
+    const firstResponse = createResponseRecorder();
+
+    await handler({ method: "GET", headers: {}, query: { view: "compact" } }, firstResponse);
+
+    expect(firstResponse.statusCode).toBe(200);
+    expect(firstResponse.body.orders).toHaveLength(50);
+    expect(firstResponse.body).not.toHaveProperty("nextCursorValues");
+    expect(firstResponse.body.nextCursor).toEqual(expect.any(String));
+    expect(firstResponse.body.nextCursor).not.toContain(cursorValues.sortKey);
+    expect(firstResponse.body.nextCursor).not.toContain(cursorValues.groupId);
+    expect(firstResponse.body.hasMore).toBe(true);
+
+    const secondResponse = createResponseRecorder();
+    await handler({
+      method: "GET",
+      headers: {},
+      query: { view: "compact", cursor: firstResponse.body.nextCursor },
+    }, secondResponse);
+
+    expect(listWorkspaceOrderSummariesMock).toHaveBeenLastCalledWith(expect.objectContaining({
+      cursor: cursorValues,
+    }));
+    expect(secondResponse.body).toEqual({ orders: [], nextCursor: null, hasMore: false });
+  });
+
+  it.each([
+    ["a malformed cursor", { cursor: "not-base64url" }],
+    ["a cursor with unexpected fields", { cursor: encodeCursor({ version: 1, sortKey: "2026-08-05", groupId: "order:1001", extra: true }) }],
+    ["a cursor with a type-valid but out-of-range sort key", { cursor: encodeCursor({ version: 1, sortKey: "20261305000000000000:3:0000000000000000000000000000000000000000000000000000000000001001", groupId: "order:1001" }) }],
+    ["limit zero", { limit: "0" }],
+    ["a limit above 50", { limit: "51" }],
+    ["an unknown status", { status: "pending" }],
+    ["an unknown batch filter", { batch: "archived" }],
+    ["a repeated cursor", { cursor: ["cursor-1", "cursor-2"] }],
+    ["a repeated limit", { limit: ["25", "50"] }],
+    ["a repeated status", { status: ["open", "all"] }],
+    ["a repeated batch filter", { batch: ["all", "notInBatch"] }],
+  ])("rejects compact requests with %s before loading the store", async (_label, invalidQuery) => {
+    resolveProductionBatchAuthMock.mockResolvedValue({ userId: "user-1", workspaceId: "workspace-1" });
+    const { default: handler } = await import("../../api/orders.js");
+    const response = createResponseRecorder();
+
+    await handler({ method: "GET", headers: {}, query: { view: "compact", ...invalidQuery } }, response);
+
+    expect(response.statusCode).toBe(400);
+    expect(listWorkspaceOrderSummariesMock).not.toHaveBeenCalled();
   });
 
   it("returns one complete order through the additive detail contract", async () => {

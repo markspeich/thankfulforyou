@@ -59,6 +59,8 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 
 ## Current Production Requirements
 
+- Empty-search Orders pagination must remain page-bounded as history grows for every lifecycle and active-batch filter, including sparse `Complete`, `Skipped`, `In Batch`, and `Not in Batch` result sets. The database may maintain a transactionally refreshed, compact order-group search projection solely to meet this requirement. The projection must not expose raw customization diagnostics, design lines, cached geometry, or prior builds, and full design details must continue to come from the bounded detail route.
+
 - Authenticated app requests must silently recover from an expired Supabase access token by refreshing the session and retrying the failed request once. Operators should only be returned to sign-in when the session cannot be refreshed or the retried request is still unauthorized.
 - Authentication expiry must not leave an operation progress dialog spinning indefinitely. Every action must settle its dialog into either a completion state or a dismissible error state.
 
@@ -679,6 +681,10 @@ For batch Etsy order sessions, the preferred workflow is:
 - The Orders workspace should provide a status filter with `Open`, `Skipped`, `Complete`, and `All` options.
 - The Orders workspace should show a compact lifecycle status indicator on each grouped order row and in the selected-order detail header, using the durable order status values `Open`, `Skipped`, and `Complete`; `Open` and `Complete` indicators must use clearly different colors so active work does not read as finished work.
 - The Orders workspace should provide a search field matching order number, buyer, listing, transaction, color, and design text.
+- Orders search must use case-insensitive substring matching across the entire authenticated workspace rather than only records already loaded in the browser.
+- Orders list and search responses must use deterministic cursor pagination, return no more than 50 complete order groups per page, and never split a multi-item order across pages.
+- Changing Orders search, lifecycle status, or batch-membership filters must reset pagination; loading another page must preserve checked orders and the selected order.
+- The initial scalable Orders search implementation must not add fuzzy matching, a denormalized search projection, or search-maintenance triggers; specialized search indexing should be added only after representative query measurements justify it.
 - The Orders workspace should provide a batch-membership filter for all orders, orders in the active batch, and orders not in the active batch.
 - The Orders workspace should provide a `Select all visible` checkbox that selects or clears every order currently shown after search, status, and batch filters. The checkbox should show an indeterminate state when only some visible orders are selected and should feed the existing `Add Checked to Production Batch` action.
 - Pasting Etsy line items should be idempotent by durable imported order-item id: items already present in the order database should not be re-imported, re-counted as new imports, reopened from `complete` to `open`, or have their existing design data overwritten. Production Batch paste may still add an existing open database item to the active batch when it is not already in that batch.

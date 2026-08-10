@@ -1130,6 +1130,49 @@ test("saves font display name changes from the Fonts workspace Save button", asy
   await expect(saveButton).toBeDisabled();
   await expect(page.locator("#fontEditorStatus")).toHaveText("Font display name saved.");
 });
+
+test("keeps an edited font display name while the initial font registry render completes", async ({ page }) => {
+  let releaseFontLoad;
+  let markFontLoadStarted;
+  const fontLoadStarted = new Promise((resolve) => {
+    markFontLoadStarted = resolve;
+  });
+  const fontLoadReleased = new Promise((resolve) => {
+    releaseFontLoad = resolve;
+  });
+
+  await page.unroute("**/api/fonts**", defaultFontRouteHandler);
+  await page.route("**/api/fonts**", (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json; charset=utf-8",
+    body: JSON.stringify({
+      fonts: [{
+        id: "font-connected-script",
+        display_name: "Connected Script",
+        family_name: "ConnectedScript",
+        public_url: "public/fonts/Candlepin-Laser.otf",
+        file_format: "otf",
+        version: 1,
+        bridging_enabled: true,
+      }],
+    }),
+  }));
+  await page.route("**/public/fonts/Candlepin-Laser.otf", async (route) => {
+    markFontLoadStarted();
+    await fontLoadReleased;
+    await route.continue();
+  });
+
+  const navigation = page.goto("/fonts/font-connected-script");
+  await fontLoadStarted;
+  await page.locator("#fontDisplayNameInput").fill("Connected Script Display");
+  releaseFontLoad();
+  await navigation;
+
+  await expect(page.locator("#selectedFontName")).toHaveText("Connected Script");
+  await expect(page.locator("#fontDisplayNameInput")).toHaveValue("Connected Script Display");
+  await expect(page.getByRole("button", { name: "Save font display name" })).toBeEnabled();
+});
 test("keeps the font workspace stable after a successful upload", async ({ page }) => {
   const pageErrors = [];
   await page.route("**/api/fonts**", async (route) => {

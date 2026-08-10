@@ -186,7 +186,7 @@ describe("production batch store database integration", () => {
     expect(design).toEqual({ order_item_id: orderItemId });
   });
 
-  it("saves a new active batch item after a completed batch is removed from the active positions", async () => {
+  it("does not recreate batch membership when a scoped save includes a new row", async () => {
     const suffix = Date.now().toString(36);
     const batchId = "44444444-4444-4444-8444-444444444444";
     const completedOrderItemId = `db-test-completed-${suffix}`;
@@ -251,19 +251,34 @@ describe("production batch store database integration", () => {
       },
     });
 
-    expect(saved?.orderItems).toHaveLength(1);
-    expect(saved?.orderItems[0]?.id).toBe(activeOrderItemId);
+    expect(saved?.orderItems).toHaveLength(0);
 
     const supabase = createSupabaseAdminClient();
-    const { data: batchItems, error } = await supabase
-      .from("batch_items")
-      .select("order_item_id, batch_position, status")
-      .eq("batch_id", batchId)
-      .order("batch_position", { ascending: true });
+    const [{ data: batchItems, error: batchItemsError }, { data: orderItem, error: orderItemError }, { data: design, error: designError }] = await Promise.all([
+      supabase
+        .from("batch_items")
+        .select("order_item_id, batch_position, status")
+        .eq("batch_id", batchId)
+        .order("batch_position", { ascending: true }),
+      supabase
+        .from("order_items")
+        .select("id")
+        .eq("id", activeOrderItemId)
+        .maybeSingle(),
+      supabase
+        .from("designs")
+        .select("order_item_id")
+        .eq("order_item_id", activeOrderItemId)
+        .maybeSingle(),
+    ]);
 
-    expect(error).toBeNull();
-    expect(batchItems).toEqual(expect.arrayContaining([
-      { order_item_id: activeOrderItemId, batch_position: 0, status: "active" },
+    expect(batchItemsError).toBeNull();
+    expect(orderItemError).toBeNull();
+    expect(designError).toBeNull();
+    expect(orderItem).toEqual({ id: activeOrderItemId });
+    expect(design).toEqual({ order_item_id: activeOrderItemId });
+    expect(batchItems).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ order_item_id: activeOrderItemId }),
     ]));
     expect(batchItems.some((item) => item.order_item_id === completedOrderItemId)).toBe(false);
   });

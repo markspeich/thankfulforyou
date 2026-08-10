@@ -8,7 +8,7 @@ const supabaseMock = vi.hoisted(() => ({
     designs: [],
     design_lines: [],
     batch_items: [],
-    summary_page_rows: [],
+    order_summary_rows: [],
   },
 }));
 
@@ -28,7 +28,7 @@ function resetDb(nextDb = {}) {
     designs: [],
     design_lines: [],
     batch_items: [],
-    summary_page_rows: [],
+    order_summary_rows: [],
     ...clone(nextDb),
   };
 }
@@ -40,8 +40,8 @@ function createSupabaseClientMock() {
     },
     async rpc(name, args) {
       supabaseMock.calls.push({ operation: "rpc", name, args: clone(args) });
-      if (name === "list_workspace_order_summaries_page") {
-        return { data: clone(supabaseMock.db.summary_page_rows), error: null };
+      if (name === "list_workspace_order_summaries") {
+        return { data: clone(supabaseMock.db.order_summary_rows), error: null };
       }
       if (name !== "add_order_items_to_production_batch") return { data: null, error: new Error("Unexpected RPC") };
       const activeIds = new Set(supabaseMock.db.batch_items.filter((row) => row.batch_id === args.p_batch_id && row.status === "active").map((row) => row.order_item_id));
@@ -263,111 +263,109 @@ afterEach(() => {
   resetDb();
   vi.resetModules();
 });
-
 describe("orders store", () => {
-  it("pages compact summaries through the database cursor contract", async () => {
+  it("lists a compact paginated RPC result without hydrating design details", async () => {
+    // Break caught: the compact list falls back to unbounded table reads or leaks large design fields.
     resetDb({
-      summary_page_rows: [
-        {
-          item_id: "item-1", item_status: "open", order_number: "1001", buyer_name: "Ada",
-          listing_id: "listing-1", transaction_id: "txn-1", imported_color: "Pink", ship_by_date: null,
-          quantity: 1, source_json: { listingTitle: "Badge Reel" }, item_revision: 2,
-          item_updated_at: "2026-08-04T12:00:00.000Z", item_updated_by: "user-1",
-          design_id: "design-1", design_text: "Ada RN", design_production_status: "saved",
-          is_in_active_batch: true, group_rank: 0, order_key: "1001", group_id: "order:1001", has_more: true,
-        },
-        {
-          item_id: "item-2", item_status: "open", order_number: "1001", buyer_name: "Ada",
-          listing_id: "listing-2", transaction_id: "txn-2", imported_color: "Teal", ship_by_date: null,
-          quantity: 1, source_json: {}, item_revision: 1, item_updated_at: null, item_updated_by: null,
-          design_id: null, design_text: "", design_production_status: null,
-          is_in_active_batch: false, group_rank: 0, order_key: "1001", group_id: "order:1001", has_more: true,
-        },
-      ],
+      order_summary_rows: [{
+        group_id: "order:1001",
+        sort_key: "3:0000000000000000000000000000000000001001",
+        order_number: "1001",
+        buyer_name: "Ada",
+        group_status: "open",
+        is_in_active_batch: true,
+        ship_by_date: "2026-08-12",
+        items: [{
+          id: "item-1", status: "open", order_number: "1001", buyer_name: "Ada",
+          listing_id: "listing-1", transaction_id: "txn-1", imported_color: "Pink",
+          ship_by_date: "2026-08-12", quantity: 1,
+          source_json: { marketplace: "etsy", listingTitle: "Badge Reel" },
+          revision: 3, updated_at: "2026-08-05T12:00:00.000Z", updated_by: null,
+          is_in_active_batch: true, design_id: "design-1", design_text: "Ada\nRN",
+          design_production_status: "export_ready",
+        }],
+      }, {
+        group_id: "order:1000",
+        sort_key: "3:0000000000000000000000000000000000001000",
+        order_number: "1000",
+        buyer_name: "Extra",
+        group_status: "open",
+        is_in_active_batch: false,
+        ship_by_date: null,
+        items: [],
+      }],
     });
-    const priorCursor = Buffer.from(JSON.stringify({
-      groupRank: 0,
-      orderKey: "0999",
-      groupId: "order:0999",
-    })).toString("base64url");
     const { listWorkspaceOrderSummaries } = await import("../../api/_lib/orders-store.js");
 
     const result = await listWorkspaceOrderSummaries({
       workspaceId: "workspace-1",
-      activeBatchId: "batch-1",
-      statusFilter: "all",
-      search: "  Ada RN  ",
-      cursor: priorCursor,
-      limit: 500,
+      activeBatchId: " batch-1 ",
+      statusFilter: "complete",
+      batchFilter: "inBatch",
+      searchTerm: "  ADA  ",
+      limit: 1,
+      cursor: { version: 1, sortKey: "cursor-key", groupId: "order:cursor" },
     });
-
-    expect(supabaseMock.calls.find((call) => call.operation === "rpc")).toEqual({
-      operation: "rpc",
-      name: "list_workspace_order_summaries_page",
-      args: {
-        p_workspace_id: "workspace-1",
-        p_status: "all",
-        p_search: "Ada RN",
-        p_active_batch_id: "batch-1",
-        p_limit: 50,
-        p_after_group_rank: 0,
-        p_after_order_key: "0999",
-        p_after_group_id: "order:0999",
-      },
-    });
-    expect(result.orders).toHaveLength(1);
-    expect(result.orders[0].items).toHaveLength(2);
-    expect(result.orders[0].items[0]).toMatchObject({
-      id: "item-1",
-      designText: "Ada RN",
-      designProductionStatus: "saved",
-      isInActiveBatch: true,
-    });
-    expect(JSON.parse(Buffer.from(result.nextCursor, "base64url").toString("utf8"))).toEqual({
-      groupRank: 0,
-      orderKey: "1001",
-      groupId: "order:1001",
-    });
-  });
-
-  it("rejects malformed compact summary cursors before querying Supabase", async () => {
-    const { listWorkspaceOrderSummaries } = await import("../../api/_lib/orders-store.js");
-
-    await expect(listWorkspaceOrderSummaries({
-      workspaceId: "workspace-1",
-      cursor: "not-a-valid-cursor",
-    })).rejects.toMatchObject({
-      message: "Invalid orders cursor.",
-      statusCode: 400,
-      expose: true,
-    });
-    expect(supabaseMock.calls).toEqual([]);
-  });
-
-  it("lists compact order summaries without lines, cached builds, previous builds, or export geometry", async () => {
-    resetDb({
-      summary_page_rows: [{
-        item_id: "item-1", item_status: "open", order_number: "1001", buyer_name: "Ada",
-        listing_id: "listing-1", transaction_id: "txn-1", imported_color: "Pink", ship_by_date: null,
-        quantity: 1, source_json: { listingTitle: "Badge Reel" }, item_revision: 1,
-        item_updated_at: null, item_updated_by: null, design_id: "design-1", design_text: "Ada\nRN",
-        design_production_status: "export_ready", is_in_active_batch: false,
-        group_rank: 0, order_key: "1001", group_id: "order:1001", has_more: false,
-      }],
-      design_lines: [{ design_id: "design-1", line_index: 0, text: "Ada", font_id: "skywalk" }],
-    });
-    const { listWorkspaceOrderSummaries } = await import("../../api/_lib/orders-store.js");
-
-    const result = await listWorkspaceOrderSummaries({ workspaceId: "workspace-1" });
 
     expect(result.orders[0].items[0]).toMatchObject({
       id: "item-1",
       designText: "Ada\nRN",
       designProductionStatus: "export_ready",
+      source: { marketplace: "etsy", listingTitle: "Badge Reel" },
     });
     expect(result.orders[0].items[0]).not.toHaveProperty("design");
     expect(JSON.stringify(result)).not.toContain("geometry");
+    expect(result).toMatchObject({
+      hasMore: true,
+      nextCursorValues: {
+        sortKey: "3:0000000000000000000000000000000000001001",
+        groupId: "order:1001",
+      },
+    });
+    expect(result.orders).toHaveLength(1);
+    expect(supabaseMock.calls[0]).toEqual({
+      operation: "rpc",
+      name: "list_workspace_order_summaries",
+      args: {
+        p_workspace_id: "workspace-1",
+        p_active_batch_id: "batch-1",
+        p_status_filter: "complete",
+        p_batch_filter: "inBatch",
+        p_search_term: "ADA",
+        p_requested_limit: 1,
+        p_cursor_sort_key: "cursor-key",
+        p_cursor_group_id: "order:cursor",
+      },
+    });
+    expect(supabaseMock.calls.filter((call) => call.operation === "select")).toEqual([]);
     expect(supabaseMock.calls.some((call) => call.table === "design_lines" && call.operation === "select")).toBe(false);
+  });
+
+  it("normalizes unsupported compact-list options to safe defaults", async () => {
+    // Break caught: callers can accidentally request an unbounded or unsupported compact query.
+    resetDb({ order_summary_rows: [] });
+    const { listWorkspaceOrderSummaries } = await import("../../api/_lib/orders-store.js");
+
+    await expect(listWorkspaceOrderSummaries({
+      workspaceId: "workspace-1",
+      activeBatchId: " ",
+      statusFilter: "unknown",
+      batchFilter: "unknown",
+      searchTerm: null,
+      limit: 500,
+      cursor: null,
+    })).resolves.toEqual({ orders: [], nextCursorValues: null, hasMore: false });
+
+    expect(supabaseMock.calls[0].args).toEqual({
+      p_workspace_id: "workspace-1",
+      p_active_batch_id: null,
+      p_status_filter: "open",
+      p_batch_filter: "all",
+      p_search_term: "",
+      p_requested_limit: 50,
+      p_cursor_sort_key: null,
+      p_cursor_group_id: null,
+    });
   });
 
   it("loads one complete order detail including editor lines and saved build data", async () => {

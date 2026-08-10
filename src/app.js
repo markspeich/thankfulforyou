@@ -92,7 +92,6 @@ import {
   runAuthenticatedRequest,
 } from "./authenticated-request.js";
 import {
-  filterGroupedOrders,
   getEtsyConnectionActionDescriptor,
   getEtsyImportSummary,
   getAmazonImportFailureDescription,
@@ -103,8 +102,9 @@ import {
   getOrderItemStatusDescriptor,
   getOrderLifecycleStatusDescriptor,
   getOrderItemListingText as getDatabaseOrderItemListingText,
-  getSelectedGroupedOrder,
+  getOrdersRetryLoadOptions,
   getVisibleOrderSelectionState,
+  mergeOrdersPageState,
   normalizeOrdersWorkspaceState,
 } from "./orders-workspace.js";
 import {
@@ -314,6 +314,10 @@ const databaseOrdersStatusFilter = document.querySelector("#databaseOrdersStatus
 const databaseOrdersBatchFilter = document.querySelector("#databaseOrdersBatchFilter");
 const selectVisibleOrdersInput = document.querySelector("#selectVisibleOrdersInput");
 const databaseOrdersListShell = document.querySelector(".database-orders-list-shell");
+const databaseOrdersListState = document.querySelector("#databaseOrdersListState");
+const databaseOrdersListStatus = document.querySelector("#databaseOrdersListStatus");
+const databaseOrdersLoadMoreButton = document.querySelector("#databaseOrdersLoadMoreButton");
+const databaseOrdersRetryButton = document.querySelector("#databaseOrdersRetryButton");
 const databaseOrderItemsShell = document.querySelector(".database-order-items-shell");
 const selectedDatabaseOrderTitle = document.querySelector(".database-order-items-panel .editor-header h2");
 const selectedDatabaseOrderMeta = document.querySelector(".database-order-items-panel .editor-meta");
@@ -521,10 +525,19 @@ const initialAppRoute = readAppRoute();
 let activeWorkspace = initialAppRoute.workspace;
 let databaseOrders = [];
 let selectedDatabaseOrderId = initialAppRoute.workspace === "databaseOrders" ? initialAppRoute.itemId : null;
+let selectedDatabaseOrderDetail = null;
+let databaseOrderDetailGeneration = 0;
 let checkedDatabaseOrderIds = new Set();
 let databaseOrdersLoading = false;
+let databaseOrdersLoadingMode = "idle";
+let databaseOrdersLoadError = null;
+let databaseOrdersFailedLoadingMode = null;
+let databaseOrdersNextCursor = null;
+let databaseOrdersHasMore = false;
+let databaseOrdersRequestGeneration = 0;
+let databaseOrdersLoadController = null;
+let databaseOrdersSearchDebounceId = null;
 let etsyConnection = null;
-let databaseOrdersForceReloadRequested = false;
 let databaseOrdersLoadPromise = null;
 let etsyConnectionLoading = false;
 let etsyImporting = false;
@@ -539,12 +552,12 @@ let amazonSessionRequest = null;
 let databaseOrdersImporting = false;
 let ordersDatabaseMutationInFlight = false;
 let databaseOrdersMutationVersion = 0;
-let databaseOrderDetailRequestVersion = 0;
 let loadedDatabaseOrdersKey = null;
 let databaseOrdersSearchTerm = "";
 let databaseOrdersStatusFilterValue = "open";
 let databaseOrdersBatchFilterValue = "all";
 let selectedFontId = "candlepin";
+let fontDisplayNameDraft = null;
 let showArchivedFonts = false;
 let fontRegistryLoadError = "";
 let fixedDesignRecords = [];
@@ -5894,37 +5907,6 @@ function getDatabaseOrderItemFlattenedLines(item) {
   return lineText.length ? lineText.join(" / ") : getDatabaseOrderItemDesignText(item);
 }
 
-async function hydrateSelectedDatabaseOrder(orderId) {
-  const normalizedOrderId = typeof orderId === "string" ? orderId.trim() : "";
-  if (!normalizedOrderId || !productionBatchAccessToken) return false;
-
-  const requestVersion = ++databaseOrderDetailRequestVersion;
-  try {
-    const payload = await fetchWorkspaceOrderDetail({
-      orderId: normalizedOrderId,
-      batchId: getActiveProductionBatchId() || null,
-      accessToken: productionBatchAccessToken,
-    });
-    if (requestVersion !== databaseOrderDetailRequestVersion || selectedDatabaseOrderId !== normalizedOrderId) {
-      return false;
-    }
-    if (!payload?.order) {
-      selectedDatabaseOrderId = null;
-      writeAppRoute({ replace: true, workspace: "databaseOrders", itemId: null });
-      renderDatabaseOrdersWorkspace();
-      return false;
-    }
-    databaseOrders = databaseOrders.map((order) => order.id === normalizedOrderId ? payload.order : order);
-    renderSelectedDatabaseOrderItems();
-    return true;
-  } catch (error) {
-    if (requestVersion === databaseOrderDetailRequestVersion && selectedDatabaseOrderId === normalizedOrderId) {
-      updateWorkflowAlert(error instanceof Error ? error.message : "Unable to load order detail.", "error");
-    }
-    return false;
-  }
-}
-
 function createDatabaseOrderRowImageStack(order) {
   const items = getDatabaseOrderItems(order);
   const stack = document.createElement("span");
@@ -6251,6 +6233,10 @@ function applyAddedOrderItemsDelta(payload) {
   const addedIdSet = new Set(addedIds);
   if (!addedIdSet.size) return 0;
 
+  const selectedOrderItems = selectedDatabaseOrderDetail?.items
+    || databaseOrders.find((order) => order.id === selectedDatabaseOrderId)?.items
+    || [];
+  const selectedOrderIsAffected = selectedOrderItems.some((item) => addedIdSet.has(item.id));
   databaseOrders = databaseOrders.map((order) => {
     const items = (order.items || []).map((item) => (
       addedIdSet.has(item.id)
@@ -6263,10 +6249,25 @@ function applyAddedOrderItemsDelta(payload) {
         ? "skipped"
         : "open";
     return { ...order, status, items, isInActiveBatch: items.some((item) => item.isInActiveBatch) };
-  });
+  }).filter(shouldRetainDatabaseOrderAfterKnownMutation);
+
+  if (selectedOrderIsAffected) {
+    databaseOrderDetailGeneration += 1;
+  }
+  if (selectedDatabaseOrderDetail) {
+    const items = (selectedDatabaseOrderDetail.items || []).map((item) => (
+      addedIdSet.has(item.id)
+        ? { ...item, status: item.status === "skipped" ? "open" : item.status, isInActiveBatch: true }
+        : item
+    ));
+    selectedDatabaseOrderDetail = {
+      ...selectedDatabaseOrderDetail,
+      items,
+      isInActiveBatch: items.some((item) => item.isInActiveBatch),
+    };
+  }
 
   databaseOrdersMutationVersion += 1;
-  databaseOrderDetailRequestVersion += 1;
   loadedDatabaseOrdersKey = (getActiveProductionBatchId() || "") + "|" + databaseOrdersStatusFilterValue;
   renderDatabaseOrdersWorkspace();
   return addedIdSet.size;
@@ -6312,7 +6313,7 @@ function applyOrderItemsStatusDelta(payload) {
       status: orderStatus,
       isInActiveBatch: items.some((item) => item.isInActiveBatch),
     };
-  });
+  }).filter(shouldRetainDatabaseOrderAfterKnownMutation);
 
   if (status === "skipped") {
     saveActiveOrderDraft();
@@ -6328,7 +6329,6 @@ function applyOrderItemsStatusDelta(payload) {
   }
 
   databaseOrdersMutationVersion += 1;
-  databaseOrderDetailRequestVersion += 1;
   loadedDatabaseOrdersKey = `${getActiveProductionBatchId() || ""}|${databaseOrdersStatusFilterValue}`;
   updateDatabaseOrdersState(normalizeOrdersWorkspaceState({
     orders: databaseOrders,
@@ -6369,14 +6369,9 @@ async function refreshOrdersAndProductionBatch({ payload = null, accessToken, re
     await refreshProductionBatchSnapshot(accessToken);
   }
 
-  if (payload) {
-    databaseOrdersMutationVersion += 1;
-  }
-
-  if (!updateDatabaseOrdersFromPayload(payload)) {
-    invalidateDatabaseOrders();
-    await loadDatabaseOrders({ force: true });
-  }
+  if (payload) databaseOrdersMutationVersion += 1;
+  invalidateDatabaseOrders();
+  await loadDatabaseOrders({ force: true });
 }
 function initializeEtsyImportUi() {
   if (!ordersImportActions) return;
@@ -6692,38 +6687,85 @@ async function startAmazonImport() {
   }
 }
 
-function loadDatabaseOrders({ force = false } = {}) {
-  if (databaseOrdersLoading) {
-    if (force) databaseOrdersForceReloadRequested = true;
-    return databaseOrdersLoadPromise || Promise.resolve();
-  }
-  const loadPromise = performDatabaseOrdersLoad({ force });
-  databaseOrdersLoadPromise = loadPromise.finally(async () => {
-    databaseOrdersLoadPromise = null;
-    if (databaseOrdersForceReloadRequested && productionBatchAccessToken && activeWorkspace === "databaseOrders") {
-      databaseOrdersForceReloadRequested = false;
-      await loadDatabaseOrders({ force: true });
-    }
-  });
-  return databaseOrdersLoadPromise;
+function getDatabaseOrdersQueryKey() {
+  return [
+    getActiveProductionBatchId(),
+    databaseOrdersStatusFilterValue,
+    databaseOrdersBatchFilterValue,
+    databaseOrdersSearchTerm.trim(),
+  ].join("|");
 }
 
-async function performDatabaseOrdersLoad({ force = false } = {}) {
+function resetDatabaseOrdersQuery({ debounce = false } = {}) {
+  if (databaseOrdersSearchDebounceId) {
+    window.clearTimeout(databaseOrdersSearchDebounceId);
+    databaseOrdersSearchDebounceId = null;
+  }
+  databaseOrdersNextCursor = null;
+  databaseOrdersHasMore = false;
+  databaseOrdersLoadError = null;
+  databaseOrdersRequestGeneration += 1;
+  databaseOrdersLoadController?.abort();
+  if (debounce) {
+    databaseOrdersSearchDebounceId = window.setTimeout(() => {
+      databaseOrdersSearchDebounceId = null;
+      void loadDatabaseOrders({ reset: true });
+    }, 250);
+    return;
+  }
+  void loadDatabaseOrders({ reset: true });
+}
+
+function retryDatabaseOrdersLoad() {
+  return loadDatabaseOrders(getOrdersRetryLoadOptions({
+    orders: databaseOrders,
+    failedLoadingMode: databaseOrdersFailedLoadingMode,
+  }));
+}
+
+function loadDatabaseOrders({ force = false, reset = false, append = false } = {}) {
+  const shouldReset = Boolean(force || reset || (!append && loadedDatabaseOrdersKey !== getDatabaseOrdersQueryKey()));
+  const shouldAppend = Boolean(append && !shouldReset);
+  if (!productionBatchAccessToken) {
+    return Promise.resolve();
+  }
+  if (!shouldReset && !shouldAppend && loadedDatabaseOrdersKey === getDatabaseOrdersQueryKey()) {
+    return databaseOrdersLoadPromise || Promise.resolve();
+  }
+  if (shouldAppend && (!databaseOrdersHasMore || !databaseOrdersNextCursor || databaseOrdersLoading)) {
+    return databaseOrdersLoadPromise || Promise.resolve();
+  }
+  if (shouldReset) {
+    databaseOrdersLoadController?.abort();
+  } else if (databaseOrdersLoading) {
+    return databaseOrdersLoadPromise || Promise.resolve();
+  }
+
+  const loadPromise = performDatabaseOrdersLoad({ reset: shouldReset, append: shouldAppend });
+  const trackedLoadPromise = loadPromise.finally(() => {
+    if (databaseOrdersLoadPromise === trackedLoadPromise) {
+      databaseOrdersLoadPromise = null;
+    }
+  });
+  databaseOrdersLoadPromise = trackedLoadPromise;
+  return trackedLoadPromise;
+}
+
+async function performDatabaseOrdersLoad({ reset, append }) {
   if (!productionBatchAccessToken) {
     return;
   }
 
   const batchId = productionBatchContext?.id || null;
-  const loadKey = `${batchId || ""}|${databaseOrdersStatusFilterValue}`;
-  if (!force && loadedDatabaseOrdersKey === loadKey) {
-    return;
-  }
-
-  if (force) {
-    invalidateDatabaseOrders();
-  }
-
+  const loadKey = getDatabaseOrdersQueryKey();
+  const controller = new AbortController();
+  const requestGeneration = databaseOrdersRequestGeneration + 1;
+  databaseOrdersRequestGeneration = requestGeneration;
+  databaseOrdersLoadController = controller;
   databaseOrdersLoading = true;
+  databaseOrdersLoadingMode = append ? "append" : "reset";
+  databaseOrdersLoadError = null;
+  databaseOrdersFailedLoadingMode = null;
   const loadMutationVersion = databaseOrdersMutationVersion;
   renderDatabaseOrdersWorkspace();
   updateWorkflowAlert("Loading orders...", "pending", { autoHideMs: 0 });
@@ -6732,30 +6774,55 @@ async function performDatabaseOrdersLoad({ force = false } = {}) {
     const payload = await runProductionBatchRequestWithSessionRefresh((accessToken) => fetchWorkspaceOrderSummaries({
       batchId,
       statusFilter: databaseOrdersStatusFilterValue,
+      batchFilter: databaseOrdersBatchFilterValue,
+      searchTerm: databaseOrdersSearchTerm,
+      limit: 50,
+      cursor: append ? databaseOrdersNextCursor : null,
       accessToken,
+      signal: controller.signal,
     }));
-    if (loadMutationVersion !== databaseOrdersMutationVersion) {
+    if (requestGeneration !== databaseOrdersRequestGeneration || loadMutationVersion !== databaseOrdersMutationVersion) {
       return;
     }
-    updateDatabaseOrdersState(normalizeOrdersWorkspaceState({
-      payload,
+    const nextState = mergeOrdersPageState({
+      currentOrders: databaseOrders,
+      incomingOrders: payload?.orders,
       selectedOrderId: selectedDatabaseOrderId,
       checkedOrderIds: checkedDatabaseOrderIds,
-    }));
+      nextCursor: payload?.nextCursor,
+      hasMore: payload?.hasMore,
+      reset,
+    });
+    updateDatabaseOrdersState({
+      ...nextState,
+      selectedOrderId: selectedDatabaseOrderId || nextState.selectedOrderId,
+    });
+    databaseOrdersNextCursor = nextState.nextCursor;
+    databaseOrdersHasMore = nextState.hasMore;
     loadedDatabaseOrdersKey = loadKey;
-    if (selectedDatabaseOrderId) {
-      void hydrateSelectedDatabaseOrder(selectedDatabaseOrderId);
-    }
     if (databaseOrders.length === 0) {
-      updateWorkflowAlert("No orders found in the workspace.", "pending");
+      updateWorkflowAlert("No orders match the current search and filters.", "pending");
     } else {
       updateWorkflowAlert("", "pending", { autoHideMs: 0 });
     }
+    if (selectedDatabaseOrderId) {
+      void hydrateSelectedDatabaseOrderDetail(selectedDatabaseOrderId);
+    }
   } catch (error) {
-    updateWorkflowAlert(error instanceof Error ? error.message : "Unable to load workspace orders.", "error");
+    if (requestGeneration === databaseOrdersRequestGeneration && error?.name !== "AbortError") {
+      databaseOrdersLoadError = error instanceof Error ? error : new Error("Unable to load workspace orders.");
+      databaseOrdersFailedLoadingMode = databaseOrdersLoadingMode;
+      updateWorkflowAlert(databaseOrdersLoadError.message, "error");
+    }
   } finally {
-    databaseOrdersLoading = false;
-    renderDatabaseOrdersWorkspace();
+    if (requestGeneration === databaseOrdersRequestGeneration) {
+      databaseOrdersLoading = false;
+      databaseOrdersLoadingMode = "idle";
+      if (databaseOrdersLoadController === controller) {
+        databaseOrdersLoadController = null;
+      }
+      renderDatabaseOrdersWorkspace();
+    }
   }
 }
 
@@ -6771,17 +6838,57 @@ function updateDatabaseOrderSelectionRows() {
   });
 }
 
+function getSelectedDatabaseOrder() {
+  if (selectedDatabaseOrderDetail?.id === selectedDatabaseOrderId) {
+    return selectedDatabaseOrderDetail;
+  }
+  return databaseOrders.find((order) => order.id === selectedDatabaseOrderId) || null;
+}
+
+async function hydrateSelectedDatabaseOrderDetail(orderId = selectedDatabaseOrderId) {
+  if (!productionBatchAccessToken || typeof orderId !== "string" || !orderId) {
+    return;
+  }
+
+  const selectionGeneration = databaseOrderDetailGeneration;
+  try {
+    const payload = await runProductionBatchRequestWithSessionRefresh((accessToken) => fetchWorkspaceOrderDetail({
+      orderId,
+      batchId: getActiveProductionBatchId() || null,
+      accessToken,
+    }));
+    if (selectionGeneration !== databaseOrderDetailGeneration || selectedDatabaseOrderId !== orderId) {
+      return;
+    }
+    if (Object.hasOwn(payload || {}, "order") && payload?.order?.id !== orderId) {
+      selectedDatabaseOrderDetail = null;
+      selectedDatabaseOrderId = null;
+      writeAppRoute({ replace: true, workspace: "databaseOrders", itemId: null });
+      renderDatabaseOrdersWorkspace();
+      return;
+    }
+    selectedDatabaseOrderDetail = payload.order;
+    renderSelectedDatabaseOrderItems();
+  } catch (error) {
+    if (selectionGeneration === databaseOrderDetailGeneration && error?.name !== "AbortError") {
+      selectedDatabaseOrderDetail = null;
+      renderSelectedDatabaseOrderItems();
+    }
+  }
+}
+
 function selectDatabaseOrder(orderId, options = {}) {
   const { updateRoute = true, replaceRoute = false } = options;
-  const order = databaseOrders.find((candidate) => candidate.id === orderId);
-  if (!order) {
+  if (typeof orderId !== "string" || !orderId) {
     return false;
   }
 
-  selectedDatabaseOrderId = order.id;
-  databaseOrderDetailRequestVersion += 1;
+  selectedDatabaseOrderId = orderId;
+  selectedDatabaseOrderDetail = null;
+  databaseOrderDetailGeneration += 1;
   updateDatabaseOrderSelectionRows();
   renderSelectedDatabaseOrderItems();
+  void hydrateSelectedDatabaseOrderDetail(orderId);
   if (updateRoute) {
     writeAppRoute({
       replace: replaceRoute,
@@ -6789,16 +6896,28 @@ function selectDatabaseOrder(orderId, options = {}) {
       itemId: selectedDatabaseOrderId,
     });
   }
-  void hydrateSelectedDatabaseOrder(selectedDatabaseOrderId);
   return true;
 }
 
 function getVisibleDatabaseOrders() {
-  return filterGroupedOrders(databaseOrders, {
-    searchTerm: databaseOrdersSearchTerm,
-    statusFilter: databaseOrdersStatusFilterValue,
-    batchFilter: databaseOrdersBatchFilterValue,
-  });
+  // Search and filter membership are determined by the compact Orders API.
+  return databaseOrders;
+}
+
+function shouldRetainDatabaseOrderAfterKnownMutation(order) {
+  const status = getOrderLifecycleStatusDescriptor(order).status;
+  if (databaseOrdersStatusFilterValue !== "all" && status !== databaseOrdersStatusFilterValue) {
+    return false;
+  }
+  if (databaseOrdersBatchFilterValue === "inBatch" && !order?.isInActiveBatch) {
+    return false;
+  }
+  if (databaseOrdersBatchFilterValue === "notInBatch" && order?.isInActiveBatch) {
+    return false;
+  }
+  // A status/batch mutation cannot change an order's search text, so its
+  // server-side search membership remains unchanged until the next reset.
+  return true;
 }
 
 function isDatabaseOrderItemSkipped(item) {
@@ -6832,6 +6951,47 @@ function canSkipDatabaseOrder(order) {
 
 function canReopenDatabaseOrder(order) {
   return isDatabaseOrderFullySkipped(order);
+}
+
+function getDatabaseOrdersEmptyMessage() {
+  if (databaseOrdersSearchTerm.trim()) {
+    return "No orders match your search.";
+  }
+  if (databaseOrdersStatusFilterValue !== "open" || databaseOrdersBatchFilterValue !== "all") {
+    return "No orders match the current filters.";
+  }
+  return "No orders loaded.";
+}
+
+function renderDatabaseOrdersListState() {
+  if (!databaseOrdersListState || !databaseOrdersListStatus || !databaseOrdersLoadMoreButton || !databaseOrdersRetryButton) {
+    return;
+  }
+
+  const isAppending = databaseOrdersLoading && databaseOrdersLoadingMode === "append";
+  const hasLoadedOrders = databaseOrders.length > 0;
+  const isAppendFailure = Boolean(databaseOrdersLoadError && databaseOrdersFailedLoadingMode === "append" && hasLoadedOrders);
+  let statusMessage = "";
+
+  if (databaseOrdersLoading) {
+    statusMessage = isAppending ? "Loading more orders..." : "Loading orders...";
+  } else if (databaseOrdersLoadError) {
+    statusMessage = isAppendFailure
+      ? `Unable to load more orders. ${databaseOrdersLoadError.message}`
+      : `Unable to load orders. ${databaseOrdersLoadError.message}`;
+  } else if (!hasLoadedOrders) {
+    statusMessage = getDatabaseOrdersEmptyMessage();
+  }
+
+  databaseOrdersListStatus.textContent = statusMessage;
+  databaseOrdersListStatus.hidden = !statusMessage;
+  databaseOrdersLoadMoreButton.hidden = !hasLoadedOrders || !databaseOrdersHasMore || Boolean(databaseOrdersLoadError);
+  databaseOrdersLoadMoreButton.disabled = isAppending;
+  databaseOrdersRetryButton.hidden = !databaseOrdersLoadError;
+  databaseOrdersRetryButton.disabled = databaseOrdersLoading;
+  databaseOrdersRetryButton.querySelector(".batch-tool-label").textContent = isAppendFailure
+    ? "Retry loading more orders"
+    : "Retry loading orders";
 }
 
 function getVisibleCheckedDatabaseOrders() {
@@ -6882,31 +7042,18 @@ function renderDatabaseOrdersWorkspace() {
     selectVisibleOrdersInput.disabled = databaseOrdersLoading || selectionState.visibleOrderCount === 0;
   }
 
-  if (databaseOrdersLoading) {
-    const loading = document.createElement("p");
-    loading.className = "batch-tools-note";
-    loading.textContent = "Loading orders...";
-    databaseOrdersListShell.append(loading);
-    restoreElementScrollState(databaseOrdersListShell, listScrollState);
-    renderSelectedDatabaseOrderItems();
-    return;
-  }
-
-  if (!databaseOrders.length) {
-    const empty = document.createElement("p");
-    empty.className = "batch-tools-note";
-    empty.textContent = "No orders loaded.";
-    databaseOrdersListShell.append(empty);
+  if ((databaseOrdersLoading && databaseOrdersLoadingMode !== "append")
+    || (databaseOrdersLoadError && databaseOrdersFailedLoadingMode !== "append")) {
+    renderDatabaseOrdersListState();
+    databaseOrdersListShell.append(databaseOrdersListState);
     restoreElementScrollState(databaseOrdersListShell, listScrollState);
     renderSelectedDatabaseOrderItems();
     return;
   }
 
   if (!visibleOrders.length) {
-    const empty = document.createElement("p");
-    empty.className = "batch-tools-note";
-    empty.textContent = "No orders match the current filters.";
-    databaseOrdersListShell.append(empty);
+    renderDatabaseOrdersListState();
+    databaseOrdersListShell.append(databaseOrdersListState);
     restoreElementScrollState(databaseOrdersListShell, listScrollState);
     renderSelectedDatabaseOrderItems();
     return;
@@ -6988,6 +7135,8 @@ function renderDatabaseOrdersWorkspace() {
     databaseOrdersListShell.append(row);
   });
 
+  renderDatabaseOrdersListState();
+  databaseOrdersListShell.append(databaseOrdersListState);
   restoreElementScrollState(databaseOrdersListShell, listScrollState);
   renderSelectedDatabaseOrderItems();
 }
@@ -7063,7 +7212,7 @@ function renderSelectedDatabaseOrderItems() {
 
   databaseOrderItemsShell.replaceChildren();
   const visibleOrders = getVisibleDatabaseOrders();
-  const selectedOrder = getSelectedGroupedOrder(visibleOrders, selectedDatabaseOrderId);
+  const selectedOrder = getSelectedDatabaseOrder();
 
   if (selectedDatabaseOrderTitle) {
     renderSelectedDatabaseOrderTitle(selectedOrder);
@@ -7532,7 +7681,7 @@ async function updateDatabaseOrderStatus({
 }
 
 async function skipSelectedDatabaseOrder() {
-  const selectedOrder = getSelectedGroupedOrder(getVisibleDatabaseOrders(), selectedDatabaseOrderId);
+  const selectedOrder = getSelectedDatabaseOrder();
   if (!canSkipDatabaseOrder(selectedOrder)) {
     return;
   }
@@ -7561,7 +7710,7 @@ async function skipSelectedDatabaseOrder() {
 }
 
 async function reopenSelectedDatabaseOrder() {
-  const selectedOrder = getSelectedGroupedOrder(getVisibleDatabaseOrders(), selectedDatabaseOrderId);
+  const selectedOrder = getSelectedDatabaseOrder();
   if (!canReopenDatabaseOrder(selectedOrder)) {
     return;
   }
@@ -7611,6 +7760,9 @@ async function updateCheckedDatabaseOrdersStatus({
       accessToken: requestToken,
     }), accessToken);
 
+    if (orderIds.includes(selectedDatabaseOrderId)) {
+      databaseOrderDetailGeneration += 1;
+    }
     if (nextFilter) {
       databaseOrdersStatusFilterValue = nextFilter;
       if (databaseOrdersStatusFilter) {
@@ -7618,7 +7770,13 @@ async function updateCheckedDatabaseOrdersStatus({
       }
     }
     checkedDatabaseOrderIds.clear();
-    applyOrderItemsStatusDelta(payload);
+    if (nextFilter) {
+      databaseOrdersMutationVersion += 1;
+      invalidateDatabaseOrders();
+      await loadDatabaseOrders({ force: true });
+    } else {
+      applyOrderItemsStatusDelta(payload);
+    }
     updateWorkflowAlert(successMessage, "success");
   } catch (error) {
     handleOrdersMutationError(
@@ -7745,7 +7903,7 @@ async function addCheckedDatabaseOrdersToBatch() {
 }
 
 async function addSelectedDatabaseOrderToBatch() {
-  const selectedOrder = getSelectedGroupedOrder(getVisibleDatabaseOrders(), selectedDatabaseOrderId);
+  const selectedOrder = getSelectedDatabaseOrder();
   const orderId = typeof selectedOrder?.id === "string" ? selectedOrder.id.trim() : "";
   const batchId = requireActiveProductionBatchId();
   if (!batchId || !orderId || !isDatabaseOrderBatchEligible(selectedOrder)) {
@@ -10160,8 +10318,12 @@ function renderFontWorkspace() {
 
   selectedFontName.textContent = selectedFont.label;
   selectedFontMeta.textContent = getFontMetaLabel(selectedFont);
-  fontDisplayNameInput.value = selectedFont.displayName || selectedFont.label;
+  const persistedDisplayName = selectedFont.displayName || selectedFont.label;
+  fontDisplayNameInput.value = fontDisplayNameDraft?.fontId === selectedFont.id
+    ? fontDisplayNameDraft.value
+    : persistedDisplayName;
   fontDisplayNameInput.disabled = false;
+  updateSaveFontDisplayNameButton();
   if (fontBridgingEnabledInput) {
     fontBridgingEnabledInput.checked = selectedFont.bridgingEnabled !== false;
     fontBridgingEnabledInput.disabled = false;
@@ -10536,6 +10698,7 @@ async function handleSaveFontDisplayName() {
     await updateWorkspaceFontSettings(selectedFont.id, { displayName, bridgingEnabled }, {
       accessToken: productionBatchAccessToken,
     });
+    fontDisplayNameDraft = null;
     await refreshWorkspaceFonts(productionBatchAccessToken);
     selectedFontId = selectedFont.id;
     renderFontWorkspace();
@@ -10926,7 +11089,7 @@ async function importFromClipboard({ clipboardText: providedClipboardText = null
       items: filteredItems,
       accessToken: requestToken,
     }), accessToken);
-    updateDatabaseOrdersFromPayload(payload);
+    await refreshOrdersAndProductionBatch({ accessToken: productionBatchAccessToken });
     appendImportedItemsToProductionBatch(filteredItems, {
       maxCount: countFromPayload(payload, "addedOrderItemCount"),
     });
@@ -12867,6 +13030,7 @@ fontPreviewTextInput?.addEventListener("input", () => {
   selectedFontPreview.textContent = fontPreviewText;
 });
 fontDisplayNameInput?.addEventListener("input", () => {
+  fontDisplayNameDraft = { fontId: selectedFontId, value: fontDisplayNameInput.value };
   updateSaveFontDisplayNameButton();
 });
 saveFontDisplayNameButton?.addEventListener("click", () => {
@@ -13025,7 +13189,13 @@ importClipboardButton.addEventListener("click", importFromClipboard);
 clearBatchButton.addEventListener("click", completeCurrentProductionBatch);
 databaseOrdersSearchInput?.addEventListener("input", () => {
   databaseOrdersSearchTerm = databaseOrdersSearchInput.value;
-  renderDatabaseOrdersWorkspace();
+  resetDatabaseOrdersQuery({ debounce: true });
+});
+databaseOrdersLoadMoreButton?.addEventListener("click", () => {
+  void loadDatabaseOrders({ append: true });
+});
+databaseOrdersRetryButton?.addEventListener("click", () => {
+  void retryDatabaseOrdersLoad();
 });
 presetSearchInput?.addEventListener("input", () => {
   presetLibrarySearchTerm = presetSearchInput.value;
@@ -13039,12 +13209,14 @@ databaseOrdersStatusFilter?.addEventListener("change", () => {
   selectedDatabaseOrderId = null;
   checkedDatabaseOrderIds.clear();
   invalidateDatabaseOrders();
-  renderDatabaseOrdersWorkspace();
-  void loadDatabaseOrders({ force: true });
+  resetDatabaseOrdersQuery();
 });
 databaseOrdersBatchFilter?.addEventListener("change", () => {
   databaseOrdersBatchFilterValue = databaseOrdersBatchFilter.value;
-  renderDatabaseOrdersWorkspace();
+  selectedDatabaseOrderId = null;
+  checkedDatabaseOrderIds.clear();
+  invalidateDatabaseOrders();
+  resetDatabaseOrdersQuery();
 });
 addSelectedOrderToBatchButton?.addEventListener("click", () => {
   void addSelectedDatabaseOrderToBatch();

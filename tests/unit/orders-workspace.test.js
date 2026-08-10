@@ -15,10 +15,76 @@ import {
   getOrderItemListingText,
   getSelectedGroupedOrder,
   getVisibleOrderSelectionState,
+  getOrdersRetryLoadOptions,
+  mergeOrdersPageState,
   normalizeOrdersWorkspaceState,
 } from "../../src/orders-workspace.js";
 
 describe("orders workspace helpers", () => {
+  it("replaces a reset page, clears stale checks, and merges later pages without duplicate groups", () => {
+    const resetState = mergeOrdersPageState({
+      currentOrders: [
+        { id: "order:old", buyerName: "Old" },
+        { id: "order:kept", buyerName: "Kept" },
+      ],
+      incomingOrders: [
+        { id: "order:kept", buyerName: "Kept (fresh)" },
+        { id: "order:new", buyerName: "New" },
+      ],
+      selectedOrderId: "order:kept",
+      checkedOrderIds: new Set(["order:old", "order:kept"]),
+      nextCursor: "page-2",
+      hasMore: true,
+      reset: true,
+    });
+
+    expect(resetState).toMatchObject({
+      orders: [
+        { id: "order:kept", buyerName: "Kept (fresh)" },
+        { id: "order:new", buyerName: "New" },
+      ],
+      selectedOrderId: "order:kept",
+      nextCursor: "page-2",
+      hasMore: true,
+    });
+    expect([...resetState.checkedOrderIds]).toEqual(["order:kept"]);
+
+    const appendState = mergeOrdersPageState({
+      currentOrders: resetState.orders,
+      incomingOrders: [
+        { id: "order:new", buyerName: "Duplicate stale page" },
+        { id: "order:later", buyerName: "Later" },
+        { id: "order:later", buyerName: "Duplicate in the fetched page" },
+      ],
+      selectedOrderId: resetState.selectedOrderId,
+      checkedOrderIds: resetState.checkedOrderIds,
+      nextCursor: null,
+      hasMore: false,
+      reset: false,
+    });
+
+    expect(appendState.orders).toEqual([
+      { id: "order:kept", buyerName: "Kept (fresh)" },
+      { id: "order:new", buyerName: "New" },
+      { id: "order:later", buyerName: "Later" },
+    ]);
+    expect(appendState.selectedOrderId).toBe("order:kept");
+    expect([...appendState.checkedOrderIds]).toEqual(["order:kept"]);
+    expect(appendState).toMatchObject({ nextCursor: null, hasMore: false });
+  });
+
+  it("retries a failed append as an append instead of treating the list as already loaded", () => {
+    expect(getOrdersRetryLoadOptions({
+      orders: [{ id: "order:page-one" }],
+      failedLoadingMode: "append",
+    })).toEqual({ append: true });
+
+    expect(getOrdersRetryLoadOptions({
+      orders: [],
+      failedLoadingMode: "reset",
+    })).toEqual({ reset: true });
+  });
+
   it("normalizes grouped order payloads and preserves selected and checked ids when possible", () => {
     const selectedOrder = { id: "order:1002", buyerName: "Grace" };
     const result = normalizeOrdersWorkspaceState({

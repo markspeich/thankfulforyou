@@ -40,6 +40,132 @@ function normalizeStatusFilter(value) {
   return ["open", "skipped", "complete", "all"].includes(normalized) ? normalized : "open";
 }
 
+function parseCompactStatusFilter(value) {
+  const normalized = normalizeString(value);
+  if (!normalized) return { value: "open" };
+  if (["open", "skipped", "complete", "all"].includes(normalized)) return { value: normalized };
+  return { error: "status must be open, skipped, complete, or all." };
+}
+
+function parseCompactBatchFilter(value) {
+  const normalized = normalizeString(value);
+  if (!normalized) return { value: "all" };
+  if (["all", "inBatch", "notInBatch"].includes(normalized)) return { value: normalized };
+  return { error: "batch must be all, inBatch, or notInBatch." };
+}
+
+function parseCompactLimit(value) {
+  const normalized = normalizeString(value);
+  if (!normalized) return { value: 50 };
+  if (!/^\d+$/.test(normalized)) return { error: "limit must be an integer from 1 to 50." };
+  const limit = Number(normalized);
+  if (limit < 1 || limit > 50) return { error: "limit must be an integer from 1 to 50." };
+  return { value: limit };
+}
+
+function encodeCompactCursor({ sortKey, groupId }) {
+  return Buffer.from(JSON.stringify({ version: 1, sortKey, groupId })).toString("base64url");
+}
+
+function isCanonicalCursorTimestamp(value) {
+  if (!/^\d{20}$/.test(value)) return false;
+
+  const year = Number(value.slice(0, 4));
+  const month = Number(value.slice(4, 6));
+  const day = Number(value.slice(6, 8));
+  const hour = Number(value.slice(8, 10));
+  const minute = Number(value.slice(10, 12));
+  const second = Number(value.slice(12, 14));
+  const millisecond = Number(value.slice(14, 17));
+
+  if (year < 1 || month < 1 || month > 12 || day < 1 || hour > 23 || minute > 59 || second > 59) {
+    return false;
+  }
+
+  const timestamp = new Date(0);
+  timestamp.setUTCFullYear(year, month - 1, day);
+  timestamp.setUTCHours(hour, minute, second, millisecond);
+  return timestamp.getUTCFullYear() === year
+    && timestamp.getUTCMonth() === month - 1
+    && timestamp.getUTCDate() === day
+    && timestamp.getUTCHours() === hour
+    && timestamp.getUTCMinutes() === minute
+    && timestamp.getUTCSeconds() === second
+    && timestamp.getUTCMilliseconds() === millisecond;
+}
+
+function isCanonicalCompactCursor({ sortKey, groupId }) {
+  const separatorIndex = sortKey.indexOf(":");
+  if (separatorIndex !== 20 || !isCanonicalCursorTimestamp(sortKey.slice(0, separatorIndex))) return false;
+
+  const normalizedKey = sortKey.slice(separatorIndex + 1);
+  const isValidNormalizedKey = normalizedKey === "1:"
+    || /^3:\d{64}$/.test(normalizedKey)
+    || (/^2:.+$/.test(normalizedKey)
+      && normalizedKey.slice(2) === normalizedKey.slice(2).trim().toLowerCase());
+  if (!isValidNormalizedKey) return false;
+  return normalizedKey === "1:"
+    ? /^item:.+$/.test(groupId)
+    : /^order:.+$/.test(groupId);
+}
+
+function decodeCompactCursor(value) {
+  const normalized = normalizeString(value);
+  if (!normalized) return { value: null };
+
+  try {
+    const json = Buffer.from(normalized, "base64url").toString("utf8");
+    if (Buffer.from(json, "utf8").toString("base64url") !== normalized) {
+      throw new Error("Invalid cursor encoding.");
+    }
+    const cursor = JSON.parse(json);
+    const expectedKeys = ["groupId", "sortKey", "version"];
+    if (!isJsonObject(cursor)
+      || Object.keys(cursor).sort().join(",") !== expectedKeys.join(",")
+      || cursor.version !== 1
+      || typeof cursor.sortKey !== "string"
+      || typeof cursor.groupId !== "string"
+      || !isCanonicalCompactCursor(cursor)) {
+      throw new Error("Invalid cursor values.");
+    }
+    return { value: cursor };
+  } catch {
+    return { error: "cursor is invalid." };
+  }
+}
+
+function parseCompactQuery(query) {
+  for (const [name, value] of Object.entries({
+    batchId: query?.batchId,
+    status: query?.status,
+    batch: query?.batch,
+    search: query?.search,
+    limit: query?.limit,
+    cursor: query?.cursor,
+  })) {
+    if (value != null && typeof value !== "string") {
+      return { error: `${name} must be a single query value.` };
+    }
+  }
+  const statusFilter = parseCompactStatusFilter(query?.status);
+  if (statusFilter.error) return statusFilter;
+  const batchFilter = parseCompactBatchFilter(query?.batch);
+  if (batchFilter.error) return batchFilter;
+  const limit = parseCompactLimit(query?.limit);
+  if (limit.error) return limit;
+  const cursor = decodeCompactCursor(query?.cursor);
+  if (cursor.error) return cursor;
+  return {
+    value: {
+      statusFilter: statusFilter.value,
+      batchFilter: batchFilter.value,
+      searchTerm: normalizeString(query?.search),
+      limit: limit.value,
+      cursor: cursor.value,
+    },
+  };
+}
+
 function isJsonObject(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
@@ -268,15 +394,22 @@ export default async function handler(req, res) {
       const statusFilter = normalizeStatusFilter(req.query?.status);
       const view = normalizeString(req.query?.view);
       if (view === "compact") {
+        const compactQuery = parseCompactQuery(req.query);
+        if (compactQuery.error) {
+          sendBadRequest(res, compactQuery.error);
+          return;
+        }
         const ordersPayload = await listWorkspaceOrderSummaries({
           workspaceId: auth.workspaceId,
           activeBatchId: batchId || null,
-          statusFilter,
-          search: normalizeString(req.query?.search),
-          cursor: normalizeString(req.query?.cursor) || null,
-          limit: 50,
+          ...compactQuery.value,
         });
-        res.status(200).json(ordersPayload);
+        const hasMore = Boolean(ordersPayload?.hasMore);
+        res.status(200).json({
+          orders: Array.isArray(ordersPayload?.orders) ? ordersPayload.orders : [],
+          nextCursor: hasMore ? encodeCompactCursor(ordersPayload.nextCursorValues) : null,
+          hasMore,
+        });
         return;
       }
       if (view === "detail") {
