@@ -1,5 +1,14 @@
 const IMPORT_ERROR = "Unable to import Amazon orders.";
 const MAX_NDJSON_RECORD_LENGTH = 256 * 1024;
+const COMPLETE_NUMERIC_FIELDS = [
+  "alreadyProcessedShipments",
+  "customizationNeeded",
+  "existingItems",
+  "failed",
+  "importedItems",
+  "processedShipments",
+  "warnings",
+];
 const COMPLETE_KEYS = [
   "alreadyProcessedShipments",
   "customizationNeeded",
@@ -8,6 +17,7 @@ const COMPLETE_KEYS = [
   "importedItems",
   "processedShipments",
   "type",
+  "warnings",
 ];
 const COMPLETE_WITH_FAILURES_KEYS = [
   "alreadyProcessedShipments",
@@ -18,11 +28,38 @@ const COMPLETE_WITH_FAILURES_KEYS = [
   "importedItems",
   "processedShipments",
   "type",
+  "warnings",
+];
+const COMPLETE_WITH_WARNING_DETAILS_KEYS = [
+  "alreadyProcessedShipments",
+  "customizationNeeded",
+  "existingItems",
+  "failed",
+  "importedItems",
+  "processedShipments",
+  "type",
+  "warningDetails",
+  "warnings",
+];
+const COMPLETE_WITH_FAILURES_AND_WARNING_DETAILS_KEYS = [
+  "alreadyProcessedShipments",
+  "customizationNeeded",
+  "existingItems",
+  "failed",
+  "failures",
+  "importedItems",
+  "processedShipments",
+  "type",
+  "warningDetails",
+  "warnings",
 ];
 const PROGRESS_KEYS = ["processed", "stage", "total", "type"];
 const ERROR_KEYS = ["code", "message", "type"];
 const FAILURE_KEYS = ["orderNumber", "reasonCode", "stage", "summary"];
+const WARNING_DETAILS_KEYS = ["type", "warningDetails"];
+const WARNING_KEYS = ["orderNumber", "stage", "summary"];
 const MAX_FAILURES = 10;
+const MAX_WARNING_DETAILS_PER_FRAME = 100;
 const SAFE_ORDER_NUMBER = /^\d{3}-\d{7}-\d{7}$/;
 const SAFE_FAILURE_STAGES = new Set([
   "item_start",
@@ -38,6 +75,11 @@ const SAFE_FAILURE_VALIDATIONS = [
   { reasonCode: "required_field", summary: "Package weight is required." },
   { reasonCode: "invalid_field_value", summary: "The selected shipping service is invalid." },
 ];
+const SAFE_WARNING_STAGES = new Set(["notes_update", "tag_update"]);
+const SAFE_WARNING_SUMMARIES = new Set([
+  "ShipStation Notes to Buyer is too long to update.",
+  "ShipStation synchronization could not be completed.",
+]);
 
 function publicImportError(code = "") {
   const error = new Error(IMPORT_ERROR);
@@ -79,6 +121,34 @@ function parseFailures(value, failed) {
   return failures;
 }
 
+function parseWarningDetails(value, warnings) {
+  if (!Array.isArray(value) || value.length > warnings) return null;
+  const warningDetails = [];
+  for (const warning of value) {
+    if (
+      !warning
+      || typeof warning !== "object"
+      || Array.isArray(warning)
+      || !hasExactKeys(warning, WARNING_KEYS)
+      || typeof warning.orderNumber !== "string"
+      || !SAFE_ORDER_NUMBER.test(warning.orderNumber)
+      || !SAFE_WARNING_STAGES.has(warning.stage)
+      || !SAFE_WARNING_SUMMARIES.has(warning.summary)
+    ) return null;
+    warningDetails.push({
+      orderNumber: warning.orderNumber,
+      stage: warning.stage,
+      summary: warning.summary,
+    });
+  }
+  return warningDetails;
+}
+
+function parseWarningDetailsFrame(value) {
+  if (!Array.isArray(value) || value.length === 0 || value.length > MAX_WARNING_DETAILS_PER_FRAME) return null;
+  return parseWarningDetails(value, value.length);
+}
+
 function parseEvent(record) {
   let event;
   try {
@@ -115,13 +185,32 @@ function parseEvent(record) {
     throw publicImportError();
   }
 
-  const hasFailures = event.type === "complete" && hasExactKeys(event, COMPLETE_WITH_FAILURES_KEYS);
-  if (event.type === "complete" && (hasExactKeys(event, COMPLETE_KEYS) || hasFailures)) {
-    if (!COMPLETE_KEYS.slice(0, -1).every((key) => isCount(event[key]))) {
+  if (event.type === "warning_details" && hasExactKeys(event, WARNING_DETAILS_KEYS)) {
+    const warningDetails = parseWarningDetailsFrame(event.warningDetails);
+    if (!warningDetails) throw publicImportError();
+    return { type: "warning_details", warningDetails };
+  }
+
+  const hasFailures = event.type === "complete" && (
+    hasExactKeys(event, COMPLETE_WITH_FAILURES_KEYS)
+    || hasExactKeys(event, COMPLETE_WITH_FAILURES_AND_WARNING_DETAILS_KEYS)
+  );
+  const hasWarningDetails = event.type === "complete" && (
+    hasExactKeys(event, COMPLETE_WITH_WARNING_DETAILS_KEYS)
+    || hasExactKeys(event, COMPLETE_WITH_FAILURES_AND_WARNING_DETAILS_KEYS)
+  );
+  if (event.type === "complete" && (
+    hasExactKeys(event, COMPLETE_KEYS)
+    || hasFailures
+    || hasWarningDetails
+  )) {
+    if (!COMPLETE_NUMERIC_FIELDS.every((key) => isCount(event[key]))) {
       throw publicImportError();
     }
     const failures = hasFailures ? parseFailures(event.failures, event.failed) : undefined;
     if (hasFailures && !failures) throw publicImportError();
+    const warningDetails = hasWarningDetails ? parseWarningDetails(event.warningDetails, event.warnings) : undefined;
+    if (hasWarningDetails && !warningDetails) throw publicImportError();
     return {
       type: "complete",
       processedShipments: event.processedShipments,
@@ -129,8 +218,10 @@ function parseEvent(record) {
       existingItems: event.existingItems,
       alreadyProcessedShipments: event.alreadyProcessedShipments,
       customizationNeeded: event.customizationNeeded,
+      warnings: event.warnings,
       failed: event.failed,
       ...(hasFailures ? { failures } : {}),
+      ...(hasWarningDetails ? { warningDetails } : {}),
     };
   }
 
@@ -186,6 +277,7 @@ export async function importAmazonOrders({
   let pending = new Uint8Array();
   let terminalSeen = false;
   let terminalEvent = null;
+  const streamedWarningDetails = [];
   let completed = false;
 
   const notify = async (bytes) => {
@@ -202,9 +294,19 @@ export async function importAmazonOrders({
     if (!record.trim()) return;
     if (terminalSeen) throw publicImportError();
     const event = parseEvent(record);
+    if (event.type === "warning_details") {
+      streamedWarningDetails.push(...event.warningDetails);
+      return;
+    }
     if (event.type === "complete") {
+      if (streamedWarningDetails.length && Object.hasOwn(event, "warningDetails")) {
+        throw publicImportError();
+      }
+      if (streamedWarningDetails.length > event.warnings) throw publicImportError();
       terminalSeen = true;
-      terminalEvent = event;
+      terminalEvent = streamedWarningDetails.length
+        ? { ...event, warningDetails: streamedWarningDetails }
+        : event;
       return;
     }
     await onEvent(event);

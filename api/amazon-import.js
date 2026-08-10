@@ -42,6 +42,12 @@ const SAFE_FAILURE_VALIDATIONS = [
   { reasonCode: "required_field", summary: "Package weight is required." },
   { reasonCode: "invalid_field_value", summary: "The selected shipping service is invalid." },
 ];
+const SAFE_WARNING_STAGES = new Set(["notes_update", "tag_update"]);
+const SAFE_WARNING_SUMMARIES = new Set([
+  "ShipStation Notes to Buyer is too long to update.",
+  "ShipStation synchronization could not be completed.",
+]);
+const MAX_PUBLIC_WARNINGS_PER_FRAME = 100;
 
 
 const PROGRESS_STAGES = new Set(["fetching_shipments", "processing_shipments"]);
@@ -73,23 +79,64 @@ function safeFailures(value) {
   return failures;
 }
 
+function safeWarnings(value) {
+  if (!Array.isArray(value)) return undefined;
+  const warnings = [];
+  for (const warning of value) {
+    if (
+      !warning
+      || typeof warning !== "object"
+      || typeof warning.orderNumber !== "string"
+      || !SAFE_ORDER_NUMBER.test(warning.orderNumber)
+      || !SAFE_WARNING_STAGES.has(warning.stage)
+      || !SAFE_WARNING_SUMMARIES.has(warning.summary)
+    ) continue;
+    warnings.push({
+      orderNumber: warning.orderNumber,
+      stage: warning.stage,
+      summary: warning.summary,
+    });
+  }
+  return warnings;
+}
+
 function safeProgressFrame(event) {
   const numericFields = event?.type === "progress"
     ? ["processed", "total"]
     : event?.type === "complete"
-      ? ["processedShipments", "importedItems", "existingItems", "alreadyProcessedShipments", "customizationNeeded", "failed"]
+      ? ["processedShipments", "importedItems", "existingItems", "alreadyProcessedShipments", "customizationNeeded", "warnings", "failed"]
       : [];
   if (!numericFields.length) return {};
 
   const frame = { type: event.type };
   if (event.type === "progress" && PROGRESS_STAGES.has(event.stage)) frame.stage = event.stage;
   for (const field of numericFields) {
-    const value = event[field];
+    const value = event.type === "complete"
+      && field === "warnings"
+      && !Object.prototype.hasOwnProperty.call(event, field)
+      ? 0
+      : event[field];
     if (typeof value === "number" || value === null) frame[field] = value;
   }
   const failures = event.type === "complete" ? safeFailures(event.failures) : undefined;
   if (failures) frame.failures = failures;
   return frame;
+}
+
+function safeProgressFrames(event) {
+  const terminalFrame = safeProgressFrame(event);
+  if (event?.type !== "complete") return [terminalFrame];
+
+  const warningDetails = safeWarnings(event.warningDetails) || [];
+  const frames = [];
+  for (let index = 0; index < warningDetails.length; index += MAX_PUBLIC_WARNINGS_PER_FRAME) {
+    frames.push({
+      type: "warning_details",
+      warningDetails: warningDetails.slice(index, index + MAX_PUBLIC_WARNINGS_PER_FRAME),
+    });
+  }
+  frames.push(terminalFrame);
+  return frames;
 }
 
 function publicError(error) {
@@ -275,7 +322,9 @@ export function createAmazonImportHandler({
         async onProgress(event) {
           if (!streaming) return;
           try {
-            await writeNdjson(res, safeProgressFrame(event), { signal });
+            for (const frame of safeProgressFrames(event)) {
+              await writeNdjson(res, frame, { signal });
+            }
           } catch (error) {
             transportFailed = true;
             throw error;

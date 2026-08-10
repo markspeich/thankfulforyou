@@ -22,6 +22,7 @@ const complete = {
   existingItems: 2,
   alreadyProcessedShipments: 1,
   customizationNeeded: 2,
+  warnings: 0,
   failed: 0,
 };
 
@@ -104,6 +105,50 @@ describe("Amazon API browser client", () => {
     await importAmazonOrders({ onEvent: (event) => seen.push(event) });
 
     expect(seen).toEqual([completion]);
+  });
+
+  it("delivers every safe completion warning record beyond ten unchanged", async () => {
+    // Break caught: the browser parser rejects safe warning context from later shipments in a large batch.
+    const warningDetails = Array.from({ length: 11 }, (_, index) => ({
+      orderNumber: `114-${String(index + 1).padStart(7, "0")}-${String(index + 1).padStart(7, "0")}`,
+      stage: index % 2 === 0 ? "notes_update" : "tag_update",
+      summary: "ShipStation synchronization could not be completed.",
+    }));
+    const warningCompletion = { type: "complete", processedShipments: 0, importedItems: 11, existingItems: 0, alreadyProcessedShipments: 0, customizationNeeded: 0, warnings: 11, failed: 0, warningDetails };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(stream([
+      `${JSON.stringify(warningCompletion)}\n`,
+    ]))));
+    const seen = [];
+
+    await importAmazonOrders({ onEvent: (event) => seen.push(event) });
+
+    expect(seen).toEqual([warningCompletion]);
+  });
+
+  it("rejects malformed, unsafe, or raw completion warning details", async () => {
+    // Break caught: customer data or provider errors cross the browser parsing boundary.
+    const safeWarning = {
+      orderNumber: "114-7445306-8228220",
+      stage: "notes_update",
+      summary: "ShipStation Notes to Buyer is too long to update.",
+    };
+    const invalidCompletions = [
+      { ...complete, warnings: 1, warningDetails: "not-an-array" },
+      { ...complete, warnings: 1, warningDetails: [{ ...safeWarning, orderNumber: "Buyer Daphne Private" }] },
+      { ...complete, warnings: 1, warningDetails: [{ ...safeWarning, stage: "private_stage" }] },
+      { ...complete, warnings: 1, warningDetails: [{ ...safeWarning, summary: "PRIVATE PROVIDER ERROR" }] },
+      { ...complete, warnings: 1, warningDetails: [{ ...safeWarning, rawShipStationResponse: "PRIVATE SHIPSTATION RESPONSE" }] },
+      { ...complete, warnings: 1, warningDetails: [safeWarning], rawShipStationResponse: "PRIVATE SHIPSTATION RESPONSE" },
+    ];
+    const fetch = vi.fn();
+    vi.stubGlobal("fetch", fetch);
+
+    for (const completion of invalidCompletions) {
+      fetch.mockResolvedValueOnce(new Response(stream([`${JSON.stringify(completion)}\n`])));
+      const onEvent = vi.fn();
+      await expect(importAmazonOrders({ onEvent })).rejects.toThrow("Unable to import Amazon orders.");
+      expect(onEvent).not.toHaveBeenCalled();
+    }
   });
 
   it("rejects a raw ShipStation response field before notifying browser listeners", async () => {

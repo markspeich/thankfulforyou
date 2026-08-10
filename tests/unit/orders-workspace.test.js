@@ -7,6 +7,7 @@ import {
   getEtsyImportProgressDescriptor,
   getEtsyImportSummary,
   getAmazonImportFailureDescription,
+  getAmazonImportWarningDescription,
   getAmazonImportSummary,
   getOrderItemCustomizationWarning,
   getCopyableSavedBuild,
@@ -499,6 +500,92 @@ describe("Etsy workspace descriptors", () => {
 });
 
 describe("Amazon workspace descriptors", () => {
+  it("formats a safe Amazon Notes to Buyer synchronization warning", () => {
+    // Break caught: a non-blocking note warning is rendered as a failure, or its safe order/action context is lost.
+    expect(getAmazonImportWarningDescription({
+      warnings: 1,
+      warningDetails: [{
+        orderNumber: "114-7445306-8228220",
+        stage: "notes_update",
+        summary: "ShipStation Notes to Buyer is too long to update.",
+      }],
+    })).toBe(
+      "Amazon order 114-7445306-8228220 was imported, but ShipStation Notes to Buyer could not be updated because the note is too long.",
+    );
+  });
+
+  it("formats every safe Amazon note and tag warning with order and action context", () => {
+    // Break caught: only the first safe warning is shown, or generic note/tag warnings lose the affected action.
+    expect(getAmazonImportWarningDescription({
+      warnings: 3,
+      warningDetails: [
+        {
+          orderNumber: "111-0000001-0000001",
+          stage: "notes_update",
+          summary: "ShipStation Notes to Buyer is too long to update.",
+        },
+        {
+          orderNumber: "111-0000002-0000002",
+          stage: "notes_update",
+          summary: "ShipStation synchronization could not be completed.",
+        },
+        {
+          orderNumber: "111-0000003-0000003",
+          stage: "tag_update",
+          summary: "ShipStation synchronization could not be completed.",
+        },
+      ],
+    })).toBe([
+      "Amazon order 111-0000001-0000001 was imported, but ShipStation Notes to Buyer could not be updated because the note is too long.",
+      "Amazon order 111-0000002-0000002 was imported, but ShipStation Notes to Buyer could not be updated.",
+      "Amazon order 111-0000003-0000003 was imported, but the ShipStation processed tag could not be added.",
+    ].join(" "));
+  });
+
+  it("formats every safe Amazon warning beyond ten without a generic fallback", () => {
+    // Break caught: the operation dialog hides order/action context after the tenth safe warning.
+    const warningDetails = Array.from({ length: 11 }, (_, index) => ({
+      orderNumber: `111-${String(index + 1).padStart(7, "0")}-${String(index + 1).padStart(7, "0")}`,
+      stage: "tag_update",
+      summary: "ShipStation synchronization could not be completed.",
+    }));
+
+    const description = getAmazonImportWarningDescription({ warnings: 11, warningDetails });
+
+    expect(description).toContain(
+      "Amazon order 111-0000011-0000011 was imported, but the ShipStation processed tag could not be added.",
+    );
+    expect(description).not.toContain(
+      "One or more Amazon orders were imported, but ShipStation synchronization could not be completed.",
+    );
+  });
+
+  it("uses a fixed warning description for malformed or untrusted Amazon warning details", () => {
+    // Break caught: warning fields inject customer or upstream data into the successful completion dialog.
+    const fallback = "One or more Amazon orders were imported, but ShipStation synchronization could not be completed.";
+    const hostileValues = [
+      "Buyer Daphne Private https://example.test/customization",
+      "notes_update<script>alert('private')</script>",
+      "ShipStation Notes to Buyer is too long to update. Buyer address: 1 Private Way",
+    ];
+    const invalidDetails = [
+      undefined,
+      { orderNumber: hostileValues[0], stage: "notes_update", summary: "ShipStation Notes to Buyer is too long to update." },
+      { orderNumber: "114-7445306-8228220", stage: hostileValues[1], summary: "ShipStation Notes to Buyer is too long to update." },
+      { orderNumber: "114-7445306-8228220", stage: "notes_update", summary: hostileValues[2] },
+    ];
+
+    for (const warning of invalidDetails) {
+      const description = getAmazonImportWarningDescription({
+        warnings: 1,
+        warningDetails: warning ? [warning] : [],
+      });
+      expect(description).toBe(fallback);
+      for (const hostileValue of hostileValues) expect(description).not.toContain(hostileValue);
+    }
+    expect(getAmazonImportWarningDescription({ warnings: 0, warningDetails: invalidDetails })).toBeNull();
+  });
+
   it("formats the first safe Amazon import failure and counts remaining failures", () => {
     // Break caught: the operator sees only aggregate counts instead of the safe order-specific failure reason.
     const failure = {
@@ -544,18 +631,19 @@ describe("Amazon workspace descriptors", () => {
     expect(getAmazonImportFailureDescription({ failed: 0, failures: invalidFailures })).toBeNull();
   });
 
-  it("summarizes the six approved Amazon import outcomes", () => {
+  it("summarizes the seven approved Amazon import outcomes", () => {
     expect(getAmazonImportSummary({
       processedShipments: 3,
       importedItems: 4,
       existingItems: 2,
       alreadyProcessedShipments: 1,
       customizationNeeded: 2,
+      warnings: 1,
       failed: 0,
       customerName: "Do not render",
       signedUrl: "https://zme-caps.amazon.com/private",
     })).toBe(
-      "3 shipments processed, 4 items imported, 2 existing items, 1 already-processed shipment, 2 items needing customization, 0 failures.",
+      "3 shipments processed, 4 items imported, 2 existing items, 1 already-processed shipment, 2 items needing customization, 1 warning, 0 failures.",
     );
   });
 
@@ -566,10 +654,11 @@ describe("Amazon workspace descriptors", () => {
       existingItems: 1.8,
       alreadyProcessedShipments: Number.POSITIVE_INFINITY,
       customizationNeeded: null,
+      warnings: "not-a-count",
       failed: 1,
       apiKey: "secret",
     })).toBe(
-      "0 shipments processed, 0 items imported, 0 existing items, 0 already-processed shipments, 0 items needing customization, 1 failure.",
+      "0 shipments processed, 0 items imported, 0 existing items, 0 already-processed shipments, 0 items needing customization, 0 warnings, 1 failure.",
     );
   });
 });

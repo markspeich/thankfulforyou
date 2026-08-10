@@ -436,7 +436,20 @@ test("Amazon import failure details remain actionable in the operation dialog", 
         existingItems: 2,
         alreadyProcessedShipments: 1,
         customizationNeeded: 2,
+        warnings: 2,
         failed: 1,
+        warningDetails: [
+          {
+            orderNumber: "111-0000002-0000002",
+            stage: "notes_update",
+            summary: "ShipStation synchronization could not be completed.",
+          },
+          {
+            orderNumber: "111-0000003-0000003",
+            stage: "tag_update",
+            summary: "ShipStation synchronization could not be completed.",
+          },
+        ],
         failures: [{
           orderNumber: "111-0318024-9415409",
           stage: "notes_update",
@@ -455,18 +468,21 @@ test("Amazon import failure details remain actionable in the operation dialog", 
   const dialog = page.locator("#pasteSummaryDialog");
   await expect(dialog).toBeVisible();
   await expect(dialog.locator("#pasteSummaryTitle")).toHaveText("Operation Failed");
-  await expect(dialog.locator("#pasteSummaryDescription")).toHaveText(
+  await expect(dialog.locator("#pasteSummaryDescription")).toHaveText([
     "Amazon order 111-0318024-9415409 failed while updating ShipStation notes: Package weight is required.",
-  );
+    "Amazon order 111-0000002-0000002 was imported, but ShipStation Notes to Buyer could not be updated.",
+    "Amazon order 111-0000003-0000003 was imported, but the ShipStation processed tag could not be added.",
+  ].join(" "));
   await expect(dialog.locator("#pasteSummaryCounts dt")).toHaveText([
     "Shipments processed",
     "Items imported",
     "Existing items",
     "Already processed",
     "Needs review",
+    "Warnings",
     "Failed",
   ]);
-  await expect(dialog.locator("#pasteSummaryCounts dd")).toHaveText(["3", "4", "2", "1", "2", "1"]);
+  await expect(dialog.locator("#pasteSummaryCounts dd")).toHaveText(["3", "4", "2", "1", "2", "2", "1"]);
   await expect(dialog.getByRole("button", { name: "Close paste summary" })).toBeVisible();
 });
 

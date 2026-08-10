@@ -21,6 +21,9 @@ const SAFE_PUBLIC_FAILURE_STAGES = new Set([
   "tag_update",
 ]);
 const SAFE_ORDER_NUMBER = /^\d{3}-\d{7}-\d{7}$/;
+const SAFE_PUBLIC_WARNING_STAGES = new Set(["notes_update", "tag_update"]);
+const NOTE_SIZE_WARNING = "ShipStation Notes to Buyer is too long to update.";
+const SYNCHRONIZATION_WARNING = "ShipStation synchronization could not be completed.";
 
 export class AmazonImportError extends Error {
   constructor(code, message, statusCode = 500) {
@@ -63,6 +66,10 @@ function isGlobalFailure(error, signal) {
   }
   return error?.code === "request_failed"
     && (error?.statusCode === 401 || error?.statusCode === 403);
+}
+
+function isImportLifecycleFailure(error, signal) {
+  return isAbort(error, signal) || error instanceof AmazonImportError;
 }
 
 function isProcessed(shipment) {
@@ -164,6 +171,21 @@ function publicShipmentFailure({ orderNumber, stage, error }) {
     stage,
     reasonCode,
     summary,
+  };
+}
+
+function publicShipmentWarning({ orderNumber, stage, error }) {
+  if (
+    typeof orderNumber !== "string"
+    || !SAFE_ORDER_NUMBER.test(orderNumber)
+    || !SAFE_PUBLIC_WARNING_STAGES.has(stage)
+  ) return null;
+  return {
+    orderNumber,
+    stage,
+    summary: stage === "notes_update" && error instanceof RangeError
+      ? NOTE_SIZE_WARNING
+      : SYNCHRONIZATION_WARNING,
   };
 }
 
@@ -408,6 +430,8 @@ export function createAmazonImportService({
         let existingItems = 0;
         let alreadyProcessedShipments = 0;
         let customizationNeeded = 0;
+        let warnings = 0;
+        const warningDetails = [];
         let failed = 0;
         const failures = [];
 
@@ -434,7 +458,6 @@ export function createAmazonImportService({
             try {
               const normalizedItems = [];
               const itemRecords = [];
-              const noteBlocks = [];
               for (const item of shipment.items) {
                 currentStage = "item_start";
                 currentFailureContext = itemDiagnosticContext(shipment, item);
@@ -491,44 +514,16 @@ export function createAmazonImportService({
                   amazonCustomizationJson: url ? customization : null,
                 };
                 normalizedItems.push(persistenceItem);
-                itemRecords.push({ item: persistenceItem, context: itemContext });
-                if (url) {
-                  currentStage = "notes_build";
-                  noteBlocks.push({
-                    itemId: item.external_order_item_id,
-                    block: buildAmazonNoteBlock({
-                      productTitle: item.name,
-                      orderItemId: item.external_order_item_id,
-                      fields: noteFieldsWithFonts(normalized),
-                    }),
-                  });
-                }
+                itemRecords.push({
+                  item: persistenceItem,
+                  context: itemContext,
+                  sourceItem: item,
+                  normalized,
+                  customizationUrl: url,
+                });
               }
 
               currentFailureContext = {};
-              const existingNotes = shipment.notes_to_buyer ?? "";
-              currentStage = "notes_update";
-              const noteResult = appendNoteBlocks({
-                existingNotes,
-                blocks: noteBlocks,
-              });
-              if (noteResult.notes !== existingNotes) {
-                await awaitActive(() => client.updateNotesToBuyer({
-                  shipmentId: shipment.shipment_id,
-                  notesToBuyer: noteResult.notes,
-                  shipTo: shipment.ship_to,
-                  shipFrom: shipment.ship_from,
-                  warehouseId: shipment.warehouse_id,
-                  carrierId: shipment.carrier_id,
-                  serviceCode: shipment.service_code,
-                  requestedShipmentService: shipment.requested_shipment_service,
-                  shippingRuleId: shipment.shipping_rule_id,
-                  packages: shipment.packages,
-                  items: shipment.items,
-                  signal,
-                }));
-              }
-
               currentStage = "persistence";
               const persistence = await awaitActive(
                 () => store.importAmazonOrderItemsTransactional({
@@ -556,20 +551,76 @@ export function createAmazonImportService({
                 (item) => item?.source?.customizationNeeded,
               ).length;
 
-              currentStage = "tag_update";
-              await awaitActive(() => client.addShipmentTag({
-                shipmentId: shipment.shipment_id,
-                tagName: PROCESSED_TAG,
-                signal,
-              }));
-              processedShipments += 1;
-              emitDiagnostic(diagnostics, "info", "shipment.completed", {
-                ...shipmentContext,
-                importedItems: persistence.importedOrderItemIds.length,
-                existingItems: persistence.existingOrderItemIds.length,
-                notesUpdated: noteResult.notes !== existingNotes,
-                processedTagUpdated: true,
-              });
+              try {
+                const noteBlocks = [];
+                for (const record of itemRecords) {
+                  if (!record.customizationUrl) continue;
+                  currentStage = "notes_build";
+                  currentFailureContext = record.context;
+                  noteBlocks.push({
+                    itemId: record.sourceItem.external_order_item_id,
+                    block: buildAmazonNoteBlock({
+                      productTitle: record.sourceItem.name,
+                      orderItemId: record.sourceItem.external_order_item_id,
+                      fields: noteFieldsWithFonts(record.normalized),
+                    }),
+                  });
+                }
+                currentFailureContext = {};
+                const existingNotes = shipment.notes_to_buyer ?? "";
+                currentStage = "notes_update";
+                const noteResult = appendNoteBlocks({
+                  existingNotes,
+                  blocks: noteBlocks,
+                });
+                if (noteResult.notes !== existingNotes) {
+                  await awaitActive(() => client.updateNotesToBuyer({
+                    shipmentId: shipment.shipment_id,
+                    notesToBuyer: noteResult.notes,
+                    shipTo: shipment.ship_to,
+                    shipFrom: shipment.ship_from,
+                    warehouseId: shipment.warehouse_id,
+                    carrierId: shipment.carrier_id,
+                    serviceCode: shipment.service_code,
+                    requestedShipmentService: shipment.requested_shipment_service,
+                    shippingRuleId: shipment.shipping_rule_id,
+                    packages: shipment.packages,
+                    items: shipment.items,
+                    signal,
+                  }));
+                }
+
+                currentStage = "tag_update";
+                await awaitActive(() => client.addShipmentTag({
+                  shipmentId: shipment.shipment_id,
+                  tagName: PROCESSED_TAG,
+                  signal,
+                }));
+                processedShipments += 1;
+                emitDiagnostic(diagnostics, "info", "shipment.completed", {
+                  ...shipmentContext,
+                  importedItems: persistence.importedOrderItemIds.length,
+                  existingItems: persistence.existingOrderItemIds.length,
+                  notesUpdated: noteResult.notes !== existingNotes,
+                  processedTagUpdated: true,
+                });
+              } catch (error) {
+                if (isImportLifecycleFailure(error, signal)) throw error;
+                const warningStage = currentStage === "tag_update" ? "tag_update" : "notes_update";
+                emitDiagnostic(diagnostics, "error", "shipment.warning", {
+                  ...shipmentContext,
+                  ...currentFailureContext,
+                  stage: currentStage,
+                  error,
+                });
+                warnings += 1;
+                const publicWarning = publicShipmentWarning({
+                  orderNumber: shipmentContext.orderNumber,
+                  stage: warningStage,
+                  error,
+                });
+                if (publicWarning) warningDetails.push(publicWarning);
+              }
             } catch (error) {
               if (isGlobalFailure(error, signal)) throw error;
               emitDiagnostic(diagnostics, "error", "shipment.failed", {
@@ -611,6 +662,8 @@ export function createAmazonImportService({
           existingItems,
           alreadyProcessedShipments,
           customizationNeeded,
+          warnings,
+          warningDetails,
           failed,
           failures,
         };

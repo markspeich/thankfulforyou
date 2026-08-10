@@ -339,6 +339,11 @@ const SAFE_AMAZON_IMPORT_FAILURE_VALIDATIONS = Object.freeze([
   Object.freeze({ reasonCode: "required_field", summary: "Package weight is required." }),
   Object.freeze({ reasonCode: "invalid_field_value", summary: "The selected shipping service is invalid." }),
 ]);
+const AMAZON_IMPORT_WARNING_FALLBACK = "One or more Amazon orders were imported, but ShipStation synchronization could not be completed.";
+const SAFE_AMAZON_IMPORT_WARNING_SUMMARIES = Object.freeze({
+  noteSize: "ShipStation Notes to Buyer is too long to update.",
+  synchronization: "ShipStation synchronization could not be completed.",
+});
 
 export function getAmazonImportFailureDescription(summary = {}) {
   let failed;
@@ -380,12 +385,54 @@ export function getAmazonImportFailureDescription(summary = {}) {
   }
 }
 
+export function getAmazonImportWarningDescription(summary = {}) {
+  let warnings;
+  try {
+    warnings = normalizeAmazonCount(summary?.warnings);
+  } catch {
+    return null;
+  }
+  if (warnings === 0) return null;
+
+  try {
+    const warningDetails = Array.isArray(summary?.warningDetails) ? summary.warningDetails : [];
+    const descriptions = warningDetails.flatMap((warning) => {
+      if (
+        !warning
+        || typeof warning !== "object"
+        || Array.isArray(warning)
+        || typeof warning.orderNumber !== "string"
+        || !SAFE_AMAZON_ORDER_NUMBER.test(warning.orderNumber)
+      ) return [];
+      if (
+        warning.stage === "notes_update"
+        && warning.summary === SAFE_AMAZON_IMPORT_WARNING_SUMMARIES.noteSize
+      ) {
+        return [`Amazon order ${warning.orderNumber} was imported, but ShipStation Notes to Buyer could not be updated because the note is too long.`];
+      }
+      if (warning.summary !== SAFE_AMAZON_IMPORT_WARNING_SUMMARIES.synchronization) return [];
+      if (warning.stage === "notes_update") {
+        return [`Amazon order ${warning.orderNumber} was imported, but ShipStation Notes to Buyer could not be updated.`];
+      }
+      if (warning.stage === "tag_update") {
+        return [`Amazon order ${warning.orderNumber} was imported, but the ShipStation processed tag could not be added.`];
+      }
+      return [];
+    });
+    if (descriptions.length < warnings) descriptions.push(AMAZON_IMPORT_WARNING_FALLBACK);
+    return descriptions.join(" ");
+  } catch {
+    return AMAZON_IMPORT_WARNING_FALLBACK;
+  }
+}
+
 export function getAmazonImportSummary(summary = {}) {
   const processedShipments = normalizeAmazonCount(summary.processedShipments);
   const importedItems = normalizeAmazonCount(summary.importedItems);
   const existingItems = normalizeAmazonCount(summary.existingItems);
   const alreadyProcessedShipments = normalizeAmazonCount(summary.alreadyProcessedShipments);
   const customizationNeeded = normalizeAmazonCount(summary.customizationNeeded);
+  const warnings = normalizeAmazonCount(summary.warnings);
   const failed = normalizeAmazonCount(summary.failed);
   const noun = (count, singular, plural = `${singular}s`) => `${count} ${count === 1 ? singular : plural}`;
   return [
@@ -394,6 +441,7 @@ export function getAmazonImportSummary(summary = {}) {
     noun(existingItems, "existing item", "existing items"),
     noun(alreadyProcessedShipments, "already-processed shipment"),
     noun(customizationNeeded, "item needing customization", "items needing customization"),
+    noun(warnings, "warning", "warnings"),
     noun(failed, "failure", "failures"),
   ].join(", ") + ".";
 }

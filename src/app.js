@@ -95,6 +95,7 @@ import {
   getEtsyConnectionActionDescriptor,
   getEtsyImportSummary,
   getAmazonImportFailureDescription,
+  getAmazonImportWarningDescription,
   getAmazonImportSummary,
   getOrderItemCustomizationWarning,
   getCheckedOrderIdsForBulkAction,
@@ -6663,17 +6664,19 @@ async function startAmazonImport() {
       renderEtsyImportUi();
       if (amazonImportResult) {
         const amazonImportFailed = amazonImportResult.failed > 0;
+        const amazonImportWarningDescription = getAmazonImportWarningDescription(amazonImportResult);
         completeOperationDialog({
           title: amazonImportFailed ? "Operation Failed" : "Amazon Import Complete",
           description: amazonImportFailed
-            ? getAmazonImportFailureDescription(amazonImportResult)
-            : getAmazonImportSummary(amazonImportResult),
+            ? [getAmazonImportFailureDescription(amazonImportResult), amazonImportWarningDescription].filter(Boolean).join(" ")
+            : [getAmazonImportSummary(amazonImportResult), amazonImportWarningDescription].filter(Boolean).join(" "),
           metrics: [
             { label: "Shipments processed", value: amazonImportResult.processedShipments },
             { label: "Items imported", value: amazonImportResult.importedItems },
             { label: "Existing items", value: amazonImportResult.existingItems },
             { label: "Already processed", value: amazonImportResult.alreadyProcessedShipments },
             { label: "Needs review", value: amazonImportResult.customizationNeeded },
+            { label: "Warnings", value: amazonImportResult.warnings },
             { label: "Failed", value: amazonImportResult.failed },
           ],
         });
