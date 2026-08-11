@@ -18,6 +18,7 @@ import {
 import {
   formatCustomerFontSelection,
   normalizeCustomerFontSelections,
+  overlayCustomerFontsOnLines,
 } from "./amazon-customer-fonts.js";
 import {
   buildPresetLines,
@@ -3190,9 +3191,7 @@ async function assignSelectedPresetToActiveListing() {
       setPresetEditorBaselineToCurrent();
     }
     activeOrder.source.manualPresetOverride = false;
-    activeOrder.settings = buildPresetSynchronizedSettings(activeOrder.settings, assignedPreset.id, {
-      listingId,
-    });
+    activeOrder.settings = buildOrderPresetSynchronizedSettings(activeOrder, assignedPreset.id);
     applySettings(activeOrder.settings);
     updateActiveOrderFromControls();
     render();
@@ -5494,6 +5493,21 @@ function buildPresetSynchronizedSettings(settings, presetId, options = {}) {
   });
 }
 
+function buildOrderPresetSynchronizedSettings(order, presetId) {
+  const presetSettings = buildPresetSynchronizedSettings(order?.settings, presetId, {
+    listingId: order?.source?.listingId,
+  });
+
+  return normalizeSettings({
+    ...presetSettings,
+    lines: overlayCustomerFontsOnLines(
+      presetSettings.lines,
+      order?.source?.customerFontSelections,
+      FONT_OPTIONS,
+    ),
+  });
+}
+
 function getMappedPresetIdForOrder(order) {
   const listingId = order?.source?.listingId;
   if (!listingId || !hasPresetMappingForListingId(listingId)) {
@@ -5520,27 +5534,9 @@ function shouldSyncOrderPreset(order, presetId, options = {}) {
   }
 
   const normalized = normalizeSettings(order.settings);
-  const expectedSettings = buildPresetSynchronizedSettings(order.settings, presetId, {
-    listingId: order.source?.listingId,
-  });
+  const expectedSettings = buildOrderPresetSynchronizedSettings(order, presetId);
 
-  if (normalized.presetId !== expectedSettings.presetId) {
-    return true;
-  }
-
-  if (normalized.backingMm !== expectedSettings.backingMm) {
-    return true;
-  }
-
-  if (normalized.weldExportedDesign !== expectedSettings.weldExportedDesign) {
-    return true;
-  }
-
-  if (normalized.lines.length !== expectedSettings.lines.length) {
-    return true;
-  }
-
-  return expectedSettings.lines.some((expectedLine, index) => !lineSettingsMatch(normalized.lines[index], expectedLine));
+  return buildSettingsSignature(normalized) !== buildSettingsSignature(expectedSettings);
 }
 
 function syncOrderPresetFromListing(order, options = {}) {
@@ -5549,9 +5545,7 @@ function syncOrderPresetFromListing(order, options = {}) {
     return;
   }
 
-  const nextSettings = buildPresetSynchronizedSettings(order.settings, mappedPresetId, {
-    listingId: order.source?.listingId,
-  });
+  const nextSettings = buildOrderPresetSynchronizedSettings(order, mappedPresetId);
   clearOrderCompletionState(order, nextSettings);
   if (order.source) {
     order.source.manualPresetOverride = false;
@@ -5575,9 +5569,7 @@ function syncOrdersForListingAssignmentChange(listingId) {
     }
 
     const nextPresetId = getMappedPresetIdForOrder(order) || getDefaultPresetId();
-    const nextSettings = buildPresetSynchronizedSettings(order.settings, nextPresetId, {
-      listingId,
-    });
+    const nextSettings = buildOrderPresetSynchronizedSettings(order, nextPresetId);
 
     if (settingsSignatureMatches(order.settings, buildSettingsSignature(nextSettings))) {
       return;
