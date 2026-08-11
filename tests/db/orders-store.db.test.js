@@ -323,6 +323,41 @@ afterEach(async () => {
 });
 
 describe("orders store database integration", () => {
+  it("preserves listing image URLs in compact order summaries", async () => {
+    // Break caught: the compact RPC projection drops thumbnails required by Orders rows.
+    const suffix = randomUUID().slice(0, 8);
+    const workspaceId = await createDisposableWorkspace(`Order thumbnail ${suffix}`);
+    const imageUrl = `https://images.example.test/listing-${suffix}.jpg`;
+    const supabase = createSupabaseAdminClient();
+    const { error } = await supabase.from("order_items").insert({
+      id: `thumbnail-${suffix}`,
+      workspace_id: workspaceId,
+      status: "open",
+      order_number: `THUMBNAIL-${suffix}`,
+      buyer_name: "Thumbnail Buyer",
+      transaction_id: `thumbnail-${suffix}`,
+      quantity: 1,
+      source_json: {
+        marketplace: "etsy",
+        listingTitle: "Thumbnail listing",
+        listingImageUrl75x75: imageUrl,
+        rawCustomization: { diagnostic: "must-not-leak" },
+      },
+    });
+    expect(error).toBeNull();
+
+    const page = await listWorkspaceOrderSummaries({
+      workspaceId,
+      statusFilter: "open",
+    });
+
+    expect(page.orders[0].items[0].source).toEqual({
+      marketplace: "etsy",
+      listingTitle: "Thumbnail listing",
+      listingImageUrl75x75: imageUrl,
+    });
+  });
+
   it("transactionally maintains compact workspace order-group summaries", async () => {
     // Break caught: source mutations leave the compact group projection stale or leak another workspace.
     const suffix = randomUUID().slice(0, 8);
