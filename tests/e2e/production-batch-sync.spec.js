@@ -228,6 +228,52 @@ function buildCompletedRemoteOrder(overrides = {}) {
   };
 }
 
+async function installRemoteBatchSnapshot(page, remoteSnapshot, presetSnapshot = null) {
+  await page.route("**/api/batch-session", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify({
+        operator: { id: "user-1", email: "mark@example.com" },
+        workspace: { id: "workspace-1", name: "Thankful For You" },
+        batch: { id: "batch-1", workspaceId: "workspace-1" },
+      }),
+    });
+  });
+  await page.route("**/api/production-batch?batchId=batch-1", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify(remoteSnapshot),
+    });
+  });
+  await page.route("**/api/production-batch", async (route) => {
+    if (route.request().method() !== "PUT") {
+      await route.fallback();
+      return;
+    }
+
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify(route.request().postDataJSON()?.snapshot || remoteSnapshot),
+    });
+  });
+
+  if (presetSnapshot) {
+    await page.route("**/api/preset-snapshot**", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json; charset=utf-8",
+        body: JSON.stringify({
+          workspaceKey: "primary",
+          snapshot: presetSnapshot,
+        }),
+      });
+    });
+  }
+}
+
 test("keeps a saved shared design complete when its linked listing preset differs on startup", async ({ page }) => {
   await installSupabaseSession(page);
 
@@ -271,6 +317,196 @@ test("keeps a saved shared design complete when its linked listing preset differ
   await expect(row.locator(".order-analysis-indicator.ok")).toBeVisible();
   await expect(page.locator("#presetInput")).toHaveValue("preset-a1f4c8e2b601");
   await expect(page.locator("#captureButton")).toBeDisabled();
+});
+
+test("keeps a recognized imported customer font when startup synchronizes its listing preset", async ({ page }) => {
+  await installSupabaseSession(page);
+
+  const remoteSnapshot = {
+    batch: {
+      id: "batch-1",
+      workspaceId: "workspace-1",
+    },
+    activeOrderItemId: "remote-order-1",
+    orderItems: [
+      buildCompletedRemoteOrder({
+        text: "Avery\nRN",
+        status: "in-progress",
+        savedSettingsSignature: null,
+        completedSettingsSignature: null,
+        source: {
+          listingId: "1884223710",
+          listingTitle: "Linked preset listing",
+          buyerName: "Avery",
+          customerFontSelections: [
+            { lineIndex: 0, name: "Candlepin" },
+          ],
+        },
+        settings: {
+          text: "Avery\nRN",
+          presetId: "preset-a1f4c8e2b601",
+          boundingSizePresetId: "size-2-2x1-5",
+          backingMm: 3.1,
+          weldExportedDesign: true,
+          lines: [
+            {
+              fontId: "candlepin",
+              bridgeMm: 0.5,
+              lineBridgeMm: 0.5,
+              offsetXMm: 0,
+              fontSizeMm: 34,
+              horizontalScale: 1,
+              verticalScale: 1,
+              lockTextHeight: false,
+            },
+            {
+              fontId: "candlepin",
+              bridgeMm: 0.5,
+              lineBridgeMm: 0.5,
+              offsetXMm: 0,
+              fontSizeMm: 34,
+              horizontalScale: 1,
+              verticalScale: 1,
+              lockTextHeight: false,
+            },
+          ],
+        },
+      }),
+    ],
+  };
+
+  await page.route("**/api/batch-session", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify({
+        operator: { id: "user-1", email: "mark@example.com" },
+        workspace: { id: "workspace-1", name: "Thankful For You" },
+        batch: { id: "batch-1", workspaceId: "workspace-1" },
+      }),
+    });
+  });
+  await page.route("**/api/production-batch?batchId=batch-1", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify(remoteSnapshot),
+    });
+  });
+
+  await page.goto("/production-batch");
+
+  await expect(page.locator("#presetInput")).toHaveValue("preset-c3e8a1d7f520");
+  await expect(page.locator('.line-control-card[data-line-index="0"] select[data-setting="fontId"]')).toHaveValue("candlepin");
+  await expect(page.locator('.line-control-card[data-line-index="1"] select[data-setting="fontId"]')).toHaveValue("somekind");
+});
+
+test("reapplies imported customer fonts when assigning a preset to a listing", async ({ page }) => {
+  await installSupabaseSession(page);
+
+  await installRemoteBatchSnapshot(page, {
+    batch: { id: "batch-1", workspaceId: "workspace-1" },
+    activeOrderItemId: "remote-order-1",
+    orderItems: [
+      buildCompletedRemoteOrder({
+        text: "Avery\nRN",
+        status: "in-progress",
+        savedSettingsSignature: null,
+        completedSettingsSignature: null,
+        source: {
+          listingId: "customer-font-assignment",
+          listingTitle: "Customer font assignment",
+          buyerName: "Avery",
+          customerFontSelections: [{ lineIndex: 0, name: "Candlepin" }],
+        },
+        settings: {
+          text: "Avery\nRN",
+          presetId: "preset-a1f4c8e2b601",
+          lines: [{ fontId: "candlepin" }, { fontId: "candlepin" }],
+        },
+      }),
+    ],
+  });
+
+  await page.goto("/production-batch");
+
+  await page.locator("#presetInput").selectOption("preset-c3e8a1d7f520");
+  await expect(page.locator('.line-control-card[data-line-index="0"] select[data-setting="fontId"]')).toHaveValue("skywalk");
+  await page.locator(".preset-tools-toggle").click();
+  await page.getByRole("button", { name: "Assign Preset to Listing" }).click();
+
+  await expect(page.locator('.line-control-card[data-line-index="0"] select[data-setting="fontId"]')).toHaveValue("candlepin");
+  await expect(page.locator('.line-control-card[data-line-index="1"] select[data-setting="fontId"]')).toHaveValue("somekind");
+});
+
+test("synchronizes a stale size guide from a listing preset", async ({ page }) => {
+  await installSupabaseSession(page);
+
+  const presetSnapshot = {
+    version: 1,
+    defaultPresetId: "preset-custom-size-guide",
+    sizePresets: [{
+      id: "size-custom-guide",
+      label: "Custom guide",
+      max: { widthIn: 2.4, heightIn: 1.6 },
+      min: { widthIn: 1.6, heightIn: 1.1 },
+    }],
+    presets: [{
+      schemaVersion: 1,
+      id: "preset-custom-size-guide",
+      name: "Custom size guide",
+      globalDefaults: {
+        boundingSizePresetId: "size-custom-guide",
+        backingMm: 3.1,
+        weldExportedDesign: true,
+      },
+      lineDefaults: {
+        fontId: "candlepin",
+        bridgeMm: 0.5,
+        lineBridgeMm: 0.5,
+        offsetXMm: 0,
+        fontSizeMm: 34,
+        horizontalScale: 1,
+        verticalScale: 1,
+        lockTextHeight: false,
+      },
+      lineRules: [],
+      listingAssignments: [{
+        listingId: "stale-size-guide-listing",
+        name: "Stale size guide listing",
+      }],
+    }],
+  };
+
+  await installRemoteBatchSnapshot(page, {
+    batch: { id: "batch-1", workspaceId: "workspace-1" },
+    activeOrderItemId: "remote-order-1",
+    orderItems: [
+      buildCompletedRemoteOrder({
+        text: "Avery",
+        status: "in-progress",
+        savedSettingsSignature: null,
+        completedSettingsSignature: null,
+        source: {
+          listingId: "stale-size-guide-listing",
+          listingTitle: "Stale size guide listing",
+          buyerName: "Avery",
+        },
+        settings: {
+          text: "Avery",
+          presetId: "preset-custom-size-guide",
+          boundingSizePresetId: "size-2-2x1-5",
+          backingMm: 3.1,
+          weldExportedDesign: true,
+          lines: [{ fontId: "candlepin" }],
+        },
+      }),
+    ],
+  }, presetSnapshot);
+
+  await page.goto("/production-batch");
+
+  await expect(page.locator("#boundingSizePresetInput")).toHaveValue("size-custom-guide");
 });
 
 test("discarding a conflicted local draft reloads the production batch without a follow-up recovery alert", async ({ page }) => {
