@@ -905,6 +905,10 @@ select {
   background: #f6fafb;
 }
 
+.paste-summary-counts div[hidden] {
+  display: none;
+}
+
 .paste-summary-counts dt {
   color: var(--muted);
   font-size: 0.72rem;

@@ -95,6 +95,12 @@ async function amazonStream(page) {
       );
     };
     window.closeAmazonStream = () => window.amazonControllers.pop()?.close();
+    window.pushEtsyEvent = event => {
+      window.etsyControllers.at(-1)?.enqueue(
+        new TextEncoder().encode(`${JSON.stringify(event)}\n`),
+      );
+    };
+    window.closeEtsyStream = () => window.etsyControllers.pop()?.close();
     window.fetch = (input, init = {}) => {
       const path = new URL(typeof input === "string" ? input : input.url, location.href).pathname;
       const isAmazon = path === "/api/amazon-import";
@@ -243,6 +249,44 @@ test("Amazon warning-only completion shows every safe warning beyond ten with al
   await expect.poll(gets).toBeGreaterThan(1);
   await expect(page.locator(".database-order-row.is-selected")).toContainText("Order 1001");
   await expect(page.locator(".amazon-import-button")).toHaveText("Import Amazon");
+});
+
+test("Etsy completion hides stale Amazon-only metrics", async ({ page }) => {
+  await session(page);
+  await routes(page);
+  await amazonStream(page);
+  await open(page);
+
+  await page.getByRole("button", { name: "Import Amazon" }).click();
+  await page.evaluate(event => {
+    pushAmazonEvent(event);
+    closeAmazonStream();
+  }, { ...completion, warnings: 1 });
+  await expect(page.locator("#pasteSummaryCounts dt")).toHaveText([
+    "Shipments processed",
+    "Items imported",
+    "Existing items",
+    "Already processed",
+    "Needs review",
+    "Warnings",
+    "Failed",
+  ]);
+  await page.getByRole("button", { name: "Done" }).click();
+
+  await page.locator("#ordersToolsMenu summary").click();
+  await page.getByRole("button", { name: "Import from Etsy" }).click();
+  await page.evaluate(() => {
+    pushEtsyEvent({ type: "complete", imported: 0, existing: 0, customizationNeeded: 0, failed: 0 });
+    closeEtsyStream();
+  });
+
+  await expect(page.locator("#pasteSummaryTitle")).toHaveText("Etsy Import Complete");
+  await expect(page.locator("#pasteSummaryCounts > div:visible")).toHaveCount(3);
+  await expect(page.locator("#pasteSummaryCounts dt:visible")).toHaveText([
+    "Imported",
+    "Existing",
+    "Needs review",
+  ]);
 });
 
 test("terminal validation failure never renders success or refreshes Orders", async ({ page }) => {
