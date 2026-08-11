@@ -51,7 +51,6 @@ export function normalizeEtsyTransaction({ receipt = {}, transaction = {}, listi
       orderNumber, transactionId, listingId, buyerName,
       colorName: text(color?.formatted_value), quantity, listingTitle,
       listingImageUrl75x75: imageUrl(image),
-      customizationNeeded: !textValue,
       personalizationResponses,
       expected_ship_date: transaction.expected_ship_date ?? null,
       shipByDate: dateFromTimestamp(transaction.expected_ship_date),

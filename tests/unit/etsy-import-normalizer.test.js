@@ -13,7 +13,8 @@ describe("Etsy transaction normalizer", () => {
       ] },
       image: { url_75x75: "https://image.test/75" }, getPresetIdForListingId: (id) => `preset-${id}`,
     });
-    expect(result).toMatchObject({ id: "transaction:987", text: "Jamie\nRN", presetId: "preset-456", source: { orderNumber: "1234567890", transactionId: "987", listingId: "456", colorName: "Teal", quantity: "2", expected_ship_date: 1783400340, shipByDate: "2026-07-06", listingImageUrl75x75: "https://image.test/75", customizationNeeded: false } });
+    expect(result).toMatchObject({ id: "transaction:987", text: "Jamie\nRN", presetId: "preset-456", source: { orderNumber: "1234567890", transactionId: "987", listingId: "456", colorName: "Teal", quantity: "2", expected_ship_date: 1783400340, shipByDate: "2026-07-06", listingImageUrl75x75: "https://image.test/75" } });
+    expect(result.source).not.toHaveProperty("customizationNeeded");
     expect(result.source.personalizationResponses).toEqual([
       { kind: "text", name: "Name", value: "Jamie" }, { kind: "text", name: "Credentials", value: "RN" }, { kind: "file", name: "Upload", value: "https://files.test/a" },
     ]);
@@ -39,10 +40,15 @@ describe("Etsy transaction normalizer", () => {
     expect(result.source.variations).toHaveLength(3);
   });
 
-  it("marks missing, blank, or URL-only personalization for customization", () => {
-    for (const variations of [[], [{ property_id: 54, formatted_name: "Name", formatted_value: " " }], [{ property_id: 54, formatted_name: "Upload", formatted_value: "https://x.test/a" }]]) {
+  it("allows missing, blank, or URL-only Etsy personalization without requesting review", () => {
+    for (const variations of [
+      [],
+      [{ property_id: 54, formatted_name: "Name", formatted_value: " " }],
+      [{ property_id: 54, formatted_name: "Upload", formatted_value: "https://x.test/a" }],
+    ]) {
       const result = normalizeEtsyTransaction({ receipt: {}, transaction: { transaction_id: 1, variations } });
-      expect(result.text).toBe(""); expect(result.source.customizationNeeded).toBe(true);
+      expect(result.text).toBe("");
+      expect(result.source).not.toHaveProperty("customizationNeeded");
     }
   });
 });
