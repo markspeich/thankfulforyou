@@ -44,6 +44,7 @@ import {
 } from "./presets.js";
 import { savePresetSnapshot } from "./preset-api.js";
 import { computeLineMaskMetrics } from "./text-metrics.js";
+import { getRenderableTextLines } from "./text-lines.js";
 import { shouldUsePostStretchBackingOffset, shouldUseRasterTextPreview } from "./preview-rendering.js";
 import { findPairOffsetPx } from "./bridge-geometry.js";
 import {
@@ -1113,11 +1114,7 @@ function isValidOrderStatus(status) {
 }
 
 function getRawTextLines(text) {
-  if (!text.length) {
-    return [];
-  }
-
-  return text.split(/\r?\n/);
+  return getRenderableTextLines(text);
 }
 
 function normalizeLineSettings(lineSettings = {}) {
