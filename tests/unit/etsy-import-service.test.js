@@ -298,4 +298,77 @@ describe("Etsy import service", () => {
       })],
     }));
   });
+
+  it("persists preset fixed items during Etsy font enrichment", async () => {
+    // Break caught: shared marketplace enrichment drops fixed SVG items before order persistence.
+    const fixedItem = {
+      kind: "fixedSvg",
+      fixedDesignId: "fixed-design-cardiology-heart",
+      fixedDesignName: "Cardiology Heart",
+      fixedDesignVersion: 3,
+      svgSizeMm: 28,
+      offsetXMm: 1.5,
+      offsetYMm: -2,
+      backingBorder: false,
+    };
+    const enrichItem = createAmazonItemEnricher({
+      presetSnapshot: {
+        version: 1,
+        defaultPresetId: "preset-etsy",
+        sizePresets: [],
+        presets: [{
+          schemaVersion: 1,
+          id: "preset-etsy",
+          name: "Cardiology Badge",
+          description: "",
+          globalDefaults: { backingMm: 3.4, weldExportedDesign: true },
+          lineDefaults: { fontId: "font-candlepin", bridgeMm: 0.7 },
+          lineRules: [
+            { match: { kind: "remaining" }, settings: { fontId: "font-somekind", fontSizeMm: 22 } },
+          ],
+          fixedItems: [fixedItem],
+          listingAssignments: [{ listingId: "3", name: "Cardiology", lineOverrides: [] }],
+          fixedDesigns: [],
+        }],
+      },
+      fontOptions: [
+        { id: "font-skywalk", displayName: "Skywalk" },
+        { id: "font-somekind", displayName: "Somekind" },
+      ],
+    });
+    const f = fixture({
+      enrichItem,
+      normalizeTransaction: () => ({
+        id: "transaction:2",
+        text: "CPL EDWARDS\nRN",
+        source: {
+          listingId: "3",
+          customerFontSelections: [
+            { lineIndex: 0, name: "Skywalk" },
+            { lineIndex: 1, name: "Unknown Font" },
+          ],
+        },
+      }),
+    });
+
+    await (await f.service.prepare({ workspaceId: "w", userId: "u" })).run();
+
+    expect(f.store.importWorkspaceOrderItems).toHaveBeenCalledWith(expect.objectContaining({
+      items: [expect.objectContaining({
+        source: expect.objectContaining({
+          customerFontSelections: [
+            { lineIndex: 0, name: "Skywalk" },
+            { lineIndex: 1, name: "Unknown Font" },
+          ],
+        }),
+        settings: expect.objectContaining({
+          lines: [
+            { fontId: "font-skywalk", bridgeMm: 0.7 },
+            { fontId: "font-somekind", bridgeMm: 0.7, fontSizeMm: 22 },
+            fixedItem,
+          ],
+        }),
+      })],
+    }));
+  });
 });

@@ -1057,6 +1057,56 @@ describe("Amazon import service", () => {
     });
   });
 
+  it("keeps fixed preset items outside the Amazon customer-font overlay", () => {
+    // Break caught: shared enrichment omits fixed SVG items or overlays a text font onto one.
+    const fixedItem = {
+      kind: "fixedSvg",
+      fixedDesignId: "fixed-design-bow",
+      fixedDesignName: "Bow",
+      fixedDesignVersion: 4,
+      svgSizeMm: 36,
+      offsetXMm: 2.5,
+      offsetYMm: -3,
+      backingBorder: true,
+    };
+    const enrich = createAmazonItemEnricher({
+      presetSnapshot: {
+        version: 1,
+        defaultPresetId: "preset-amazon",
+        sizePresets: [],
+        presets: [{
+          schemaVersion: 1,
+          id: "preset-amazon",
+          name: "Bow RN",
+          description: "",
+          globalDefaults: { backingMm: 3.1, weldExportedDesign: true },
+          lineDefaults: { fontId: "font-candlepin", bridgeMm: 0.5 },
+          lineRules: [],
+          fixedItems: [fixedItem],
+          listingAssignments: [{ listingId: "ASIN-BOW", name: "Bow RN", lineOverrides: [] }],
+          fixedDesigns: [],
+        }],
+      },
+      fontOptions: [{ id: "font-skywalk", displayName: "Skywalk" }],
+    });
+
+    const enriched = enrich({
+      text: "Morgan",
+      source: {
+        listingId: "ASIN-BOW",
+        customerFontSelections: [
+          { lineIndex: 0, name: "Skywalk" },
+          { lineIndex: 1, name: "Skywalk" },
+        ],
+      },
+    });
+
+    expect(enriched.settings.lines).toEqual([
+      { fontId: "font-skywalk", bridgeMm: 0.5 },
+      fixedItem,
+    ]);
+  });
+
   it("reports a safe font-resolution summary without changing the enriched item shape", () => {
     // Break caught: enrichment diagnostics expose customer font values or become persisted item data.
     const onEnriched = vi.fn();
