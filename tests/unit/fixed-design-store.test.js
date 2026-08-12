@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 import {
   buildFixedDesignStoragePath,
+  normalizeFixedDesignStoreError,
   normalizeSvgUploadFile,
   validateSvgContent,
 } from "../../api/_lib/fixed-design-store.js";
@@ -34,6 +35,19 @@ describe("fixed design store helpers", () => {
 
   it("rejects files without an svg root", () => {
     expect(() => validateSvgContent("<html></html>")).toThrow("Upload a valid SVG file.");
+  });
+
+  it("turns an active-name uniqueness violation into an actionable conflict", () => {
+    const error = normalizeFixedDesignStoreError({
+      code: "23505",
+      message: "duplicate key value violates unique constraint \"fixed_designs_workspace_active_name_uidx\"",
+    }, { displayName: "Rbt" });
+
+    expect(error).toMatchObject({
+      statusCode: 409,
+      expose: true,
+      message: 'A fixed design named "Rbt" already exists. Select it and use Load New Version to replace its SVG.',
+    });
   });
 });
 

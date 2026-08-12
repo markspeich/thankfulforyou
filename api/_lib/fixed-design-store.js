@@ -27,6 +27,23 @@ export function createFixedDesignStoreError(statusCode, message) {
   });
 }
 
+export function normalizeFixedDesignStoreError(error, { displayName = "" } = {}) {
+  const constraintText = [error?.message, error?.details, error?.hint]
+    .filter((value) => typeof value === "string")
+    .join(" ");
+  const isActiveNameConflict = error?.code === "23505"
+    && /fixed_designs_workspace_active_name_uidx/i.test(constraintText);
+
+  if (!isActiveNameConflict) {
+    return error;
+  }
+
+  return createFixedDesignStoreError(
+    409,
+    `A fixed design named "${String(displayName).trim()}" already exists. Select it and use Load New Version to replace its SVG.`,
+  );
+}
+
 function cleanPathPart(value) {
   return String(value || "")
     .trim()
@@ -310,7 +327,7 @@ export async function createWorkspaceFixedDesign({ workspaceId, displayName, fil
     .single();
 
   if (error) {
-    throw error;
+    throw normalizeFixedDesignStoreError(error, { displayName: resolvedDisplayName });
   }
 
   return normalizeFixedDesignRow(data);
