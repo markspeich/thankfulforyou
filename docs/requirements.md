@@ -333,7 +333,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Workspace Etsy OAuth tokens should be encrypted before database storage, and the Etsy connection table should be inaccessible to ordinary browser database clients.
 - The Etsy API importer must support multiple transaction variation values with `property_id: 54`, must not require the question name to be `Personalization`, and must preserve question labels and values in source metadata.
 - Usable Etsy text personalization responses should initialize design text in Etsy's returned order with one response per line; file-upload URLs should be preserved as references without becoming design text.
-- An Etsy transaction with missing or unusable customization should still import as an editable order item and should display a `Customization needed` warning.
+- Etsy listings may validly require no personalization. Missing, blank, or file-only Etsy personalization must not by itself mark an imported item as needing customization review.
 - Listing-image or other enrichment failures should not block an otherwise valid Etsy transaction, and isolated receipt or transaction failures should not roll back unrelated successful imports.
 - Etsy API imports from the `Orders` workspace should persist through the existing Orders import path and should not automatically add imported items to the active production batch.
 - While an Etsy import is running, the Orders workspace must show an animated spinner inside the disabled import button and expose the button's busy state accessibly; it must not show a separate progress card or progress bar.
