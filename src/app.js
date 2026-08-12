@@ -8961,9 +8961,13 @@ function applyPresetSelection(presetId) {
     getRawTextLines,
   });
 
+  const previousSettingsSignature = activeOrder ? buildSettingsSignature(activeOrder.settings) : null;
   if (activeOrder) {
     activeOrder.text = nextSettings.text;
     activeOrder.settings = nextSettings;
+    if (buildSettingsSignature(nextSettings) !== previousSettingsSignature) {
+      activeOrder.saveErrorMessage = null;
+    }
   }
   applySettings(nextSettings);
   render();
