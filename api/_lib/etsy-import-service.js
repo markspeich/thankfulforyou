@@ -6,11 +6,21 @@ const OVERLAP = 300000;
 const INITIAL = 90 * 86400000;
 export const DEFAULT_MAX_IMPORT_ITEMS = 5_000;
 const HEARTBEAT_INTERVAL = 300_000;
+const RAW_DIAGNOSTIC_RECEIPT_ID = "4142168158";
+const RAW_DIAGNOSTIC_TRANSACTION_ID = "5174720728";
+const defaultLogRawTransaction = ({ receiptId, transaction }) => {
+  console.info(JSON.stringify({
+    level: "info",
+    event: "etsy_import.raw_transaction_diagnostic",
+    receiptId,
+    transaction,
+  }));
+};
 const reauth = (error) => error?.category === "reauthorize" || error?.code === "reauthorize";
 const aborted = (error, signal) => Boolean(signal?.aborted || error?.name === "AbortError" || error?.code === "ABORT_ERR");
 const eligible = (r) => { const s = String(r?.status || "").toLowerCase(); return r?.is_paid === true && r?.is_shipped === false && r?.was_canceled !== true && r?.was_cancelled !== true && !["canceled", "cancelled"].includes(s); };
 const compactReceipt = (r) => ({ receipt_id: r.receipt_id, name: r.name, buyer_name: r.buyer_name, create_timestamp: r.create_timestamp, update_timestamp: r.update_timestamp, paid_timestamp: r.paid_timestamp, expected_ship_date: r.expected_ship_date, transaction_sold_count: r.transaction_sold_count });
-export function createEtsyImportService({ store, refreshAccess, createClient, normalizeTransaction, getPresetIdForListingId = () => null, clock = () => new Date(), randomUUID = uuid, maxImportItems = DEFAULT_MAX_IMPORT_ITEMS }) {
+export function createEtsyImportService({ store, refreshAccess, createClient, normalizeTransaction, getPresetIdForListingId = () => null, clock = () => new Date(), randomUUID = uuid, maxImportItems = DEFAULT_MAX_IMPORT_ITEMS, logRawTransaction = defaultLogRawTransaction }) {
   async function prepare({ workspaceId, userId, signal, onProgress = () => {} }) {
     const started = clock();
     let connection = await store.getEtsyConnectionCredentials({ workspaceId });
@@ -83,6 +93,9 @@ export function createEtsyImportService({ store, refreshAccess, createClient, no
         for (const { receiptIndex, transaction } of work) {
           const receipt = eligibleReceipts[receiptIndex]; await renewIfDue();
           try {
+            if (String(receipt.receipt_id) === RAW_DIAGNOSTIC_RECEIPT_ID || String(transaction.transaction_id) === RAW_DIAGNOSTIC_TRANSACTION_ID) {
+              logRawTransaction({ receiptId: receipt.receipt_id, transaction });
+            }
             let listing = {}, image = {};
             await renewIfDue();
             try { listing = await client.getListing({ listingId: transaction.listing_id, signal }); } catch (error) {
