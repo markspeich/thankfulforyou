@@ -37,6 +37,11 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Reference example 2 uses two fonts: the top name text uses Skywalk, and the lower credential text uses Somekind.
 - Skywalk has also been modified by the business to fix laser-cutting issues.
 - The three primary production fonts are modified Candlepin, modified Skywalk, and Somekind.
+- Etsy imports must distinguish customer font-selection dropdowns from design text even when Etsy reports both as personalization variations with `property_id: 54`.
+- An Etsy personalization variation should be treated as a customer font selection only when it is a non-file dropdown response with a non-null `value_id` and its formatted question name contains the standalone word `font`, case-insensitively.
+- Recognized Etsy customer font selections must be excluded from design text, preserved in imported source metadata using the same per-line `customerFontSelections` shape as Amazon imports, and applied to the corresponding persisted design line using the active workspace font registry.
+- Unknown Etsy customer font names must remain visible in imported source metadata for operator review without overriding the preset font.
+- Etsy personalization dropdowns that are not font-selection questions must remain eligible design text, and free-text responses must not be classified as font selections merely because their question name contains `font`.
 - The text layer should be manufacturable from acrylic, ideally as one connected piece per text layer.
 - When text letters overlap, the overlap should be welded or unioned into one face-layer shape so internal seam lines are removed.
 - The backing layer follows the overall silhouette of the design and gives the text support and contrast.
@@ -332,6 +337,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Etsy Keystring, Shared Secret, token-encryption key, and decrypted OAuth tokens must remain server-side and must never be exposed to browser code, logs, or version control.
 - Workspace Etsy OAuth tokens should be encrypted before database storage, and the Etsy connection table should be inaccessible to ordinary browser database clients.
 - The Etsy API importer must support multiple transaction variation values with `property_id: 54`, must not require the question name to be `Personalization`, and must preserve question labels and values in source metadata.
+- The repository includes a sanitized Etsy Open API transaction reference fixture at `tests/fixtures/etsy-font-choice-transaction.json`. Use it for Etsy personalization/font-selection development and regression testing; it preserves the API structure that reports both free-text personalization and a font dropdown as separate `property_id: 54` variations.
 - Usable Etsy text personalization responses should initialize design text in Etsy's returned order with one response per line; file-upload URLs should be preserved as references without becoming design text.
 - Etsy listings may validly require no personalization. Missing, blank, or file-only Etsy personalization must not by itself mark an imported item as needing customization review.
 - Listing-image or other enrichment failures should not block an otherwise valid Etsy transaction, and isolated receipt or transaction failures should not roll back unrelated successful imports.

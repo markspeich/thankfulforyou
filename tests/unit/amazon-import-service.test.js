@@ -1022,7 +1022,7 @@ describe("Amazon import service", () => {
           id: "preset-amazon",
           globalDefaults: { backingMm: 4.2, globalHorizontalScale: 1.1 },
           lineDefaults: { fontId: "candlepin", bridgeMm: 0.6, fontSizeMm: 30, horizontalScale: 0.95 },
-          lineRules: [{ match: { type: "first" }, settings: { fontSizeMm: 36, lockTextHeight: true } }],
+          lineRules: [{ match: { kind: "first" }, settings: { fontSizeMm: 36, lockTextHeight: true } }],
           listingAssignments: [{
             listingId: "ASIN-1",
             lineOverrides: [{ lineIndex: 1, settings: { offsetXMm: 2, verticalScale: 1.2 } }],
@@ -1055,6 +1055,56 @@ describe("Amazon import service", () => {
         ],
       },
     });
+  });
+
+  it("keeps fixed preset items outside the Amazon customer-font overlay", () => {
+    // Break caught: shared enrichment omits fixed SVG items or overlays a text font onto one.
+    const fixedItem = {
+      kind: "fixedSvg",
+      fixedDesignId: "fixed-design-bow",
+      fixedDesignName: "Bow",
+      fixedDesignVersion: 4,
+      svgSizeMm: 36,
+      offsetXMm: 2.5,
+      offsetYMm: -3,
+      backingBorder: true,
+    };
+    const enrich = createAmazonItemEnricher({
+      presetSnapshot: {
+        version: 1,
+        defaultPresetId: "preset-amazon",
+        sizePresets: [],
+        presets: [{
+          schemaVersion: 1,
+          id: "preset-amazon",
+          name: "Bow RN",
+          description: "",
+          globalDefaults: { backingMm: 3.1, weldExportedDesign: true },
+          lineDefaults: { fontId: "font-candlepin", bridgeMm: 0.5 },
+          lineRules: [],
+          fixedItems: [fixedItem],
+          listingAssignments: [{ listingId: "ASIN-BOW", name: "Bow RN", lineOverrides: [] }],
+          fixedDesigns: [],
+        }],
+      },
+      fontOptions: [{ id: "font-skywalk", displayName: "Skywalk" }],
+    });
+
+    const enriched = enrich({
+      text: "Morgan",
+      source: {
+        listingId: "ASIN-BOW",
+        customerFontSelections: [
+          { lineIndex: 0, name: "Skywalk" },
+          { lineIndex: 1, name: "Skywalk" },
+        ],
+      },
+    });
+
+    expect(enriched.settings.lines).toEqual([
+      { fontId: "font-skywalk", bridgeMm: 0.5 },
+      fixedItem,
+    ]);
   });
 
   it("reports a safe font-resolution summary without changing the enriched item shape", () => {

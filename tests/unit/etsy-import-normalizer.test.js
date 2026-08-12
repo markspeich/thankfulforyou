@@ -1,5 +1,12 @@
+import { readFileSync } from "node:fs";
+
 import { describe, expect, it } from "vitest";
 import { normalizeEtsyTransaction } from "../../api/_lib/etsy-import-normalizer.js";
+
+const capturedFontChoiceTransaction = JSON.parse(readFileSync(
+  new URL("../fixtures/etsy-font-choice-transaction.json", import.meta.url),
+  "utf8",
+));
 
 describe("Etsy transaction normalizer", () => {
   it("creates the imported item contract with text and file personalization", () => {
@@ -50,5 +57,75 @@ describe("Etsy transaction normalizer", () => {
       expect(result.text).toBe("");
       expect(result.source).not.toHaveProperty("customizationNeeded");
     }
+  });
+
+  it("classifies captured Etsy font dropdown selections without adding them to design text", () => {
+    const result = normalizeEtsyTransaction({ receipt: {}, transaction: capturedFontChoiceTransaction });
+
+    expect(result.text).toBe("CPL EDWARDS");
+    expect(result.source.customerFontSelections).toEqual([{ lineIndex: 0, name: "Candlepin" }]);
+    expect(result.source.variations).toEqual([
+      {
+        property_id: 514,
+        value_id: 114393148710,
+        formatted_name: "Badge Reel",
+        formatted_value: "Swivel Alligator",
+      },
+      {
+        property_id: 513,
+        value_id: 52625096996,
+        formatted_name: "Color",
+        formatted_value: "Pink",
+      },
+      {
+        property_id: 54,
+        value_id: null,
+        formatted_name: "Personalization",
+        formatted_value: "CPL EDWARDS",
+      },
+      {
+        property_id: 54,
+        value_id: 1463105574344,
+        formatted_name: "Font Choice",
+        formatted_value: "Candlepin",
+      },
+    ]);
+  });
+
+  it("retains non-font dropdown and font-labeled free-text responses as design text", () => {
+    const result = normalizeEtsyTransaction({ receipt: {}, transaction: { transaction_id: "1", variations: [
+      { property_id: 54, formatted_name: "Badge Choice", formatted_value: "PICU", value_id: "badge-choice" },
+      { property_id: 54, formatted_name: "Font notes", formatted_value: "Use block letters", value_id: null },
+    ] } });
+
+    expect(result.text).toBe("PICU\nUse block letters");
+    expect(result.source).not.toHaveProperty("customerFontSelections");
+  });
+
+  it("does not classify empty or URL-valued font dropdown responses as customer font selections", () => {
+    const result = normalizeEtsyTransaction({ receipt: {}, transaction: { transaction_id: "1", variations: [
+      { property_id: 54, formatted_name: "Font Choice", formatted_value: " ", value_id: 100 },
+      { property_id: 54, formatted_name: "Font Choice", formatted_value: "https://files.test/font", value_id: 101 },
+      { property_id: 54, formatted_name: "Personalization", formatted_value: "Avery", value_id: null },
+    ] } });
+
+    expect(result.text).toBe("Avery");
+    expect(result.source).not.toHaveProperty("customerFontSelections");
+  });
+
+  it("pairs customer font dropdowns ordinally with existing design lines and ignores unmatched selections", () => {
+    const result = normalizeEtsyTransaction({ receipt: {}, transaction: { transaction_id: "1", variations: [
+      { property_id: 54, formatted_name: "Name", formatted_value: "Maria", value_id: null },
+      { property_id: 54, formatted_name: "Credentials", formatted_value: "RN", value_id: null },
+      { property_id: 54, formatted_name: "Font Choice", formatted_value: "Skywalk", value_id: "font-1" },
+      { property_id: 54, formatted_name: "Font Choice", formatted_value: "Somekind", value_id: "font-2" },
+      { property_id: 54, formatted_name: "Font Choice", formatted_value: "Unmatched Font", value_id: "font-3" },
+    ] } });
+
+    expect(result.text).toBe("Maria\nRN");
+    expect(result.source.customerFontSelections).toEqual([
+      { lineIndex: 0, name: "Skywalk" },
+      { lineIndex: 1, name: "Somekind" },
+    ]);
   });
 });

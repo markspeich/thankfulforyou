@@ -6,9 +6,9 @@ import {
 const DEFAULT_PERSISTED_FONT_ID = "candlepin";
 
 function matchesRule(match, lineIndex) {
-  if (match?.type === "first") return lineIndex === 0;
-  if (match?.type === "remaining") return lineIndex > 0;
-  if (match?.type === "index") return lineIndex === Number(match.lineIndex);
+  if (match?.kind === "first") return lineIndex === 0;
+  if (match?.kind === "remaining") return lineIndex > 0;
+  if (match?.kind === "index") return lineIndex === Number(match.lineIndex);
   return false;
 }
 
@@ -71,11 +71,15 @@ export function createAmazonItemEnricher({ presetSnapshot, fontOptions = [], onE
     }
     const lineCount = String(item?.text ?? "").split("\n").length;
     const presetLineSettings = presetLines(preset, item?.source?.listingId, lineCount);
-    const lines = overlayCustomerFontsOnLines(
+    const textLines = overlayCustomerFontsOnLines(
       presetLineSettings,
       selections,
       fontOptions,
     );
+    const lines = [
+      ...textLines,
+      ...(Array.isArray(preset.fixedItems) ? preset.fixedItems : []),
+    ];
     const fontSummary = summarizeCustomerFontResolution(presetLineSettings, selections, fontOptions);
     const summary = {
       presetId: preset.id,
