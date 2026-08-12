@@ -242,14 +242,17 @@ describe("Etsy import service", () => {
     }));
   });
 
-  it("persists recognized Etsy customer fonts over matching preset lines without changing unknown selections", async () => {
+  it("preserves kind-based remaining and index preset settings when Etsy font selections are unknown", async () => {
     const enrichItem = createAmazonItemEnricher({
       presetSnapshot: {
         defaultPresetId: "preset-1",
         presets: [{
           id: "preset-1",
           lineDefaults: { fontId: "font-candlepin", bridgeMm: 0.7 },
-          lineRules: [{ match: { type: "remaining" }, settings: { fontId: "font-somekind" } }],
+          lineRules: [
+            { match: { kind: "remaining" }, settings: { fontId: "font-somekind", horizontalScale: 1.2 } },
+            { match: { kind: "index", lineIndex: 2 }, settings: { fontId: "font-candlepin", offsetXMm: 2 } },
+          ],
         }],
       },
       fontOptions: [
@@ -262,12 +265,13 @@ describe("Etsy import service", () => {
       enrichItem,
       normalizeTransaction: () => ({
         id: "transaction:2",
-        text: "CPL EDWARDS\nRN",
+        text: "CPL EDWARDS\nRN\nBSN",
         source: {
           listingId: "3",
           customerFontSelections: [
             { lineIndex: 0, name: "Skywalk" },
             { lineIndex: 1, name: "Unknown Font" },
+            { lineIndex: 2, name: "Unknown Script" },
           ],
         },
       }),
@@ -281,12 +285,14 @@ describe("Etsy import service", () => {
           customerFontSelections: [
             { lineIndex: 0, name: "Skywalk" },
             { lineIndex: 1, name: "Unknown Font" },
+            { lineIndex: 2, name: "Unknown Script" },
           ],
         }),
         settings: expect.objectContaining({
           lines: [
             expect.objectContaining({ fontId: "font-skywalk", bridgeMm: 0.7 }),
-            expect.objectContaining({ fontId: "font-somekind" }),
+            expect.objectContaining({ fontId: "font-somekind", horizontalScale: 1.2 }),
+            expect.objectContaining({ fontId: "font-candlepin", horizontalScale: 1.2, offsetXMm: 2 }),
           ],
         }),
       })],

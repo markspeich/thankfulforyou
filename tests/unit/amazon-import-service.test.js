@@ -1022,7 +1022,7 @@ describe("Amazon import service", () => {
           id: "preset-amazon",
           globalDefaults: { backingMm: 4.2, globalHorizontalScale: 1.1 },
           lineDefaults: { fontId: "candlepin", bridgeMm: 0.6, fontSizeMm: 30, horizontalScale: 0.95 },
-          lineRules: [{ match: { type: "first" }, settings: { fontSizeMm: 36, lockTextHeight: true } }],
+          lineRules: [{ match: { kind: "first" }, settings: { fontSizeMm: 36, lockTextHeight: true } }],
           listingAssignments: [{
             listingId: "ASIN-1",
             lineOverrides: [{ lineIndex: 1, settings: { offsetXMm: 2, verticalScale: 1.2 } }],
