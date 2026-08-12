@@ -60,6 +60,12 @@ describe("Etsy transaction normalizer", () => {
 
     expect(result.text).toBe("CPL EDWARDS");
     expect(result.source.customerFontSelections).toEqual([{ lineIndex: 0, name: "Candlepin" }]);
+    expect(result.source.variations).toContainEqual({
+      property_id: "54",
+      value_id: 12345,
+      formatted_name: "Font Choice",
+      formatted_value: "Candlepin",
+    });
   });
 
   it("retains non-font dropdown and font-labeled free-text responses as design text", () => {

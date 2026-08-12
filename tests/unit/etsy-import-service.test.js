@@ -298,29 +298,4 @@ describe("Etsy import service", () => {
       })],
     }));
   });
-
-  it("logs the raw Etsy API transaction for the targeted diagnostic order", async () => {
-    const logRawTransaction = vi.fn();
-    const transaction = {
-      transaction_id: 5174720728,
-      listing_id: 4543433391,
-      variations: [
-        { property_id: 54, formatted_name: "Personalization", formatted_value: "CPL EDWARDS" },
-        { property_id: 54, formatted_name: "Font Choice", formatted_value: "Candlepin" },
-      ],
-    };
-    const f = fixture({ logRawTransaction });
-    f.client.listReceipts.mockResolvedValue([
-      { receipt_id: 4142168158, is_paid: true, is_shipped: false },
-    ]);
-    f.client.listReceiptTransactions.mockResolvedValue([transaction]);
-
-    await (await f.service.prepare({ workspaceId: "w", userId: "u" })).run();
-
-    expect(logRawTransaction).toHaveBeenCalledOnce();
-    expect(logRawTransaction).toHaveBeenCalledWith({
-      receiptId: 4142168158,
-      transaction,
-    });
-  });
 });
