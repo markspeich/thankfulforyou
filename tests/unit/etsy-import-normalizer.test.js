@@ -51,4 +51,51 @@ describe("Etsy transaction normalizer", () => {
       expect(result.source).not.toHaveProperty("customizationNeeded");
     }
   });
+
+  it("classifies captured Etsy font dropdown selections without adding them to design text", () => {
+    const result = normalizeEtsyTransaction({ receipt: {}, transaction: { transaction_id: "5174720728", variations: [
+      { property_id: 54, question_id: 1, formatted_name: "Personalization", formatted_value: "CPL EDWARDS", value_id: null },
+      { property_id: "54", question_id: 2, formatted_name: "Font Choice", formatted_value: "Candlepin", value_id: 12345 },
+    ] } });
+
+    expect(result.text).toBe("CPL EDWARDS");
+    expect(result.source.customerFontSelections).toEqual([{ lineIndex: 0, name: "Candlepin" }]);
+  });
+
+  it("retains non-font dropdown and font-labeled free-text responses as design text", () => {
+    const result = normalizeEtsyTransaction({ receipt: {}, transaction: { transaction_id: "1", variations: [
+      { property_id: 54, formatted_name: "Badge Choice", formatted_value: "PICU", value_id: "badge-choice" },
+      { property_id: 54, formatted_name: "Font notes", formatted_value: "Use block letters", value_id: null },
+    ] } });
+
+    expect(result.text).toBe("PICU\nUse block letters");
+    expect(result.source).not.toHaveProperty("customerFontSelections");
+  });
+
+  it("does not classify empty or URL-valued font dropdown responses as customer font selections", () => {
+    const result = normalizeEtsyTransaction({ receipt: {}, transaction: { transaction_id: "1", variations: [
+      { property_id: 54, formatted_name: "Font Choice", formatted_value: " ", value_id: 100 },
+      { property_id: 54, formatted_name: "Font Choice", formatted_value: "https://files.test/font", value_id: 101 },
+      { property_id: 54, formatted_name: "Personalization", formatted_value: "Avery", value_id: null },
+    ] } });
+
+    expect(result.text).toBe("Avery");
+    expect(result.source).not.toHaveProperty("customerFontSelections");
+  });
+
+  it("pairs customer font dropdowns ordinally with existing design lines and ignores unmatched selections", () => {
+    const result = normalizeEtsyTransaction({ receipt: {}, transaction: { transaction_id: "1", variations: [
+      { property_id: 54, formatted_name: "Name", formatted_value: "Maria", value_id: null },
+      { property_id: 54, formatted_name: "Credentials", formatted_value: "RN", value_id: null },
+      { property_id: 54, formatted_name: "Font Choice", formatted_value: "Skywalk", value_id: "font-1" },
+      { property_id: 54, formatted_name: "Font Choice", formatted_value: "Somekind", value_id: "font-2" },
+      { property_id: 54, formatted_name: "Font Choice", formatted_value: "Unmatched Font", value_id: "font-3" },
+    ] } });
+
+    expect(result.text).toBe("Maria\nRN");
+    expect(result.source.customerFontSelections).toEqual([
+      { lineIndex: 0, name: "Skywalk" },
+      { lineIndex: 1, name: "Somekind" },
+    ]);
+  });
 });

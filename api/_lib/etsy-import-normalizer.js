@@ -2,6 +2,7 @@ import { normalizeImportedText } from "../../src/etsy-import.js";
 
 const PERSONALIZATION_PROPERTY_ID = "54";
 const URL_PATTERN = /^https?:\/\/\S+$/i;
+const FONT_LABEL_PATTERN = /\bfont\b/i;
 
 function text(value) { return normalizeImportedText(value); }
 function id(value) { return value == null ? "" : String(value).trim(); }
@@ -31,10 +32,20 @@ export function normalizeEtsyTransaction({ receipt = {}, transaction = {}, listi
     .map((variation) => {
       const label = text(variation.formatted_name);
       const value = text(variation.formatted_value);
-      return { kind: URL_PATTERN.test(value) ? "file" : "text", name: label, value };
+      const kind = URL_PATTERN.test(value) ? "file" : "text";
+      return {
+        kind,
+        name: label,
+        value,
+        isFontSelection: kind === "text" && Boolean(id(variation.value_id)) && FONT_LABEL_PATTERN.test(label),
+      };
     })
     .filter((response) => response.value);
-  const designLines = personalizationResponses.filter((response) => response.kind === "text").map((response) => response.value);
+  const designResponses = personalizationResponses.filter((response) => !response.isFontSelection);
+  const designLines = designResponses.filter((response) => response.kind === "text").map((response) => response.value);
+  const customerFontSelections = personalizationResponses
+    .filter((response) => response.isFontSelection)
+    .flatMap((response, lineIndex) => designLines[lineIndex] ? [{ lineIndex, name: response.value }] : []);
   const listingId = id(transaction.listing_id ?? listing.listing_id);
   const transactionId = id(transaction.transaction_id);
   const color = variations.find((variation) => text(variation.formatted_name).toLowerCase() === "color");
@@ -51,7 +62,8 @@ export function normalizeEtsyTransaction({ receipt = {}, transaction = {}, listi
       orderNumber, transactionId, listingId, buyerName,
       colorName: text(color?.formatted_value), quantity, listingTitle,
       listingImageUrl75x75: imageUrl(image),
-      personalizationResponses,
+      personalizationResponses: designResponses.map(({ kind, name, value }) => ({ kind, name, value })),
+      ...(customerFontSelections.length ? { customerFontSelections } : {}),
       expected_ship_date: transaction.expected_ship_date ?? null,
       shipByDate: dateFromTimestamp(transaction.expected_ship_date),
       variations: variations.map(({ property_id, value_id, formatted_name, formatted_value }) => ({ property_id, value_id, formatted_name, formatted_value })),
