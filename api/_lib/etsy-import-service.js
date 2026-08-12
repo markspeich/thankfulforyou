@@ -20,7 +20,7 @@ const reauth = (error) => error?.category === "reauthorize" || error?.code === "
 const aborted = (error, signal) => Boolean(signal?.aborted || error?.name === "AbortError" || error?.code === "ABORT_ERR");
 const eligible = (r) => { const s = String(r?.status || "").toLowerCase(); return r?.is_paid === true && r?.is_shipped === false && r?.was_canceled !== true && r?.was_cancelled !== true && !["canceled", "cancelled"].includes(s); };
 const compactReceipt = (r) => ({ receipt_id: r.receipt_id, name: r.name, buyer_name: r.buyer_name, create_timestamp: r.create_timestamp, update_timestamp: r.update_timestamp, paid_timestamp: r.paid_timestamp, expected_ship_date: r.expected_ship_date, transaction_sold_count: r.transaction_sold_count });
-export function createEtsyImportService({ store, refreshAccess, createClient, normalizeTransaction, getPresetIdForListingId = () => null, clock = () => new Date(), randomUUID = uuid, maxImportItems = DEFAULT_MAX_IMPORT_ITEMS, logRawTransaction = defaultLogRawTransaction }) {
+export function createEtsyImportService({ store, refreshAccess, createClient, normalizeTransaction, enrichItem = (item) => item, getPresetIdForListingId = () => null, clock = () => new Date(), randomUUID = uuid, maxImportItems = DEFAULT_MAX_IMPORT_ITEMS, logRawTransaction = defaultLogRawTransaction }) {
   async function prepare({ workspaceId, userId, signal, onProgress = () => {} }) {
     const started = clock();
     let connection = await store.getEtsyConnectionCredentials({ workspaceId });
@@ -108,7 +108,8 @@ export function createEtsyImportService({ store, refreshAccess, createClient, no
               if (reauth(error)) throw error;
             }
             await renewIfDue();
-            const item = normalizeTransaction({ receipt, transaction, listing, image, getPresetIdForListingId });
+            const normalizedItem = normalizeTransaction({ receipt, transaction, listing, image, getPresetIdForListingId });
+            const item = await enrichItem(normalizedItem);
             const result = await store.importWorkspaceOrderItems({ workspaceId, userId, items: [item], target: "orders", batchId: null });
             const count = Number(result?.importedCount ?? result?.importedOrderItemIds?.length ?? 0);
             imported += count; existing += Math.max(0, 1 - count);

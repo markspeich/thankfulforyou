@@ -2,6 +2,38 @@ import { describe, expect, it, vi } from "vitest";
 import { createEtsyImportHandler } from "../../api/etsy-import.js";
 function response() { return { headers: {}, chunks: [], status(v) { this.statusCode = v; return this; }, setHeader(k, v) { this.headers[k] = v; }, json(v) { this.body = v; }, write(v) { this.chunks.push(v); }, end() { this.ended = true; }, flushHeaders: vi.fn() }; }
 describe("Etsy import API", () => {
+  it("loads workspace fonts and the preset snapshot to enrich Etsy imports", async () => {
+    const enrichItem = vi.fn((item) => item);
+    const itemEnricherFactory = vi.fn(() => enrichItem);
+    const serviceFactory = vi.fn(({ enrichItem: serviceEnricher }) => ({
+      prepare: async ({ onProgress }) => ({
+        run: async () => onProgress({ type: "complete", imported: 0 }),
+        release: vi.fn(),
+      }),
+    }));
+    const loadPresetSnapshot = vi.fn().mockResolvedValue({
+      snapshot: { defaultPresetId: "preset-1", presets: [{ id: "preset-1" }] },
+    });
+    const listWorkspaceFonts = vi.fn().mockResolvedValue([
+      { id: "font-skywalk", display_name: "Skywalk" },
+    ]);
+
+    await createEtsyImportHandler({
+      resolveAuth: vi.fn().mockResolvedValue({ workspaceId: "workspace-1", userId: "user-1" }),
+      serviceFactory,
+      itemEnricherFactory,
+      dependencies: { loadPresetSnapshot, listWorkspaceFonts },
+    })({ method: "POST" }, response());
+
+    expect(loadPresetSnapshot).toHaveBeenCalledWith("workspace-1");
+    expect(listWorkspaceFonts).toHaveBeenCalledWith({ workspaceId: "workspace-1" });
+    expect(itemEnricherFactory).toHaveBeenCalledWith({
+      presetSnapshot: { defaultPresetId: "preset-1", presets: [{ id: "preset-1" }] },
+      fontOptions: [{ id: "font-skywalk", displayName: "Skywalk", label: undefined }],
+    });
+    expect(serviceFactory).toHaveBeenCalledWith(expect.objectContaining({ enrichItem }));
+  });
+
   it("authenticates before streaming and writes newline-delimited progress", async () => {
     const order = []; const auth = vi.fn(async () => { order.push("auth"); return { workspaceId: "w", userId: "u" }; });
     const serviceFactory = () => ({ prepare: vi.fn(async ({ onProgress }) => { order.push("prepare"); return { run: async () => { onProgress({ type: "complete", imported: 0 }); }, release: vi.fn() }; }) });

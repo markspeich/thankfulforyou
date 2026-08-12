@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { createEtsyImportService, EtsyImportError } from "../../api/_lib/etsy-import-service.js";
+import { createAmazonItemEnricher } from "../../api/_lib/amazon-import-enrichment.js";
 function fixture(overrides = {}) {
   const now = new Date("2026-07-16T12:00:00.000Z");
   const store = {
@@ -238,6 +239,57 @@ describe("Etsy import service", () => {
     expect(result).toMatchObject({ imported: 0, existing: 1, customizationNeeded: 1 });
     expect(f.store.importWorkspaceOrderItems).toHaveBeenCalledWith(expect.objectContaining({
       items: [expect.objectContaining({ source: expect.objectContaining({ customizationNeeded: true }) })],
+    }));
+  });
+
+  it("persists recognized Etsy customer fonts over matching preset lines without changing unknown selections", async () => {
+    const enrichItem = createAmazonItemEnricher({
+      presetSnapshot: {
+        defaultPresetId: "preset-1",
+        presets: [{
+          id: "preset-1",
+          lineDefaults: { fontId: "font-candlepin", bridgeMm: 0.7 },
+          lineRules: [{ match: { type: "remaining" }, settings: { fontId: "font-somekind" } }],
+        }],
+      },
+      fontOptions: [
+        { id: "font-candlepin", displayName: "Candlepin" },
+        { id: "font-skywalk", displayName: "Skywalk" },
+        { id: "font-somekind", displayName: "Somekind" },
+      ],
+    });
+    const f = fixture({
+      enrichItem,
+      normalizeTransaction: () => ({
+        id: "transaction:2",
+        text: "CPL EDWARDS\nRN",
+        source: {
+          listingId: "3",
+          customerFontSelections: [
+            { lineIndex: 0, name: "Skywalk" },
+            { lineIndex: 1, name: "Unknown Font" },
+          ],
+        },
+      }),
+    });
+
+    await (await f.service.prepare({ workspaceId: "w", userId: "u" })).run();
+
+    expect(f.store.importWorkspaceOrderItems).toHaveBeenCalledWith(expect.objectContaining({
+      items: [expect.objectContaining({
+        source: expect.objectContaining({
+          customerFontSelections: [
+            { lineIndex: 0, name: "Skywalk" },
+            { lineIndex: 1, name: "Unknown Font" },
+          ],
+        }),
+        settings: expect.objectContaining({
+          lines: [
+            expect.objectContaining({ fontId: "font-skywalk", bridgeMm: 0.7 }),
+            expect.objectContaining({ fontId: "font-somekind" }),
+          ],
+        }),
+      })],
     }));
   });
 
