@@ -240,6 +240,57 @@ async function installRacyFixedDesignRoutes(page) {
   });
 }
 
+async function installPresetWithFixedDesignRoute(page) {
+  await page.route("**/api/preset-snapshot**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify({
+        snapshot: {
+          version: 1,
+          defaultPresetId: "fixed-svg-preset",
+          presets: [
+            {
+              schemaVersion: 1,
+              id: "fixed-svg-preset",
+              name: "Fixed SVG Preset",
+              globalDefaults: {
+                boundingSizePresetId: "size-2-2x1-5",
+                backingMm: 3.1,
+                weldExportedDesign: true,
+              },
+              lineDefaults: {
+                fontId: "candlepin",
+                bridgeMm: 0.5,
+                lineBridgeMm: 0.5,
+                offsetXMm: 0,
+                fontSizeMm: 32,
+                horizontalScale: 1,
+                verticalScale: 1,
+                lockTextHeight: false,
+              },
+              lineRules: [{ match: { kind: "all" }, settings: {} }],
+              listingAssignments: [],
+              fixedItems: [
+                {
+                  kind: "fixedSvg",
+                  fixedDesignId: "fixed-design-1",
+                  fixedDesignName: "Cardiology Heart",
+                  fixedDesignVersion: 3,
+                  svgSizeMm: 28,
+                  offsetXMm: 0,
+                  offsetYMm: 0,
+                  backingBorder: false,
+                },
+              ],
+            },
+          ],
+        },
+      }),
+    });
+  });
+}
+
 async function openPresetTools(page) {
   const menu = page.locator(".preset-tools-menu");
   if (await menu.evaluate((node) => node.hasAttribute("open"))) {
@@ -330,6 +381,36 @@ test("renders inserted fixed SVG artwork even when the order text is blank", asy
       heightMm: 32,
     }),
   ]);
+});
+
+test("renders a preset fixed SVG on a blank manual design", async ({ page }) => {
+  await installPresetWithFixedDesignRoute(page);
+  await page.unroute("**/api/production-batch**");
+  await installProductionBatchRoutes(page, {
+    ...buildDefaultProductionBatchSnapshot(),
+    orderItems: [
+      {
+        ...buildDefaultProductionBatchSnapshot().orderItems[0],
+        text: "",
+        settings: {
+          text: "",
+          presetId: "all-candlepin",
+          lines: [],
+        },
+      },
+    ],
+  });
+
+  await page.goto("/production-batch");
+  await expect(page.locator("#initialBatchLoading")).toBeHidden();
+  await expect(page.locator("#textInput")).toHaveValue("");
+
+  await page.locator("#presetInput").selectOption("fixed-svg-preset");
+
+  await expect(page.locator(".line-control-card", { hasText: "Fixed Design: Cardiology Heart" })).toBeVisible();
+  const fixedPreview = page.locator('#preview [data-fixed-svg-id="fixed-design-1"]');
+  await expect(fixedPreview).toBeVisible();
+  await expect(fixedPreview).toHaveAttribute("href", fixedDesignPublicUrl("cardiology-heart.svg"));
 });
 
 test("inserts a fixed SVG design from the preset tools menu with SVG-only controls", async ({ page }) => {

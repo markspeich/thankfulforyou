@@ -8961,6 +8961,10 @@ function applyPresetSelection(presetId) {
     getRawTextLines,
   });
 
+  if (activeOrder) {
+    activeOrder.text = nextSettings.text;
+    activeOrder.settings = nextSettings;
+  }
   applySettings(nextSettings);
   render();
   void ensureFixedDesignRecordsForSettings(nextSettings).then((loaded) => {
