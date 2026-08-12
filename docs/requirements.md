@@ -12,6 +12,8 @@ The business sells custom badge reels. Each face plate is made from two layers o
 
 The software must lay out customer-provided text in a selected font so the laser-cut acrylic uses as few separate pieces as possible.
 
+Blank or whitespace-only text lines must be ignored and must not affect design geometry, line controls, fitting, analysis, or export.
+
 The ideal result is that neighboring letters overlap slightly enough to form a single connected acrylic piece, while still preserving legibility and the intended font style.
 
 ## Product Stage
