@@ -37,6 +37,11 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Reference example 2 uses two fonts: the top name text uses Skywalk, and the lower credential text uses Somekind.
 - Skywalk has also been modified by the business to fix laser-cutting issues.
 - The three primary production fonts are modified Candlepin, modified Skywalk, and Somekind.
+- Etsy imports must distinguish customer font-selection dropdowns from design text even when Etsy reports both as personalization variations with `property_id: 54`.
+- An Etsy personalization variation should be treated as a customer font selection only when it is a non-file dropdown response with a non-null `value_id` and its formatted question name contains the standalone word `font`, case-insensitively.
+- Recognized Etsy customer font selections must be excluded from design text, preserved in imported source metadata using the same per-line `customerFontSelections` shape as Amazon imports, and applied to the corresponding persisted design line using the active workspace font registry.
+- Unknown Etsy customer font names must remain visible in imported source metadata for operator review without overriding the preset font.
+- Etsy personalization dropdowns that are not font-selection questions must remain eligible design text, and free-text responses must not be classified as font selections merely because their question name contains `font`.
 - The text layer should be manufacturable from acrylic, ideally as one connected piece per text layer.
 - When text letters overlap, the overlap should be welded or unioned into one face-layer shape so internal seam lines are removed.
 - The backing layer follows the overall silhouette of the design and gives the text support and contrast.
