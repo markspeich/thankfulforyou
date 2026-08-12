@@ -1,5 +1,12 @@
+import { readFileSync } from "node:fs";
+
 import { describe, expect, it } from "vitest";
 import { normalizeEtsyTransaction } from "../../api/_lib/etsy-import-normalizer.js";
+
+const capturedFontChoiceTransaction = JSON.parse(readFileSync(
+  new URL("../fixtures/etsy-font-choice-transaction.json", import.meta.url),
+  "utf8",
+));
 
 describe("Etsy transaction normalizer", () => {
   it("creates the imported item contract with text and file personalization", () => {
@@ -53,14 +60,23 @@ describe("Etsy transaction normalizer", () => {
   });
 
   it("classifies captured Etsy font dropdown selections without adding them to design text", () => {
-    const result = normalizeEtsyTransaction({ receipt: {}, transaction: { transaction_id: "5174720728", variations: [
-      { property_id: 54, question_id: 1, formatted_name: "Personalization", formatted_value: "CPL EDWARDS", value_id: null },
-      { property_id: "54", question_id: 2, formatted_name: "Font Choice", formatted_value: "Candlepin", value_id: 12345 },
-    ] } });
+    const result = normalizeEtsyTransaction({ receipt: {}, transaction: capturedFontChoiceTransaction });
 
     expect(result.text).toBe("CPL EDWARDS");
     expect(result.source.customerFontSelections).toEqual([{ lineIndex: 0, name: "Candlepin" }]);
     expect(result.source.variations).toEqual([
+      {
+        property_id: 514,
+        value_id: 114393148710,
+        formatted_name: "Badge Reel",
+        formatted_value: "Swivel Alligator",
+      },
+      {
+        property_id: 513,
+        value_id: 52625096996,
+        formatted_name: "Color",
+        formatted_value: "Pink",
+      },
       {
         property_id: 54,
         value_id: null,
@@ -68,8 +84,8 @@ describe("Etsy transaction normalizer", () => {
         formatted_value: "CPL EDWARDS",
       },
       {
-        property_id: "54",
-        value_id: 12345,
+        property_id: 54,
+        value_id: 1463105574344,
         formatted_name: "Font Choice",
         formatted_value: "Candlepin",
       },

@@ -1,0 +1,69 @@
+{
+  "transaction_id": 9000000001,
+  "title": "Custom Badge Reel",
+  "description": "Sanitized listing description.",
+  "seller_user_id": 9000000002,
+  "buyer_user_id": 9000000003,
+  "create_timestamp": 1786492460,
+  "created_timestamp": 1786492460,
+  "paid_timestamp": 1786492466,
+  "shipped_timestamp": null,
+  "quantity": 1,
+  "listing_image_id": 9000000004,
+  "receipt_id": 9000000005,
+  "is_digital": false,
+  "file_data": "",
+  "listing_id": 9000000006,
+  "sku": "",
+  "product_id": 9000000007,
+  "transaction_type": "listing",
+  "price": {
+    "amount": 1900,
+    "divisor": 100,
+    "currency_code": "USD"
+  },
+  "shipping_cost": {
+    "amount": 0,
+    "divisor": 100,
+    "currency_code": "USD"
+  },
+  "variations": [
+    {
+      "property_id": 514,
+      "value_id": 114393148710,
+      "formatted_name": "Badge Reel",
+      "formatted_value": "Swivel Alligator",
+      "question_id": null
+    },
+    {
+      "property_id": 513,
+      "value_id": 52625096996,
+      "formatted_name": "Color",
+      "formatted_value": "Pink",
+      "question_id": null
+    },
+    {
+      "property_id": 54,
+      "value_id": null,
+      "formatted_name": "Personalization",
+      "formatted_value": "CPL EDWARDS",
+      "question_id": 1463088724573
+    },
+    {
+      "property_id": 54,
+      "value_id": 1463105574344,
+      "formatted_name": "Font Choice",
+      "formatted_value": "Candlepin",
+      "question_id": 1463099906777
+    }
+  ],
+  "product_data": null,
+  "shipping_profile_id": 9000000008,
+  "min_processing_days": 1,
+  "max_processing_days": 2,
+  "shipping_method": null,
+  "shipping_upgrade": null,
+  "expected_ship_date": 1786683540,
+  "buyer_coupon": 4.8,
+  "shop_coupon": 4.8
+}
