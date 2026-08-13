@@ -226,6 +226,7 @@ function safeContext(context) {
     "selectionCount",
     "recognizedCount",
     "unknownCount",
+    "pendingCount",
     "processedShipments",
     "importedItems",
     "existingItems",

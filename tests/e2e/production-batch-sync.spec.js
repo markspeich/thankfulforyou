@@ -1,5 +1,5 @@
 import { expect, test } from "playwright/test";
-import { installSeededFontRoute } from "./font-test-routes.js";
+import { installSeededFontRoute, SEEDED_FONT_RECORDS } from "./font-test-routes.js";
 
 test.describe.configure({ mode: "serial" });
 
@@ -399,6 +399,79 @@ test("keeps a recognized imported customer font when startup synchronizes its li
   await expect(page.locator("#presetInput")).toHaveValue("preset-c3e8a1d7f520");
   await expect(page.locator('.line-control-card[data-line-index="0"] select[data-setting="fontId"]')).toHaveValue("candlepin");
   await expect(page.locator('.line-control-card[data-line-index="1"] select[data-setting="fontId"]')).toHaveValue("somekind");
+});
+
+test("applies a pending Etsy line-two font when the operator adds the second text line", async ({ page }) => {
+  // Break caught: a new line gets its preset default instead of the stored Etsy selection.
+  await installSupabaseSession(page);
+  await page.route("**/api/fonts**", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify({
+        fonts: [
+          ...SEEDED_FONT_RECORDS,
+          {
+            id: "super-boys",
+            display_name: "Super Boys",
+            family_name: "SuperBoys",
+            public_url: "public/fonts/Somekind.ttf",
+            file_format: "ttf",
+            version: 1,
+          },
+        ],
+      }),
+    });
+  });
+  await installRemoteBatchSnapshot(page, {
+    batch: { id: "batch-1", workspaceId: "workspace-1" },
+    activeOrderItemId: "remote-order-1",
+    orderItems: [
+      buildCompletedRemoteOrder({
+        text: "Kiara  MA",
+        status: "in-progress",
+        savedSettingsSignature: null,
+        completedSettingsSignature: null,
+        source: {
+          marketplace: "etsy",
+          listingTitle: "Production-shaped pending font order",
+          buyerName: "Kiara",
+          customerFontSelections: [
+            { lineIndex: 0, name: "Candlepin" },
+            { lineIndex: 1, name: "Super Boy" },
+          ],
+        },
+        settings: {
+          text: "Kiara  MA",
+          presetId: "preset-c3e8a1d7f520",
+          boundingSizePresetId: "size-2-2x1-5",
+          backingMm: 3.1,
+          weldExportedDesign: true,
+          lines: [{
+            fontId: "candlepin",
+            bridgeMm: 0.5,
+            lineBridgeMm: 0.5,
+            offsetXMm: 0,
+            fontSizeMm: 34,
+            horizontalScale: 1,
+            verticalScale: 1,
+            lockTextHeight: false,
+          }],
+        },
+      }),
+    ],
+  });
+  await page.route("**/api/layout-analyze", async (route) => {
+    await route.fulfill({ json: buildMockAnalysisResponse() });
+  });
+
+  await page.goto("/production-batch");
+  await expect(page.locator('.line-control-card[data-line-index="0"] select[data-setting="fontId"]')).toHaveValue("candlepin");
+  await expect(page.locator('.line-control-card[data-line-index="1"]')).toHaveCount(0);
+
+  await page.locator("#textInput").fill("Kiara\nMA");
+
+  await expect(page.locator('.line-control-card[data-line-index="1"] select[data-setting="fontId"]')).toHaveValue("super-boys");
 });
 
 test("reapplies imported customer fonts when assigning a preset to a listing", async ({ page }) => {

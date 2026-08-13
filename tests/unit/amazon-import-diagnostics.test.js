@@ -23,6 +23,7 @@ describe("Amazon import diagnostics", () => {
       orderItemId: "order-item-2",
       presetId: "preset-3",
       fontIds: ["font-1", "font-2", "font-3"],
+      pendingCount: 2,
       persistenceOutcome: "created",
       summary: {
         format: "v3",
@@ -45,6 +46,7 @@ describe("Amazon import diagnostics", () => {
       details: {
         presetId: "preset-3",
         fontIds: ["font-1", "font-2", "font-3"],
+        pendingCount: 2,
         persistenceOutcome: "created",
         summary: {
           format: "v3",

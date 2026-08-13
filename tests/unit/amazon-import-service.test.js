@@ -279,7 +279,7 @@ describe("Amazon import service", () => {
       { level: "info", event: "amazon_import.item.started", context: { runId: "run-123", workspaceId: "workspace-1", shipmentId: "shipment-safe", orderNumber: "order-shipment-safe", orderItemId: "item-safe", customizationUrlPresent: true } },
       { level: "info", event: "amazon_import.item.customization_fetched", context: { runId: "run-123", workspaceId: "workspace-1", shipmentId: "shipment-safe", orderNumber: "order-shipment-safe", orderItemId: "item-safe", summary: { format: "v3", surfaceCount: 1, areaCount: 3, candidateNodeCount: 3, acceptedTextCount: 1, acceptedConfigurationCount: 2, acceptedLabels: ["Name", "Name Font", "Color"], rejectedCounts: {} } } },
       { level: "info", event: "amazon_import.item.normalized", context: { runId: "run-123", workspaceId: "workspace-1", shipmentId: "shipment-safe", orderNumber: "order-shipment-safe", orderItemId: "item-safe", textLineCount: 1, personalizationResponseCount: 3, fontSelectionCount: 1, customizationNeeded: false } },
-      { level: "info", event: "amazon_import.item.enriched", context: { runId: "run-123", workspaceId: "workspace-1", shipmentId: "shipment-safe", orderNumber: "order-shipment-safe", orderItemId: "item-safe", presetId: "preset-amazon", designLineCount: 1, selectionCount: 1, recognizedCount: 1, unknownCount: 0, effectiveFontIds: ["skywalk-internal"] } },
+      { level: "info", event: "amazon_import.item.enriched", context: { runId: "run-123", workspaceId: "workspace-1", shipmentId: "shipment-safe", orderNumber: "order-shipment-safe", orderItemId: "item-safe", presetId: "preset-amazon", designLineCount: 1, selectionCount: 1, recognizedCount: 1, unknownCount: 0, pendingCount: 0, effectiveFontIds: ["skywalk-internal"] } },
       { level: "info", event: "amazon_import.item.persisted", context: { runId: "run-123", workspaceId: "workspace-1", shipmentId: "shipment-safe", orderNumber: "order-shipment-safe", orderItemId: "item-safe", persistenceOutcome: "imported" } },
       { level: "info", event: "amazon_import.shipment.completed", context: { runId: "run-123", workspaceId: "workspace-1", shipmentId: "shipment-safe", orderNumber: "order-shipment-safe", importedItems: 1, existingItems: 0, notesUpdated: true, processedTagUpdated: true } },
       { level: "info", event: "amazon_import.run.completed", context: { runId: "run-123", workspaceId: "workspace-1", processedShipments: 1, importedItems: 1, existingItems: 0, alreadyProcessedShipments: 0, customizationNeeded: 0, warnings: 0, failed: 0 } },
@@ -1153,6 +1153,7 @@ describe("Amazon import service", () => {
       selectionCount: 2,
       recognizedCount: 1,
       unknownCount: 1,
+      pendingCount: 0,
       effectiveFontIds: ["skywalk", "candlepin"],
     });
     const [summary] = onEnriched.mock.calls[0];
@@ -1190,6 +1191,7 @@ describe("Amazon import service", () => {
       selectionCount: 2,
       recognizedCount: 1,
       unknownCount: 1,
+      pendingCount: 0,
       effectiveFontIds: ["candlepin", "candlepin"],
     });
     expect(JSON.stringify(onEnriched.mock.calls)).not.toContain("PRIVATE UNKNOWN FONT");

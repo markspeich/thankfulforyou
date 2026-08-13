@@ -8876,6 +8876,17 @@ function createCheckboxField(lineIndex, setting, labelText, checked) {
   return label;
 }
 
+function applyCustomerFontToNewTextLine(lineSettings, order, textLineIndex) {
+  const selection = normalizeCustomerFontSelections(order?.source?.customerFontSelections)
+    .find((candidate) => candidate.lineIndex === textLineIndex);
+  if (!selection) return lineSettings;
+  return overlayCustomerFontsOnLines(
+    [lineSettings],
+    [{ ...selection, lineIndex: 0 }],
+    FONT_OPTIONS,
+  )[0];
+}
+
 function getCurrentSettings() {
   const rawLines = getRawTextLines(textInput.value);
   const presetId = presetInput.value;
@@ -8888,6 +8899,9 @@ function getCurrentSettings() {
     presetId,
   });
   const lines = [];
+  const existingTextLineCount = Array.isArray(activeSettings.lines)
+    ? activeSettings.lines.filter((line) => !isFixedSvgLineSettings(line)).length
+    : 0;
   let textLineIndex = 0;
 
   normalizedActiveSettings.lines.forEach((line, settingsIndex) => {
@@ -8900,22 +8914,27 @@ function getCurrentSettings() {
     }
 
     if (textLineIndex < rawLines.length) {
+      const fallbackLineSettings = textLineIndex < existingTextLineCount
+        ? line
+        : applyCustomerFontToNewTextLine(line, activeOrder, textLineIndex);
       lines.push(readTextLineSettingsFromControls({
         presetId,
         textLineIndex,
         listingId,
-        fallbackLineSettings: line,
+        fallbackLineSettings,
       }));
       textLineIndex += 1;
     }
   });
 
   while (textLineIndex < rawLines.length) {
+    const presetLineSettings = createPresetLineSettings(presetId, textLineIndex, { listingId });
+    const newLineSettings = applyCustomerFontToNewTextLine(presetLineSettings, activeOrder, textLineIndex);
     lines.push(readTextLineSettingsFromControls({
       presetId,
       textLineIndex,
       listingId,
-      fallbackLineSettings: createPresetLineSettings(presetId, textLineIndex, { listingId }),
+      fallbackLineSettings: newLineSettings,
     }));
     textLineIndex += 1;
   }

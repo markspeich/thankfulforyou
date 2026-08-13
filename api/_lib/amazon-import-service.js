@@ -507,6 +507,7 @@ export function createAmazonImportService({
                   selectionCount: enrichmentSummary?.selectionCount ?? 0,
                   recognizedCount: enrichmentSummary?.recognizedCount ?? 0,
                   unknownCount: enrichmentSummary?.unknownCount ?? 0,
+                  pendingCount: enrichmentSummary?.pendingCount ?? 0,
                   effectiveFontIds: enrichmentSummary?.effectiveFontIds ?? [],
                 });
                 const persistenceItem = {

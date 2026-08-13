@@ -57,7 +57,9 @@ export function overlayCustomerFontsOnLines(lines, selections, fontOptions) {
 
 export function summarizeCustomerFontResolution(lines, selections, fontOptions) {
   const normalized = normalizeCustomerFontSelections(selections);
-  const recognizedCount = normalized.filter((selection) => (
+  const materializedLineCount = Array.isArray(lines) ? lines.length : 0;
+  const materializedSelections = normalized.filter((selection) => selection.lineIndex < materializedLineCount);
+  const recognizedCount = materializedSelections.filter((selection) => (
     resolveCustomerFontId(selection.name, fontOptions) !== null
   )).length;
   const effectiveFontIds = overlayCustomerFontsOnLines(lines, normalized, fontOptions)
@@ -66,7 +68,8 @@ export function summarizeCustomerFontResolution(lines, selections, fontOptions) 
   return {
     selectionCount: normalized.length,
     recognizedCount,
-    unknownCount: normalized.length - recognizedCount,
+    unknownCount: materializedSelections.length - recognizedCount,
+    pendingCount: normalized.length - materializedSelections.length,
     effectiveFontIds,
   };
 }

@@ -91,9 +91,31 @@ describe("Amazon customer fonts", () => {
       selectionCount: 2,
       recognizedCount: 1,
       unknownCount: 1,
+      pendingCount: 0,
       effectiveFontIds: ["skywalk", "somekind"],
     });
     expect(JSON.stringify(summary)).not.toContain("Skywalk");
     expect(JSON.stringify(summary)).not.toContain("TOP SECRET FONT VALUE");
+  });
+
+  it("keeps future-line selections pending rather than resolving them against missing text", () => {
+    // Break caught: diagnostics count a stored line-two selection as resolved before line two exists.
+    const summary = summarizeCustomerFontResolution(
+      [{ fontId: "candlepin" }],
+      [
+        { lineIndex: 0, name: "Skywalk" },
+        { lineIndex: 1, name: "Super Boy" },
+        { lineIndex: 2, name: "Unknown Font" },
+      ],
+      [...fonts, { id: "super-boys", displayName: "Super Boys" }],
+    );
+
+    expect(summary).toEqual({
+      selectionCount: 3,
+      recognizedCount: 1,
+      unknownCount: 0,
+      pendingCount: 2,
+      effectiveFontIds: ["skywalk"],
+    });
   });
 });
