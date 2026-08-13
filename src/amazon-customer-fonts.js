@@ -6,6 +6,15 @@ function key(value) {
   return clean(value).toLowerCase();
 }
 
+function aliasesForFontValue(value) {
+  const normalized = key(value);
+  if (!normalized) return [];
+  const withoutLaserSuffix = normalized.replace(/\s*[-–—]?\s*laser$/, "").trim();
+  return withoutLaserSuffix && withoutLaserSuffix !== normalized
+    ? [normalized, withoutLaserSuffix]
+    : [normalized];
+}
+
 export function normalizeCustomerFontSelections(selections) {
   if (!Array.isArray(selections)) return [];
   const byLine = new Map();
@@ -23,9 +32,7 @@ export function resolveCustomerFontId(name, fontOptions = []) {
   if (!requested) return null;
   for (const font of Array.isArray(fontOptions) ? fontOptions : []) {
     const aliases = [font?.id, font?.label, font?.displayName]
-      .map(key)
-      .filter(Boolean)
-      .flatMap((value) => [value, value.replace(/\s+laser$/, "")]);
+      .flatMap(aliasesForFontValue);
     if (aliases.includes(requested)) return clean(font?.id) || null;
   }
   return null;

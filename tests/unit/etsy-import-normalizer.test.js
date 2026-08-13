@@ -113,13 +113,13 @@ describe("Etsy transaction normalizer", () => {
     expect(result.source).not.toHaveProperty("customerFontSelections");
   });
 
-  it("pairs customer font dropdowns ordinally with existing design lines and ignores unmatched selections", () => {
+  it("maps line-labeled customer font dropdowns to their explicit zero-based design lines", () => {
     const result = normalizeEtsyTransaction({ receipt: {}, transaction: { transaction_id: "1", variations: [
       { property_id: 54, formatted_name: "Name", formatted_value: "Maria", value_id: null },
       { property_id: 54, formatted_name: "Credentials", formatted_value: "RN", value_id: null },
-      { property_id: 54, formatted_name: "Font Choice", formatted_value: "Skywalk", value_id: "font-1" },
-      { property_id: 54, formatted_name: "Font Choice", formatted_value: "Somekind", value_id: "font-2" },
-      { property_id: 54, formatted_name: "Font Choice", formatted_value: "Unmatched Font", value_id: "font-3" },
+      { property_id: 54, formatted_name: "Font Choice Line 2", formatted_value: "Somekind", value_id: "font-2" },
+      { property_id: 54, formatted_name: "Font Choice Line 1", formatted_value: "Skywalk", value_id: "font-1" },
+      { property_id: 54, formatted_name: "Font Choice Line 3", formatted_value: "Unmatched Font", value_id: "font-3" },
     ] } });
 
     expect(result.text).toBe("Maria\nRN");
@@ -127,5 +127,17 @@ describe("Etsy transaction normalizer", () => {
       { lineIndex: 0, name: "Skywalk" },
       { lineIndex: 1, name: "Somekind" },
     ]);
+    expect(result.etsyImportDiagnostics).toEqual(expect.objectContaining({
+      schemaVersion: 1,
+      fontSelections: [
+        { selectionIndex: 0, name: "Somekind", lineIndex: 1, outcome: "paired", mappingSource: "label_line_number", labelLineNumber: 2 },
+        { selectionIndex: 1, name: "Skywalk", lineIndex: 0, outcome: "paired", mappingSource: "label_line_number", labelLineNumber: 1 },
+        { selectionIndex: 2, name: "Unmatched Font", lineIndex: null, outcome: "unmatched_design_line", mappingSource: "label_line_number", labelLineNumber: 3 },
+      ],
+    }));
+    expect(result.etsyImportDiagnostics.variations).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: "Name", classification: "design_text", reason: "text_personalization" }),
+      expect.objectContaining({ name: "Font Choice Line 2", classification: "font_selection", reason: "font_dropdown" }),
+    ]));
   });
 });

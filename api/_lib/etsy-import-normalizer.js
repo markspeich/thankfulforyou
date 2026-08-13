@@ -3,9 +3,16 @@ import { normalizeImportedText } from "../../src/etsy-import.js";
 const PERSONALIZATION_PROPERTY_ID = "54";
 const URL_PATTERN = /^https?:\/\/\S+$/i;
 const FONT_LABEL_PATTERN = /\bfont\b/i;
+const FONT_LINE_LABEL_PATTERN = /\bline\s*(\d+)\b/i;
 
 function text(value) { return normalizeImportedText(value); }
 function id(value) { return value == null ? "" : String(value).trim(); }
+function nullableId(value) { const normalized = id(value); return normalized || null; }
+function fontLineNumber(name) {
+  const match = FONT_LINE_LABEL_PATTERN.exec(name);
+  const number = Number(match?.[1]);
+  return Number.isInteger(number) && number > 0 ? number : null;
+}
 function dateFromTimestamp(value) {
   const timestamp = Number(value);
   if (!Number.isFinite(timestamp) || timestamp <= 0) return "";
@@ -25,27 +32,79 @@ function imageUrl(image) {
   return "";
 }
 
+function classifyPersonalizationVariation(variation) {
+  const propertyId = id(variation.property_id);
+  const valueId = nullableId(variation.value_id);
+  const name = text(variation.formatted_name);
+  const value = text(variation.formatted_value);
+  const isPersonalization = propertyId === PERSONALIZATION_PROPERTY_ID;
+  const isFile = URL_PATTERN.test(value);
+  const fontLabel = FONT_LABEL_PATTERN.test(name);
+  const isFontSelection = isPersonalization && Boolean(value) && !isFile && Boolean(valueId) && fontLabel;
+  let classification = "ignored";
+  let reason = "not_personalization_property";
+  if (isPersonalization && !value) {
+    reason = "empty_value";
+  } else if (isPersonalization && isFile) {
+    classification = "file";
+    reason = "file_response";
+  } else if (isFontSelection) {
+    classification = "font_selection";
+    reason = "font_dropdown";
+  } else if (isPersonalization) {
+    classification = "design_text";
+    reason = fontLabel && !valueId ? "font_label_without_dropdown_value" : "text_personalization";
+  }
+  return {
+    propertyId,
+    questionId: nullableId(variation.question_id),
+    valueId,
+    name,
+    value,
+    classification,
+    reason,
+    isFontSelection,
+  };
+}
+
 export function normalizeEtsyTransaction({ receipt = {}, transaction = {}, listing = {}, image = {}, getPresetIdForListingId = () => null }) {
   const variations = variationsOf(transaction);
-  const personalizationResponses = variations
-    .filter((variation) => id(variation.property_id) === PERSONALIZATION_PROPERTY_ID)
+  const variationDiagnostics = variations.map(classifyPersonalizationVariation);
+  const personalizationResponses = variationDiagnostics
+    .filter((variation) => variation.propertyId === PERSONALIZATION_PROPERTY_ID)
     .map((variation) => {
-      const label = text(variation.formatted_name);
-      const value = text(variation.formatted_value);
-      const kind = URL_PATTERN.test(value) ? "file" : "text";
+      const kind = variation.classification === "file" ? "file" : "text";
       return {
         kind,
-        name: label,
-        value,
-        isFontSelection: kind === "text" && Boolean(id(variation.value_id)) && FONT_LABEL_PATTERN.test(label),
+        name: variation.name,
+        value: variation.value,
+        isFontSelection: variation.isFontSelection,
       };
     })
     .filter((response) => response.value);
   const designResponses = personalizationResponses.filter((response) => !response.isFontSelection);
   const designLines = designResponses.filter((response) => response.kind === "text").map((response) => response.value);
-  const customerFontSelections = personalizationResponses
+  const fontSelections = personalizationResponses
     .filter((response) => response.isFontSelection)
-    .flatMap((response, lineIndex) => designLines[lineIndex] ? [{ lineIndex, name: response.value }] : []);
+    .map((response, selectionIndex) => {
+      const labelLineNumber = fontLineNumber(response.name);
+      const mappedLineIndex = labelLineNumber === null ? selectionIndex : labelLineNumber - 1;
+      const lineIndex = designLines[mappedLineIndex] ? mappedLineIndex : null;
+      return {
+        selectionIndex,
+        name: response.value,
+        lineIndex,
+        outcome: lineIndex === null ? "unmatched_design_line" : "paired",
+        mappingSource: labelLineNumber === null ? "ordinal" : "label_line_number",
+        ...(labelLineNumber === null ? {} : { labelLineNumber }),
+      };
+    });
+  const customerFontSelections = fontSelections
+    .flatMap((selection) => selection.lineIndex === null ? [] : [{
+      lineIndex: selection.lineIndex,
+      name: selection.name,
+    }])
+    .sort((left, right) => left.lineIndex - right.lineIndex);
   const listingId = id(transaction.listing_id ?? listing.listing_id);
   const transactionId = id(transaction.transaction_id);
   const color = variations.find((variation) => text(variation.formatted_name).toLowerCase() === "color");
@@ -58,6 +117,11 @@ export function normalizeEtsyTransaction({ receipt = {}, transaction = {}, listi
     id: `transaction:${transactionId}`,
     text: textValue,
     presetId: getPresetIdForListingId(listingId),
+    etsyImportDiagnostics: {
+      schemaVersion: 1,
+      variations: variationDiagnostics.map(({ isFontSelection, ...variation }) => variation),
+      fontSelections,
+    },
     source: {
       orderNumber, transactionId, listingId, buyerName,
       colorName: text(color?.formatted_value), quantity, listingTitle,

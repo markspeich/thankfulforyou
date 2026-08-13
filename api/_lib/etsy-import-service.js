@@ -96,7 +96,13 @@ export function createEtsyImportService({ store, refreshAccess, createClient, no
             }
             await renewIfDue();
             const normalizedItem = normalizeTransaction({ receipt, transaction, listing, image, getPresetIdForListingId });
-            const item = await enrichItem(normalizedItem);
+            let enrichmentSummary = null;
+            const item = await enrichItem(normalizedItem, {
+              onEnriched(summary) { enrichmentSummary = summary; },
+            });
+            if (item?.etsyImportDiagnostics && enrichmentSummary && typeof enrichmentSummary === "object") {
+              item.etsyImportDiagnostics = { ...item.etsyImportDiagnostics, fontResolution: enrichmentSummary };
+            }
             const result = await store.importWorkspaceOrderItems({ workspaceId, userId, items: [item], target: "orders", batchId: null });
             const count = Number(result?.importedCount ?? result?.importedOrderItemIds?.length ?? 0);
             imported += count; existing += Math.max(0, 1 - count);

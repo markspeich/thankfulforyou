@@ -81,6 +81,10 @@ export function buildImportedOrderItemRow(item, { workspaceId, userId }) {
       item?.amazonCustomizationJson && typeof item.amazonCustomizationJson === "object"
         ? item.amazonCustomizationJson
         : null,
+    etsy_import_diagnostics:
+      item?.etsyImportDiagnostics && typeof item.etsyImportDiagnostics === "object"
+        ? item.etsyImportDiagnostics
+        : null,
     source_json: { ...source },
     revision: 1,
     updated_by: userId || null,
@@ -881,7 +885,8 @@ export async function importWorkspaceOrderItems({
   const existingOrderItemUpdates = orderRows.flatMap((row) => {
     const existingItem = existingOrderItemById.get(row.id);
     const hasExpectedShipDate = Object.hasOwn(row.source_json, "expected_ship_date");
-    if (!existingItem || (!row.ship_by_date && !hasExpectedShipDate)) {
+    const hasEtsyImportDiagnostics = row.etsy_import_diagnostics && typeof row.etsy_import_diagnostics === "object";
+    if (!existingItem || (!row.ship_by_date && !hasExpectedShipDate && !hasEtsyImportDiagnostics)) {
       return [];
     }
     const existingSource = existingItem.source_json && typeof existingItem.source_json === "object"
@@ -897,6 +902,7 @@ export async function importWorkspaceOrderItems({
             expected_ship_date: row.source_json.expected_ship_date,
           },
         } : {},
+        ...hasEtsyImportDiagnostics ? { etsy_import_diagnostics: row.etsy_import_diagnostics } : {},
       },
     }];
   });

@@ -31,6 +31,12 @@ describe("Amazon customer fonts", () => {
     expect(resolveCustomerFontId("Unknown", fonts)).toBeNull();
   });
 
+  it("resolves a display name when Etsy omits the laser suffix", () => {
+    expect(resolveCustomerFontId("Quincy", [
+      { id: "workspace-font-quincy", displayName: "Quincy - Laser" },
+    ])).toBe("workspace-font-quincy");
+  });
+
   it("overlays only recognized differing font ids and preserves preset settings", () => {
     const lines = [
       { fontId: "candlepin", bridgeMm: 0.7, fontSizeMm: 31, lockTextHeight: true },
