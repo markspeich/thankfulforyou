@@ -45,6 +45,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Unknown Etsy customer font names must remain visible in imported source metadata for operator review without overriding the preset font.
 - Etsy personalization dropdowns that are not font-selection questions must remain eligible design text, and free-text responses must not be classified as font selections merely because their question name contains `font`.
 - Successful Etsy imports must persist a private, server-side audit record of sanitized variation metadata, classification reasons, font-to-line pairing, and post-enrichment font-resolution outcomes. This record must use a dedicated diagnostic field rather than `source_json` and must not appear in browser responses, telemetry, or ordinary application logs.
+- Numbered Etsy font selections must be preserved by their explicit line number even when the corresponding design text line does not yet exist, then applied automatically if that line is later added. Etsy font values may resolve through internal aliases for workspace font names; `Super Boy` must resolve to `Super Boys`. Repeated spaces in personalization text must not be treated as line separators.
 - The text layer should be manufacturable from acrylic, ideally as one connected piece per text layer.
 - When text letters overlap, the overlap should be welded or unioned into one face-layer shape so internal seam lines are removed.
 - The backing layer follows the overall silhouette of the design and gives the text support and contrast.
