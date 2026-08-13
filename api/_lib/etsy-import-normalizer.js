@@ -91,12 +91,13 @@ export function normalizeEtsyTransaction({ receipt = {}, transaction = {}, listi
     .map((response, selectionIndex) => {
       const labelLineNumber = fontLineNumber(response.name);
       const mappedLineIndex = labelLineNumber === null ? selectionIndex : labelLineNumber - 1;
-      const lineIndex = designLines[mappedLineIndex] ? mappedLineIndex : null;
+      const hasDesignLine = Boolean(designLines[mappedLineIndex]);
+      const lineIndex = labelLineNumber === null && !hasDesignLine ? null : mappedLineIndex;
       return {
         selectionIndex,
         name: response.value,
         lineIndex,
-        outcome: lineIndex === null ? "unmatched_design_line" : "paired",
+        outcome: lineIndex === null ? "unmatched_design_line" : hasDesignLine ? "paired" : "stored_without_design_line",
         mappingSource: labelLineNumber === null ? "ordinal" : "label_line_number",
         ...(labelLineNumber === null ? {} : { labelLineNumber }),
       };

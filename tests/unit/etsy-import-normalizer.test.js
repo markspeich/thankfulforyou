@@ -126,13 +126,14 @@ describe("Etsy transaction normalizer", () => {
     expect(result.source.customerFontSelections).toEqual([
       { lineIndex: 0, name: "Skywalk" },
       { lineIndex: 1, name: "Somekind" },
+      { lineIndex: 2, name: "Unmatched Font" },
     ]);
     expect(result.etsyImportDiagnostics).toEqual(expect.objectContaining({
       schemaVersion: 1,
       fontSelections: [
         { selectionIndex: 0, name: "Somekind", lineIndex: 1, outcome: "paired", mappingSource: "label_line_number", labelLineNumber: 2 },
         { selectionIndex: 1, name: "Skywalk", lineIndex: 0, outcome: "paired", mappingSource: "label_line_number", labelLineNumber: 1 },
-        { selectionIndex: 2, name: "Unmatched Font", lineIndex: null, outcome: "unmatched_design_line", mappingSource: "label_line_number", labelLineNumber: 3 },
+        { selectionIndex: 2, name: "Unmatched Font", lineIndex: 2, outcome: "stored_without_design_line", mappingSource: "label_line_number", labelLineNumber: 3 },
       ],
     }));
     expect(result.etsyImportDiagnostics.variations).toEqual(expect.arrayContaining([
@@ -141,23 +142,21 @@ describe("Etsy transaction normalizer", () => {
     ]));
   });
 
-  it("maps line-labeled font dropdowns against newline-separated text in one personalization response", () => {
+  it("preserves an explicit Etsy font selection when its numbered line has no design text", () => {
     const result = normalizeEtsyTransaction({ receipt: {}, transaction: { transaction_id: "1", variations: [
-      { property_id: 54, formatted_name: "Personalization", formatted_value: "Kiara\nMA", value_id: null },
+      { property_id: 54, formatted_name: "Personalization", formatted_value: "Kiara  MA", value_id: null },
       { property_id: 54, formatted_name: "Font Choice Line 1", formatted_value: "Quincy", value_id: "font-1" },
       { property_id: 54, formatted_name: "Font Choice Line 2", formatted_value: "Super Boy", value_id: "font-2" },
-      { property_id: 54, formatted_name: "Font Choice Line 3", formatted_value: "Unmatched", value_id: "font-3" },
     ] } });
 
-    expect(result.text).toBe("Kiara\nMA");
+    expect(result.text).toBe("Kiara  MA");
     expect(result.source.customerFontSelections).toEqual([
       { lineIndex: 0, name: "Quincy" },
       { lineIndex: 1, name: "Super Boy" },
     ]);
     expect(result.etsyImportDiagnostics.fontSelections).toEqual([
       { selectionIndex: 0, name: "Quincy", lineIndex: 0, outcome: "paired", mappingSource: "label_line_number", labelLineNumber: 1 },
-      { selectionIndex: 1, name: "Super Boy", lineIndex: 1, outcome: "paired", mappingSource: "label_line_number", labelLineNumber: 2 },
-      { selectionIndex: 2, name: "Unmatched", lineIndex: null, outcome: "unmatched_design_line", mappingSource: "label_line_number", labelLineNumber: 3 },
+      { selectionIndex: 1, name: "Super Boy", lineIndex: 1, outcome: "stored_without_design_line", mappingSource: "label_line_number", labelLineNumber: 2 },
     ]);
   });
 });
