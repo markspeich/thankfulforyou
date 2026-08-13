@@ -88,6 +88,30 @@ describe("fixed designs api route", () => {
     expect(response.body).toEqual({ error: "Fixed design upload must include a file." });
   });
 
+  it("returns an actionable conflict when a fixed design name already exists", async () => {
+    resolveProductionBatchAuthMock.mockResolvedValue({ userId: "user-1", workspaceId: "workspace-1" });
+    createWorkspaceFixedDesignMock.mockRejectedValue(Object.assign(
+      new Error('A fixed design named "Rbt" already exists. Select it and use Load New Version to replace its SVG.'),
+      { statusCode: 409, expose: true },
+    ));
+    const { default: handler } = await import("../../api/fixed-designs.js");
+    const response = createResponseRecorder();
+
+    await handler({
+      method: "POST",
+      headers: { authorization: "Bearer token-1" },
+      body: {
+        displayName: "Rbt",
+        file: { name: "rbt.svg", type: "image/svg+xml", text: "<svg></svg>" },
+      },
+    }, response);
+
+    expect(response.statusCode).toBe(409);
+    expect(response.body).toEqual({
+      error: 'A fixed design named "Rbt" already exists. Select it and use Load New Version to replace its SVG.',
+    });
+  });
+
   it("rejects replace requests without a fixedDesignId", async () => {
     resolveProductionBatchAuthMock.mockResolvedValue({ userId: "user-1", workspaceId: "workspace-1" });
     const { default: handler } = await import("../../api/fixed-designs.js");
