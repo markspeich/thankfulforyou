@@ -6,6 +6,10 @@ function key(value) {
   return clean(value).toLowerCase();
 }
 
+const CUSTOMER_FONT_NAME_ALIASES = new Map([
+  ["super boy", "super boys"],
+]);
+
 function aliasesForFontValue(value) {
   const normalized = key(value);
   if (!normalized) return [];
@@ -28,7 +32,7 @@ export function normalizeCustomerFontSelections(selections) {
 }
 
 export function resolveCustomerFontId(name, fontOptions = []) {
-  const requested = key(name);
+  const requested = CUSTOMER_FONT_NAME_ALIASES.get(key(name)) ?? key(name);
   if (!requested) return null;
   for (const font of Array.isArray(fontOptions) ? fontOptions : []) {
     const aliases = [font?.id, font?.label, font?.displayName]

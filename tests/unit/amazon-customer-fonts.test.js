@@ -37,6 +37,13 @@ describe("Amazon customer fonts", () => {
     ])).toBe("workspace-font-quincy");
   });
 
+  it("resolves the Super Boy customer alias to Super Boys", () => {
+    // Break caught: singular Etsy requests are rejected when the available font uses its plural name.
+    const fonts = [{ id: "super-boys", displayName: "Super Boys" }];
+
+    expect(resolveCustomerFontId("Super Boy", fonts)).toBe("super-boys");
+  });
+
   it("overlays only recognized differing font ids and preserves preset settings", () => {
     const lines = [
       { fontId: "candlepin", bridgeMm: 0.7, fontSizeMm: 31, lockTextHeight: true },
@@ -51,6 +58,22 @@ describe("Amazon customer fonts", () => {
       { fontId: "somekind", offsetXMm: 2, horizontalScale: 1.2 },
     ]);
     expect(lines[0].fontId).toBe("candlepin");
+  });
+
+  it("applies a later-line customer font only when that line exists", () => {
+    // Break caught: a second-line selection is silently ignored after its alias resolves.
+    const fonts = [{ id: "super-boys", displayName: "Super Boys" }];
+    const selection = [{ lineIndex: 1, name: "Super Boy" }];
+
+    expect(overlayCustomerFontsOnLines([{ fontId: "candlepin" }], selection, fonts))
+      .toEqual([{ fontId: "candlepin" }]);
+    expect(overlayCustomerFontsOnLines([
+      { fontId: "candlepin" },
+      { fontId: "somekind", bridgeMm: 0.7 },
+    ], selection, fonts)).toEqual([
+      { fontId: "candlepin" },
+      { fontId: "super-boys", bridgeMm: 0.7 },
+    ]);
   });
 
   it("summarizes resolved fonts without retaining customer-facing font values", () => {
