@@ -83,7 +83,9 @@ export function normalizeEtsyTransaction({ receipt = {}, transaction = {}, listi
     })
     .filter((response) => response.value);
   const designResponses = personalizationResponses.filter((response) => !response.isFontSelection);
-  const designLines = designResponses.filter((response) => response.kind === "text").map((response) => response.value);
+  const designLines = designResponses
+    .filter((response) => response.kind === "text")
+    .flatMap((response) => response.value.split(/\r?\n/).map(text).filter(Boolean));
   const fontSelections = personalizationResponses
     .filter((response) => response.isFontSelection)
     .map((response, selectionIndex) => {
