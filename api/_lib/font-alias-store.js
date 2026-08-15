@@ -26,6 +26,7 @@ function mapAliasRow(row) {
     aliasName: row.alias_name ?? null,
     normalizedAlias: row.normalized_alias ?? null,
     fontId: row.font_id ?? null,
+    revision: row.revision ?? row.alias_revision ?? null,
     font,
     createdAt: row.created_at ?? null,
     updatedAt: row.updated_at ?? null,
@@ -65,6 +66,8 @@ function mapRpcResult(data) {
     line: mapSavedLine(row.line),
     orderRevision: row.order_revision ?? null,
     designRevision: row.design_revision ?? null,
+    designStateInvalidated: Boolean(row.design_state_invalidated),
+    productionStatus: row.production_status ?? null,
   };
 }
 
@@ -84,7 +87,7 @@ function mapRpcError(error) {
 export async function listWorkspaceFontAliases({ workspaceId, supabase = createSupabaseAdminClient() }) {
   const { data, error } = await supabase
     .from("font_aliases")
-    .select("id, alias_name, normalized_alias, font_id, created_at, updated_at, fonts!inner(id, display_name, archived_at, deleted_at)")
+    .select("id, alias_name, normalized_alias, font_id, revision, created_at, updated_at, fonts!inner(id, display_name, archived_at, deleted_at)")
     .eq("workspace_id", workspaceId)
     .order("alias_name", { ascending: true });
   if (error) throw error;
@@ -99,6 +102,7 @@ export async function mapWorkspaceFontAlias({
   orderItemId = null,
   designId = null,
   lineIndex = null,
+  expectedAliasRevision = null,
   expectedOrderRevision = null,
   expectedDesignRevision = null,
   supabase = createSupabaseAdminClient(),
@@ -120,6 +124,7 @@ export async function mapWorkspaceFontAlias({
     p_order_item_id: orderItemId,
     p_design_id: designId,
     p_line_index: lineIndex,
+    p_expected_alias_revision: expectedAliasRevision,
     p_expected_order_revision: expectedOrderRevision,
     p_expected_design_revision: expectedDesignRevision,
   });

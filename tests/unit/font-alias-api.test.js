@@ -50,12 +50,12 @@ describe("font aliases api route", () => {
 
     await handler({
       method: "POST", headers: { authorization: "Bearer token" },
-      body: { aliasName: "  S\u{FF35}\u{FF50}\u{FF45}\u{FF52}   Boy ", normalizedAlias: "wrong", fontId: "font-1" },
+      body: { aliasName: "  S\u{FF35}\u{FF50}\u{FF45}\u{FF52}   Boy ", normalizedAlias: "wrong", fontId: "font-1", expectedAliasRevision: 7 },
     }, response);
 
     expect(mapWorkspaceFontAliasMock).toHaveBeenCalledWith(expect.objectContaining({
       workspaceId: "workspace-1", userId: "operator-1", aliasName: "  S\u{FF35}\u{FF50}\u{FF45}\u{FF52}   Boy ",
-      normalizedAlias: "super boy", fontId: "font-1",
+      normalizedAlias: "super boy", fontId: "font-1", expectedAliasRevision: 7,
     }));
     expect(response.statusCode).toBe(200);
   });

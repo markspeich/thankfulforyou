@@ -9685,11 +9685,11 @@ function renderReconciledFontAliasOrder(order) {
   render();
 }
 
-function rebaseFontAliasDraftLine({ draftLine, previousLine, authoritativeLine }) {
+function rebaseFontAliasDraftLine({ draftLine, previousLine, authoritativeLine, preserveDraftFont = false }) {
   const rebasedLine = { ...authoritativeLine };
   if (!draftLine || !previousLine) return rebasedLine;
 
-  for (const key of [
+  const draftKeys = [
     "bridgeMm",
     "lineBridgeMm",
     "offsetXMm",
@@ -9699,13 +9699,15 @@ function rebaseFontAliasDraftLine({ draftLine, previousLine, authoritativeLine }
     "verticalScale",
     "lockTextHeight",
     "fontBridgingEnabled",
-  ]) {
+  ];
+  if (preserveDraftFont) draftKeys.push("fontId");
+  for (const key of draftKeys) {
     if (settingsValueChanged(draftLine[key], previousLine[key])) rebasedLine[key] = draftLine[key];
   }
   return rebasedLine;
 }
 
-function reconcileMappedDesignLine(order, draftSettings, savedLine, orderRevision, designRevision) {
+function reconcileMappedDesignLine(order, draftSettings, savedLine, orderRevision, designRevision, designStateInvalidated = false) {
   if (!order || !savedLine || !Number.isInteger(savedLine.lineIndex)) return;
   const draft = normalizeSettings(draftSettings);
   const previousPublishedSettings = normalizeSettings(order.publishedSnapshot?.settings || order.settings);
@@ -9724,6 +9726,12 @@ function reconcileMappedDesignLine(order, draftSettings, savedLine, orderRevisio
     order.publishedSnapshot.text = order.publishedSnapshot.settings.text;
     order.publishedSnapshot.revision = order.revision;
     order.publishedSnapshot.designRevision = order.designRevision;
+    if (designStateInvalidated) {
+      clearOrderCompletionState(order.publishedSnapshot, order.publishedSnapshot.settings);
+    }
+  }
+  if (designStateInvalidated) {
+    clearOrderCompletionState(order, order.settings);
   }
 
   suppressBatchSyncLocalNotice = true;
@@ -9732,32 +9740,94 @@ function reconcileMappedDesignLine(order, draftSettings, savedLine, orderRevisio
   renderReconciledFontAliasOrder(order);
 }
 
+function applyMappedFontToDraftLine(order, draftSettings, selection, fontId) {
+  if (!order || !fontId) return false;
+  const draft = normalizeSettings(draftSettings);
+  const draftLine = getTextLineItemsFromSettings(draft)
+    .find((item) => item.textLineIndex === selection?.lineIndex);
+  if (!draftLine) return false;
+
+  order.settings = replaceSettingsLine(draft, draftLine.settingsIndex, { fontId });
+  order.text = order.settings.text;
+  suppressBatchSyncLocalNotice = true;
+  persistBatchState({ skipRemoteSave: true });
+  suppressBatchSyncLocalNotice = false;
+  renderReconciledFontAliasOrder(order);
+  return true;
+}
+
 function settingsValueChanged(currentValue, previousValue) {
   return JSON.stringify(currentValue) !== JSON.stringify(previousValue);
 }
 
-function fontAliasSelectedLineWasRetained(previousSettings, latestSettings, selection) {
-  const previousLines = getTextLineItemsFromSettings(previousSettings);
-  const latestLines = getTextLineItemsFromSettings(latestSettings);
-  const previousLine = previousLines
-    .find((item) => item.textLineIndex === selection?.lineIndex);
-  const latestLine = latestLines
-    .find((item) => item.textLineIndex === selection?.lineIndex);
-  if (!previousLine || !latestLine) return false;
+function getFontAliasLineSequence(settings) {
+  const normalized = normalizeSettings(settings);
+  const textBySettingsIndex = new Map(
+    getTextLineItemsFromSettings(normalized).map((item) => [item.settingsIndex, item.text]),
+  );
+  return normalized.lines.map((line, settingsIndex) => ({
+    settingsIndex,
+    identity: line.kind === "fixedSvg"
+      ? `fixed:${line.fixedDesignId || ""}:${line.fixedDesignVersion || ""}`
+      : `text:${textBySettingsIndex.get(settingsIndex) ?? ""}`,
+  }));
+}
 
-  const previousLineId = previousLine.line?.lineId || previousLine.line?.id || null;
-  const latestLineId = latestLine.line?.lineId || latestLine.line?.id || null;
-  if (previousLineId || latestLineId) return Boolean(previousLineId && latestLineId && previousLineId === latestLineId);
-  if (previousLine.text !== latestLine.text) return false;
-  const previousMatchCount = previousLines.filter((item) => item.text === previousLine.text).length;
-  const latestMatchCount = latestLines.filter((item) => item.text === latestLine.text).length;
-  return previousMatchCount === 1 && latestMatchCount === 1;
+function buildUnambiguousFontAliasLineRebase(previousSettings, latestSettings) {
+  const previous = getFontAliasLineSequence(previousSettings);
+  const latest = getFontAliasLineSequence(latestSettings);
+  const previousCounts = new Map();
+  const latestCounts = new Map();
+  for (const item of previous) previousCounts.set(item.identity, (previousCounts.get(item.identity) || 0) + 1);
+  for (const item of latest) latestCounts.set(item.identity, (latestCounts.get(item.identity) || 0) + 1);
+
+  const eligibleIdentity = (identity) => previousCounts.get(identity) === 1 && latestCounts.get(identity) === 1;
+  const lengths = Array.from({ length: previous.length + 1 }, () => Array(latest.length + 1).fill(0));
+  for (let previousIndex = previous.length - 1; previousIndex >= 0; previousIndex -= 1) {
+    for (let latestIndex = latest.length - 1; latestIndex >= 0; latestIndex -= 1) {
+      const matches = previous[previousIndex].identity === latest[latestIndex].identity
+        && eligibleIdentity(previous[previousIndex].identity);
+      lengths[previousIndex][latestIndex] = matches
+        ? 1 + lengths[previousIndex + 1][latestIndex + 1]
+        : Math.max(lengths[previousIndex + 1][latestIndex], lengths[previousIndex][latestIndex + 1]);
+    }
+  }
+
+  const rebase = new Map();
+  let previousIndex = 0;
+  let latestIndex = 0;
+  while (previousIndex < previous.length && latestIndex < latest.length) {
+    const matches = previous[previousIndex].identity === latest[latestIndex].identity
+      && eligibleIdentity(previous[previousIndex].identity);
+    if (matches) {
+      rebase.set(previous[previousIndex].settingsIndex, latest[latestIndex].settingsIndex);
+      previousIndex += 1;
+      latestIndex += 1;
+    } else if (lengths[previousIndex + 1][latestIndex] >= lengths[previousIndex][latestIndex + 1]) {
+      previousIndex += 1;
+    } else {
+      latestIndex += 1;
+    }
+  }
+  return rebase;
+}
+
+function getRetainedFontAliasLine(previousSettings, latestSettings, selection, lineRebase = null) {
+  const previousLine = getTextLineItemsFromSettings(previousSettings)
+    .find((item) => item.textLineIndex === selection?.lineIndex);
+  if (!previousLine) return null;
+  const mappedSettingsIndex = (lineRebase || buildUnambiguousFontAliasLineRebase(previousSettings, latestSettings))
+    .get(previousLine.settingsIndex);
+  if (!Number.isInteger(mappedSettingsIndex)) return null;
+  return getTextLineItemsFromSettings(latestSettings)
+    .find((item) => item.settingsIndex === mappedSettingsIndex) || null;
 }
 
 function rebaseFontAliasDraftSettings({ draftSettings, previousPublishedSettings, latestPublishedSettings, selection }) {
   const draft = normalizeSettings(draftSettings);
   const previous = normalizeSettings(previousPublishedSettings);
   const latest = normalizeSettings(latestPublishedSettings);
+  const lineRebase = buildUnambiguousFontAliasLineRebase(previous, latest);
   const rebased = { ...latest };
   for (const key of ["text", "presetId", "boundingSizePresetId", "backingMm", "weldExportedDesign"]) {
     if (settingsValueChanged(draft[key], previous[key])) rebased[key] = draft[key];
@@ -9765,16 +9835,22 @@ function rebaseFontAliasDraftSettings({ draftSettings, previousPublishedSettings
 
   const selectedPreviousLine = getTextLineItemsFromSettings(previous)
     .find((item) => item.textLineIndex === selection?.lineIndex);
-  const selectedLatestLine = getTextLineItemsFromSettings(latest)
-    .find((item) => item.textLineIndex === selection?.lineIndex);
-  const selectedLineWasRetained = fontAliasSelectedLineWasRetained(previous, latest, selection);
+  const selectedLatestLine = getRetainedFontAliasLine(previous, latest, selection, lineRebase);
+  const selectedLineWasRetained = Boolean(selectedLatestLine);
   const selectedSettingsIndex = selectedPreviousLine?.settingsIndex ?? -1;
   const lines = latest.lines.map((line) => ({ ...line }));
   const lineCount = Math.max(previous.lines.length, draft.lines.length);
   for (let index = 0; index < lineCount; index += 1) {
     if (index === selectedSettingsIndex || !settingsValueChanged(draft.lines[index], previous.lines[index])) continue;
-    if (draft.lines[index]) lines[index] = { ...draft.lines[index] };
-    else if (index < lines.length) lines.splice(index, 1);
+    const latestSettingsIndex = lineRebase.get(index);
+    if (Number.isInteger(latestSettingsIndex) && draft.lines[index]) {
+      lines[latestSettingsIndex] = rebaseFontAliasDraftLine({
+        draftLine: draft.lines[index],
+        previousLine: previous.lines[index],
+        authoritativeLine: lines[latestSettingsIndex],
+        preserveDraftFont: true,
+      });
+    }
   }
   if (selectedLineWasRetained && selectedPreviousLine && selectedLatestLine && draft.lines[selectedSettingsIndex]) {
     lines[selectedLatestLine.settingsIndex] = rebaseFontAliasDraftLine({
@@ -9832,11 +9908,13 @@ async function recoverFontAliasConflict(error, request, order) {
     const remoteOrder = snapshot?.orderItems?.find((candidate) => candidate?.id === order?.id);
     const latestPublishedOrder = normalizeStoredPublishedSnapshot(remoteOrder);
     if (latestPublishedOrder && selection) {
-      request.omitLineMutation = !fontAliasSelectedLineWasRetained(
+      const retainedLine = getRetainedFontAliasLine(
         request.previousPublishedSettings,
         latestPublishedOrder.settings,
         selection,
       );
+      request.omitLineMutation = !retainedLine;
+      request.authoritativeLineSettingsIndex = retainedLine?.settingsIndex ?? null;
       order.publishedSnapshot = latestPublishedOrder;
       applyProductionBatchAuditToOrder(order, latestPublishedOrder);
       order.settings = rebaseFontAliasDraftSettings({
@@ -9885,11 +9963,19 @@ async function submitFontAliasMapping() {
   }
 
   const publishedSettings = order.publishedSnapshot?.settings || order.settings;
+  const publishedLines = getTextLineItemsFromSettings(publishedSettings);
   const persistedLine = request.omitLineMutation
     ? null
-    : getTextLineItemsFromSettings(publishedSettings)
-      .find((item) => item.textLineIndex === request.selection.lineIndex);
-  const payload = { aliasName: request.selection.name, fontId: target.id };
+    : Number.isInteger(request.authoritativeLineSettingsIndex)
+      ? publishedLines.find((item) => item.settingsIndex === request.authoritativeLineSettingsIndex)
+      : publishedLines.find((item) => item.textLineIndex === request.selection.lineIndex);
+  const payload = {
+    aliasName: request.selection.name,
+    fontId: target.id,
+    expectedAliasRevision: Number.isInteger(request.existingAlias?.revision)
+      ? request.existingAlias.revision
+      : null,
+  };
   if (persistedLine) {
     if (!order.designId || order.revision == null || order.designRevision == null) {
       setFontAliasStatus("This design needs to be refreshed before its font mapping can be changed.", "error");
@@ -9918,14 +10004,36 @@ async function submitFontAliasMapping() {
     );
     upsertWorkspaceFontAlias(result.alias);
     request.existingAlias = result.alias;
-    if (result.line) reconcileMappedDesignLine(order, request.draftSettings, result.line, result.orderRevision, result.designRevision);
+    if (result.line) {
+      reconcileMappedDesignLine(
+        order,
+        request.draftSettings,
+        result.line,
+        result.orderRevision,
+        result.designRevision,
+        result.designStateInvalidated,
+      );
+    }
+    const appliedToDraftLine = !result.line && !request.omitLineMutation
+      ? applyMappedFontToDraftLine(
+        order,
+        request.draftSettings,
+        request.selection,
+        result.alias?.fontId || target.id,
+      )
+      : false;
     if (order.id === activeOrderItemId) {
       renderCustomerFontSelections(order);
       refreshFontAliasRestoreFocusTarget(request.selection);
     }
 
     if (!result.line) {
-      setFontAliasStatus(`Mapping saved for future Line ${request.selection.lineIndex + 1}. No current design line was changed.`, "success");
+      setFontAliasStatus(
+        appliedToDraftLine
+          ? `Mapping applied to draft Line ${request.selection.lineIndex + 1}. Save this design to persist the line.`
+          : `Mapping saved for future Line ${request.selection.lineIndex + 1}. No current design line was changed.`,
+        "success",
+      );
       fontAliasConfirmButton.textContent = "Map Font";
       setFontAliasDialogSubmitting(false);
       fontAliasConfirmButton.disabled = true;

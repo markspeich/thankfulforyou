@@ -23,6 +23,7 @@ import {
 } from "../../api/_lib/amazon-customization-normalizer.js";
 import { createAmazonItemEnricher } from "../../api/_lib/amazon-import-enrichment.js";
 import { listWorkspaceFonts } from "../../api/_lib/font-store.js";
+import { listWorkspaceFontAliases } from "../../api/_lib/font-alias-store.js";
 import { createSupabaseAdminClient } from "../../api/_lib/supabase-admin.js";
 import { loadPresetSnapshot } from "../../api/_lib/preset-store.js";
 import { addOrderItemsToProductionBatch } from "../../api/_lib/orders-store.js";
@@ -249,6 +250,114 @@ describe("Amazon import database integration", () => {
       .maybeSingle();
     expect(error).toBeNull();
     expect(design.design_text).toBe("Original");
+  });
+
+  it("keeps an alias-resolved saved Amazon design unchanged when the durable item is reimported", async () => {
+    // Break caught: Amazon re-enrichment treats the mapped marketplace font as permission to replace a saved design.
+    const suffix = randomUUID();
+    const id = `amazon-order-item:${suffix}`;
+    const aliasName = `Amazon Reimport ${suffix}`;
+    const normalizedAlias = aliasName.toLowerCase();
+    const cachedBuild = { signature: `amazon-saved-${suffix}`, layout: { text: "Saved Amazon" } };
+    const supabase = createSupabaseAdminClient();
+    expect((await supabase.from("font_aliases").insert({
+      workspace_id: PRIMARY_WORKSPACE_ID,
+      font_id: "skywalk",
+      alias_name: aliasName,
+      normalized_alias: normalizedAlias,
+    })).error).toBeNull();
+
+    try {
+      const fontAliases = await listWorkspaceFontAliases({ workspaceId: PRIMARY_WORKSPACE_ID, supabase });
+      const enrich = createAmazonItemEnricher({
+        presetSnapshot: {
+          defaultPresetId: "preset-c3e8a1d7f520",
+          presets: [{
+            id: "preset-c3e8a1d7f520",
+            globalDefaults: {},
+            lineDefaults: { fontId: "candlepin" },
+            lineRules: [],
+            listingAssignments: [],
+          }],
+        },
+        fontOptions: [
+          { id: "candlepin", displayName: "Candlepin Laser" },
+          { id: "skywalk", displayName: "Skywalk Laser" },
+        ],
+        fontAliases,
+      });
+      const source = {
+        orderNumber: `AMAZON-ALIAS-${suffix}`,
+        buyerName: "Alias Buyer",
+        listingId: `LISTING-${suffix}`,
+        transactionId: `TX-${suffix}`,
+        customerFontSelections: [{ lineIndex: 0, name: aliasName }],
+      };
+      const firstImport = enrich({ id, text: "Saved Amazon", source });
+      expect(firstImport.settings.lines[0].fontId).toBe("skywalk");
+      await importAmazonOrderItemsTransactional({
+        workspaceId: PRIMARY_WORKSPACE_ID,
+        userId: importUserId,
+        items: [firstImport],
+      });
+
+      const { data: storedDesign, error: designLookupError } = await supabase
+        .from("designs")
+        .select("id")
+        .eq("order_item_id", id)
+        .single();
+      expect(designLookupError).toBeNull();
+      expect((await supabase.from("designs").update({
+        production_status: "export_ready",
+        cached_build_json: cachedBuild,
+        saved_settings_signature: cachedBuild.signature,
+        completed_settings_signature: cachedBuild.signature,
+      }).eq("id", storedDesign.id)).error).toBeNull();
+      expect((await supabase.from("design_lines").update({
+        font_id: "somekind",
+        letter_bridge_mm: 0.9,
+      }).eq("design_id", storedDesign.id).eq("line_index", 0)).error).toBeNull();
+
+      const duplicateImport = enrich({ id, text: "Incoming Amazon overwrite", source });
+      expect(duplicateImport.settings.lines[0].fontId).toBe("skywalk");
+      await expect(importAmazonOrderItemsTransactional({
+        workspaceId: PRIMARY_WORKSPACE_ID,
+        userId: importUserId,
+        items: [duplicateImport],
+      })).resolves.toEqual({ importedOrderItemIds: [], existingOrderItemIds: [id] });
+
+      const [{ data: design }, { data: lines }] = await Promise.all([
+        supabase
+          .from("designs")
+          .select("design_text, production_status, cached_build_json, saved_settings_signature, completed_settings_signature")
+          .eq("id", storedDesign.id)
+          .single(),
+        supabase
+          .from("design_lines")
+          .select("line_index, text, font_id, letter_bridge_mm")
+          .eq("design_id", storedDesign.id)
+          .order("line_index"),
+      ]);
+      expect(design).toMatchObject({
+        design_text: "Saved Amazon",
+        production_status: "export_ready",
+        cached_build_json: cachedBuild,
+        saved_settings_signature: cachedBuild.signature,
+        completed_settings_signature: cachedBuild.signature,
+      });
+      expect(lines).toEqual([expect.objectContaining({
+        line_index: 0,
+        text: "Saved Amazon",
+        font_id: "somekind",
+        letter_bridge_mm: 0.9,
+      })]);
+    } finally {
+      await supabase
+        .from("font_aliases")
+        .delete()
+        .eq("workspace_id", PRIMARY_WORKSPACE_ID)
+        .eq("normalized_alias", normalizedAlias);
+    }
   });
 
   it("stores the raw Amazon customization document and refreshes it on re-import", async () => {

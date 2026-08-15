@@ -24,6 +24,7 @@ function readMappingPayload(req) {
     orderItemId: typeof body?.orderItemId === "string" ? body.orderItemId : null,
     designId: typeof body?.designId === "string" ? body.designId : null,
     lineIndex: Number.isInteger(body?.lineIndex) ? body.lineIndex : null,
+    expectedAliasRevision: Number.isInteger(body?.expectedAliasRevision) ? body.expectedAliasRevision : null,
     expectedOrderRevision: Number.isInteger(body?.expectedOrderRevision) ? body.expectedOrderRevision : null,
     expectedDesignRevision: Number.isInteger(body?.expectedDesignRevision) ? body.expectedDesignRevision : null,
   };

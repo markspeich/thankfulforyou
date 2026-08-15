@@ -6,6 +6,7 @@ create table public.font_aliases (
   normalized_alias text not null,
   created_by uuid references auth.users(id) on delete set null,
   updated_by uuid references auth.users(id) on delete set null,
+  revision bigint not null default 1 check (revision > 0),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique (workspace_id, normalized_alias)
@@ -82,7 +83,8 @@ create or replace function public.map_workspace_font_alias(
   p_design_id uuid default null,
   p_line_index integer default null,
   p_expected_order_revision bigint default null,
-  p_expected_design_revision bigint default null
+  p_expected_design_revision bigint default null,
+  p_expected_alias_revision bigint default null
 )
 returns jsonb
 language plpgsql
@@ -97,8 +99,10 @@ declare
   v_previous_font public.fonts%rowtype;
   v_order public.order_items%rowtype;
   v_design public.designs%rowtype;
+  v_selected_line public.design_lines%rowtype;
   v_line jsonb;
   v_has_design_context boolean;
+  v_design_state_invalidated boolean := false;
 begin
   if p_workspace_id is null then
     raise exception using errcode = '22023', message = 'Workspace is required.';
@@ -112,10 +116,11 @@ begin
     from public.workspace_memberships memberships
     where memberships.workspace_id = p_workspace_id
       and memberships.user_id = p_user_id
+      and memberships.role = 'operator'
   ) then
     raise exception using
       errcode = '42501',
-      message = 'Operator user is not a member of the workspace.';
+      message = 'User is not an operator in the workspace.';
   end if;
 
   if p_alias_name is null then
@@ -160,6 +165,9 @@ begin
   if p_line_index is not null and p_line_index < 0 then
     raise exception using errcode = '22023', message = 'Line index must not be negative.';
   end if;
+  if p_expected_alias_revision is not null and p_expected_alias_revision < 1 then
+    raise exception using errcode = '22023', message = 'Expected alias revision must be positive.';
+  end if;
 
   -- Missing aliases cannot be row-locked, so serialize by canonical workspace key first.
   perform pg_advisory_xact_lock(
@@ -172,6 +180,19 @@ begin
   where aliases.workspace_id = p_workspace_id
     and aliases.normalized_alias = v_normalized_alias
   for update;
+
+  if v_existing_alias.id is null and p_expected_alias_revision is not null then
+    raise exception using
+      errcode = '40001',
+      message = 'Font alias revision conflict.';
+  end if;
+  if v_existing_alias.id is not null
+    and v_existing_alias.revision is distinct from p_expected_alias_revision
+  then
+    raise exception using
+      errcode = '40001',
+      message = 'Font alias revision conflict.';
+  end if;
 
   if found then
     select fonts.*
@@ -227,14 +248,18 @@ begin
         message = 'Design revision conflict.';
     end if;
 
-    perform 1
+    select lines.*
+    into v_selected_line
     from public.design_lines lines
     where lines.design_id = p_design_id
       and lines.line_index = p_line_index
+      and lines.item_kind = 'text'
     for update;
     if not found then
-      raise exception using errcode = '22023', message = 'Design line does not exist.';
+      raise exception using errcode = '22023', message = 'Text design line does not exist.';
     end if;
+
+    v_design_state_invalidated := v_selected_line.font_id is distinct from p_font_id;
   end if;
 
   if v_existing_alias.id is null then
@@ -261,6 +286,7 @@ begin
       font_id = p_font_id,
       alias_name = p_alias_name,
       updated_by = p_user_id,
+      revision = aliases.revision + 1,
       updated_at = now()
     where aliases.id = v_existing_alias.id
     returning * into v_saved_alias;
@@ -270,15 +296,36 @@ begin
     update public.design_lines lines
     set font_id = p_font_id
     where lines.design_id = p_design_id
-      and lines.line_index = p_line_index;
+      and lines.line_index = p_line_index
+      and lines.item_kind = 'text';
 
-    update public.designs designs
-    set
-      revision = designs.revision + 1,
-      updated_by = p_user_id,
-      updated_at = now()
-    where designs.id = p_design_id
-    returning * into v_design;
+    if v_design_state_invalidated then
+      update public.designs designs
+      set
+        production_status = 'in_progress',
+        cached_build_json = null,
+        previous_completed_build_json = null,
+        saved_settings_signature = null,
+        completed_settings_signature = null,
+        analysis_badge_json = null,
+        pending_analysis_signature = null,
+        revision = designs.revision + 1,
+        updated_by = p_user_id,
+        updated_at = now()
+      where designs.id = p_design_id
+      returning * into v_design;
+
+      delete from public.design_analysis_cache cache
+      where cache.design_id = p_design_id;
+    else
+      update public.designs designs
+      set
+        revision = designs.revision + 1,
+        updated_by = p_user_id,
+        updated_at = now()
+      where designs.id = p_design_id
+      returning * into v_design;
+    end if;
 
     update public.order_items orders
     set
@@ -292,7 +339,8 @@ begin
     into v_line
     from public.design_lines lines
     where lines.design_id = p_design_id
-      and lines.line_index = p_line_index;
+      and lines.line_index = p_line_index
+      and lines.item_kind = 'text';
   end if;
 
   return jsonb_build_object(
@@ -300,6 +348,8 @@ begin
     'workspace_id', v_saved_alias.workspace_id,
     'alias_name', v_saved_alias.alias_name,
     'normalized_alias', v_saved_alias.normalized_alias,
+    'alias_revision', v_saved_alias.revision,
+    'previous_alias_revision', v_existing_alias.revision,
     'previous_font_id', v_existing_alias.font_id,
     'previous_font_display_name', v_previous_font.display_name,
     'previous_font_archived_at', v_previous_font.archived_at,
@@ -313,6 +363,8 @@ begin
     'created_at', v_saved_alias.created_at,
     'updated_at', v_saved_alias.updated_at,
     'line', v_line,
+    'design_state_invalidated', v_design_state_invalidated,
+    'production_status', case when v_has_design_context then v_design.production_status else null end,
     'order_revision', case when v_has_design_context then v_order.revision else null end,
     'design_revision', case when v_has_design_context then v_design.revision else null end
   );
@@ -329,6 +381,7 @@ revoke all on function public.map_workspace_font_alias(
   uuid,
   integer,
   bigint,
+  bigint,
   bigint
 ) from public, anon, authenticated;
 grant execute on function public.map_workspace_font_alias(
@@ -340,6 +393,7 @@ grant execute on function public.map_workspace_font_alias(
   text,
   uuid,
   integer,
+  bigint,
   bigint,
   bigint
 ) to service_role;

@@ -16,6 +16,7 @@ let secondaryWorkspaceId;
 let secondaryUserId;
 let secondaryClient;
 let alternateMemberUserId;
+let nonOperatorUserId;
 const createdAliasKeys = new Set();
 const createdFontIds = new Set();
 const createdOrderItemIds = new Set();
@@ -111,7 +112,7 @@ function activeFont(overrides = {}) {
   return font;
 }
 
-async function createAuthenticatedUser(admin, workspaceId) {
+async function createAuthenticatedUser(admin, workspaceId, role = "operator") {
   const email = `font-alias-${randomUUID()}@example.com`;
   const password = `T-${randomUUID()}!`;
   const { data: created, error: createError } = await admin.auth.admin.createUser({
@@ -124,7 +125,7 @@ async function createAuthenticatedUser(admin, workspaceId) {
   const { error: membershipError } = await admin.from("workspace_memberships").insert({
     workspace_id: workspaceId,
     user_id: created.user.id,
-    role: "operator",
+    role,
   });
   expect(membershipError).toBeNull();
 
@@ -236,6 +237,11 @@ beforeAll(async () => {
     admin,
     PRIMARY_WORKSPACE_ID,
   ));
+  ({ userId: nonOperatorUserId } = await createAuthenticatedUser(
+    admin,
+    PRIMARY_WORKSPACE_ID,
+    "viewer",
+  ));
 });
 
 afterAll(async () => {
@@ -266,6 +272,7 @@ afterAll(async () => {
     memberUserId ? admin.auth.admin.deleteUser(memberUserId) : Promise.resolve(),
     secondaryUserId ? admin.auth.admin.deleteUser(secondaryUserId) : Promise.resolve(),
     alternateMemberUserId ? admin.auth.admin.deleteUser(alternateMemberUserId) : Promise.resolve(),
+    nonOperatorUserId ? admin.auth.admin.deleteUser(nonOperatorUserId) : Promise.resolve(),
   ]);
   for (const result of userDeletions.filter(Boolean)) {
     expect(result.error).toBeNull();
@@ -554,6 +561,13 @@ drop function if exists public.${functionName}();
     });
     expect(unauthorized.error?.code).toBe("42501");
 
+    const nonOperator = await mapAlias(admin, {
+      p_user_id: nonOperatorUserId,
+      p_alias_name: aliasName,
+      p_normalized_alias: normalizedAlias,
+    });
+    expect(nonOperator.error?.code).toBe("42501");
+
     const fixture = await createDesignFixture(admin);
     const created = await mapAlias(admin, {
       p_user_id: memberUserId,
@@ -572,6 +586,7 @@ drop function if exists public.${functionName}();
       p_alias_name: aliasName,
       p_normalized_alias: normalizedAlias,
       p_font_id: "skywalk",
+      p_expected_alias_revision: 1,
       p_order_item_id: fixture.orderItemId,
       p_design_id: fixture.designId,
       p_line_index: 0,
@@ -589,6 +604,35 @@ drop function if exists public.${functionName}();
     ]);
     expect(order.updated_by).toBe(alternateMemberUserId);
     expect(design.updated_by).toBe(alternateMemberUserId);
+  });
+
+  it("rejects a selected design line that is not a text item", async () => {
+    const admin = createSupabaseAdminClient();
+    const fixture = await createDesignFixture(admin);
+    expect((await admin
+      .from("design_lines")
+      .update({ item_kind: "fixed_svg" })
+      .eq("design_id", fixture.designId)
+      .eq("line_index", 0)).error).toBeNull();
+
+    const aliasName = `Fixed ${randomUUID()}`;
+    const normalizedAlias = aliasName.toLowerCase();
+    const result = await mapAlias(admin, {
+      p_alias_name: aliasName,
+      p_normalized_alias: normalizedAlias,
+      p_order_item_id: fixture.orderItemId,
+      p_design_id: fixture.designId,
+      p_line_index: 0,
+      p_expected_order_revision: fixture.revision,
+      p_expected_design_revision: fixture.revision,
+    });
+
+    expect(result.error?.code).toBe("22023");
+    expect((await admin
+      .from("font_aliases")
+      .select("id")
+      .eq("workspace_id", PRIMARY_WORKSPACE_ID)
+      .eq("normalized_alias", normalizedAlias)).data).toEqual([]);
   });
 
   it("updates only the selected line and increments both authoritative revisions", async () => {
@@ -635,6 +679,70 @@ drop function if exists public.${functionName}();
     ]);
   });
 
+  it("atomically invalidates export-ready geometry when the selected line font changes", async () => {
+    // Break caught: a mapped font changes while stale completed geometry remains exportable.
+    const admin = createSupabaseAdminClient();
+    const fixture = await createDesignFixture(admin);
+    const cachedBuild = {
+      signature: "completed-candlepin",
+      layout: { lines: [{ fontId: "candlepin" }] },
+      analysis: { connectedComponentCount: 1 },
+    };
+    expect((await admin.from("designs").update({
+      production_status: "export_ready",
+      cached_build_json: cachedBuild,
+      previous_completed_build_json: { ...cachedBuild, signature: "previous-candlepin" },
+      saved_settings_signature: "completed-candlepin",
+      completed_settings_signature: "completed-candlepin",
+      analysis_badge_json: { state: "ok", shortLabel: "1" },
+      pending_analysis_signature: "completed-candlepin",
+    }).eq("id", fixture.designId)).error).toBeNull();
+    expect((await admin.from("design_analysis_cache").insert({
+      design_id: fixture.designId,
+      settings_signature: "completed-candlepin",
+      layout_json: cachedBuild.layout,
+      analysis_json: cachedBuild.analysis,
+    })).error).toBeNull();
+
+    const aliasName = `Invalidate ${randomUUID()}`;
+    const { data, error } = await mapAlias(admin, {
+      p_alias_name: aliasName,
+      p_normalized_alias: aliasName.toLowerCase(),
+      p_font_id: "skywalk",
+      p_order_item_id: fixture.orderItemId,
+      p_design_id: fixture.designId,
+      p_line_index: 0,
+      p_expected_order_revision: fixture.revision,
+      p_expected_design_revision: fixture.revision,
+    });
+
+    expect(error).toBeNull();
+    expect(data).toMatchObject({
+      design_state_invalidated: true,
+      production_status: "in_progress",
+      order_revision: 2,
+      design_revision: 2,
+    });
+    const [{ data: designs }, { data: cacheRows }, { data: lines }] = await Promise.all([
+      admin.from("designs")
+        .select("production_status, cached_build_json, previous_completed_build_json, saved_settings_signature, completed_settings_signature, analysis_badge_json, pending_analysis_signature")
+        .eq("id", fixture.designId),
+      admin.from("design_analysis_cache").select("design_id").eq("design_id", fixture.designId),
+      admin.from("design_lines").select("font_id").eq("design_id", fixture.designId).eq("line_index", 0),
+    ]);
+    expect(designs).toEqual([{
+      production_status: "in_progress",
+      cached_build_json: null,
+      previous_completed_build_json: null,
+      saved_settings_signature: null,
+      completed_settings_signature: null,
+      analysis_badge_json: null,
+      pending_analysis_signature: null,
+    }]);
+    expect(cacheRows).toEqual([]);
+    expect(lines).toEqual([{ font_id: "skywalk" }]);
+  });
+
   it("returns previous and current authoritative font metadata when reassigning an alias", async () => {
     const admin = createSupabaseAdminClient();
     const aliasName = `Reassign ${randomUUID()}`;
@@ -649,6 +757,7 @@ drop function if exists public.${functionName}();
       p_alias_name: aliasName,
       p_normalized_alias: normalizedAlias,
       p_font_id: "somekind",
+      p_expected_alias_revision: 1,
     });
     expect(error).toBeNull();
     expect(data).toMatchObject({
@@ -665,8 +774,8 @@ drop function if exists public.${functionName}();
     expect(rows).toEqual([{ font_id: "somekind" }]);
   });
 
-  it("serializes alias-only mappings on the canonical alias advisory lock", async () => {
-    // Break caught: two missing-alias inserts race to the unique constraint instead of serializing authoritatively.
+  it("rejects a concurrent alias-only replacement when both operators expected no mapping", async () => {
+    // Break caught: a waiter silently replaces an alias created after its editor opened.
     const admin = createSupabaseAdminClient();
     const aliasName = `Alias Lock ${randomUUID()}`;
     const normalizedAlias = aliasName.toLowerCase();
@@ -718,30 +827,26 @@ execute function public.${functionName}();
 
       const [first, second] = await Promise.all([firstPromise, secondPromise]);
       expect(first.error).toBeNull();
-      expect(second.error).toBeNull();
+      expect(second.error?.code).toBe("40001");
       expect(first.data).toMatchObject({
         previous_font_id: null,
         font_id: "candlepin",
+        alias_revision: 1,
         created_by: memberUserId,
         updated_by: memberUserId,
       });
-      expect(second.data).toMatchObject({
-        previous_font_id: "candlepin",
-        font_id: "somekind",
-        created_by: memberUserId,
-        updated_by: alternateMemberUserId,
-      });
       const { data: saved, error: savedError } = await admin
         .from("font_aliases")
-        .select("font_id, created_by, updated_by")
+        .select("font_id, revision, created_by, updated_by")
         .eq("workspace_id", PRIMARY_WORKSPACE_ID)
         .eq("normalized_alias", normalizedAlias)
         .single();
       expect(savedError).toBeNull();
       expect(saved).toEqual({
-        font_id: "somekind",
+        font_id: "candlepin",
+        revision: 1,
         created_by: memberUserId,
-        updated_by: alternateMemberUserId,
+        updated_by: memberUserId,
       });
     } finally {
       await Promise.allSettled([firstPromise, secondPromise].filter(Boolean));
@@ -771,6 +876,7 @@ drop function if exists public.${functionName}();
       p_alias_name: aliasName,
       p_normalized_alias: normalizedAlias,
       p_font_id: "skywalk",
+      p_expected_alias_revision: 1,
       p_order_item_id: fixture.orderItemId,
       p_design_id: fixture.designId,
       p_line_index: 0,
