@@ -18,6 +18,9 @@ function run(command, args, options = {}) {
 }
 
 const mode = parseSupabaseEnvMode(process.argv.slice(2), "local");
+const testTargets = process.argv.slice(2).filter((argument, index, argumentsList) => (
+  argument !== "--env" && argumentsList[index - 1] !== "--env"
+));
 
 if (mode === "local") {
   const config = await generateSupabaseWorktreeConfig();
@@ -27,7 +30,7 @@ if (mode === "local") {
 const supabaseEnv = await resolveSupabaseEnv(mode);
 assertSupabaseEnv(supabaseEnv);
 
-run("vitest", ["run", "--config", "vitest.db.config.js"], {
+run("vitest", ["run", "--config", "vitest.db.config.js", ...testTargets], {
   env: {
     ...process.env,
     ...supabaseEnv,
