@@ -3,6 +3,8 @@ import { randomUUID } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
 
 import { createSupabaseAdminClient } from "../../api/_lib/supabase-admin.js";
+import { createAmazonItemEnricher } from "../../api/_lib/amazon-import-enrichment.js";
+import { listWorkspaceFontAliases } from "../../api/_lib/font-alias-store.js";
 import {
   addOrderGroupsToProductionBatch,
   importWorkspaceOrderItems,
@@ -1839,6 +1841,117 @@ drop function if exists public.${holdFunctionName}();
       completedSettingsSignature: cachedBuild.signature,
       lines: [{ lineIndex: 0, text: "Saved", fontId: "skywalk" }],
     });
+  });
+
+  it("keeps an alias-resolved saved Etsy design unchanged when the transaction is reimported", async () => {
+    // Break caught: Etsy re-enrichment treats the mapped marketplace font as permission to replace a saved design.
+    const suffix = randomUUID();
+    const aliasName = `Etsy Reimport ${suffix}`;
+    const normalizedAlias = aliasName.toLowerCase();
+    const transactionId = `etsy-alias-reimport-${suffix}`;
+    const orderItemId = `transaction:${transactionId}`;
+    const cachedBuild = { signature: `etsy-saved-${suffix}`, layout: { text: "Saved Etsy" } };
+    const supabase = createSupabaseAdminClient();
+
+    try {
+      const enricherOptions = {
+        presetSnapshot: {
+          defaultPresetId: "preset-c3e8a1d7f520",
+          presets: [{
+            id: "preset-c3e8a1d7f520",
+            globalDefaults: {},
+            lineDefaults: { fontId: "candlepin" },
+            lineRules: [],
+            listingAssignments: [],
+          }],
+        },
+        fontOptions: [
+          { id: "candlepin", displayName: "Candlepin Laser" },
+          { id: "skywalk", displayName: "Skywalk Laser" },
+        ],
+      };
+      const source = {
+        marketplace: "etsy",
+        orderNumber: `ETSY-ALIAS-${suffix}`,
+        transactionId,
+        buyerName: "Alias Buyer",
+        customerFontSelections: [{ lineIndex: 0, name: aliasName }],
+      };
+      const firstImport = createAmazonItemEnricher(enricherOptions)({ text: "Saved Etsy", source });
+      expect(firstImport.settings.lines[0].fontId).toBe("candlepin");
+      await importWorkspaceOrderItems({
+        workspaceId: PRIMARY_WORKSPACE_ID,
+        userId: null,
+        target: "orders",
+        items: [firstImport],
+      });
+
+      const { data: storedDesign, error: designLookupError } = await supabase
+        .from("designs")
+        .select("id")
+        .eq("order_item_id", orderItemId)
+        .single();
+      expect(designLookupError).toBeNull();
+      expect((await supabase.from("designs").update({
+        production_status: "export_ready",
+        cached_build_json: cachedBuild,
+        saved_settings_signature: cachedBuild.signature,
+        completed_settings_signature: cachedBuild.signature,
+      }).eq("id", storedDesign.id)).error).toBeNull();
+      expect((await supabase.from("design_lines").update({
+        font_id: "somekind",
+        letter_bridge_mm: 0.9,
+      }).eq("design_id", storedDesign.id).eq("line_index", 0)).error).toBeNull();
+
+      expect((await supabase.from("font_aliases").insert({
+        workspace_id: PRIMARY_WORKSPACE_ID,
+        font_id: "skywalk",
+        alias_name: aliasName,
+        normalized_alias: normalizedAlias,
+      })).error).toBeNull();
+      const fontAliases = await listWorkspaceFontAliases({ workspaceId: PRIMARY_WORKSPACE_ID, supabase });
+      const enrich = createAmazonItemEnricher({ ...enricherOptions, fontAliases });
+      const duplicateImport = enrich({ text: "Incoming Etsy overwrite", source });
+      expect(duplicateImport.settings.lines[0].fontId).toBe("skywalk");
+      await importWorkspaceOrderItems({
+        workspaceId: PRIMARY_WORKSPACE_ID,
+        userId: null,
+        target: "orders",
+        items: [duplicateImport],
+      });
+
+      const [{ data: design }, { data: lines }] = await Promise.all([
+        supabase
+          .from("designs")
+          .select("design_text, production_status, cached_build_json, saved_settings_signature, completed_settings_signature")
+          .eq("id", storedDesign.id)
+          .single(),
+        supabase
+          .from("design_lines")
+          .select("line_index, text, font_id, letter_bridge_mm")
+          .eq("design_id", storedDesign.id)
+          .order("line_index"),
+      ]);
+      expect(design).toMatchObject({
+        design_text: "Saved Etsy",
+        production_status: "export_ready",
+        cached_build_json: cachedBuild,
+        saved_settings_signature: cachedBuild.signature,
+        completed_settings_signature: cachedBuild.signature,
+      });
+      expect(lines).toEqual([expect.objectContaining({
+        line_index: 0,
+        text: "Saved Etsy",
+        font_id: "somekind",
+        letter_bridge_mm: 0.9,
+      })]);
+    } finally {
+      await supabase
+        .from("font_aliases")
+        .delete()
+        .eq("workspace_id", PRIMARY_WORKSPACE_ID)
+        .eq("normalized_alias", normalizedAlias);
+    }
   });
 
   it("skips an order and clears active production batch selection", async () => {

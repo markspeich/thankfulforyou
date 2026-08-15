@@ -14,6 +14,7 @@ describe("production batch relational snapshot mapping", () => {
         {
           id: "33333333-3333-4333-8333-333333333333",
           revision: 4,
+          designRevision: 9,
           updatedAt: "2026-05-30T15:30:00.000Z",
           updatedBy: { id: "44444444-4444-4444-8444-444444444444", email: "operator@example.com" },
           text: "Morgan\nRN",
@@ -109,6 +110,7 @@ describe("production batch relational snapshot mapping", () => {
       global_horizontal_scale: 1.1,
       global_vertical_scale: 0.95,
       production_status: "saved",
+      revision: 9,
       cached_build_json: {
         signature: "completed-signature",
         layout: { svg: "<svg></svg>", bounds: { width: 2.2, height: 1.5 } },
@@ -195,6 +197,7 @@ describe("production batch relational snapshot mapping", () => {
           global_horizontal_scale: 1.1,
           global_vertical_scale: 0.95,
           production_status: "saved",
+          revision: 9,
           cached_build_json: {
             signature: "completed-signature",
             layout: { svg: "<svg></svg>", bounds: { width: 2.2, height: 1.5 } },
@@ -245,6 +248,8 @@ describe("production batch relational snapshot mapping", () => {
         {
           id: "33333333-3333-4333-8333-333333333333",
           revision: 4,
+          designId: "55555555-5555-4555-8555-555555555555",
+          designRevision: 9,
           updatedAt: "2026-05-30T15:30:00.000Z",
           updatedBy: { id: "44444444-4444-4444-8444-444444444444" },
           text: "Morgan\nRN",

@@ -3,6 +3,7 @@ import {
   buildProductionBatchRowsFromSnapshot,
   buildSnapshotFromProductionBatchRows,
 } from "./production-batch-mapper.js";
+import { listWorkspaceFontAliases } from "./font-alias-store.js";
 
 function createSharedSessionAccessError() {
   return Object.assign(new Error("Shared workspace access denied."), {
@@ -44,6 +45,8 @@ export async function loadProductionBatch({ batchId, workspaceId }) {
     return null;
   }
 
+  const fontAliasesPromise = listWorkspaceFontAliases({ workspaceId, supabase });
+
   const { data: batchItems, error: batchItemsError } = await supabase
     .from("batch_items")
     .select("order_item_id, batch_position, status")
@@ -58,7 +61,9 @@ export async function loadProductionBatch({ batchId, workspaceId }) {
 
   const orderItemIds = (batchItems || []).map((item) => item.order_item_id);
   if (!orderItemIds.length) {
-    return buildSnapshotFromProductionBatchRows({ batch, batchItems: [], orderItems: [], designs: [], designLines: [] });
+    return buildSnapshotFromProductionBatchRows({
+      batch, batchItems: [], orderItems: [], designs: [], designLines: [], fontAliases: await fontAliasesPromise,
+    });
   }
 
   const [
@@ -102,6 +107,7 @@ export async function loadProductionBatch({ batchId, workspaceId }) {
     orderItems,
     designs,
     designLines,
+    fontAliases: await fontAliasesPromise,
   });
 }
 

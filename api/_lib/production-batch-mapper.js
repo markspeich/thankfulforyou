@@ -110,7 +110,9 @@ function buildDesignRow(orderItem, { workspaceId, updatedBy }) {
     completed_settings_signature: normalizeStringValue(orderItem.completedSettingsSignature),
     analysis_badge_json: normalizeNullableJsonValue(orderItem.analysisBadge),
     pending_analysis_signature: normalizeStringValue(orderItem.pendingAnalysisSignature),
-    revision: Number.isInteger(orderItem.revision) ? orderItem.revision : 1,
+    revision: Number.isInteger(orderItem.designRevision)
+      ? orderItem.designRevision
+      : Number.isInteger(orderItem.revision) ? orderItem.revision : 1,
     updated_by: updatedBy || null,
     updated_at: orderItem.updatedAt || undefined,
   };
@@ -196,6 +198,8 @@ function buildOrderItemFromRows({ orderItem, design, designLines }) {
   return {
     id: orderItem.id,
     revision: Number.isInteger(orderItem.revision) ? orderItem.revision : null,
+    designId: design?.id ?? null,
+    designRevision: Number.isInteger(design?.revision) ? design.revision : null,
     updatedAt: orderItem.updated_at ?? null,
     updatedBy: orderItem.updated_by ? { id: orderItem.updated_by } : null,
     text: design?.design_text ?? "",
@@ -250,6 +254,7 @@ export function buildSnapshotFromProductionBatchRows({
   orderItems = [],
   designs = [],
   designLines = [],
+  fontAliases,
 } = {}) {
   if (!batch) {
     return null;
@@ -294,5 +299,6 @@ export function buildSnapshotFromProductionBatchRows({
     },
     activeOrderItemId: batch.active_order_item_id ?? null,
     orderItems: restoredOrderItems,
+    ...(Array.isArray(fontAliases) ? { fontAliases } : {}),
   };
 }

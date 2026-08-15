@@ -17,8 +17,10 @@ import {
 } from "./layout-math.js";
 import {
   formatCustomerFontSelection,
+  normalizeCustomerFontAlias,
   normalizeCustomerFontSelections,
   overlayCustomerFontsOnLines,
+  resolveCustomerFont,
 } from "./amazon-customer-fonts.js";
 import {
   buildPresetLines,
@@ -177,6 +179,7 @@ const orderMetadataOriginalValues = {
 
 let FONT_OPTIONS = buildFontOptions();
 let FONT_BY_ID = new Map(FONT_OPTIONS.map((font) => [font.id, font]));
+let workspaceFontAliases = [];
 const DEFAULT_PREVIEW_WIDTH_MM = PREVIEW_BOX_WIDTH_MM + PREVIEW_MARGIN_MM * 2 + PREVIEW_LABEL_RIGHT_MM;
 const DEFAULT_PREVIEW_HEIGHT_MM = PREVIEW_BOX_HEIGHT_MM + PREVIEW_MARGIN_MM * 2;
 const PREVIEW_INNER_GUIDE_WIDTH_MM = 1.6 * 25.4;
@@ -395,6 +398,15 @@ const listingReferenceTitle = document.querySelector("#listingReferenceTitle");
 const listingReferenceImage = document.querySelector("#listingReferenceImage");
 const textInput = document.querySelector("#textInput");
 const customerFontSelections = document.querySelector("#customerFontSelections");
+const fontAliasDialog = document.querySelector("#fontAliasDialog");
+const closeFontAliasDialogButton = document.querySelector("#closeFontAliasDialogButton");
+const cancelFontAliasDialogButton = document.querySelector("#cancelFontAliasDialogButton");
+const fontAliasMarketplaceName = document.querySelector("#fontAliasMarketplaceName");
+const fontAliasSearchInput = document.querySelector("#fontAliasSearchInput");
+const fontAliasFontSelect = document.querySelector("#fontAliasFontSelect");
+const fontAliasPreview = document.querySelector("#fontAliasPreview");
+const fontAliasStatus = document.querySelector("#fontAliasStatus");
+const fontAliasConfirmButton = document.querySelector("#fontAliasConfirmButton");
 const orderColorInput = document.querySelector("#orderColorInput");
 const orderQuantityInput = document.querySelector("#orderQuantityInput");
 const editOrderColorButton = document.querySelector("#editOrderColorButton");
@@ -583,6 +595,8 @@ let presetLibrarySearchTerm = "";
 let activeConfirmationRequest = null;
 let confirmationDialogRestoreFocusTarget = null;
 let activeSavePresetAsRequest = null;
+let activeFontAliasRequest = null;
+let fontAliasRestoreFocusTarget = null;
 let batchSessionContext = null;
 let productionBatchContext = null;
 let productionBatchAutosaveTimeoutId = null;
@@ -1520,6 +1534,8 @@ function normalizeStoredPublishedSnapshot(snapshot) {
   return {
     id,
     revision: normalizeStoredRevision(snapshot.revision),
+    designId: typeof snapshot.designId === "string" && snapshot.designId.trim() ? snapshot.designId.trim() : null,
+    designRevision: normalizeStoredRevision(snapshot.designRevision),
     updatedAt: normalizeStoredUpdatedAt(snapshot.updatedAt),
     updatedBy: normalizeStoredAuditActor(snapshot.updatedBy),
     text,
@@ -3908,6 +3924,8 @@ function hydrateStoredOrder(order, index) {
   const normalizedOrder = {
     id: typeof order.id === "string" && order.id.trim() ? order.id : crypto.randomUUID(),
     revision: normalizeStoredRevision(order.revision),
+    designId: typeof order.designId === "string" && order.designId.trim() ? order.designId.trim() : null,
+    designRevision: normalizeStoredRevision(order.designRevision),
     updatedAt: normalizeStoredUpdatedAt(order.updatedAt),
     updatedBy: normalizeStoredAuditActor(order.updatedBy),
     text,
@@ -3931,6 +3949,8 @@ function hydrateStoredOrder(order, index) {
     normalizedOrder.publishedSnapshot = {
       id: normalizedOrder.id,
       revision: normalizedOrder.revision,
+      designId: normalizedOrder.designId,
+      designRevision: normalizedOrder.designRevision,
       updatedAt: normalizedOrder.updatedAt,
       updatedBy: normalizedOrder.updatedBy ? structuredClone(normalizedOrder.updatedBy) : null,
       text: normalizedOrder.text,
@@ -3977,6 +3997,8 @@ function buildSerializedBatchOrder(order, options = {}) {
   const serializedOrder = {
     id: order.id,
     revision: order.revision,
+    designId: order.designId,
+    designRevision: order.designRevision,
     updatedAt: order.updatedAt,
     updatedBy: order.updatedBy ? structuredClone(order.updatedBy) : null,
     text: order.text,
@@ -4077,6 +4099,16 @@ function applyProductionBatchAuditToOrder(order, auditSource) {
   }
 
   order.revision = normalizeStoredRevision(auditSource.revision);
+  if (Object.hasOwn(auditSource, "designId")) {
+    order.designId = typeof auditSource.designId === "string" && auditSource.designId.trim()
+      ? auditSource.designId.trim()
+      : null;
+  }
+  if (Object.hasOwn(auditSource, "designRevision")) {
+    order.designRevision = auditSource.designRevision == null
+      ? null
+      : normalizeStoredRevision(auditSource.designRevision);
+  }
   order.updatedAt = normalizeStoredUpdatedAt(auditSource.updatedAt);
   order.updatedBy = normalizeStoredAuditActor(auditSource.updatedBy);
 }
@@ -5008,6 +5040,7 @@ function applyPersistedBatchState(parsed) {
   }
 
   setProductionBatchContext(parsed.batch || productionBatchContext || batchSessionContext?.batch || null);
+  workspaceFontAliases = Array.isArray(parsed.fontAliases) ? parsed.fontAliases : [];
   const restoredOrders = parsed.orderItems
     .map((order, index) => hydrateStoredOrder(order, index))
     .filter(Boolean);
@@ -5501,6 +5534,7 @@ function buildOrderPresetSynchronizedSettings(order, presetId) {
       presetSettings.lines,
       order?.source?.customerFontSelections,
       FONT_OPTIONS,
+      workspaceFontAliases,
     ),
   });
 }
@@ -8884,6 +8918,7 @@ function applyCustomerFontToNewTextLine(lineSettings, order, textLineIndex) {
     [lineSettings],
     [{ ...selection, lineIndex: 0 }],
     FONT_OPTIONS,
+    workspaceFontAliases,
   )[0];
 }
 
@@ -9116,6 +9151,8 @@ function restoreOrderFromPublishedSnapshot(order) {
   }
 
   order.revision = snapshot.revision;
+  order.designId = snapshot.designId;
+  order.designRevision = snapshot.designRevision;
   order.updatedAt = snapshot.updatedAt;
   order.updatedBy = snapshot.updatedBy ? structuredClone(snapshot.updatedBy) : null;
   order.text = snapshot.text;
@@ -9515,12 +9552,609 @@ function renderPresetListingIndicator(order) {
   presetListingIndicator.title = `Listing ID ${listingId} is assigned to ${mappedPresetName}.`;
 }
 
+function getWorkspaceFontAlias(aliasName) {
+  const normalizedAlias = normalizeCustomerFontAlias(aliasName);
+  return workspaceFontAliases.find((alias) => (
+    (normalizeCustomerFontAlias(alias?.normalizedAlias) || normalizeCustomerFontAlias(alias?.aliasName)) === normalizedAlias
+  )) || null;
+}
+
+function getCustomerFontResolutionDisplay(selection) {
+  const alias = getWorkspaceFontAlias(selection?.name);
+  const resolution = resolveCustomerFont(selection?.name, FONT_OPTIONS, workspaceFontAliases);
+  const font = resolution?.font || (alias?.font && typeof alias.font === "object" ? alias.font : null);
+  if (!font) {
+    return { alias, font: null, label: "Unmapped", resolved: false };
+  }
+
+  const displayName = font.displayName || font.label || font.id || "Unknown font";
+  const archived = Boolean(font.isArchived || font.archivedAt || font.deletedAt || resolution?.status === "archived" || resolution?.status === "deleted");
+  return {
+    alias,
+    font,
+    label: archived ? `${displayName} — archived` : displayName,
+    resolved: true,
+  };
+}
+
+function setFontAliasStatus(message = "", state = "pending") {
+  fontAliasStatus.textContent = message;
+  fontAliasStatus.hidden = !message;
+  fontAliasStatus.dataset.state = state;
+}
+
+function getActiveFontAliasTarget() {
+  if (!activeFontAliasRequest?.selectedFontId) return null;
+  return FONT_BY_ID.get(activeFontAliasRequest.selectedFontId) || null;
+}
+
+function updateFontAliasPreview() {
+  const target = getActiveFontAliasTarget();
+  fontAliasPreview.style.fontFamily = target?.family ? `"${target.family}"` : "";
+  fontAliasConfirmButton.disabled = !target || Boolean(activeFontAliasRequest?.submitting);
+}
+
+function setFontAliasDialogSubmitting(submitting) {
+  if (!activeFontAliasRequest) return;
+  activeFontAliasRequest.submitting = Boolean(submitting);
+  fontAliasSearchInput.disabled = Boolean(submitting);
+  fontAliasFontSelect.disabled = Boolean(submitting);
+  cancelFontAliasDialogButton.disabled = Boolean(submitting);
+  closeFontAliasDialogButton.disabled = Boolean(submitting);
+  updateFontAliasPreview();
+}
+
+function renderFontAliasOptions() {
+  const requestedSearch = fontAliasSearchInput.value.trim().toLowerCase();
+  const selectedId = activeFontAliasRequest?.selectedFontId || "";
+  const placeholder = document.createElement("option");
+  placeholder.value = "";
+  placeholder.textContent = "Select a font";
+
+  const options = FONT_OPTIONS
+    .filter((font) => !font.isArchived && !font.archivedAt && !font.deletedAt)
+    .filter((font) => !requestedSearch || `${font.displayName || ""} ${font.label || ""}`.toLowerCase().includes(requestedSearch))
+    .map((font) => {
+      const option = document.createElement("option");
+      option.value = font.id;
+      option.textContent = font.displayName || font.label || font.id;
+      return option;
+    });
+
+  fontAliasFontSelect.replaceChildren(placeholder, ...options);
+  fontAliasFontSelect.value = options.some((option) => option.value === selectedId) ? selectedId : "";
+  if (activeFontAliasRequest) activeFontAliasRequest.selectedFontId = fontAliasFontSelect.value;
+  updateFontAliasPreview();
+}
+
+function closeFontAliasMappingDialog() {
+  if (activeFontAliasRequest?.submitting) return;
+  if (fontAliasDialog.open) fontAliasDialog.close();
+}
+
+function openFontAliasMappingDialog(selection, actionButton) {
+  const order = getActiveOrder();
+  if (!order) return;
+  const display = getCustomerFontResolutionDisplay(selection);
+  const activeResolvedFont = display.font && !display.font.isArchived && !display.font.archivedAt && !display.font.deletedAt
+    ? FONT_BY_ID.get(display.font.id)
+    : null;
+  activeFontAliasRequest = {
+    orderId: order.id,
+    selection,
+    existingAlias: display.alias,
+    selectedFontId: activeResolvedFont?.id || "",
+    confirmReplacement: false,
+    submitting: false,
+  };
+  fontAliasRestoreFocusTarget = actionButton;
+  fontAliasMarketplaceName.textContent = selection.name;
+  fontAliasSearchInput.value = "";
+  fontAliasPreview.textContent = getRawTextLines(getCurrentSettings().text)[selection.lineIndex] || "No current design line";
+  fontAliasConfirmButton.textContent = "Map Font";
+  setFontAliasStatus();
+  renderFontAliasOptions();
+  fontAliasDialog.showModal();
+  fontAliasSearchInput.focus();
+}
+
+function upsertWorkspaceFontAlias(alias) {
+  if (!alias || typeof alias !== "object") return;
+  const normalizedAlias = normalizeCustomerFontAlias(alias.normalizedAlias) || normalizeCustomerFontAlias(alias.aliasName);
+  const index = workspaceFontAliases.findIndex((candidate) => (
+    (normalizeCustomerFontAlias(candidate?.normalizedAlias) || normalizeCustomerFontAlias(candidate?.aliasName)) === normalizedAlias
+  ));
+  if (index >= 0) workspaceFontAliases.splice(index, 1, alias);
+  else workspaceFontAliases.push(alias);
+}
+
+function replaceSettingsLine(settings, settingsIndex, savedLine) {
+  const normalized = normalizeSettings(settings);
+  if (!Number.isInteger(settingsIndex) || settingsIndex < 0 || settingsIndex >= normalized.lines.length || !savedLine) return normalized;
+  const lines = normalized.lines.map((line, index) => index === settingsIndex
+    ? { ...line, ...savedLine, kind: savedLine.kind === "fixedSvg" ? "fixedSvg" : line.kind }
+    : line);
+  return normalizeSettings({ ...normalized, lines });
+}
+
+function renderReconciledFontAliasOrder(order) {
+  if (order?.id !== activeOrderItemId) return;
+  applySettings(order.settings);
+  renderOrderList();
+  renderCustomerFontSelections(order);
+  render();
+}
+
+function rebaseFontAliasDraftLine({ draftLine, previousLine, authoritativeLine, preserveDraftFont = false }) {
+  const rebasedLine = { ...authoritativeLine };
+  if (!draftLine || !previousLine) return rebasedLine;
+
+  const fixedLine = draftLine.kind === "fixedSvg" || authoritativeLine.kind === "fixedSvg";
+  const draftKeys = fixedLine
+    ? ["svgSizeMm", "offsetXMm", "offsetYMm", "backingBorder"]
+    : [
+        "bridgeMm",
+        "lineBridgeMm",
+        "offsetXMm",
+        "offsetYMm",
+        "fontSizeMm",
+        "horizontalScale",
+        "verticalScale",
+        "lockTextHeight",
+        "fontBridgingEnabled",
+      ];
+  if (!fixedLine && preserveDraftFont) draftKeys.push("fontId");
+  for (const key of draftKeys) {
+    if (settingsValueChanged(draftLine[key], previousLine[key])) rebasedLine[key] = draftLine[key];
+  }
+  return rebasedLine;
+}
+
+function reconcileMappedDesignLine(order, draftSettings, savedLine, orderRevision, designRevision, designStateInvalidated = false) {
+  if (!order || !savedLine || !Number.isInteger(savedLine.lineIndex)) return;
+  const draft = normalizeSettings(draftSettings);
+  const previousPublishedSettings = normalizeSettings(order.publishedSnapshot?.settings || order.settings);
+  const rebasedDraftLine = rebaseFontAliasDraftLine({
+    draftLine: draft.lines[savedLine.lineIndex],
+    previousLine: previousPublishedSettings.lines[savedLine.lineIndex],
+    authoritativeLine: savedLine,
+  });
+  order.settings = replaceSettingsLine(draft, savedLine.lineIndex, rebasedDraftLine);
+  order.text = order.settings.text;
+  order.revision = normalizeStoredRevision(orderRevision);
+  order.designRevision = normalizeStoredRevision(designRevision);
+
+  if (order.publishedSnapshot) {
+    order.publishedSnapshot.settings = replaceSettingsLine(order.publishedSnapshot.settings, savedLine.lineIndex, savedLine);
+    order.publishedSnapshot.text = order.publishedSnapshot.settings.text;
+    order.publishedSnapshot.revision = order.revision;
+    order.publishedSnapshot.designRevision = order.designRevision;
+    if (designStateInvalidated) {
+      clearOrderCompletionState(order.publishedSnapshot, order.publishedSnapshot.settings);
+    }
+  }
+  if (designStateInvalidated) {
+    clearOrderCompletionState(order, order.settings);
+  }
+
+  suppressBatchSyncLocalNotice = true;
+  persistBatchState({ skipRemoteSave: true });
+  suppressBatchSyncLocalNotice = false;
+  renderReconciledFontAliasOrder(order);
+}
+
+function applyMappedFontToDraftLine(order, draftSettings, selection, fontId) {
+  if (!order || !fontId) return false;
+  const draft = normalizeSettings(draftSettings);
+  const draftLine = getTextLineItemsFromSettings(draft)
+    .find((item) => item.textLineIndex === selection?.lineIndex);
+  if (!draftLine) return false;
+
+  order.settings = replaceSettingsLine(draft, draftLine.settingsIndex, { fontId });
+  order.text = order.settings.text;
+  suppressBatchSyncLocalNotice = true;
+  persistBatchState({ skipRemoteSave: true });
+  suppressBatchSyncLocalNotice = false;
+  renderReconciledFontAliasOrder(order);
+  return true;
+}
+
+function settingsValueChanged(currentValue, previousValue) {
+  return JSON.stringify(currentValue) !== JSON.stringify(previousValue);
+}
+
+function getFontAliasLineSequence(settings) {
+  const normalized = normalizeSettings(settings);
+  const textBySettingsIndex = new Map(
+    getTextLineItemsFromSettings(normalized).map((item) => [item.settingsIndex, item.text]),
+  );
+  return normalized.lines.map((line, settingsIndex) => {
+    const text = line.kind === "fixedSvg" ? null : textBySettingsIndex.get(settingsIndex) ?? "";
+    return {
+      settingsIndex,
+      kind: line.kind,
+      line,
+      text,
+      identity: line.kind === "fixedSvg"
+        ? `fixed:${line.fixedDesignId || ""}:${line.fixedDesignVersion || ""}`
+        : `text:${text}`,
+    };
+  });
+}
+
+function countFontAliasLineIdentities(sequence) {
+  const counts = new Map();
+  for (const item of sequence) counts.set(item.identity, (counts.get(item.identity) || 0) + 1);
+  return counts;
+}
+
+function buildUnambiguousFontAliasLineRebase(previousSettings, latestSettings) {
+  const previous = getFontAliasLineSequence(previousSettings);
+  const latest = getFontAliasLineSequence(latestSettings);
+  const previousCounts = countFontAliasLineIdentities(previous);
+  const latestCounts = countFontAliasLineIdentities(latest);
+
+  const eligibleIdentity = (identity) => previousCounts.get(identity) === 1 && latestCounts.get(identity) === 1;
+  const lengths = Array.from({ length: previous.length + 1 }, () => Array(latest.length + 1).fill(0));
+  for (let previousIndex = previous.length - 1; previousIndex >= 0; previousIndex -= 1) {
+    for (let latestIndex = latest.length - 1; latestIndex >= 0; latestIndex -= 1) {
+      const matches = previous[previousIndex].identity === latest[latestIndex].identity
+        && eligibleIdentity(previous[previousIndex].identity);
+      lengths[previousIndex][latestIndex] = matches
+        ? 1 + lengths[previousIndex + 1][latestIndex + 1]
+        : Math.max(lengths[previousIndex + 1][latestIndex], lengths[previousIndex][latestIndex + 1]);
+    }
+  }
+
+  const rebase = new Map();
+  let previousIndex = 0;
+  let latestIndex = 0;
+  while (previousIndex < previous.length && latestIndex < latest.length) {
+    const matches = previous[previousIndex].identity === latest[latestIndex].identity
+      && eligibleIdentity(previous[previousIndex].identity);
+    if (matches) {
+      rebase.set(previous[previousIndex].settingsIndex, latest[latestIndex].settingsIndex);
+      previousIndex += 1;
+      latestIndex += 1;
+    } else if (lengths[previousIndex + 1][latestIndex] >= lengths[previousIndex][latestIndex + 1]) {
+      previousIndex += 1;
+    } else {
+      latestIndex += 1;
+    }
+  }
+  return rebase;
+}
+
+function getRetainedFontAliasLine(previousSettings, latestSettings, selection, lineRebase = null) {
+  const previousLine = getTextLineItemsFromSettings(previousSettings)
+    .find((item) => item.textLineIndex === selection?.lineIndex);
+  if (!previousLine) return null;
+  const mappedSettingsIndex = (lineRebase || buildUnambiguousFontAliasLineRebase(previousSettings, latestSettings))
+    .get(previousLine.settingsIndex);
+  if (!Number.isInteger(mappedSettingsIndex)) return null;
+  return getTextLineItemsFromSettings(latestSettings)
+    .find((item) => item.settingsIndex === mappedSettingsIndex) || null;
+}
+
+function rebaseFontAliasDraftSettings({ draftSettings, previousPublishedSettings, latestPublishedSettings, selection }) {
+  const draft = normalizeSettings(draftSettings);
+  const previous = normalizeSettings(previousPublishedSettings);
+  const latest = normalizeSettings(latestPublishedSettings);
+  const previousSequence = getFontAliasLineSequence(previous);
+  const draftSequence = getFontAliasLineSequence(draft);
+  const latestSequence = getFontAliasLineSequence(latest);
+  const previousToDraft = buildUnambiguousFontAliasLineRebase(previous, draft);
+  const previousToLatest = buildUnambiguousFontAliasLineRebase(previous, latest);
+  const draftToPrevious = new Map([...previousToDraft].map(([previousIndex, draftIndex]) => [draftIndex, previousIndex]));
+  const latestToPrevious = new Map([...previousToLatest].map(([previousIndex, latestIndex]) => [latestIndex, previousIndex]));
+  const previousCounts = countFontAliasLineIdentities(previousSequence);
+  const draftCounts = countFontAliasLineIdentities(draftSequence);
+  const draftItemsByIdentity = new Map();
+  for (const item of draftSequence) {
+    const matchingItems = draftItemsByIdentity.get(item.identity) || [];
+    matchingItems.push(item);
+    draftItemsByIdentity.set(item.identity, matchingItems);
+  }
+  const draftInsertionSettingsIndexes = new Set();
+  for (const [identity, matchingItems] of draftItemsByIdentity) {
+    const surplusCount = matchingItems.length - (previousCounts.get(identity) || 0);
+    if (surplusCount <= 0) continue;
+    const unmatchedItems = matchingItems.filter((item) => !draftToPrevious.has(item.settingsIndex));
+    for (const item of unmatchedItems.slice(-surplusCount)) {
+      draftInsertionSettingsIndexes.add(item.settingsIndex);
+    }
+  }
+  const rebased = { ...latest };
+  for (const key of ["presetId", "boundingSizePresetId", "backingMm", "weldExportedDesign"]) {
+    if (settingsValueChanged(draft[key], previous[key])) rebased[key] = draft[key];
+  }
+
+  const selectedPreviousLine = getTextLineItemsFromSettings(previous)
+    .find((item) => item.textLineIndex === selection?.lineIndex);
+  const selectedSettingsIndex = selectedPreviousLine?.settingsIndex ?? -1;
+  const localInsertionsBeforeLatestIndex = new Map();
+  for (let draftSequenceIndex = 0; draftSequenceIndex < draftSequence.length; draftSequenceIndex += 1) {
+    const draftItem = draftSequence[draftSequenceIndex];
+    if (draftToPrevious.has(draftItem.settingsIndex) || !draftInsertionSettingsIndexes.has(draftItem.settingsIndex)) continue;
+
+    let targetLatestIndex = latestSequence.length;
+    for (let nextDraftIndex = draftSequenceIndex + 1; nextDraftIndex < draftSequence.length; nextDraftIndex += 1) {
+      const nextPreviousIndex = draftToPrevious.get(draftSequence[nextDraftIndex].settingsIndex);
+      const nextLatestIndex = previousToLatest.get(nextPreviousIndex);
+      if (Number.isInteger(nextLatestIndex)) {
+        targetLatestIndex = nextLatestIndex;
+        break;
+      }
+    }
+    const insertions = localInsertionsBeforeLatestIndex.get(targetLatestIndex) || [];
+    insertions.push({ ...draftItem, line: { ...draftItem.line } });
+    localInsertionsBeforeLatestIndex.set(targetLatestIndex, insertions);
+  }
+
+  const mergedSequence = [];
+  for (let latestSequenceIndex = 0; latestSequenceIndex <= latestSequence.length; latestSequenceIndex += 1) {
+    mergedSequence.push(...(localInsertionsBeforeLatestIndex.get(latestSequenceIndex) || []));
+    if (latestSequenceIndex === latestSequence.length) break;
+
+    const latestItem = latestSequence[latestSequenceIndex];
+    const previousIndex = latestToPrevious.get(latestItem.settingsIndex);
+    if (!Number.isInteger(previousIndex)) {
+      mergedSequence.push({ ...latestItem, line: { ...latestItem.line } });
+      continue;
+    }
+
+    const previousItem = previousSequence.find((item) => item.settingsIndex === previousIndex);
+    const draftIndex = previousToDraft.get(previousIndex);
+    if (!Number.isInteger(draftIndex)) {
+      const definitelyDeletedLocally = previousCounts.get(previousItem?.identity) === 1
+        && !draftCounts.has(previousItem?.identity);
+      if (!definitelyDeletedLocally) mergedSequence.push({ ...latestItem, line: { ...latestItem.line } });
+      continue;
+    }
+
+    const draftItem = draftSequence.find((item) => item.settingsIndex === draftIndex);
+    mergedSequence.push({
+      ...latestItem,
+      line: rebaseFontAliasDraftLine({
+        draftLine: draftItem?.line,
+        previousLine: previousItem?.line,
+        authoritativeLine: latestItem.line,
+        preserveDraftFont: previousIndex !== selectedSettingsIndex,
+      }),
+    });
+  }
+
+  rebased.text = mergedSequence
+    .filter((item) => item.kind !== "fixedSvg")
+    .map((item) => item.text ?? "")
+    .join("\n");
+  rebased.lines = mergedSequence.map((item) => item.line);
+  return normalizeSettings(rebased);
+}
+
+function refreshFontAliasRestoreFocusTarget(selection) {
+  const matchingAction = customerFontSelections.querySelector(`[data-font-alias-line-index="${selection?.lineIndex}"]`);
+  fontAliasRestoreFocusTarget = matchingAction instanceof HTMLElement ? matchingAction : textInput;
+}
+
+async function postFontAliasMapping(payload, accessToken) {
+  const response = await fetch("/api/font-aliases", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+    },
+    body: JSON.stringify(payload),
+  });
+  let responsePayload = {};
+  try {
+    responsePayload = await response.json();
+  } catch {
+    responsePayload = {};
+  }
+  if (!response.ok) {
+    throw Object.assign(new Error(responsePayload.error || "Unable to save this font mapping."), {
+      status: response.status,
+      code: responsePayload.code || null,
+      payload: responsePayload,
+    });
+  }
+  return responsePayload;
+}
+
+async function recoverFontAliasConflict(error, request, order) {
+  if (Array.isArray(error?.payload?.fontAliases)) workspaceFontAliases = error.payload.fontAliases;
+  const selection = request?.selection;
+  try {
+    const accessToken = productionBatchAccessToken || readProductionBatchAccessTokenOverride() || await getAccessToken();
+    const snapshot = productionBatchContext?.id
+      ? await runProductionBatchRequestWithSessionRefresh(
+        (requestToken) => fetchProductionBatchSnapshot(productionBatchContext.id, requestToken),
+        accessToken,
+      )
+      : null;
+    const remoteOrder = snapshot?.orderItems?.find((candidate) => candidate?.id === order?.id);
+    const latestPublishedOrder = normalizeStoredPublishedSnapshot(remoteOrder);
+    if (latestPublishedOrder && selection) {
+      const retainedLine = getRetainedFontAliasLine(
+        request.previousPublishedSettings,
+        latestPublishedOrder.settings,
+        selection,
+      );
+      request.omitLineMutation = !retainedLine;
+      request.authoritativeLineSettingsIndex = retainedLine?.settingsIndex ?? null;
+      order.publishedSnapshot = latestPublishedOrder;
+      applyProductionBatchAuditToOrder(order, latestPublishedOrder);
+      order.settings = rebaseFontAliasDraftSettings({
+        draftSettings: request.draftSettings,
+        previousPublishedSettings: request.previousPublishedSettings,
+        latestPublishedSettings: latestPublishedOrder.settings,
+        selection,
+      });
+      order.text = order.settings.text;
+      suppressBatchSyncLocalNotice = true;
+      persistBatchState({ skipRemoteSave: true });
+      suppressBatchSyncLocalNotice = false;
+      renderReconciledFontAliasOrder(order);
+    }
+  } catch {
+    // The authoritative alias snapshot still lets the operator retry after a batch refresh failure.
+  }
+
+  if (activeFontAliasRequest === request) {
+    request.existingAlias = getWorkspaceFontAlias(request.selection.name);
+    request.confirmReplacement = false;
+  }
+  if (order?.id === activeOrderItemId) {
+    renderCustomerFontSelections(order);
+    refreshFontAliasRestoreFocusTarget(selection);
+  }
+  setFontAliasStatus(error.message, "error");
+  fontAliasConfirmButton.textContent = "Map Font";
+  updateFontAliasPreview();
+}
+
+async function submitFontAliasMapping() {
+  const request = activeFontAliasRequest;
+  const order = orders.find((candidate) => candidate.id === request?.orderId) || null;
+  const target = getActiveFontAliasTarget();
+  if (!request || !order || !target || request.submitting) return;
+
+  const existingFont = request.existingAlias
+    ? FONT_BY_ID.get(request.existingAlias.fontId) || request.existingAlias.font
+    : null;
+  if (existingFont && request.existingAlias.fontId !== target.id && !request.confirmReplacement) {
+    setFontAliasStatus(`${request.selection.name} is currently mapped to ${existingFont.displayName || existingFont.label || existingFont.id}. Replace this mapping with ${target.displayName || target.label || target.id}?`);
+    request.confirmReplacement = true;
+    fontAliasConfirmButton.textContent = "Replace Mapping";
+    return;
+  }
+
+  const publishedSettings = order.publishedSnapshot?.settings || order.settings;
+  const publishedLines = getTextLineItemsFromSettings(publishedSettings);
+  const persistedLine = request.omitLineMutation
+    ? null
+    : Number.isInteger(request.authoritativeLineSettingsIndex)
+      ? publishedLines.find((item) => item.settingsIndex === request.authoritativeLineSettingsIndex)
+      : publishedLines.find((item) => item.textLineIndex === request.selection.lineIndex);
+  const payload = {
+    aliasName: request.selection.name,
+    fontId: target.id,
+    expectedAliasRevision: Number.isInteger(request.existingAlias?.revision)
+      ? request.existingAlias.revision
+      : null,
+  };
+  if (persistedLine) {
+    if (!order.designId || order.revision == null || order.designRevision == null) {
+      setFontAliasStatus("This design needs to be refreshed before its font mapping can be changed.", "error");
+      return;
+    }
+    Object.assign(payload, {
+      orderItemId: order.id,
+      designId: order.designId,
+      lineIndex: persistedLine.settingsIndex,
+      expectedOrderRevision: order.revision,
+      expectedDesignRevision: order.designRevision,
+    });
+  }
+
+  request.draftSettings = order.id === activeOrderItemId
+    ? normalizeSettings(getCurrentSettings())
+    : normalizeSettings(order.settings);
+  if (typeof request.selectionWasDraftOnly !== "boolean") {
+    request.selectionWasDraftOnly = !persistedLine && Boolean(
+      getTextLineItemsFromSettings(request.draftSettings)
+        .find((item) => item.textLineIndex === request.selection.lineIndex),
+    );
+  }
+  request.previousPublishedSettings = normalizeSettings(publishedSettings);
+  setFontAliasDialogSubmitting(true);
+  setFontAliasStatus("Saving font mapping…");
+  try {
+    const accessToken = productionBatchAccessToken || readProductionBatchAccessTokenOverride() || await getAccessToken();
+    const result = await runProductionBatchRequestWithSessionRefresh(
+      (requestToken) => postFontAliasMapping(payload, requestToken),
+      accessToken,
+    );
+    upsertWorkspaceFontAlias(result.alias);
+    request.existingAlias = result.alias;
+    if (result.line) {
+      reconcileMappedDesignLine(
+        order,
+        request.draftSettings,
+        result.line,
+        result.orderRevision,
+        result.designRevision,
+        result.designStateInvalidated,
+      );
+    }
+    const appliedToDraftLine = !result.line && request.selectionWasDraftOnly
+      ? applyMappedFontToDraftLine(
+        order,
+        request.draftSettings,
+        request.selection,
+        result.alias?.fontId || target.id,
+      )
+      : false;
+    if (order.id === activeOrderItemId) {
+      renderCustomerFontSelections(order);
+      refreshFontAliasRestoreFocusTarget(request.selection);
+    }
+
+    if (!result.line) {
+      setFontAliasStatus(
+        appliedToDraftLine
+          ? `Mapping applied to draft Line ${request.selection.lineIndex + 1}. Save this design to persist the line.`
+          : `Mapping saved for future Line ${request.selection.lineIndex + 1}. No current design line was changed.`,
+        "success",
+      );
+      fontAliasConfirmButton.textContent = "Map Font";
+      setFontAliasDialogSubmitting(false);
+      fontAliasConfirmButton.disabled = true;
+      return;
+    }
+
+    setFontAliasDialogSubmitting(false);
+    closeFontAliasMappingDialog();
+  } catch (error) {
+    if (error?.status === 409 && error?.code === "FONT_ALIAS_CONFLICT") {
+      await recoverFontAliasConflict(error, request, order);
+      setFontAliasDialogSubmitting(false);
+      return;
+    }
+    setFontAliasDialogSubmitting(false);
+    setFontAliasStatus(error instanceof Error ? error.message : "Unable to save this font mapping.", "error");
+    updateFontAliasPreview();
+  }
+}
+
 function renderCustomerFontSelections(order) {
   const selections = normalizeCustomerFontSelections(order?.source?.customerFontSelections);
   const rows = selections.map((selection) => {
     const row = document.createElement("div");
     row.className = "customer-font-selection";
-    row.textContent = formatCustomerFontSelection(selection);
+    const display = getCustomerFontResolutionDisplay(selection);
+    const copy = document.createElement("span");
+    copy.textContent = `${formatCustomerFontSelection(selection)} (${display.label})`;
+    const action = document.createElement("button");
+    action.type = "button";
+    action.className = "customer-font-map-button";
+    action.dataset.fontAliasLineIndex = String(selection.lineIndex);
+    if (display.resolved) {
+      action.setAttribute("aria-label", "Change font mapping");
+      action.title = "Change font mapping";
+      const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      icon.setAttribute("viewBox", "0 0 24 24");
+      icon.setAttribute("aria-hidden", "true");
+      const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      path.setAttribute("d", "M4 20h4l10.5-10.5a2.1 2.1 0 0 0-3-3L5 17v3ZM13.5 8.5 16 11");
+      icon.append(path);
+      action.append(icon);
+    } else {
+      action.textContent = "Map font";
+    }
+    row.append(copy, action);
     return row;
   });
   customerFontSelections.replaceChildren(...rows);
@@ -11087,6 +11721,7 @@ async function importFromClipboard({ clipboardText: providedClipboardText = null
       getPresetIdForListingId,
       getPresetSettingsForImport: buildImportedPresetSettings,
       fontOptions: FONT_OPTIONS,
+      fontAliases: workspaceFontAliases,
     });
     assertImportableItems(importedItems);
     const { filteredItems, skippedCount } = filterNewProductionBatchImportItems(importedItems);
@@ -11160,6 +11795,7 @@ async function importOrdersFromClipboard({ clipboardText: providedClipboardText 
       getPresetIdForListingId,
       getPresetSettingsForImport: buildImportedPresetSettings,
       fontOptions: FONT_OPTIONS,
+      fontAliases: workspaceFontAliases,
     });
     assertImportableItems(importedItems);
     const accessToken = await resolveProductionBatchMutationAccessToken();
@@ -13104,6 +13740,48 @@ fixedDesignVersionDialog?.addEventListener("click", (event) => {
   if (event.target === fixedDesignVersionDialog) {
     closeFixedDesignVersionDialog();
   }
+});
+customerFontSelections?.addEventListener("click", (event) => {
+  const action = event.target instanceof Element
+    ? event.target.closest("[data-font-alias-line-index]")
+    : null;
+  if (!(action instanceof HTMLButtonElement)) return;
+  const lineIndex = Number(action.dataset.fontAliasLineIndex);
+  const selection = normalizeCustomerFontSelections(getActiveOrder()?.source?.customerFontSelections)
+    .find((candidate) => candidate.lineIndex === lineIndex);
+  if (selection) openFontAliasMappingDialog(selection, action);
+});
+fontAliasSearchInput?.addEventListener("input", renderFontAliasOptions);
+fontAliasFontSelect?.addEventListener("change", () => {
+  if (!activeFontAliasRequest) return;
+  activeFontAliasRequest.selectedFontId = fontAliasFontSelect.value;
+  activeFontAliasRequest.confirmReplacement = false;
+  fontAliasConfirmButton.textContent = "Map Font";
+  setFontAliasStatus();
+  updateFontAliasPreview();
+});
+fontAliasConfirmButton?.addEventListener("click", () => {
+  void submitFontAliasMapping();
+});
+closeFontAliasDialogButton?.addEventListener("click", closeFontAliasMappingDialog);
+cancelFontAliasDialogButton?.addEventListener("click", closeFontAliasMappingDialog);
+fontAliasDialog?.addEventListener("click", (event) => {
+  if (event.target === fontAliasDialog) closeFontAliasMappingDialog();
+});
+fontAliasDialog?.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape") return;
+  event.preventDefault();
+  closeFontAliasMappingDialog();
+});
+fontAliasDialog?.addEventListener("cancel", (event) => {
+  event.preventDefault();
+  closeFontAliasMappingDialog();
+});
+fontAliasDialog?.addEventListener("close", () => {
+  const restoreTarget = fontAliasRestoreFocusTarget;
+  activeFontAliasRequest = null;
+  fontAliasRestoreFocusTarget = null;
+  if (restoreTarget instanceof HTMLElement && restoreTarget.isConnected) restoreTarget.focus();
 });
 fixedDesignDropZone?.addEventListener("dragover", (event) => {
   event.preventDefault();

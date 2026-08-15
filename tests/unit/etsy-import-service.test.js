@@ -371,4 +371,37 @@ describe("Etsy import service", () => {
       })],
     }));
   });
+
+  it("uses an active workspace alias for Etsy without changing its source selection", async () => {
+    // Break caught: Etsy normalization retains the source but shared enrichment misses its alias.
+    const enrichItem = createAmazonItemEnricher({
+      presetSnapshot: {
+        defaultPresetId: "preset-etsy",
+        presets: [{
+          id: "preset-etsy",
+          lineDefaults: { fontId: "font-candlepin", bridgeMm: 0.7 },
+          lineRules: [],
+        }],
+      },
+      fontOptions: [{ id: "font-skywalk", displayName: "Skywalk" }],
+      fontAliases: [{ aliasName: "Lemonade", normalizedAlias: "lemonade", fontId: "font-skywalk" }],
+    });
+    const f = fixture({
+      enrichItem,
+      normalizeTransaction: () => ({
+        id: "transaction:2",
+        text: "CPL EDWARDS",
+        source: { listingId: "3", customerFontSelections: [{ lineIndex: 0, name: "Lemonade" }] },
+      }),
+    });
+
+    await (await f.service.prepare({ workspaceId: "w", userId: "u" })).run();
+
+    expect(f.store.importWorkspaceOrderItems).toHaveBeenCalledWith(expect.objectContaining({
+      items: [expect.objectContaining({
+        source: { listingId: "3", customerFontSelections: [{ lineIndex: 0, name: "Lemonade" }] },
+        settings: expect.objectContaining({ lines: [expect.objectContaining({ fontId: "font-skywalk" })] }),
+      })],
+    }));
+  });
 });

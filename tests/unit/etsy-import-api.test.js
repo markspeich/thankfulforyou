@@ -30,8 +30,36 @@ describe("Etsy import API", () => {
     expect(itemEnricherFactory).toHaveBeenCalledWith({
       presetSnapshot: { defaultPresetId: "preset-1", presets: [{ id: "preset-1" }] },
       fontOptions: [{ id: "font-skywalk", displayName: "Skywalk", label: undefined }],
+      fontAliases: [],
     });
     expect(serviceFactory).toHaveBeenCalledWith(expect.objectContaining({ enrichItem }));
+  });
+  it("loads workspace aliases with Etsy import context", async () => {
+    // Break caught: Etsy imports ignore a workspace mapping that is not a font display name.
+    const enrichItem = vi.fn((item) => item);
+    const itemEnricherFactory = vi.fn(() => enrichItem);
+    const listWorkspaceFontAliases = vi.fn().mockResolvedValue([{
+      aliasName: "Lemonade", normalizedAlias: "lemonade", fontId: "font-skywalk",
+    }]);
+    const serviceFactory = vi.fn(() => ({
+      prepare: async () => ({ run: async () => {}, release: vi.fn() }),
+    }));
+
+    await createEtsyImportHandler({
+      resolveAuth: vi.fn().mockResolvedValue({ workspaceId: "workspace-1", userId: "user-1" }),
+      serviceFactory,
+      itemEnricherFactory,
+      dependencies: {
+        loadPresetSnapshot: vi.fn().mockResolvedValue({ snapshot: { defaultPresetId: "preset-1", presets: [{ id: "preset-1" }] } }),
+        listWorkspaceFonts: vi.fn().mockResolvedValue([{ id: "font-skywalk", display_name: "Skywalk" }]),
+        listWorkspaceFontAliases,
+      },
+    })({ method: "POST" }, response());
+
+    expect(listWorkspaceFontAliases).toHaveBeenCalledWith({ workspaceId: "workspace-1" });
+    expect(itemEnricherFactory).toHaveBeenCalledWith(expect.objectContaining({
+      fontAliases: [{ aliasName: "Lemonade", normalizedAlias: "lemonade", fontId: "font-skywalk" }],
+    }));
   });
 
   it("authenticates before streaming and writes newline-delimited progress", async () => {

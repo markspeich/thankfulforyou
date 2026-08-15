@@ -2,21 +2,36 @@ function clean(value) {
   return typeof value === "string" ? value.trim() : "";
 }
 
-function key(value) {
-  return clean(value).toLowerCase();
+export function normalizeCustomerFontAlias(value) {
+  return typeof value === "string"
+    ? value.normalize("NFKC").trim().replace(/\s+/g, " ").toLowerCase()
+    : "";
 }
 
-const CUSTOMER_FONT_NAME_ALIASES = new Map([
-  ["super boy", "super boys"],
-]);
-
 function aliasesForFontValue(value) {
-  const normalized = key(value);
+  const normalized = normalizeCustomerFontAlias(value);
   if (!normalized) return [];
   const withoutLaserSuffix = normalized.replace(/\s*[-–—]?\s*laser$/, "").trim();
   return withoutLaserSuffix && withoutLaserSuffix !== normalized
     ? [normalized, withoutLaserSuffix]
     : [normalized];
+}
+
+function statusForFont(font) {
+  if (font?.deletedAt) return "deleted";
+  if (font?.archivedAt) return "archived";
+  return "active";
+}
+
+function resolutionForFont(font, alias = null) {
+  if (!font) return null;
+  const status = statusForFont(font);
+  return {
+    fontId: status === "active" ? clean(font.id) || null : null,
+    font,
+    alias,
+    status,
+  };
 }
 
 export function normalizeCustomerFontSelections(selections) {
@@ -31,22 +46,35 @@ export function normalizeCustomerFontSelections(selections) {
   return [...byLine.values()].sort((left, right) => left.lineIndex - right.lineIndex);
 }
 
-export function resolveCustomerFontId(name, fontOptions = []) {
-  const requested = CUSTOMER_FONT_NAME_ALIASES.get(key(name)) ?? key(name);
+export function resolveCustomerFont(name, fontOptions = [], fontAliases = []) {
+  const requested = normalizeCustomerFontAlias(name);
+  const fonts = Array.isArray(fontOptions) ? fontOptions : [];
   if (!requested) return null;
-  for (const font of Array.isArray(fontOptions) ? fontOptions : []) {
+
+  for (const alias of Array.isArray(fontAliases) ? fontAliases : []) {
+    const aliasName = normalizeCustomerFontAlias(alias?.normalizedAlias) || normalizeCustomerFontAlias(alias?.aliasName);
+    if (aliasName !== requested) continue;
+    const font = fonts.find((option) => clean(option?.id) === clean(alias?.fontId));
+    return resolutionForFont(font, alias);
+  }
+
+  for (const font of fonts) {
     const aliases = [font?.id, font?.label, font?.displayName]
       .flatMap(aliasesForFontValue);
-    if (aliases.includes(requested)) return clean(font?.id) || null;
+    if (aliases.includes(requested)) return resolutionForFont(font);
   }
   return null;
 }
 
-export function overlayCustomerFontsOnLines(lines, selections, fontOptions) {
+export function resolveCustomerFontId(name, fontOptions = [], fontAliases = []) {
+  return resolveCustomerFont(name, fontOptions, fontAliases)?.fontId ?? null;
+}
+
+export function overlayCustomerFontsOnLines(lines, selections, fontOptions, fontAliases = []) {
   const normalized = normalizeCustomerFontSelections(selections);
   const fontByLine = new Map(normalized.map((selection) => [
     selection.lineIndex,
-    resolveCustomerFontId(selection.name, fontOptions),
+    resolveCustomerFontId(selection.name, fontOptions, fontAliases),
   ]));
   return (Array.isArray(lines) ? lines : []).map((line, lineIndex) => {
     const current = line && typeof line === "object" ? line : {};
@@ -55,14 +83,14 @@ export function overlayCustomerFontsOnLines(lines, selections, fontOptions) {
   });
 }
 
-export function summarizeCustomerFontResolution(lines, selections, fontOptions) {
+export function summarizeCustomerFontResolution(lines, selections, fontOptions, fontAliases = []) {
   const normalized = normalizeCustomerFontSelections(selections);
   const materializedLineCount = Array.isArray(lines) ? lines.length : 0;
   const materializedSelections = normalized.filter((selection) => selection.lineIndex < materializedLineCount);
   const recognizedCount = materializedSelections.filter((selection) => (
-    resolveCustomerFontId(selection.name, fontOptions) !== null
+    resolveCustomerFontId(selection.name, fontOptions, fontAliases) !== null
   )).length;
-  const effectiveFontIds = overlayCustomerFontsOnLines(lines, normalized, fontOptions)
+  const effectiveFontIds = overlayCustomerFontsOnLines(lines, normalized, fontOptions, fontAliases)
     .map((line) => clean(line?.fontId))
     .filter(Boolean);
   return {

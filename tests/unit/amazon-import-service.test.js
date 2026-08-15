@@ -1107,6 +1107,54 @@ describe("Amazon import service", () => {
     ]);
   });
 
+  it("uses an active workspace alias for Amazon while preserving its marketplace source name", () => {
+    // Break caught: an Amazon alias is not passed through shared line overlay or replaces its source value.
+    const enrich = createAmazonItemEnricher({
+      presetSnapshot: {
+        defaultPresetId: "preset-amazon",
+        presets: [{
+          id: "preset-amazon",
+          globalDefaults: {},
+          lineDefaults: { fontId: "candlepin", bridgeMm: 0.5 },
+          lineRules: [],
+          listingAssignments: [],
+        }],
+      },
+      fontOptions: [{ id: "skywalk", displayName: "Skywalk" }],
+      fontAliases: [{ aliasName: "Lemonade", normalizedAlias: "lemonade", fontId: "skywalk" }],
+    });
+    const item = {
+      text: "Maria",
+      source: { customerFontSelections: [{ lineIndex: 0, name: "Lemonade" }] },
+    };
+
+    expect(enrich(item).settings.lines).toEqual([{ fontId: "skywalk", bridgeMm: 0.5 }]);
+    expect(item.source.customerFontSelections).toEqual([{ lineIndex: 0, name: "Lemonade" }]);
+  });
+
+  it("keeps the preset font when an Amazon alias targets an archived font", () => {
+    // Break caught: imports apply an archived alias target instead of leaving the selected preset intact.
+    const enrich = createAmazonItemEnricher({
+      presetSnapshot: {
+        defaultPresetId: "preset-amazon",
+        presets: [{
+          id: "preset-amazon",
+          globalDefaults: {},
+          lineDefaults: { fontId: "candlepin", bridgeMm: 0.5 },
+          lineRules: [],
+          listingAssignments: [],
+        }],
+      },
+      fontOptions: [{ id: "font-archived", displayName: "Crushed Lemonade", archivedAt: "2026-08-01T00:00:00.000Z" }],
+      fontAliases: [{ aliasName: "Lemonade", normalizedAlias: "lemonade", fontId: "font-archived" }],
+    });
+
+    expect(enrich({
+      text: "Maria",
+      source: { customerFontSelections: [{ lineIndex: 0, name: "Lemonade" }] },
+    }).settings.lines).toEqual([{ fontId: "candlepin", bridgeMm: 0.5 }]);
+  });
+
   it("reports a safe font-resolution summary without changing the enriched item shape", () => {
     // Break caught: enrichment diagnostics expose customer font values or become persisted item data.
     const onEnriched = vi.fn();

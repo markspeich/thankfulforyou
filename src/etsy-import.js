@@ -85,6 +85,7 @@ export function normalizeImportedEntry(entry, options = {}) {
     getPresetIdForListingId = () => null,
     getPresetSettingsForImport = null,
     fontOptions = [],
+    fontAliases = [],
     marketplace = "",
   } = options;
 
@@ -123,7 +124,7 @@ export function normalizeImportedEntry(entry, options = {}) {
   const settings = presetSettings && typeof presetSettings === "object"
     ? {
         ...presetSettings,
-        lines: overlayCustomerFontsOnLines(presetSettings.lines, customerFontSelections, fontOptions),
+        lines: overlayCustomerFontsOnLines(presetSettings.lines, customerFontSelections, fontOptions, fontAliases),
       }
     : null;
 

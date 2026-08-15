@@ -9,6 +9,8 @@ const PRODUCTION_BATCH_CONFLICT_TEST_TITLE = "keeps shared sync enabled on revis
 const PRODUCTION_BATCH_PAGEHIDE_TEST_TITLE = "pagehide keepalive saves even while a shared autosave is in flight";
 const PRODUCTION_BATCH_AMAZON_LABEL_TEST_TITLE = "labels imported Amazon orders as Amazon in the production batch editor";
 const PRODUCTION_BATCH_AMAZON_FONT_TEST_TITLE = "shows supplied Amazon fonts on the production batch screen";
+const PRODUCTION_BATCH_EMPTY_ALIAS_IMPORT_TEST_TITLE = "applies a loaded alias to the first clipboard import in an empty production batch";
+const FONT_ALIAS_DIALOG_TEST_TITLE = "shows marketplace font resolution and an accessible active-font mapping dialog";
 const SAMPLE_CLIPBOARD_URL = new URL("../../docs/sample-clipboard.txt", import.meta.url);
 const AMAZON_CUSTOMIZATION_FIXTURE_URL = new URL("../fixtures/amazon-customization-166136048232641.json", import.meta.url);
 const productionBatchSnapshots = new WeakMap();
@@ -670,6 +672,8 @@ test.beforeEach(async ({ page, request }, testInfo) => {
     || testInfo.title === PRODUCTION_BATCH_PAGEHIDE_TEST_TITLE
     || testInfo.title === PRODUCTION_BATCH_AMAZON_LABEL_TEST_TITLE
     || testInfo.title === PRODUCTION_BATCH_AMAZON_FONT_TEST_TITLE
+    || testInfo.title === PRODUCTION_BATCH_EMPTY_ALIAS_IMPORT_TEST_TITLE
+    || testInfo.title === FONT_ALIAS_DIALOG_TEST_TITLE
   ) {
     return;
   }
@@ -3313,11 +3317,167 @@ test(PRODUCTION_BATCH_AMAZON_FONT_TEST_TITLE, async ({ page }) => {
 
   await expect(page.locator("#activeOrderName")).toHaveText(`#${customization.orderId}`);
   await expect(page.locator("#customerFontSelections")).toHaveText([
-    "Line 1 Font: Skywalk",
-    "Line 2 Font: Somekind",
+    "Line 1 Font: Skywalk (Skywalk Laser)",
+    "Line 2 Font: Somekind (Somekind)",
   ].join(""));
   await expect(page.locator('.line-control-card[data-line-index="0"] select[data-setting="fontId"]')).toHaveValue("skywalk");
   await expect(page.locator('.line-control-card[data-line-index="1"] select[data-setting="fontId"]')).toHaveValue("somekind");
+});
+
+test(FONT_ALIAS_DIALOG_TEST_TITLE, async ({ page }) => {
+  // Break caught: imported font values are rendered without resolution context or a safe, keyboard-friendly mapper.
+  await installSupabaseSession(page);
+  await page.route("**/api/fonts**", route => route.fulfill({
+    json: {
+      fonts: [
+        { id: "candlepin", display_name: "Candlepin Laser", family_name: "CandlepinLaser", public_url: "public/fonts/Candlepin-Laser.otf", file_format: "otf", version: 1 },
+        { id: "skywalk", display_name: "Crushed Lemonade", family_name: "SkywalkLaser", public_url: "public/fonts/SkywalkLaserRegular.otf", file_format: "otf", version: 1 },
+        { id: "somekind", display_name: "Somekind", family_name: "Somekind", public_url: "public/fonts/Somekind.ttf", file_format: "ttf", version: 1 },
+        { id: "super-boys", display_name: "Super Boys", family_name: "Somekind", public_url: "public/fonts/Somekind.ttf", file_format: "ttf", version: 1, archived_at: "2026-08-01T00:00:00.000Z" },
+      ],
+    },
+  }));
+  await page.route("**/api/batch-session", route => route.fulfill({
+    json: { operator: { id: "user-1", email: "mark@example.com" }, workspace: { id: "workspace-1", name: "Thankful For You" }, batch: { id: "batch-1", workspaceId: "workspace-1" } },
+  }));
+  await page.route("**/api/production-batch**", route => route.fulfill({
+    json: {
+      batch: { id: "batch-1", workspaceId: "workspace-1" },
+      activeOrderItemId: "order-1",
+      fontAliases: [
+        { id: "alias-1", aliasName: "Lemonade", normalizedAlias: "lemonade", fontId: "skywalk", font: { id: "skywalk", displayName: "Crushed Lemonade", archivedAt: null, deletedAt: null } },
+        { id: "alias-2", aliasName: "Super Boy", normalizedAlias: "super boy", fontId: "super-boys", font: { id: "super-boys", displayName: "Super Boys", archivedAt: "2026-08-01T00:00:00.000Z", deletedAt: null } },
+      ],
+      orderItems: [{
+        id: "order-1", revision: 7, designId: "design-1", designRevision: 11, text: "Avery\nRN\nBSN", status: "in-progress",
+        source: { customerFontSelections: [{ lineIndex: 0, name: "Lemonade" }, { lineIndex: 1, name: "<img src=x onerror=alert(1)>" }, { lineIndex: 2, name: "Super Boy" }] },
+        settings: { text: "Avery\nRN\nBSN", presetId: "preset-a1f4c8e2b601", backingMm: 3.1, weldExportedDesign: true, lines: [{ fontId: "skywalk" }, { fontId: "somekind" }, { fontId: "super-boys" }] },
+      }],
+    },
+  }));
+  await page.route("**/api/orders**", route => route.fulfill({ json: { orders: [] } }));
+  await page.route("**/api/layout-analyze", route => route.fulfill({ json: buildMockAnalysisResponse() }));
+
+  await page.goto("/production-batch");
+  await waitForProductionBatchStartup(page);
+
+  const rows = page.locator("#customerFontSelections .customer-font-selection");
+  await expect(rows.nth(0)).toContainText("Line 1 Font: Lemonade (Crushed Lemonade)");
+  await expect(rows.nth(1)).toContainText("Line 2 Font: <img src=x onerror=alert(1)> (Unmapped)");
+  await expect(rows.nth(2)).toContainText("Line 3 Font: Super Boy (Super Boys — archived)");
+  await expect(rows.nth(1).locator("img")).toHaveCount(0);
+  await expect(rows.nth(0).getByRole("button", { name: "Change font mapping" })).toBeVisible();
+
+  const mapButton = rows.nth(1).getByRole("button", { name: "Map font" });
+  await mapButton.click();
+  const dialog = page.getByRole("dialog", { name: "Map Marketplace Font" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.locator("#fontAliasMarketplaceName")).toHaveText("<img src=x onerror=alert(1)>");
+  await expect(dialog.locator("#fontAliasConfirmButton")).toBeDisabled();
+  await expect(dialog.locator("#fontAliasPreview")).toContainText("RN");
+  await dialog.locator("#fontAliasSearchInput").fill("Some");
+  await expect(dialog.locator("#fontAliasFontSelect option")).toHaveText(["Select a font", "Somekind"]);
+  await dialog.locator("#fontAliasFontSelect").selectOption("somekind");
+  await expect(dialog.locator("#fontAliasConfirmButton")).toBeEnabled();
+  await expect(dialog.locator("#fontAliasPreview")).toHaveCSS("font-family", /Somekind/i);
+  await page.keyboard.press("Escape");
+  await expect(dialog).not.toBeVisible();
+  await expect(mapButton).toBeFocused();
+});
+
+test("applies a loaded alias when a later imported text line is materialized", async ({ page }) => {
+  // Break caught: later line creation ignores aliases loaded with the production batch snapshot.
+  await installSupabaseSession(page);
+  await page.route("**/api/batch-session", route => route.fulfill({
+    json: {
+      operator: { id: "user-1", email: "mark@example.com" },
+      workspace: { id: "workspace-1", name: "Thankful For You" },
+      batch: { id: "batch-1", workspaceId: "workspace-1" },
+    },
+  }));
+  await page.route("**/api/production-batch**", route => route.fulfill({
+    json: {
+      batch: { id: "batch-1", workspaceId: "workspace-1" },
+      activeOrderItemId: "amazon-item-1",
+      fontAliases: [{ aliasName: "Lemonade", normalizedAlias: "lemonade", fontId: "skywalk" }],
+      orderItems: [{
+        id: "amazon-item-1",
+        revision: 1,
+        text: "Maria",
+        status: "in-progress",
+        source: {
+          marketplace: "amazon",
+          orderNumber: "114-0233450-6206634",
+          customerFontSelections: [{ lineIndex: 1, name: "Lemonade" }],
+        },
+        settings: {
+          text: "Maria",
+          presetId: "preset-a1f4c8e2b601",
+          backingMm: 3.1,
+          weldExportedDesign: true,
+          lines: [{ fontId: "candlepin", bridgeMm: 0.5, lineBridgeMm: 0.5, offsetXMm: 0, fontSizeMm: 34, horizontalScale: 1, verticalScale: 1, lockTextHeight: false }],
+        },
+      }],
+    },
+  }));
+  await page.route("**/api/orders**", route => route.fulfill({ json: { orders: [] } }));
+  await page.route("**/api/layout-analyze", route => route.fulfill({ json: buildMockAnalysisResponse() }));
+
+  await page.goto("/production-batch");
+  await waitForProductionBatchStartup(page);
+  await page.locator("#textInput").fill("Maria\nRN");
+
+  await expect(page.locator('.line-control-card[data-line-index="1"] select[data-setting="fontId"]')).toHaveValue("skywalk");
+  await expect(page.locator("#customerFontSelections")).toContainText("Line 2 Font: Lemonade");
+});
+
+test(PRODUCTION_BATCH_EMPTY_ALIAS_IMPORT_TEST_TITLE, async ({ page }) => {
+  // Break caught: an empty remote batch loses aliases before its first clipboard order is normalized.
+  await installSupabaseSession(page);
+  await page.route("**/api/batch-session", route => route.fulfill({
+    json: {
+      operator: { id: "user-1", email: "mark@example.com" },
+      workspace: { id: "workspace-1", name: "Thankful For You" },
+      batch: { id: "batch-1", workspaceId: "workspace-1" },
+    },
+  }));
+  await page.route("**/api/production-batch**", route => route.fulfill({
+    json: {
+      batch: { id: "batch-1", workspaceId: "workspace-1" },
+      activeOrderItemId: null,
+      orderItems: [],
+      fontAliases: [{ aliasName: "Lemonade", normalizedAlias: "lemonade", fontId: "skywalk" }],
+    },
+  }));
+  await page.route("**/api/orders**", route => route.fulfill({
+    json: { importedOrderItemCount: 1, addedOrderItemCount: 1, orders: [] },
+  }));
+  await page.route("**/api/layout-analyze", route => route.fulfill({ json: buildMockAnalysisResponse() }));
+  await page.goto("/production-batch");
+  await waitForProductionBatchStartup(page);
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        readText: async () => JSON.stringify({
+          source: "thankfulforyou-amazon-clipboard",
+          version: 1,
+          items: [{
+            orderNumber: "114-0233450-6206634",
+            listingId: "B0H6ND1TL3",
+            transactionId: "amazon-item-1",
+            personalization: "Maria",
+            customerFontSelections: [{ lineIndex: 0, name: "Lemonade" }],
+          }],
+        }),
+      },
+    });
+  });
+
+  await clickButtonBySelector(page, "#importClipboardButton");
+
+  await expect(page.locator('.line-control-card[data-line-index="0"] select[data-setting="fontId"]')).toHaveValue("skywalk");
+  await expect(page.locator("#customerFontSelections")).toContainText("Line 1 Font: Lemonade");
 });
 
 test("skips already imported Etsy line items when importing another batch", async ({ page }) => {

@@ -1,5 +1,5 @@
 function isProductionBatchSnapshotEmpty(snapshot) {
-  return !snapshot || !Array.isArray(snapshot.orderItems) || snapshot.orderItems.length === 0;
+  return !snapshot || !Array.isArray(snapshot.orderItems);
 }
 
 export function createProductionBatchSnapshot({ batch, activeOrderItemId, orderItems } = {}) {

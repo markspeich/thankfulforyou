@@ -1084,6 +1084,124 @@ select {
   overflow: visible;
 }
 
+.font-alias-dialog {
+  width: min(520px, calc(100vw - 32px));
+  padding: 0;
+  border: 0;
+  background: transparent;
+  overflow: visible;
+}
+
+.font-alias-dialog::backdrop {
+  background: rgba(22, 27, 31, 0.42);
+  backdrop-filter: blur(2px);
+}
+
+.font-alias-card {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.font-alias-marketplace-value {
+  margin: 0;
+}
+
+.font-alias-marketplace-value div {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid #d7e4e9;
+  border-radius: 10px;
+  background: #f6fafb;
+}
+
+.font-alias-marketplace-value dt,
+.font-alias-preview-panel > span {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.font-alias-marketplace-value dd {
+  margin: 0;
+  color: var(--ink);
+  font-weight: 750;
+  overflow-wrap: anywhere;
+}
+
+.font-alias-preview-panel {
+  display: grid;
+  gap: 8px;
+}
+
+.font-alias-preview {
+  min-height: 62px;
+  display: grid;
+  place-items: center;
+  padding: 12px;
+  color: var(--ink);
+  font-size: 2rem;
+  line-height: 1.15;
+  text-align: center;
+  overflow-wrap: anywhere;
+  border: 1px solid #d7e4e9;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.font-alias-status {
+  margin: 0;
+  padding: 10px 12px;
+  color: #34454f;
+  font-size: 0.88rem;
+  line-height: 1.45;
+  border-radius: 10px;
+  background: #f4f8fa;
+}
+
+.font-alias-status[data-state="error"] {
+  color: #852a23;
+  background: #fff0ee;
+}
+
+.font-alias-status[data-state="success"] {
+  color: #17613d;
+  background: #edf8f2;
+}
+
+.customer-font-selection {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+.customer-font-map-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 26px;
+  padding: 3px 8px;
+  color: #315c70;
+  font-size: 0.76rem;
+  font-weight: 750;
+  background: #f4f8fa;
+  border: 1px solid #cbdce4;
+  border-radius: 999px;
+}
+
+.customer-font-map-button svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
 .save-preset-as-card {
   width: 100%;
   box-sizing: border-box;

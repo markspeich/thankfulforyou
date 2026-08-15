@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   formatCustomerFontSelection,
+  normalizeCustomerFontAlias,
   normalizeCustomerFontSelections,
   overlayCustomerFontsOnLines,
+  resolveCustomerFont,
   resolveCustomerFontId,
   summarizeCustomerFontResolution,
 } from "../../src/amazon-customer-fonts.js";
@@ -12,6 +14,12 @@ const fonts = [
   { id: "skywalk", label: "Skywalk Laser" },
   { id: "somekind", label: "Somekind" },
   { id: "font-custom", displayName: "My Custom Font", label: "My Custom Font" },
+];
+
+const workspaceFonts = [
+  { id: "font-primary", displayName: "Primary Display", label: "Primary Display" },
+  { id: "font-archived", displayName: "Archived Display", archivedAt: "2026-01-01T00:00:00.000Z" },
+  { id: "font-deleted", displayName: "Deleted Display", deletedAt: "2026-01-01T00:00:00.000Z" },
 ];
 
 describe("Amazon customer fonts", () => {
@@ -37,11 +45,69 @@ describe("Amazon customer fonts", () => {
     ])).toBe("workspace-font-quincy");
   });
 
-  it("resolves the Super Boy customer alias to Super Boys", () => {
-    // Break caught: singular Etsy requests are rejected when the available font uses its plural name.
-    const fonts = [{ id: "super-boys", displayName: "Super Boys" }];
+  it("normalizes aliases with NFKC, collapsed whitespace, and lowercase", () => {
+    expect(normalizeCustomerFontAlias("  S\u{FF35}\u{FF50}\u{FF45}\u{FF52}   Boy  ")).toBe("super boy");
+    expect(normalizeCustomerFontAlias(null)).toBe("");
+  });
 
-    expect(resolveCustomerFontId("Super Boy", fonts)).toBe("super-boys");
+  it("resolves workspace aliases before exact display-name fallback", () => {
+    const aliases = [{
+      id: "alias-primary",
+      aliasName: "Primary Display",
+      normalizedAlias: "primary display",
+      fontId: "font-archived",
+    }];
+
+    expect(resolveCustomerFont(" primary   display ", workspaceFonts, aliases)).toMatchObject({
+      fontId: null,
+      font: workspaceFonts[1],
+      alias: aliases[0],
+      status: "archived",
+    });
+    expect(resolveCustomerFontId("primary display", workspaceFonts, aliases)).toBeNull();
+    expect(resolveCustomerFontId("Primary Display", workspaceFonts)).toBe("font-primary");
+  });
+
+  it("does not apply trailing Laser compatibility to alias identities", () => {
+    const aliases = [{
+      id: "alias-primary", aliasName: "Primary Display", normalizedAlias: "primary display", fontId: "font-primary",
+    }];
+
+    expect(resolveCustomerFontId("Primary Display Laser", workspaceFonts, aliases)).toBeNull();
+  });
+
+  it("resolves exact display names and trailing Laser compatibility without static aliases", () => {
+    const superBoys = [{ id: "super-boys", displayName: "Super Boys Laser" }];
+
+    expect(resolveCustomerFontId("Super Boys", superBoys)).toBe("super-boys");
+    expect(resolveCustomerFontId("Super Boy", superBoys)).toBeNull();
+  });
+
+  it("keeps alias snapshots isolated to their supplied workspace input", () => {
+    const workspaceOneAliases = [{
+      id: "alias-one", aliasName: "Signature", normalizedAlias: "signature", fontId: "font-primary",
+    }];
+    const workspaceTwoAliases = [{
+      id: "alias-two", aliasName: "Signature", normalizedAlias: "signature", fontId: "font-archived",
+    }];
+
+    expect(resolveCustomerFontId("Signature", workspaceFonts, workspaceOneAliases)).toBe("font-primary");
+    expect(resolveCustomerFont("Signature", workspaceFonts, workspaceTwoAliases)).toMatchObject({
+      fontId: null, alias: workspaceTwoAliases[0], status: "archived",
+    });
+  });
+
+  it("returns deleted alias target metadata without an applicable font id", () => {
+    const aliases = [{
+      id: "alias-deleted", aliasName: "Legacy", normalizedAlias: "legacy", fontId: "font-deleted",
+    }];
+
+    expect(resolveCustomerFont("Legacy", workspaceFonts, aliases)).toMatchObject({
+      fontId: null,
+      font: workspaceFonts[2],
+      alias: aliases[0],
+      status: "deleted",
+    });
   });
 
   it("overlays only recognized differing font ids and preserves preset settings", () => {
@@ -60,10 +126,27 @@ describe("Amazon customer fonts", () => {
     expect(lines[0].fontId).toBe("candlepin");
   });
 
+  it("threads aliases through overlay and summary without changing selections", () => {
+    const aliases = [{
+      id: "alias-primary", aliasName: "Customer Choice", normalizedAlias: "customer choice", fontId: "font-primary",
+    }];
+    const selections = [{ lineIndex: 0, name: "  Customer   Choice  " }];
+    const originalSelections = JSON.stringify(selections);
+
+    expect(overlayCustomerFontsOnLines(
+      [{ fontId: "candlepin" }], selections, workspaceFonts, aliases,
+    )).toEqual([{ fontId: "font-primary" }]);
+    expect(summarizeCustomerFontResolution(
+      [{ fontId: "candlepin" }], selections, workspaceFonts, aliases,
+    )).toMatchObject({ recognizedCount: 1, unknownCount: 0, effectiveFontIds: ["font-primary"] });
+    expect(JSON.stringify(selections)).toBe(originalSelections);
+    expect(selections[0].name).toBe("  Customer   Choice  ");
+  });
+
   it("applies a later-line customer font only when that line exists", () => {
     // Break caught: a second-line selection is silently ignored after its alias resolves.
     const fonts = [{ id: "super-boys", displayName: "Super Boys" }];
-    const selection = [{ lineIndex: 1, name: "Super Boy" }];
+    const selection = [{ lineIndex: 1, name: "Super Boys" }];
 
     expect(overlayCustomerFontsOnLines([{ fontId: "candlepin" }], selection, fonts))
       .toEqual([{ fontId: "candlepin" }]);

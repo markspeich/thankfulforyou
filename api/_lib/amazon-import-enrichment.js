@@ -49,7 +49,7 @@ function notifyEnriched(onEnriched, summary) {
   }
 }
 
-export function createAmazonItemEnricher({ presetSnapshot, fontOptions = [], onEnriched, diagnostics } = {}) {
+export function createAmazonItemEnricher({ presetSnapshot, fontOptions = [], fontAliases = [], onEnriched, diagnostics } = {}) {
   const enrich = (item, { onEnriched: onCallEnriched } = {}) => {
     const preset = selectedPreset(presetSnapshot, item?.source?.listingId);
     const selections = item?.source?.customerFontSelections;
@@ -58,7 +58,7 @@ export function createAmazonItemEnricher({ presetSnapshot, fontOptions = [], onE
       const persistenceLines = Array.from({ length: Math.max(lineCount, 1) }, () => ({
         fontId: DEFAULT_PERSISTED_FONT_ID,
       }));
-      const fontSummary = summarizeCustomerFontResolution(persistenceLines, selections, fontOptions);
+      const fontSummary = summarizeCustomerFontResolution(persistenceLines, selections, fontOptions, fontAliases);
       const summary = {
         presetId: null,
         designLineCount: persistenceLines.length,
@@ -75,12 +75,13 @@ export function createAmazonItemEnricher({ presetSnapshot, fontOptions = [], onE
       presetLineSettings,
       selections,
       fontOptions,
+      fontAliases,
     );
     const lines = [
       ...textLines,
       ...(Array.isArray(preset.fixedItems) ? preset.fixedItems : []),
     ];
-    const fontSummary = summarizeCustomerFontResolution(presetLineSettings, selections, fontOptions);
+    const fontSummary = summarizeCustomerFontResolution(presetLineSettings, selections, fontOptions, fontAliases);
     const summary = {
       presetId: preset.id,
       designLineCount: lines.length,

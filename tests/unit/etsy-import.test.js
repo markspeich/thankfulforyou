@@ -164,6 +164,24 @@ describe("Etsy import parsing", () => {
     ]);
   });
 
+  it("uses workspace aliases for clipboard imports without changing source customer font names", () => {
+    // Break caught: browser clipboard imports resolve only registered font names and lose alias selections.
+    const result = parseImportedItems(JSON.stringify({
+      items: [{
+        listingId: "listing-1",
+        personalization: "Maria",
+        customerFontSelections: [{ lineIndex: 0, name: "Lemonade" }],
+      }],
+    }), {
+      getPresetSettingsForImport: () => ({ lines: [{ fontId: "candlepin", bridgeMm: 0.7 }] }),
+      fontOptions: [{ id: "skywalk", displayName: "Skywalk" }],
+      fontAliases: [{ aliasName: "Lemonade", normalizedAlias: "lemonade", fontId: "skywalk" }],
+    });
+
+    expect(result[0].settings.lines).toEqual([{ fontId: "skywalk", bridgeMm: 0.7 }]);
+    expect(result[0].source.customerFontSelections).toEqual([{ lineIndex: 0, name: "Lemonade" }]);
+  });
+
   it("preserves malformed numeric HTML entities in personalization text", () => {
     expect(parseImportedItems(JSON.stringify({
       items: [{ personalization: "A &#999999999999; B" }],

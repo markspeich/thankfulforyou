@@ -67,8 +67,10 @@ function validateImportResult(data, requestedIds) {
 }
 
 function buildTransactionalItem(item, context) {
+  const orderItem = buildImportedOrderItemRow(item, context);
+
   return {
-    orderItem: buildImportedOrderItemRow(item, context),
+    orderItem,
     design: buildImportedDesignRow(item, context),
     lines: buildImportedDesignLineRows(item),
   };
