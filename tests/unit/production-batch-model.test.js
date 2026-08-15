@@ -56,6 +56,24 @@ describe("production batch model", () => {
     });
   });
 
+  it("keeps an empty remote snapshot so workspace aliases are available before the first import", () => {
+    // Break caught: startup discards alias metadata whenever the active batch has no order items yet.
+    const remoteSnapshot = {
+      batch: { id: "batch-1", workspaceId: "workspace-1" },
+      activeOrderItemId: null,
+      orderItems: [],
+      fontAliases: [{ aliasName: "Lemonade", normalizedAlias: "lemonade", fontId: "skywalk" }],
+    };
+
+    expect(chooseProductionBatchStartupState({
+      remoteSnapshot,
+      localCache: null,
+    })).toEqual({
+      source: "remote",
+      snapshot: remoteSnapshot,
+    });
+  });
+
   it("returns 1 for null and increments an existing revision", () => {
     expect(getNextRevision(null)).toBe(1);
     expect(getNextRevision({ revision: 4 })).toBe(5);
