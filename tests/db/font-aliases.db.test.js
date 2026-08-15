@@ -5,6 +5,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { createSupabaseAdminClient } from "../../api/_lib/supabase-admin.js";
 import { loadEnvFile } from "../../tools/env_file.mjs";
+import { spawnCommand } from "../../tools/supabase_env.mjs";
+import { generateSupabaseWorktreeConfig } from "../../tools/supabase_worktree_config.mjs";
 
 const PRIMARY_WORKSPACE_ID = "11111111-1111-4111-8111-111111111111";
 
@@ -13,10 +15,89 @@ let memberClient;
 let secondaryWorkspaceId;
 let secondaryUserId;
 let secondaryClient;
+let alternateMemberUserId;
+const createdAliasKeys = new Set();
+const createdFontIds = new Set();
+const createdOrderItemIds = new Set();
+const disposableWorkspaceIds = new Set();
+
+function quoteSqlLiteral(value) {
+  return `'${String(value).replaceAll("'", "''")}'`;
+}
+
+async function getLocalDatabaseContainerId() {
+  const config = await generateSupabaseWorktreeConfig();
+  const databaseContainer = spawnCommand("docker", [
+    "ps",
+    "--filter", `label=com.supabase.cli.project=${config.projectId}`,
+    "--filter", "name=supabase_db_",
+    "--format", "{{.ID}}",
+  ], { encoding: "utf8" });
+  expect(databaseContainer.status, databaseContainer.stderr).toBe(0);
+  const databaseContainerId = databaseContainer.stdout.trim();
+  expect(databaseContainerId).toMatch(/^[a-f0-9]+$/i);
+  return databaseContainerId;
+}
+
+function executeDatabaseSql(databaseContainerId, sql) {
+  return spawnCommand("docker", [
+    "exec",
+    "-i",
+    databaseContainerId,
+    "psql",
+    "-X",
+    "-q",
+    "-v", "ON_ERROR_STOP=1",
+    "-U", "postgres",
+    "-d", "postgres",
+    "-f", "-",
+  ], { encoding: "utf8", input: sql });
+}
+
+function waitForDatabaseActivity(databaseContainerId, predicate, description) {
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    const result = executeDatabaseSql(databaseContainerId, String.raw`
+\pset tuples_only on
+\pset format unaligned
+select exists (
+  select 1
+  from pg_catalog.pg_stat_activity
+  where ${predicate}
+);
+`);
+    expect(result.status, result.stderr || result.stdout).toBe(0);
+    if (result.stdout.trim() === "t") return;
+  }
+  throw new Error(`Timed out waiting for database activity: ${description}.`);
+}
+
+function waitForDatabaseSleep(databaseContainerId) {
+  waitForDatabaseActivity(
+    databaseContainerId,
+    "wait_event = 'PgSleep' and state = 'active'",
+    "test trigger sleep",
+  );
+}
+
+function waitForDatabaseLock(databaseContainerId) {
+  waitForDatabaseActivity(
+    databaseContainerId,
+    "wait_event_type = 'Lock' and state = 'active'",
+    "concurrent lock waiter",
+  );
+}
+
+function waitForDatabaseAdvisoryLock(databaseContainerId) {
+  waitForDatabaseActivity(
+    databaseContainerId,
+    "wait_event = 'advisory' and state = 'active'",
+    "alias advisory lock waiter",
+  );
+}
 
 function activeFont(overrides = {}) {
   const suffix = randomUUID();
-  return {
+  const font = {
     id: `font-alias-test-${suffix}`,
     workspace_id: PRIMARY_WORKSPACE_ID,
     display_name: `Alias Test ${suffix}`,
@@ -26,6 +107,8 @@ function activeFont(overrides = {}) {
     file_format: "otf",
     ...overrides,
   };
+  createdFontIds.add(font.id);
+  return font;
 }
 
 async function createAuthenticatedUser(admin, workspaceId) {
@@ -58,6 +141,7 @@ async function createAuthenticatedUser(admin, workspaceId) {
 
 async function createDesignFixture(admin, { fontIds, revision = 1 } = {}) {
   const orderItemId = `font-alias-order-${randomUUID()}`;
+  createdOrderItemIds.add(orderItemId);
   const designId = randomUUID();
   const selectedFonts = fontIds || ["candlepin", "somekind"];
   const { error: orderError } = await admin.from("order_items").insert({
@@ -108,13 +192,17 @@ async function createDesignFixture(admin, { fontIds, revision = 1 } = {}) {
 }
 
 async function mapAlias(admin, overrides = {}) {
-  return admin.rpc("map_workspace_font_alias", {
+  const aliasName = `Marketplace ${randomUUID()}`;
+  const input = {
     p_workspace_id: PRIMARY_WORKSPACE_ID,
-    p_alias_name: `Marketplace ${randomUUID()}`,
-    p_normalized_alias: `marketplace ${randomUUID()}`,
+    p_user_id: memberUserId,
+    p_alias_name: aliasName,
+    p_normalized_alias: aliasName.toLowerCase(),
     p_font_id: "skywalk",
     ...overrides,
-  });
+  };
+  createdAliasKeys.add(`${input.p_workspace_id}:${input.p_normalized_alias}`);
+  return admin.rpc("map_workspace_font_alias", input);
 }
 
 beforeAll(() => {
@@ -129,6 +217,7 @@ beforeAll(() => {
 beforeAll(async () => {
   const admin = createSupabaseAdminClient();
   secondaryWorkspaceId = randomUUID();
+  disposableWorkspaceIds.add(secondaryWorkspaceId);
   const { error: workspaceError } = await admin.from("workspaces").insert({
     id: secondaryWorkspaceId,
     name: "Font Alias Secondary Workspace",
@@ -143,14 +232,44 @@ beforeAll(async () => {
     admin,
     secondaryWorkspaceId,
   ));
+  ({ userId: alternateMemberUserId } = await createAuthenticatedUser(
+    admin,
+    PRIMARY_WORKSPACE_ID,
+  ));
 });
 
 afterAll(async () => {
   const admin = createSupabaseAdminClient();
-  await Promise.all([
+  const primaryAliasNames = [...createdAliasKeys]
+    .map((key) => key.split(":").slice(1).join(":"));
+  if (primaryAliasNames.length > 0) {
+    const { error } = await admin
+      .from("font_aliases")
+      .delete()
+      .eq("workspace_id", PRIMARY_WORKSPACE_ID)
+      .in("normalized_alias", primaryAliasNames);
+    expect(error).toBeNull();
+  }
+  if (createdOrderItemIds.size > 0) {
+    const { error } = await admin.from("order_items").delete().in("id", [...createdOrderItemIds]);
+    expect(error).toBeNull();
+  }
+  if (disposableWorkspaceIds.size > 0) {
+    const { error } = await admin.from("workspaces").delete().in("id", [...disposableWorkspaceIds]);
+    expect(error).toBeNull();
+  }
+  if (createdFontIds.size > 0) {
+    const { error } = await admin.from("fonts").delete().in("id", [...createdFontIds]);
+    expect(error).toBeNull();
+  }
+  const userDeletions = await Promise.all([
     memberUserId ? admin.auth.admin.deleteUser(memberUserId) : Promise.resolve(),
     secondaryUserId ? admin.auth.admin.deleteUser(secondaryUserId) : Promise.resolve(),
+    alternateMemberUserId ? admin.auth.admin.deleteUser(alternateMemberUserId) : Promise.resolve(),
   ]);
+  for (const result of userDeletions.filter(Boolean)) {
+    expect(result.error).toBeNull();
+  }
 });
 
 describe("workspace font alias database foundation", () => {
@@ -160,25 +279,27 @@ describe("workspace font alias database foundation", () => {
     const secondaryFont = activeFont({ workspace_id: secondaryWorkspaceId });
     expect((await admin.from("fonts").insert([primaryFont, secondaryFont])).error).toBeNull();
 
-    const normalizedAlias = `shared-${randomUUID()}`;
+    const aliasName = `Shared ${randomUUID()}`;
+    const normalizedAlias = aliasName.toLowerCase();
+    createdAliasKeys.add(`${PRIMARY_WORKSPACE_ID}:${normalizedAlias}`);
     const first = await admin.from("font_aliases").insert({
       workspace_id: PRIMARY_WORKSPACE_ID,
       font_id: primaryFont.id,
-      alias_name: "Shared Name",
+      alias_name: aliasName,
       normalized_alias: normalizedAlias,
     });
     expect(first.error).toBeNull();
     const duplicate = await admin.from("font_aliases").insert({
       workspace_id: PRIMARY_WORKSPACE_ID,
       font_id: primaryFont.id,
-      alias_name: "Shared Name Again",
+      alias_name: aliasName.toUpperCase(),
       normalized_alias: normalizedAlias,
     });
     expect(duplicate.error?.code).toBe("23505");
     const otherWorkspace = await admin.from("font_aliases").insert({
       workspace_id: secondaryWorkspaceId,
       font_id: secondaryFont.id,
-      alias_name: "Shared Name",
+      alias_name: aliasName,
       normalized_alias: normalizedAlias,
     });
     expect(otherWorkspace.error).toBeNull();
@@ -189,18 +310,21 @@ describe("workspace font alias database foundation", () => {
     const primaryFont = activeFont();
     const secondaryFont = activeFont({ workspace_id: secondaryWorkspaceId });
     expect((await admin.from("fonts").insert([primaryFont, secondaryFont])).error).toBeNull();
+    const primaryAliasName = `Primary ${randomUUID()}`;
+    const secondaryAliasName = `Secondary ${randomUUID()}`;
+    createdAliasKeys.add(`${PRIMARY_WORKSPACE_ID}:${primaryAliasName.toLowerCase()}`);
     expect((await admin.from("font_aliases").insert([
       {
         workspace_id: PRIMARY_WORKSPACE_ID,
         font_id: primaryFont.id,
-        alias_name: "Primary Only",
-        normalized_alias: `primary-${randomUUID()}`,
+        alias_name: primaryAliasName,
+        normalized_alias: primaryAliasName.toLowerCase(),
       },
       {
         workspace_id: secondaryWorkspaceId,
         font_id: secondaryFont.id,
-        alias_name: "Secondary Only",
-        normalized_alias: `secondary-${randomUUID()}`,
+        alias_name: secondaryAliasName,
+        normalized_alias: secondaryAliasName.toLowerCase(),
       },
     ])).error).toBeNull();
 
@@ -212,10 +336,10 @@ describe("workspace font alias database foundation", () => {
     expect(new Set(primaryRows.map((row) => row.workspace_id))).toEqual(new Set([PRIMARY_WORKSPACE_ID]));
 
     const forbiddenWrite = await memberClient.from("font_aliases").insert({
-      workspace_id: secondaryWorkspaceId,
-      font_id: secondaryFont.id,
-      alias_name: "Cross Workspace",
-      normalized_alias: `cross-${randomUUID()}`,
+      workspace_id: PRIMARY_WORKSPACE_ID,
+      font_id: primaryFont.id,
+      alias_name: "Direct Member Write",
+      normalized_alias: "direct member write",
     });
     expect(forbiddenWrite.error?.code).toBe("42501");
 
@@ -227,14 +351,83 @@ describe("workspace font alias database foundation", () => {
     expect(new Set(secondaryRows.map((row) => row.workspace_id))).toEqual(new Set([secondaryWorkspaceId]));
   });
 
-  it("seeds Super Boy only when an active same-workspace Super Boys font exists at migration time", async () => {
+  it("normalizes aliases with the same locale-independent Unicode contract as JavaScript", async () => {
     const admin = createSupabaseAdminClient();
+    const cases = [
+      ["  S\u{FF35}\u{FF50}\u{FF45}\u{FF52}\u2003Boy  ", "super boy"],
+      ["  \u0130STANBUL  ", "i\u0307stanbul"],
+    ];
+    for (const [aliasName, normalizedAlias] of cases) {
+      const { data, error } = await mapAlias(admin, {
+        p_alias_name: aliasName,
+        p_normalized_alias: normalizedAlias,
+      });
+      expect(error).toBeNull();
+      expect(data.normalized_alias).toBe(normalizedAlias);
+    }
+  });
+
+  it("rejects aliases that normalize empty or disagree with the canonical key", async () => {
+    const admin = createSupabaseAdminClient();
+    const emptyResult = await mapAlias(admin, {
+      p_alias_name: " \u00a0\u2003\ufeff ",
+      p_normalized_alias: "",
+    });
+    expect(emptyResult.error?.code).toBe("22023");
+
+    const mismatchName = `Mismatch ${randomUUID()}`;
+    const mismatchResult = await mapAlias(admin, {
+      p_alias_name: mismatchName,
+      p_normalized_alias: "wrong key",
+    });
+    expect(mismatchResult.error?.code).toBe("22023");
+    const { data: rows, error } = await admin
+      .from("font_aliases")
+      .select("id")
+      .in("normalized_alias", ["", "wrong key"]);
+    expect(error).toBeNull();
+    expect(rows).toEqual([]);
+  });
+
+  it("seeds Super Boy only for an active same-workspace Super Boys font", async () => {
+    const admin = createSupabaseAdminClient();
+    const activeWorkspaceId = randomUUID();
+    const archivedWorkspaceId = randomUUID();
+    disposableWorkspaceIds.add(activeWorkspaceId);
+    disposableWorkspaceIds.add(archivedWorkspaceId);
+    expect((await admin.from("workspaces").insert([
+      { id: activeWorkspaceId, name: `Active Super Boys ${randomUUID()}` },
+      { id: archivedWorkspaceId, name: `Archived Super Boys ${randomUUID()}` },
+    ])).error).toBeNull();
+    const activeSuperBoys = activeFont({
+      workspace_id: activeWorkspaceId,
+      display_name: "Super Boys",
+    });
+    const archivedSuperBoys = activeFont({
+      workspace_id: archivedWorkspaceId,
+      display_name: "Super Boys",
+      archived_at: new Date().toISOString(),
+    });
+    expect((await admin.from("fonts").insert([activeSuperBoys, archivedSuperBoys])).error).toBeNull();
+
+    const { data: insertedCount, error: seedError } = await admin
+      .rpc("seed_workspace_super_boy_font_aliases");
+    expect(seedError).toBeNull();
+    expect(insertedCount).toBe(1);
     const { data, error } = await admin
       .from("font_aliases")
-      .select("workspace_id, alias_name, normalized_alias, fonts!inner(display_name, archived_at, deleted_at)")
-      .eq("normalized_alias", "super boy");
+      .select("workspace_id, font_id, alias_name, normalized_alias")
+      .in("workspace_id", [activeWorkspaceId, archivedWorkspaceId])
+      .eq("normalized_alias", "super boy")
+      .order("workspace_id");
     expect(error).toBeNull();
-    expect(data).toEqual([]);
+    expect(data).toEqual([{
+      workspace_id: activeWorkspaceId,
+      font_id: activeSuperBoys.id,
+      alias_name: "Super Boy",
+      normalized_alias: "super boy",
+    }]);
+    expect((await admin.rpc("seed_workspace_super_boy_font_aliases")).data).toBe(0);
   });
 
   it.each([
@@ -257,8 +450,75 @@ describe("workspace font alias database foundation", () => {
       .toEqual([]);
   });
 
+  it("holds the target font against archive updates until alias mapping commits", async () => {
+    // Break caught: FOR KEY SHARE allows an archive update to commit while mapping still uses the font as active.
+    const admin = createSupabaseAdminClient();
+    const font = activeFont();
+    expect((await admin.from("fonts").insert(font)).error).toBeNull();
+    const aliasName = `Locked Target ${randomUUID()}`;
+    const normalizedAlias = aliasName.toLowerCase();
+    const databaseContainerId = await getLocalDatabaseContainerId();
+    const suffix = randomUUID().replaceAll("-", "");
+    const triggerName = `zz_test_hold_font_alias_${suffix}`;
+    const functionName = `test_hold_font_alias_${suffix}`;
+    const setupResult = executeDatabaseSql(databaseContainerId, `
+create function public.${functionName}()
+returns trigger
+language plpgsql
+security invoker
+set search_path = ''
+as $hold$
+begin
+  perform pg_catalog.pg_sleep(3);
+  return null;
+end;
+$hold$;
+
+create trigger ${triggerName}
+after insert on public.font_aliases
+for each row
+when (new.normalized_alias = ${quoteSqlLiteral(normalizedAlias)})
+execute function public.${functionName}();
+`);
+    expect(setupResult.status, setupResult.stderr || setupResult.stdout).toBe(0);
+
+    let mappingPromise;
+    let archivePromise;
+    try {
+      mappingPromise = mapAlias(admin, {
+        p_alias_name: aliasName,
+        p_normalized_alias: normalizedAlias,
+        p_font_id: font.id,
+      });
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      waitForDatabaseSleep(databaseContainerId);
+
+      const archivedAt = new Date().toISOString();
+      archivePromise = createSupabaseAdminClient()
+        .from("fonts")
+        .update({ archived_at: archivedAt, deleted_at: archivedAt })
+        .eq("id", font.id)
+        .then((result) => result);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      waitForDatabaseLock(databaseContainerId);
+
+      const [mapping, archive] = await Promise.all([mappingPromise, archivePromise]);
+      expect(mapping.error).toBeNull();
+      expect(archive.error).toBeNull();
+      expect(mapping.data.font_id).toBe(font.id);
+    } finally {
+      await Promise.allSettled([mappingPromise, archivePromise].filter(Boolean));
+      const cleanupResult = executeDatabaseSql(databaseContainerId, `
+drop trigger if exists ${triggerName} on public.font_aliases;
+drop function if exists public.${functionName}();
+`);
+      expect(cleanupResult.status, cleanupResult.stderr || cleanupResult.stdout).toBe(0);
+    }
+  }, 30_000);
+
   it("saves an alias without synthesizing a future design line", async () => {
     const admin = createSupabaseAdminClient();
+    const fixture = await createDesignFixture(admin);
     const aliasName = `Future ${randomUUID()}`;
     const normalizedAlias = aliasName.toLowerCase();
     const { data, error } = await mapAlias(admin, {
@@ -276,7 +536,59 @@ describe("workspace font alias database foundation", () => {
       order_revision: null,
       design_revision: null,
     });
-    expect((await admin.from("design_lines").select("id").eq("line_index", 7)).data).toEqual([]);
+    expect((await admin
+      .from("design_lines")
+      .select("id")
+      .eq("design_id", fixture.designId)
+      .eq("line_index", 7)).data).toEqual([]);
+  });
+
+  it("requires a workspace member operator and attributes every affected row to that operator", async () => {
+    const admin = createSupabaseAdminClient();
+    const aliasName = `Attributed ${randomUUID()}`;
+    const normalizedAlias = aliasName.toLowerCase();
+    const unauthorized = await mapAlias(admin, {
+      p_user_id: secondaryUserId,
+      p_alias_name: aliasName,
+      p_normalized_alias: normalizedAlias,
+    });
+    expect(unauthorized.error?.code).toBe("42501");
+
+    const fixture = await createDesignFixture(admin);
+    const created = await mapAlias(admin, {
+      p_user_id: memberUserId,
+      p_alias_name: aliasName,
+      p_normalized_alias: normalizedAlias,
+      p_font_id: "candlepin",
+    });
+    expect(created.error).toBeNull();
+    expect(created.data).toMatchObject({
+      created_by: memberUserId,
+      updated_by: memberUserId,
+    });
+
+    const reassigned = await mapAlias(admin, {
+      p_user_id: alternateMemberUserId,
+      p_alias_name: aliasName,
+      p_normalized_alias: normalizedAlias,
+      p_font_id: "skywalk",
+      p_order_item_id: fixture.orderItemId,
+      p_design_id: fixture.designId,
+      p_line_index: 0,
+      p_expected_order_revision: 1,
+      p_expected_design_revision: 1,
+    });
+    expect(reassigned.error).toBeNull();
+    expect(reassigned.data).toMatchObject({
+      created_by: memberUserId,
+      updated_by: alternateMemberUserId,
+    });
+    const [{ data: order }, { data: design }] = await Promise.all([
+      admin.from("order_items").select("updated_by").eq("id", fixture.orderItemId).single(),
+      admin.from("designs").select("updated_by").eq("id", fixture.designId).single(),
+    ]);
+    expect(order.updated_by).toBe(alternateMemberUserId);
+    expect(design.updated_by).toBe(alternateMemberUserId);
   });
 
   it("updates only the selected line and increments both authoritative revisions", async () => {
@@ -353,6 +665,94 @@ describe("workspace font alias database foundation", () => {
     expect(rows).toEqual([{ font_id: "somekind" }]);
   });
 
+  it("serializes alias-only mappings on the canonical alias advisory lock", async () => {
+    // Break caught: two missing-alias inserts race to the unique constraint instead of serializing authoritatively.
+    const admin = createSupabaseAdminClient();
+    const aliasName = `Alias Lock ${randomUUID()}`;
+    const normalizedAlias = aliasName.toLowerCase();
+    const databaseContainerId = await getLocalDatabaseContainerId();
+    const suffix = randomUUID().replaceAll("-", "");
+    const triggerName = `zz_test_hold_alias_advisory_${suffix}`;
+    const functionName = `test_hold_alias_advisory_${suffix}`;
+    const setupResult = executeDatabaseSql(databaseContainerId, `
+create function public.${functionName}()
+returns trigger
+language plpgsql
+security invoker
+set search_path = ''
+as $hold$
+begin
+  perform pg_catalog.pg_sleep(3);
+  return null;
+end;
+$hold$;
+
+create trigger ${triggerName}
+after insert on public.font_aliases
+for each row
+when (new.normalized_alias = ${quoteSqlLiteral(normalizedAlias)})
+execute function public.${functionName}();
+`);
+    expect(setupResult.status, setupResult.stderr || setupResult.stdout).toBe(0);
+
+    let firstPromise;
+    let secondPromise;
+    try {
+      firstPromise = mapAlias(admin, {
+        p_user_id: memberUserId,
+        p_alias_name: aliasName,
+        p_normalized_alias: normalizedAlias,
+        p_font_id: "candlepin",
+      });
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      waitForDatabaseSleep(databaseContainerId);
+
+      secondPromise = mapAlias(createSupabaseAdminClient(), {
+        p_user_id: alternateMemberUserId,
+        p_alias_name: aliasName,
+        p_normalized_alias: normalizedAlias,
+        p_font_id: "somekind",
+      });
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      waitForDatabaseAdvisoryLock(databaseContainerId);
+
+      const [first, second] = await Promise.all([firstPromise, secondPromise]);
+      expect(first.error).toBeNull();
+      expect(second.error).toBeNull();
+      expect(first.data).toMatchObject({
+        previous_font_id: null,
+        font_id: "candlepin",
+        created_by: memberUserId,
+        updated_by: memberUserId,
+      });
+      expect(second.data).toMatchObject({
+        previous_font_id: "candlepin",
+        font_id: "somekind",
+        created_by: memberUserId,
+        updated_by: alternateMemberUserId,
+      });
+      const { data: saved, error: savedError } = await admin
+        .from("font_aliases")
+        .select("font_id, created_by, updated_by")
+        .eq("workspace_id", PRIMARY_WORKSPACE_ID)
+        .eq("normalized_alias", normalizedAlias)
+        .single();
+      expect(savedError).toBeNull();
+      expect(saved).toEqual({
+        font_id: "somekind",
+        created_by: memberUserId,
+        updated_by: alternateMemberUserId,
+      });
+    } finally {
+      await Promise.allSettled([firstPromise, secondPromise].filter(Boolean));
+      const cleanupResult = executeDatabaseSql(databaseContainerId, `
+drop trigger if exists ${triggerName} on public.font_aliases;
+drop function if exists public.${functionName}();
+`);
+      expect(cleanupResult.status, cleanupResult.stderr || cleanupResult.stdout).toBe(0);
+    }
+  }, 30_000);
+
   it.each([
     ["order", { p_expected_order_revision: 0, p_expected_design_revision: 1 }],
     ["design", { p_expected_order_revision: 1, p_expected_design_revision: 0 }],
@@ -406,6 +806,7 @@ describe("workspace font alias database foundation", () => {
     const results = await Promise.all(inputs.map((input) => (
       createSupabaseAdminClient().rpc("map_workspace_font_alias", {
         p_workspace_id: PRIMARY_WORKSPACE_ID,
+        p_user_id: memberUserId,
         ...input,
       })
     )));

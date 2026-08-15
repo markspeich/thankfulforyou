@@ -16,12 +16,12 @@ create index font_aliases_workspace_font_idx
 
 alter table public.font_aliases enable row level security;
 
-grant select, insert, update, delete on public.font_aliases to authenticated;
+grant select on public.font_aliases to authenticated;
 grant all on public.font_aliases to service_role;
 
-create policy font_aliases_member_all
+create policy font_aliases_member_select
 on public.font_aliases
-for all
+for select
 to authenticated
 using (
   exists (
@@ -30,45 +30,51 @@ using (
     where memberships.workspace_id = font_aliases.workspace_id
       and memberships.user_id = (select auth.uid())
   )
-)
-with check (
-  exists (
-    select 1
-    from public.workspace_memberships memberships
-    where memberships.workspace_id = font_aliases.workspace_id
-      and memberships.user_id = (select auth.uid())
-  )
-  and exists (
-    select 1
-    from public.fonts target_font
-    where target_font.id = font_aliases.font_id
-      and target_font.workspace_id = font_aliases.workspace_id
-      and target_font.archived_at is null
-      and target_font.deleted_at is null
-  )
 );
 
-insert into public.font_aliases (
-  workspace_id,
-  font_id,
-  alias_name,
-  normalized_alias
-)
-select
-  workspaces.id,
-  target_font.id,
-  'Super Boy',
-  'super boy'
-from public.workspaces workspaces
-join public.fonts target_font
-  on target_font.workspace_id = workspaces.id
- and target_font.display_name = 'Super Boys'
- and target_font.archived_at is null
- and target_font.deleted_at is null
-on conflict (workspace_id, normalized_alias) do nothing;
+create or replace function public.seed_workspace_super_boy_font_aliases()
+returns bigint
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+declare
+  v_inserted_count bigint;
+begin
+  insert into public.font_aliases (
+    workspace_id,
+    font_id,
+    alias_name,
+    normalized_alias
+  )
+  select
+    workspaces.id,
+    target_font.id,
+    'Super Boy',
+    'super boy'
+  from public.workspaces workspaces
+  join public.fonts target_font
+    on target_font.workspace_id = workspaces.id
+   and target_font.display_name = 'Super Boys'
+   and target_font.archived_at is null
+   and target_font.deleted_at is null
+  on conflict (workspace_id, normalized_alias) do nothing;
+
+  get diagnostics v_inserted_count = row_count;
+  return v_inserted_count;
+end;
+$$;
+
+select public.seed_workspace_super_boy_font_aliases();
+
+revoke all on function public.seed_workspace_super_boy_font_aliases()
+from public, anon, authenticated;
+grant execute on function public.seed_workspace_super_boy_font_aliases()
+to service_role;
 
 create or replace function public.map_workspace_font_alias(
   p_workspace_id uuid,
+  p_user_id uuid,
   p_alias_name text,
   p_normalized_alias text,
   p_font_id text,
@@ -98,13 +104,37 @@ begin
     raise exception using errcode = '22023', message = 'Workspace is required.';
   end if;
 
-  if p_alias_name is null or btrim(p_alias_name) = '' then
+  if p_user_id is null then
+    raise exception using errcode = '22023', message = 'Operator user is required.';
+  end if;
+  if not exists (
+    select 1
+    from public.workspace_memberships memberships
+    where memberships.workspace_id = p_workspace_id
+      and memberships.user_id = p_user_id
+  ) then
+    raise exception using
+      errcode = '42501',
+      message = 'Operator user is not a member of the workspace.';
+  end if;
+
+  if p_alias_name is null then
     raise exception using errcode = '22023', message = 'Alias name is required.';
   end if;
 
-  v_normalized_alias := lower(
-    regexp_replace(btrim(normalize(p_alias_name, NFKC)), '[[:space:]]+', ' ', 'g')
+  v_normalized_alias := pg_catalog.lower(
+    pg_catalog.btrim(
+      pg_catalog.regexp_replace(
+        normalize(p_alias_name, NFKC),
+        U&'[\0009-\000D\0020\00A0\1680\2000-\200A\2028\2029\202F\205F\3000\FEFF]+',
+        ' ',
+        'g'
+      )
+    ) collate pg_catalog."und-x-icu"
   );
+  if v_normalized_alias = '' then
+    raise exception using errcode = '22023', message = 'Alias name is required.';
+  end if;
   if p_normalized_alias is distinct from v_normalized_alias then
     raise exception using
       errcode = '22023',
@@ -157,7 +187,7 @@ begin
     and fonts.workspace_id = p_workspace_id
     and fonts.archived_at is null
     and fonts.deleted_at is null
-  for key share;
+  for update;
   if not found then
     raise exception using
       errcode = '22023',
@@ -221,8 +251,8 @@ begin
       p_font_id,
       p_alias_name,
       v_normalized_alias,
-      auth.uid(),
-      auth.uid()
+      p_user_id,
+      p_user_id
     )
     returning * into v_saved_alias;
   else
@@ -230,7 +260,7 @@ begin
     set
       font_id = p_font_id,
       alias_name = p_alias_name,
-      updated_by = auth.uid(),
+      updated_by = p_user_id,
       updated_at = now()
     where aliases.id = v_existing_alias.id
     returning * into v_saved_alias;
@@ -245,7 +275,7 @@ begin
     update public.designs designs
     set
       revision = designs.revision + 1,
-      updated_by = auth.uid(),
+      updated_by = p_user_id,
       updated_at = now()
     where designs.id = p_design_id
     returning * into v_design;
@@ -253,7 +283,7 @@ begin
     update public.order_items orders
     set
       revision = orders.revision + 1,
-      updated_by = auth.uid(),
+      updated_by = p_user_id,
       updated_at = now()
     where orders.id = p_order_item_id
     returning * into v_order;
@@ -291,6 +321,7 @@ $$;
 
 revoke all on function public.map_workspace_font_alias(
   uuid,
+  uuid,
   text,
   text,
   text,
@@ -301,6 +332,7 @@ revoke all on function public.map_workspace_font_alias(
   bigint
 ) from public, anon, authenticated;
 grant execute on function public.map_workspace_font_alias(
+  uuid,
   uuid,
   text,
   text,
