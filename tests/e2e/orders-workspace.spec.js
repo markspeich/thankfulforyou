@@ -542,8 +542,8 @@ test("shows imported customer font selections beneath Quantity and hides them wh
   await expect(customerFonts).toBeVisible();
   await expect(customerFonts.evaluate((element) => element.previousElementSibling?.id)).resolves.toBe("importedQuantityField");
   await expect(customerFonts.locator(".customer-font-selection")).toHaveText([
-    "Line 1 Font: Skywalk",
-    "Line 2 Font: Somekind",
+    "Line 1 Font: Skywalk (Unmapped)Map font",
+    "Line 2 Font: Somekind (Unmapped)Map font",
   ]);
 
   await page.locator("#orderList .order-row").filter({ hasText: "Katherine RN" }).locator(".order-item").click();
