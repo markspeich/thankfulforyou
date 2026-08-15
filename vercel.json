@@ -5,6 +5,10 @@
   "outputDirectory": "dist",
   "rewrites": [
     {
+      "source": "/api/font-aliases",
+      "destination": "/api/fonts?resource=aliases"
+    },
+    {
       "source": "/api/export-svg",
       "destination": "/api/export_svg"
     },

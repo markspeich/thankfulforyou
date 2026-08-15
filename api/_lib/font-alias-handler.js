@@ -1,6 +1,6 @@
-import { normalizeCustomerFontAlias } from "../src/amazon-customer-fonts.js";
-import { resolveProductionBatchAuth } from "./_lib/production-batch-auth.js";
-import { listWorkspaceFontAliases, mapWorkspaceFontAlias } from "./_lib/font-alias-store.js";
+import { normalizeCustomerFontAlias } from "../../src/amazon-customer-fonts.js";
+import { resolveProductionBatchAuth } from "./production-batch-auth.js";
+import { listWorkspaceFontAliases, mapWorkspaceFontAlias } from "./font-alias-store.js";
 
 function readJsonBody(req) {
   if (req.body == null) return {};

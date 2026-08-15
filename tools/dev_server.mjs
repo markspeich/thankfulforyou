@@ -165,6 +165,7 @@ const server = createServer(async (request, response) => {
     || requestUrl.pathname === "/api/orders"
     || requestUrl.pathname === "/api/production-batch"
     || requestUrl.pathname === "/api/fonts"
+    || requestUrl.pathname === "/api/font-aliases"
     || requestUrl.pathname === "/api/fixed-designs"
     || requestUrl.pathname === "/api/etsy-connection"
     || requestUrl.pathname === "/api/etsy-callback"
@@ -193,6 +194,7 @@ const server = createServer(async (request, response) => {
         "/api/orders": "../api/orders.js",
         "/api/production-batch": "../api/production-batch.js",
         "/api/fonts": "../api/fonts.js",
+        "/api/font-aliases": "../api/fonts.js",
         "/api/fixed-designs": "../api/fixed-designs.js",
         "/api/etsy-connection": "../api/etsy-connection.js",
         "/api/etsy-callback": "../api/etsy-callback.js",
@@ -208,7 +210,10 @@ const server = createServer(async (request, response) => {
         headers: Object.fromEntries(
           Object.entries(request.headers).map(([key, value]) => [key, Array.isArray(value) ? value[0] : value]),
         ),
-        query: buildApiQuery(requestUrl),
+        query: {
+          ...buildApiQuery(requestUrl),
+          ...(requestUrl.pathname === "/api/font-aliases" ? { resource: "aliases" } : {}),
+        },
         body: payload,
       };
       const res = {
