@@ -9737,16 +9737,21 @@ function settingsValueChanged(currentValue, previousValue) {
 }
 
 function fontAliasSelectedLineWasRetained(previousSettings, latestSettings, selection) {
-  const previousLine = getTextLineItemsFromSettings(previousSettings)
+  const previousLines = getTextLineItemsFromSettings(previousSettings);
+  const latestLines = getTextLineItemsFromSettings(latestSettings);
+  const previousLine = previousLines
     .find((item) => item.textLineIndex === selection?.lineIndex);
-  const latestLine = getTextLineItemsFromSettings(latestSettings)
+  const latestLine = latestLines
     .find((item) => item.textLineIndex === selection?.lineIndex);
   if (!previousLine || !latestLine) return false;
 
   const previousLineId = previousLine.line?.lineId || previousLine.line?.id || null;
   const latestLineId = latestLine.line?.lineId || latestLine.line?.id || null;
   if (previousLineId || latestLineId) return Boolean(previousLineId && latestLineId && previousLineId === latestLineId);
-  return previousLine.text === latestLine.text;
+  if (previousLine.text !== latestLine.text) return false;
+  const previousMatchCount = previousLines.filter((item) => item.text === previousLine.text).length;
+  const latestMatchCount = latestLines.filter((item) => item.text === latestLine.text).length;
+  return previousMatchCount === 1 && latestMatchCount === 1;
 }
 
 function rebaseFontAliasDraftSettings({ draftSettings, previousPublishedSettings, latestPublishedSettings, selection }) {
