@@ -4099,6 +4099,16 @@ function applyProductionBatchAuditToOrder(order, auditSource) {
   }
 
   order.revision = normalizeStoredRevision(auditSource.revision);
+  if (Object.hasOwn(auditSource, "designId")) {
+    order.designId = typeof auditSource.designId === "string" && auditSource.designId.trim()
+      ? auditSource.designId.trim()
+      : null;
+  }
+  if (Object.hasOwn(auditSource, "designRevision")) {
+    order.designRevision = auditSource.designRevision == null
+      ? null
+      : normalizeStoredRevision(auditSource.designRevision);
+  }
   order.updatedAt = normalizeStoredUpdatedAt(auditSource.updatedAt);
   order.updatedBy = normalizeStoredAuditActor(auditSource.updatedBy);
 }
@@ -9584,6 +9594,16 @@ function updateFontAliasPreview() {
   fontAliasConfirmButton.disabled = !target || Boolean(activeFontAliasRequest?.submitting);
 }
 
+function setFontAliasDialogSubmitting(submitting) {
+  if (!activeFontAliasRequest) return;
+  activeFontAliasRequest.submitting = Boolean(submitting);
+  fontAliasSearchInput.disabled = Boolean(submitting);
+  fontAliasFontSelect.disabled = Boolean(submitting);
+  cancelFontAliasDialogButton.disabled = Boolean(submitting);
+  closeFontAliasDialogButton.disabled = Boolean(submitting);
+  updateFontAliasPreview();
+}
+
 function renderFontAliasOptions() {
   const requestedSearch = fontAliasSearchInput.value.trim().toLowerCase();
   const selectedId = activeFontAliasRequest?.selectedFontId || "";
@@ -9608,6 +9628,7 @@ function renderFontAliasOptions() {
 }
 
 function closeFontAliasMappingDialog() {
+  if (activeFontAliasRequest?.submitting) return;
   if (fontAliasDialog.open) fontAliasDialog.close();
 }
 
@@ -9656,10 +9677,17 @@ function replaceSettingsLine(settings, settingsIndex, savedLine) {
   return normalizeSettings({ ...normalized, lines });
 }
 
-function reconcileMappedDesignLine(order, savedLine, orderRevision, designRevision) {
+function renderReconciledFontAliasOrder(order) {
+  if (order?.id !== activeOrderItemId) return;
+  applySettings(order.settings);
+  renderOrderList();
+  renderCustomerFontSelections(order);
+  render();
+}
+
+function reconcileMappedDesignLine(order, draftSettings, savedLine, orderRevision, designRevision) {
   if (!order || !savedLine || !Number.isInteger(savedLine.lineIndex)) return;
-  const currentSettings = normalizeSettings(getCurrentSettings());
-  order.settings = replaceSettingsLine(currentSettings, savedLine.lineIndex, savedLine);
+  order.settings = replaceSettingsLine(draftSettings, savedLine.lineIndex, savedLine);
   order.text = order.settings.text;
   order.revision = normalizeStoredRevision(orderRevision);
   order.designRevision = normalizeStoredRevision(designRevision);
@@ -9671,12 +9699,41 @@ function reconcileMappedDesignLine(order, savedLine, orderRevision, designRevisi
     order.publishedSnapshot.designRevision = order.designRevision;
   }
 
-  applySettings(order.settings);
   suppressBatchSyncLocalNotice = true;
   persistBatchState({ skipRemoteSave: true });
   suppressBatchSyncLocalNotice = false;
-  renderOrderList();
-  render();
+  renderReconciledFontAliasOrder(order);
+}
+
+function settingsValueChanged(currentValue, previousValue) {
+  return JSON.stringify(currentValue) !== JSON.stringify(previousValue);
+}
+
+function rebaseFontAliasDraftSettings({ draftSettings, previousPublishedSettings, latestPublishedSettings, selection }) {
+  const draft = normalizeSettings(draftSettings);
+  const previous = normalizeSettings(previousPublishedSettings);
+  const latest = normalizeSettings(latestPublishedSettings);
+  const rebased = { ...latest };
+  for (const key of ["text", "presetId", "boundingSizePresetId", "backingMm", "weldExportedDesign"]) {
+    if (settingsValueChanged(draft[key], previous[key])) rebased[key] = draft[key];
+  }
+
+  const selectedSettingsIndex = getTextLineItemsFromSettings(previous)
+    .find((item) => item.textLineIndex === selection?.lineIndex)?.settingsIndex ?? -1;
+  const lines = latest.lines.map((line) => ({ ...line }));
+  const lineCount = Math.max(previous.lines.length, draft.lines.length);
+  for (let index = 0; index < lineCount; index += 1) {
+    if (index === selectedSettingsIndex || !settingsValueChanged(draft.lines[index], previous.lines[index])) continue;
+    if (draft.lines[index]) lines[index] = { ...draft.lines[index] };
+    else if (index < lines.length) lines.splice(index, 1);
+  }
+  rebased.lines = lines;
+  return normalizeSettings(rebased);
+}
+
+function refreshFontAliasRestoreFocusTarget(selection) {
+  const matchingAction = customerFontSelections.querySelector(`[data-font-alias-line-index="${selection?.lineIndex}"]`);
+  fontAliasRestoreFocusTarget = matchingAction instanceof HTMLElement ? matchingAction : textInput;
 }
 
 async function postFontAliasMapping(payload, accessToken) {
@@ -9705,10 +9762,9 @@ async function postFontAliasMapping(payload, accessToken) {
   return responsePayload;
 }
 
-async function recoverFontAliasConflict(error) {
+async function recoverFontAliasConflict(error, request, order) {
   if (Array.isArray(error?.payload?.fontAliases)) workspaceFontAliases = error.payload.fontAliases;
-  const order = getActiveOrder();
-  const selection = activeFontAliasRequest?.selection;
+  const selection = request?.selection;
   try {
     const accessToken = productionBatchAccessToken || readProductionBatchAccessTokenOverride() || await getAccessToken();
     const snapshot = productionBatchContext?.id
@@ -9718,30 +9774,34 @@ async function recoverFontAliasConflict(error) {
       )
       : null;
     const remoteOrder = snapshot?.orderItems?.find((candidate) => candidate?.id === order?.id);
-    if (remoteOrder && selection) {
-      const remoteSettings = normalizeSettings(remoteOrder.settings);
-      const remoteLineItem = getTextLineItemsFromSettings(remoteSettings)
-        .find((item) => item.textLineIndex === selection.lineIndex);
-      order.designId = remoteOrder.designId || order.designId;
-      if (remoteLineItem) {
-        reconcileMappedDesignLine(order, {
-          ...remoteLineItem.line,
-          lineIndex: remoteLineItem.settingsIndex,
-        }, remoteOrder.revision, remoteOrder.designRevision);
-      } else {
-        order.revision = normalizeStoredRevision(remoteOrder.revision);
-        order.designRevision = normalizeStoredRevision(remoteOrder.designRevision);
-      }
+    const latestPublishedOrder = normalizeStoredPublishedSnapshot(remoteOrder);
+    if (latestPublishedOrder && selection) {
+      order.publishedSnapshot = latestPublishedOrder;
+      applyProductionBatchAuditToOrder(order, latestPublishedOrder);
+      order.settings = rebaseFontAliasDraftSettings({
+        draftSettings: request.draftSettings,
+        previousPublishedSettings: request.previousPublishedSettings,
+        latestPublishedSettings: latestPublishedOrder.settings,
+        selection,
+      });
+      order.text = order.settings.text;
+      suppressBatchSyncLocalNotice = true;
+      persistBatchState({ skipRemoteSave: true });
+      suppressBatchSyncLocalNotice = false;
+      renderReconciledFontAliasOrder(order);
     }
   } catch {
     // The authoritative alias snapshot still lets the operator retry after a batch refresh failure.
   }
 
-  if (activeFontAliasRequest) {
-    activeFontAliasRequest.existingAlias = getWorkspaceFontAlias(activeFontAliasRequest.selection.name);
-    activeFontAliasRequest.confirmReplacement = false;
+  if (activeFontAliasRequest === request) {
+    request.existingAlias = getWorkspaceFontAlias(request.selection.name);
+    request.confirmReplacement = false;
   }
-  renderCustomerFontSelections(getActiveOrder());
+  if (order?.id === activeOrderItemId) {
+    renderCustomerFontSelections(order);
+    refreshFontAliasRestoreFocusTarget(selection);
+  }
   setFontAliasStatus(error.message, "error");
   fontAliasConfirmButton.textContent = "Map Font";
   updateFontAliasPreview();
@@ -9749,7 +9809,7 @@ async function recoverFontAliasConflict(error) {
 
 async function submitFontAliasMapping() {
   const request = activeFontAliasRequest;
-  const order = getActiveOrder();
+  const order = orders.find((candidate) => candidate.id === request?.orderId) || null;
   const target = getActiveFontAliasTarget();
   if (!request || !order || !target || request.submitting) return;
 
@@ -9781,8 +9841,11 @@ async function submitFontAliasMapping() {
     });
   }
 
-  request.submitting = true;
-  fontAliasConfirmButton.disabled = true;
+  request.draftSettings = order.id === activeOrderItemId
+    ? normalizeSettings(getCurrentSettings())
+    : normalizeSettings(order.settings);
+  request.previousPublishedSettings = normalizeSettings(publishedSettings);
+  setFontAliasDialogSubmitting(true);
   setFontAliasStatus("Saving font mapping…");
   try {
     const accessToken = productionBatchAccessToken || readProductionBatchAccessTokenOverride() || await getAccessToken();
@@ -9792,26 +9855,29 @@ async function submitFontAliasMapping() {
     );
     upsertWorkspaceFontAlias(result.alias);
     request.existingAlias = result.alias;
-    if (result.line) reconcileMappedDesignLine(order, result.line, result.orderRevision, result.designRevision);
-    renderCustomerFontSelections(order);
+    if (result.line) reconcileMappedDesignLine(order, request.draftSettings, result.line, result.orderRevision, result.designRevision);
+    if (order.id === activeOrderItemId) {
+      renderCustomerFontSelections(order);
+      refreshFontAliasRestoreFocusTarget(request.selection);
+    }
 
     if (!result.line) {
       setFontAliasStatus(`Mapping saved for future Line ${request.selection.lineIndex + 1}. No current design line was changed.`, "success");
       fontAliasConfirmButton.textContent = "Map Font";
-      request.submitting = false;
-      updateFontAliasPreview();
+      setFontAliasDialogSubmitting(false);
       fontAliasConfirmButton.disabled = true;
       return;
     }
 
-    fontAliasRestoreFocusTarget = customerFontSelections.querySelector(`[data-font-alias-line-index="${request.selection.lineIndex}"]`);
+    setFontAliasDialogSubmitting(false);
     closeFontAliasMappingDialog();
   } catch (error) {
-    request.submitting = false;
     if (error?.status === 409 && error?.code === "FONT_ALIAS_CONFLICT") {
-      await recoverFontAliasConflict(error);
+      await recoverFontAliasConflict(error, request, order);
+      setFontAliasDialogSubmitting(false);
       return;
     }
+    setFontAliasDialogSubmitting(false);
     setFontAliasStatus(error instanceof Error ? error.message : "Unable to save this font mapping.", "error");
     updateFontAliasPreview();
   }
@@ -13458,6 +13524,10 @@ fontAliasDialog?.addEventListener("click", (event) => {
 });
 fontAliasDialog?.addEventListener("keydown", (event) => {
   if (event.key !== "Escape") return;
+  event.preventDefault();
+  closeFontAliasMappingDialog();
+});
+fontAliasDialog?.addEventListener("cancel", (event) => {
   event.preventDefault();
   closeFontAliasMappingDialog();
 });

@@ -531,13 +531,138 @@ test("maps an active marketplace font line transactionally without saving unrela
   await expect(page.locator("#cancelDesignButton")).toBeEnabled();
 });
 
+test("reconciles a delayed font mapping only into its original order draft", async ({ page }) => {
+  // Break caught: a delayed response reads the newly active order controls and corrupts both order drafts.
+  await installSupabaseSession(page);
+  const firstOrder = buildCompletedRemoteOrder({
+    id: "order-a", revision: 7, designId: "design-a", designRevision: 11,
+    text: "Avery", status: "in-progress", savedSettingsSignature: null, completedSettingsSignature: null, cachedBuild: null,
+    source: { marketplace: "amazon", orderNumber: "A-1", customerFontSelections: [{ lineIndex: 0, name: "Lemonade" }] },
+    settings: { text: "Avery", presetId: "preset-a1f4c8e2b601", backingMm: 3.1, weldExportedDesign: true, lines: [{ fontId: "candlepin" }] },
+  });
+  const secondOrder = buildCompletedRemoteOrder({
+    id: "order-b", revision: 4, designId: "design-b", designRevision: 6,
+    text: "Blair", status: "in-progress", savedSettingsSignature: null, completedSettingsSignature: null, cachedBuild: null,
+    source: { marketplace: "amazon", orderNumber: "B-1" },
+    settings: { text: "Blair", presetId: "preset-a1f4c8e2b601", backingMm: 2.7, weldExportedDesign: true, lines: [{ fontId: "somekind" }] },
+  });
+  await installRemoteBatchSnapshot(page, {
+    batch: { id: "batch-1", workspaceId: "workspace-1" }, activeOrderItemId: firstOrder.id,
+    fontAliases: [], orderItems: [firstOrder, secondOrder],
+  });
+  let releaseMapping;
+  const mappingReleased = new Promise((resolve) => { releaseMapping = resolve; });
+  let mappingRequested;
+  const mappingRequestStarted = new Promise((resolve) => { mappingRequested = resolve; });
+  await page.route("**/api/font-aliases", async (route) => {
+    mappingRequested();
+    await mappingReleased;
+    await route.fulfill({ json: {
+      alias: { id: "alias-1", aliasName: "Lemonade", normalizedAlias: "lemonade", fontId: "skywalk", font: { id: "skywalk", displayName: "Skywalk Laser", archivedAt: null, deletedAt: null } },
+      previousFont: null,
+      line: { lineIndex: 0, kind: "text", text: "Avery", fontId: "skywalk", bridgeMm: 0.5, lineBridgeMm: 0.5, offsetXMm: 0, offsetYMm: 0, fontSizeMm: 34, horizontalScale: 1, verticalScale: 1, lockTextHeight: false },
+      orderRevision: 8, designRevision: 12,
+    } });
+  });
+
+  await page.goto("/production-batch");
+  await page.locator("#backingInput").fill("4.2");
+  await page.locator("#backingInput").dispatchEvent("input");
+  await page.getByRole("button", { name: "Map font" }).click();
+  await page.locator("#fontAliasFontSelect").selectOption("skywalk");
+  await page.locator("#fontAliasConfirmButton").click();
+  await mappingRequestStarted;
+  await expect(page.locator("#fontAliasFontSelect")).toBeDisabled();
+  await expect(page.locator("#fontAliasSearchInput")).toBeDisabled();
+  await expect(page.locator("#cancelFontAliasDialogButton")).toBeDisabled();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog", { name: "Map Marketplace Font" })).toBeVisible();
+
+  await page.evaluate(() => {
+    const nextOrder = document.querySelectorAll("#orderList .order-item")[1];
+    if (!(nextOrder instanceof HTMLButtonElement)) throw new Error("Second order was not rendered");
+    nextOrder.click();
+  });
+  await expect(page.locator("#textInput")).toHaveValue("Blair");
+  releaseMapping();
+  await expect(page.getByRole("dialog", { name: "Map Marketplace Font" })).not.toBeVisible();
+  await expect(page.locator("#textInput")).toHaveValue("Blair");
+  await expect(page.locator("#backingInput")).toHaveValue("2.7");
+  await expect(page.locator('.line-control-card[data-line-index="0"] select[data-setting="fontId"]')).toHaveValue("somekind");
+
+  await page.evaluate(() => {
+    const firstOrderButton = document.querySelectorAll("#orderList .order-item")[0];
+    if (!(firstOrderButton instanceof HTMLButtonElement)) throw new Error("First order was not rendered");
+    firstOrderButton.click();
+  });
+  await expect(page.locator("#textInput")).toHaveValue("Avery");
+  await expect(page.locator("#backingInput")).toHaveValue("4.2");
+  await expect(page.locator('.line-control-card[data-line-index="0"] select[data-setting="fontId"]')).toHaveValue("skywalk");
+});
+
+test("uses design identity returned by ordinary saves for new and updated designs", async ({ page }) => {
+  // Break caught: save responses update order revision but leave live design identity stale or missing.
+  await installSupabaseSession(page);
+  const newDesignOrder = buildCompletedRemoteOrder({
+    id: "order-new", revision: 2, designId: null, designRevision: null,
+    text: "New", status: "in-progress", savedSettingsSignature: null, completedSettingsSignature: null, cachedBuild: null,
+    source: { marketplace: "amazon", orderNumber: "NEW-1", customerFontSelections: [{ lineIndex: 0, name: "Lemonade" }] },
+    settings: { text: "New", presetId: "preset-a1f4c8e2b601", backingMm: 3.1, weldExportedDesign: true, lines: [{ fontId: "candlepin" }] },
+  });
+  const updatedDesignOrder = buildCompletedRemoteOrder({
+    id: "order-existing", revision: 5, designId: "design-existing", designRevision: 8,
+    text: "Existing", status: "in-progress", savedSettingsSignature: null, completedSettingsSignature: null, cachedBuild: null,
+    source: { marketplace: "amazon", orderNumber: "EXISTING-1", customerFontSelections: [{ lineIndex: 0, name: "Lemonade" }] },
+    settings: { text: "Existing", presetId: "preset-a1f4c8e2b601", backingMm: 3.1, weldExportedDesign: true, lines: [{ fontId: "candlepin" }] },
+  });
+  await page.route("**/api/batch-session", route => route.fulfill({ json: { operator: { id: "user-1", email: "mark@example.com" }, workspace: { id: "workspace-1", name: "Thankful For You" }, batch: { id: "batch-1", workspaceId: "workspace-1" } } }));
+  await page.route("**/api/production-batch?batchId=batch-1", route => route.fulfill({ json: { batch: { id: "batch-1", workspaceId: "workspace-1" }, activeOrderItemId: "order-new", fontAliases: [], orderItems: [newDesignOrder, updatedDesignOrder] } }));
+  await page.route("**/api/production-batch", async (route) => {
+    if (route.request().method() !== "PUT") return route.fallback();
+    const snapshot = route.request().postDataJSON().snapshot;
+    await route.fulfill({ json: {
+      ...snapshot,
+      orderItems: snapshot.orderItems.map((order) => order.id === "order-new"
+        ? { ...order, revision: 3, designId: "design-new", designRevision: 1 }
+        : { ...order, revision: 6, designId: "design-existing", designRevision: 9 }),
+    } });
+  });
+  await page.route("**/api/layout-analyze", route => route.fulfill({ json: buildMockAnalysisResponse() }));
+  const mappingBodies = [];
+  await page.route("**/api/font-aliases", route => {
+    mappingBodies.push(route.request().postDataJSON());
+    return route.fulfill({ status: 500, json: { error: "Stop after request capture." } });
+  });
+
+  await page.goto("/production-batch");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await page.getByRole("button", { name: "Map font" }).click();
+  await page.locator("#fontAliasFontSelect").selectOption("skywalk");
+  await page.locator("#fontAliasConfirmButton").click();
+  await expect.poll(() => mappingBodies.length).toBe(1);
+  expect(mappingBodies[0]).toMatchObject({ orderItemId: "order-new", designId: "design-new", expectedOrderRevision: 3, expectedDesignRevision: 1 });
+  await page.locator("#cancelFontAliasDialogButton").click();
+
+  await page.evaluate(() => {
+    const nextOrder = document.querySelectorAll("#orderList .order-item")[1];
+    if (!(nextOrder instanceof HTMLButtonElement)) throw new Error("Existing order was not rendered");
+    nextOrder.click();
+  });
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await page.getByRole("button", { name: "Map font" }).click();
+  await page.locator("#fontAliasFontSelect").selectOption("skywalk");
+  await page.locator("#fontAliasConfirmButton").click();
+  await expect.poll(() => mappingBodies.length).toBe(2);
+  expect(mappingBodies[1]).toMatchObject({ orderItemId: "order-existing", designId: "design-existing", expectedOrderRevision: 6, expectedDesignRevision: 9 });
+});
+
 test("keeps future-line mapping success visible without synthesizing a line", async ({ page }) => {
   // Break caught: alias-only success creates a blank line or gives no durable future-line feedback.
   await installSupabaseSession(page);
   const remoteOrder = buildCompletedRemoteOrder({
     designId: "design-1", designRevision: 11,
     text: "Avery", status: "in-progress", savedSettingsSignature: null, completedSettingsSignature: null, cachedBuild: null,
-    source: { customerFontSelections: [{ lineIndex: 1, name: "Lemonade" }] },
+    source: { marketplace: "amazon", orderNumber: "CONFLICT-1", customerFontSelections: [{ lineIndex: 1, name: "Lemonade" }] },
     settings: { text: "Avery", presetId: "preset-a1f4c8e2b601", backingMm: 3.1, weldExportedDesign: true, lines: [{ fontId: "candlepin" }] },
   });
   await installRemoteBatchSnapshot(page, { batch: { id: "batch-1", workspaceId: "workspace-1" }, activeOrderItemId: remoteOrder.id, fontAliases: [], orderItems: [remoteOrder] });
@@ -554,37 +679,86 @@ test("keeps future-line mapping success visible without synthesizing a line", as
   await expect(page.locator("#fontAliasStatus")).toContainText("Mapping saved for future Line 2. No current design line was changed.");
   await expect(page.locator("#customerFontSelections")).toContainText("Line 2 Font: Lemonade (Somekind)");
   await expect(page.locator('.line-control-card[data-line-index="1"]')).toHaveCount(0);
+  await page.locator("#cancelFontAliasDialogButton").click();
+  await expect(page.getByRole("button", { name: "Change font mapping" })).toBeFocused();
 });
 
 test("recovers a font alias revision conflict and keeps the selected target for retry", async ({ page }) => {
-  // Break caught: a 409 mutates stale local design state or loses the operator's selected replacement.
+  // Break caught: a 409 keeps a stale baseline/line, loses draft edits, or retries a removed line mutation.
   await installSupabaseSession(page);
   let snapshotReads = 0;
+  let releaseRecovery;
+  const recoveryReleased = new Promise((resolve) => { releaseRecovery = resolve; });
+  let recoveryRequested;
+  const recoveryRequestStarted = new Promise((resolve) => { recoveryRequested = resolve; });
   const remoteOrder = buildCompletedRemoteOrder({
-    revision: 7, designId: "design-1", designRevision: 11, text: "Avery", status: "in-progress", savedSettingsSignature: null, completedSettingsSignature: null, cachedBuild: null,
-    source: { customerFontSelections: [{ lineIndex: 0, name: "Lemonade" }] },
-    settings: { text: "Avery", presetId: "preset-a1f4c8e2b601", backingMm: 3.1, weldExportedDesign: true, lines: [{ fontId: "candlepin" }] },
+    revision: 7, designId: "design-1", designRevision: 11, text: "Avery\nRN", status: "in-progress", savedSettingsSignature: null, completedSettingsSignature: null, cachedBuild: null,
+    source: { marketplace: "amazon", orderNumber: "CONFLICT-2", customerFontSelections: [{ lineIndex: 1, name: "Lemonade" }] },
+    settings: { text: "Avery\nRN", presetId: "preset-a1f4c8e2b601", backingMm: 3.1, weldExportedDesign: true, lines: [{ fontId: "candlepin" }, { fontId: "candlepin" }] },
   });
-  const latestOrder = { ...remoteOrder, revision: 8, designRevision: 12, settings: { ...remoteOrder.settings, lines: [{ ...remoteOrder.settings.lines[0], fontId: "somekind" }] } };
+  const latestOrder = {
+    ...remoteOrder,
+    revision: 8,
+    designRevision: 12,
+    text: "Avery",
+    settings: { ...remoteOrder.settings, text: "Avery", lines: [{ ...remoteOrder.settings.lines[0], fontId: "somekind" }] },
+  };
   await page.route("**/api/batch-session", route => route.fulfill({ json: { operator: { id: "user-1", email: "mark@example.com" }, workspace: { id: "workspace-1", name: "Thankful For You" }, batch: { id: "batch-1", workspaceId: "workspace-1" } } }));
-  await page.route("**/api/production-batch?batchId=batch-1", route => route.fulfill({ json: snapshotReads++ === 0
-    ? { batch: { id: "batch-1", workspaceId: "workspace-1" }, activeOrderItemId: remoteOrder.id, fontAliases: [], orderItems: [remoteOrder] }
-    : { batch: { id: "batch-1", workspaceId: "workspace-1" }, activeOrderItemId: latestOrder.id, fontAliases: [{ id: "alias-1", aliasName: "Lemonade", normalizedAlias: "lemonade", fontId: "somekind", font: { id: "somekind", displayName: "Somekind", archivedAt: null, deletedAt: null } }], orderItems: [latestOrder] } }));
+  await page.route("**/api/production-batch?batchId=batch-1", async (route) => {
+    if (snapshotReads++ === 0) {
+      await route.fulfill({ json: { batch: { id: "batch-1", workspaceId: "workspace-1" }, activeOrderItemId: remoteOrder.id, fontAliases: [], orderItems: [remoteOrder] } });
+      return;
+    }
+    recoveryRequested();
+    await recoveryReleased;
+    await route.fulfill({ json: { batch: { id: "batch-1", workspaceId: "workspace-1" }, activeOrderItemId: latestOrder.id, fontAliases: [{ id: "alias-1", aliasName: "Lemonade", normalizedAlias: "lemonade", fontId: "somekind", font: { id: "somekind", displayName: "Somekind", archivedAt: null, deletedAt: null } }], orderItems: [latestOrder] } });
+  });
   await page.route("**/api/production-batch", route => route.request().method() === "PUT" ? route.fulfill({ json: route.request().postDataJSON()?.snapshot }) : route.fallback());
-  await page.route("**/api/font-aliases", route => route.fulfill({ status: 409, json: { error: "This mapping changed while you were editing it. Refresh and try again.", code: "FONT_ALIAS_CONFLICT", fontAliases: [{ id: "alias-1", aliasName: "Lemonade", normalizedAlias: "lemonade", fontId: "somekind", font: { id: "somekind", displayName: "Somekind", archivedAt: null, deletedAt: null } }] } }));
+  const mappingBodies = [];
+  await page.route("**/api/font-aliases", route => {
+    mappingBodies.push(route.request().postDataJSON());
+    if (mappingBodies.length === 1) {
+      return route.fulfill({ status: 409, json: { error: "This mapping changed while you were editing it. Refresh and try again.", code: "FONT_ALIAS_CONFLICT", fontAliases: [{ id: "alias-1", aliasName: "Lemonade", normalizedAlias: "lemonade", fontId: "somekind", font: { id: "somekind", displayName: "Somekind", archivedAt: null, deletedAt: null } }] } });
+    }
+    return route.fulfill({ json: { alias: { id: "alias-1", aliasName: "Lemonade", normalizedAlias: "lemonade", fontId: "skywalk", font: { id: "skywalk", displayName: "Skywalk Laser", archivedAt: null, deletedAt: null } }, previousFont: { id: "somekind", displayName: "Somekind" }, line: null, orderRevision: null, designRevision: null } });
+  });
 
   await page.goto("/production-batch");
+  await page.locator("#backingInput").fill("4.2");
+  await page.locator("#backingInput").dispatchEvent("input");
   await page.getByRole("button", { name: "Map font" }).click();
   await page.locator("#fontAliasFontSelect").selectOption("skywalk");
   await page.locator("#fontAliasConfirmButton").click();
+  await recoveryRequestStarted;
+  await expect(page.locator("#fontAliasFontSelect")).toBeDisabled();
+  await expect(page.locator("#cancelFontAliasDialogButton")).toBeDisabled();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog", { name: "Map Marketplace Font" })).toBeVisible();
+  releaseRecovery();
 
   await expect(page.getByRole("dialog", { name: "Map Marketplace Font" })).toBeVisible();
   await expect(page.locator("#fontAliasFontSelect")).toHaveValue("skywalk");
   await expect(page.locator("#fontAliasStatus")).toContainText("This mapping changed while you were editing it");
   await expect(page.locator("#customerFontSelections")).toContainText("Lemonade (Somekind)");
-  await expect(page.locator('.line-control-card[data-line-index="0"] select[data-setting="fontId"]')).toHaveValue("somekind");
+  await expect(page.locator("#textInput")).toHaveValue("Avery");
+  await expect(page.locator("#backingInput")).toHaveValue("4.2");
+  await expect(page.locator('.line-control-card[data-line-index="1"]')).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  const updatedAction = page.getByRole("button", { name: "Change font mapping" });
+  await expect(updatedAction).toBeFocused();
+
+  await updatedAction.click();
+  await page.locator("#fontAliasFontSelect").selectOption("skywalk");
   await page.locator("#fontAliasConfirmButton").click();
   await expect(page.locator("#fontAliasStatus")).toContainText("Lemonade is currently mapped to Somekind. Replace this mapping with Skywalk Laser?");
+  await page.locator("#fontAliasConfirmButton").click();
+  await expect.poll(() => mappingBodies.length).toBe(2);
+  expect(mappingBodies[1]).toEqual({ aliasName: "Lemonade", fontId: "skywalk" });
+  await expect(page.locator("#fontAliasStatus")).toContainText("Mapping saved for future Line 2. No current design line was changed.");
+  await page.locator("#cancelFontAliasDialogButton").click();
+  await page.locator("#cancelDesignButton").click();
+  await expect(page.locator("#backingInput")).toHaveValue("3.1");
+  await expect(page.locator("#textInput")).toHaveValue("Avery");
 });
 
 test("leaves alias and design state unchanged when font mapping fails", async ({ page }) => {
@@ -1378,6 +1552,8 @@ test("does not re-autosave immediately after a successful manual save merges rev
         orderItems: requestSnapshot.orderItems.map((order) => ({
           ...order,
           revision: 4,
+          designId: "design-created-by-save",
+          designRevision: 1,
           updatedAt: "2026-05-26T16:05:00.000Z",
           updatedBy: {
             name: "Avery",
