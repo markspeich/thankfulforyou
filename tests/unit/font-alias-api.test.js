@@ -79,6 +79,42 @@ describe("font aliases api route", () => {
     });
   });
 
+  it("returns a retriable error instead of a snapshot-less conflict when alias refresh fails", async () => {
+    // Break caught: a 409 tells the browser to reconcile but leaves out the authoritative alias state.
+    resolveProductionBatchAuthMock.mockResolvedValue({ userId: "operator-1", workspaceId: "workspace-1" });
+    mapWorkspaceFontAliasMock.mockRejectedValue(Object.assign(new Error("This mapping changed while you were editing it. Refresh and try again."), {
+      code: "FONT_ALIAS_CONFLICT", statusCode: 409, expose: true,
+    }));
+    listWorkspaceFontAliasesMock.mockRejectedValue(new Error("database unavailable"));
+    const { default: handler } = await import("../../api/font-aliases.js");
+    const response = createResponseRecorder();
+
+    await handler({ method: "POST", headers: {}, body: { aliasName: "Lemonade", fontId: "font-2" } }, response);
+
+    expect(response.statusCode).toBe(503);
+    expect(response.body).toEqual({
+      error: "The latest font mappings could not be loaded. Try again.",
+      code: "FONT_ALIAS_SNAPSHOT_UNAVAILABLE",
+    });
+    expect(response.body).not.toHaveProperty("fontAliases");
+  });
+
+  it("rejects malformed JSON as stable alias input validation", async () => {
+    // Break caught: malformed request JSON is reported as an unrelated server-side save failure.
+    resolveProductionBatchAuthMock.mockResolvedValue({ userId: "operator-1", workspaceId: "workspace-1" });
+    const { default: handler } = await import("../../api/font-aliases.js");
+    const response = createResponseRecorder();
+
+    await handler({ method: "POST", headers: {}, body: '{"aliasName":' }, response);
+
+    expect(mapWorkspaceFontAliasMock).not.toHaveBeenCalled();
+    expect(response.statusCode).toBe(400);
+    expect(response.body).toEqual({
+      error: "Font alias input must be valid JSON.",
+      code: "FONT_ALIAS_VALIDATION",
+    });
+  });
+
   it("requires authentication and rejects unsupported methods", async () => {
     resolveProductionBatchAuthMock.mockRejectedValue(Object.assign(new Error("Authentication required."), { statusCode: 401, expose: true }));
     const { default: handler } = await import("../../api/font-aliases.js");

@@ -4,7 +4,16 @@ import { listWorkspaceFontAliases, mapWorkspaceFontAlias } from "./_lib/font-ali
 
 function readJsonBody(req) {
   if (req.body == null) return {};
-  return typeof req.body === "string" ? JSON.parse(req.body) : req.body;
+  if (typeof req.body !== "string") return req.body;
+  try {
+    return JSON.parse(req.body);
+  } catch {
+    throw Object.assign(new Error("Font alias input must be valid JSON."), {
+      statusCode: 400,
+      code: "FONT_ALIAS_VALIDATION",
+      expose: true,
+    });
+  }
 }
 
 function readMappingPayload(req) {
@@ -58,7 +67,11 @@ export default async function handler(req, res) {
         res.status(409).json({ error: error.message, code: error.code, fontAliases });
         return;
       } catch {
-        // Fall through to the safe conflict response when refreshing aliases also fails.
+        res.status(503).json({
+          error: "The latest font mappings could not be loaded. Try again.",
+          code: "FONT_ALIAS_SNAPSHOT_UNAVAILABLE",
+        });
+        return;
       }
     }
     sendError(res, error);
