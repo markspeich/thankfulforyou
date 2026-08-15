@@ -68,6 +68,14 @@ describe("Amazon customer fonts", () => {
     expect(resolveCustomerFontId("Primary Display", workspaceFonts)).toBe("font-primary");
   });
 
+  it("does not apply trailing Laser compatibility to alias identities", () => {
+    const aliases = [{
+      id: "alias-primary", aliasName: "Primary Display", normalizedAlias: "primary display", fontId: "font-primary",
+    }];
+
+    expect(resolveCustomerFontId("Primary Display Laser", workspaceFonts, aliases)).toBeNull();
+  });
+
   it("resolves exact display names and trailing Laser compatibility without static aliases", () => {
     const superBoys = [{ id: "super-boys", displayName: "Super Boys Laser" }];
 
@@ -116,6 +124,23 @@ describe("Amazon customer fonts", () => {
       { fontId: "somekind", offsetXMm: 2, horizontalScale: 1.2 },
     ]);
     expect(lines[0].fontId).toBe("candlepin");
+  });
+
+  it("threads aliases through overlay and summary without changing selections", () => {
+    const aliases = [{
+      id: "alias-primary", aliasName: "Customer Choice", normalizedAlias: "customer choice", fontId: "font-primary",
+    }];
+    const selections = [{ lineIndex: 0, name: "  Customer   Choice  " }];
+    const originalSelections = JSON.stringify(selections);
+
+    expect(overlayCustomerFontsOnLines(
+      [{ fontId: "candlepin" }], selections, workspaceFonts, aliases,
+    )).toEqual([{ fontId: "font-primary" }]);
+    expect(summarizeCustomerFontResolution(
+      [{ fontId: "candlepin" }], selections, workspaceFonts, aliases,
+    )).toMatchObject({ recognizedCount: 1, unknownCount: 0, effectiveFontIds: ["font-primary"] });
+    expect(JSON.stringify(selections)).toBe(originalSelections);
+    expect(selections[0].name).toBe("  Customer   Choice  ");
   });
 
   it("applies a later-line customer font only when that line exists", () => {
