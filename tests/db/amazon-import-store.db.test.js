@@ -260,16 +260,9 @@ describe("Amazon import database integration", () => {
     const normalizedAlias = aliasName.toLowerCase();
     const cachedBuild = { signature: `amazon-saved-${suffix}`, layout: { text: "Saved Amazon" } };
     const supabase = createSupabaseAdminClient();
-    expect((await supabase.from("font_aliases").insert({
-      workspace_id: PRIMARY_WORKSPACE_ID,
-      font_id: "skywalk",
-      alias_name: aliasName,
-      normalized_alias: normalizedAlias,
-    })).error).toBeNull();
 
     try {
-      const fontAliases = await listWorkspaceFontAliases({ workspaceId: PRIMARY_WORKSPACE_ID, supabase });
-      const enrich = createAmazonItemEnricher({
+      const enricherOptions = {
         presetSnapshot: {
           defaultPresetId: "preset-c3e8a1d7f520",
           presets: [{
@@ -284,8 +277,7 @@ describe("Amazon import database integration", () => {
           { id: "candlepin", displayName: "Candlepin Laser" },
           { id: "skywalk", displayName: "Skywalk Laser" },
         ],
-        fontAliases,
-      });
+      };
       const source = {
         orderNumber: `AMAZON-ALIAS-${suffix}`,
         buyerName: "Alias Buyer",
@@ -293,8 +285,8 @@ describe("Amazon import database integration", () => {
         transactionId: `TX-${suffix}`,
         customerFontSelections: [{ lineIndex: 0, name: aliasName }],
       };
-      const firstImport = enrich({ id, text: "Saved Amazon", source });
-      expect(firstImport.settings.lines[0].fontId).toBe("skywalk");
+      const firstImport = createAmazonItemEnricher(enricherOptions)({ id, text: "Saved Amazon", source });
+      expect(firstImport.settings.lines[0].fontId).toBe("candlepin");
       await importAmazonOrderItemsTransactional({
         workspaceId: PRIMARY_WORKSPACE_ID,
         userId: importUserId,
@@ -318,6 +310,14 @@ describe("Amazon import database integration", () => {
         letter_bridge_mm: 0.9,
       }).eq("design_id", storedDesign.id).eq("line_index", 0)).error).toBeNull();
 
+      expect((await supabase.from("font_aliases").insert({
+        workspace_id: PRIMARY_WORKSPACE_ID,
+        font_id: "skywalk",
+        alias_name: aliasName,
+        normalized_alias: normalizedAlias,
+      })).error).toBeNull();
+      const fontAliases = await listWorkspaceFontAliases({ workspaceId: PRIMARY_WORKSPACE_ID, supabase });
+      const enrich = createAmazonItemEnricher({ ...enricherOptions, fontAliases });
       const duplicateImport = enrich({ id, text: "Incoming Amazon overwrite", source });
       expect(duplicateImport.settings.lines[0].fontId).toBe("skywalk");
       await expect(importAmazonOrderItemsTransactional({

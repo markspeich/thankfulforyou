@@ -1852,16 +1852,9 @@ drop function if exists public.${holdFunctionName}();
     const orderItemId = `transaction:${transactionId}`;
     const cachedBuild = { signature: `etsy-saved-${suffix}`, layout: { text: "Saved Etsy" } };
     const supabase = createSupabaseAdminClient();
-    expect((await supabase.from("font_aliases").insert({
-      workspace_id: PRIMARY_WORKSPACE_ID,
-      font_id: "skywalk",
-      alias_name: aliasName,
-      normalized_alias: normalizedAlias,
-    })).error).toBeNull();
 
     try {
-      const fontAliases = await listWorkspaceFontAliases({ workspaceId: PRIMARY_WORKSPACE_ID, supabase });
-      const enrich = createAmazonItemEnricher({
+      const enricherOptions = {
         presetSnapshot: {
           defaultPresetId: "preset-c3e8a1d7f520",
           presets: [{
@@ -1876,8 +1869,7 @@ drop function if exists public.${holdFunctionName}();
           { id: "candlepin", displayName: "Candlepin Laser" },
           { id: "skywalk", displayName: "Skywalk Laser" },
         ],
-        fontAliases,
-      });
+      };
       const source = {
         marketplace: "etsy",
         orderNumber: `ETSY-ALIAS-${suffix}`,
@@ -1885,8 +1877,8 @@ drop function if exists public.${holdFunctionName}();
         buyerName: "Alias Buyer",
         customerFontSelections: [{ lineIndex: 0, name: aliasName }],
       };
-      const firstImport = enrich({ text: "Saved Etsy", source });
-      expect(firstImport.settings.lines[0].fontId).toBe("skywalk");
+      const firstImport = createAmazonItemEnricher(enricherOptions)({ text: "Saved Etsy", source });
+      expect(firstImport.settings.lines[0].fontId).toBe("candlepin");
       await importWorkspaceOrderItems({
         workspaceId: PRIMARY_WORKSPACE_ID,
         userId: null,
@@ -1911,6 +1903,14 @@ drop function if exists public.${holdFunctionName}();
         letter_bridge_mm: 0.9,
       }).eq("design_id", storedDesign.id).eq("line_index", 0)).error).toBeNull();
 
+      expect((await supabase.from("font_aliases").insert({
+        workspace_id: PRIMARY_WORKSPACE_ID,
+        font_id: "skywalk",
+        alias_name: aliasName,
+        normalized_alias: normalizedAlias,
+      })).error).toBeNull();
+      const fontAliases = await listWorkspaceFontAliases({ workspaceId: PRIMARY_WORKSPACE_ID, supabase });
+      const enrich = createAmazonItemEnricher({ ...enricherOptions, fontAliases });
       const duplicateImport = enrich({ text: "Incoming Etsy overwrite", source });
       expect(duplicateImport.settings.lines[0].fontId).toBe("skywalk");
       await importWorkspaceOrderItems({
