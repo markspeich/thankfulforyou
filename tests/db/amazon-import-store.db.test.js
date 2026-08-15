@@ -393,7 +393,7 @@ describe("Amazon import database integration", () => {
     const [{ data: orderItem, error: orderError }, { data: design, error: designError }] = await Promise.all([
       admin
         .from("order_items")
-        .select("amazon_customization_json")
+        .select("amazon_customization_json, etsy_import_diagnostics")
         .eq("id", id)
         .maybeSingle(),
       admin
@@ -405,6 +405,7 @@ describe("Amazon import database integration", () => {
     expect(orderError).toBeNull();
     expect(designError).toBeNull();
     expect(orderItem.amazon_customization_json).toEqual(replacement.amazonCustomizationJson);
+    expect(orderItem.etsy_import_diagnostics).toBeNull();
     expect(design.design_text).toBe("Original");
   });
 

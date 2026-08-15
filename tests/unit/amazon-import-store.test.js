@@ -237,6 +237,7 @@ describe("Amazon import store", () => {
             ship_by_date: "2026-07-28",
             quantity: 2,
             amazon_customization_json: items[0].amazonCustomizationJson,
+            etsy_import_diagnostics: null,
             source_json: items[0].source,
             updated_by: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
           }),
