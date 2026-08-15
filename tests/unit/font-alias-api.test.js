@@ -32,7 +32,7 @@ describe("font aliases api route", () => {
   it("lists browser-safe aliases for the authenticated workspace", async () => {
     resolveProductionBatchAuthMock.mockResolvedValue({ userId: "operator-1", workspaceId: "workspace-1" });
     listWorkspaceFontAliasesMock.mockResolvedValue([{ id: "alias-1", aliasName: "Lemonade", font: { displayName: "Crushed Lemonade" } }]);
-    const { default: handler } = await import("../../api/font-aliases.js");
+    const { default: handler } = await import("../../api/_lib/font-alias-handler.js");
     const response = createResponseRecorder();
 
     await handler({ method: "GET", headers: { authorization: "Bearer token" } }, response);
@@ -45,7 +45,7 @@ describe("font aliases api route", () => {
   it("canonicalizes aliases on the server and uses the authenticated operator", async () => {
     resolveProductionBatchAuthMock.mockResolvedValue({ userId: "operator-1", workspaceId: "workspace-1" });
     mapWorkspaceFontAliasMock.mockResolvedValue({ alias: { id: "alias-1" }, line: null, orderRevision: null, designRevision: null });
-    const { default: handler } = await import("../../api/font-aliases.js");
+    const { default: handler } = await import("../../api/_lib/font-alias-handler.js");
     const response = createResponseRecorder();
 
     await handler({
@@ -66,7 +66,7 @@ describe("font aliases api route", () => {
       code: "FONT_ALIAS_CONFLICT", statusCode: 409, expose: true,
     }));
     listWorkspaceFontAliasesMock.mockResolvedValue([{ id: "alias-1", aliasName: "Lemonade", fontId: "font-current" }]);
-    const { default: handler } = await import("../../api/font-aliases.js");
+    const { default: handler } = await import("../../api/_lib/font-alias-handler.js");
     const response = createResponseRecorder();
 
     await handler({ method: "POST", headers: {}, body: { aliasName: "Lemonade", fontId: "font-2" } }, response);
@@ -86,7 +86,7 @@ describe("font aliases api route", () => {
       code: "FONT_ALIAS_CONFLICT", statusCode: 409, expose: true,
     }));
     listWorkspaceFontAliasesMock.mockRejectedValue(new Error("database unavailable"));
-    const { default: handler } = await import("../../api/font-aliases.js");
+    const { default: handler } = await import("../../api/_lib/font-alias-handler.js");
     const response = createResponseRecorder();
 
     await handler({ method: "POST", headers: {}, body: { aliasName: "Lemonade", fontId: "font-2" } }, response);
@@ -102,7 +102,7 @@ describe("font aliases api route", () => {
   it("rejects malformed JSON as stable alias input validation", async () => {
     // Break caught: malformed request JSON is reported as an unrelated server-side save failure.
     resolveProductionBatchAuthMock.mockResolvedValue({ userId: "operator-1", workspaceId: "workspace-1" });
-    const { default: handler } = await import("../../api/font-aliases.js");
+    const { default: handler } = await import("../../api/_lib/font-alias-handler.js");
     const response = createResponseRecorder();
 
     await handler({ method: "POST", headers: {}, body: '{"aliasName":' }, response);
@@ -117,7 +117,7 @@ describe("font aliases api route", () => {
 
   it("requires authentication and rejects unsupported methods", async () => {
     resolveProductionBatchAuthMock.mockRejectedValue(Object.assign(new Error("Authentication required."), { statusCode: 401, expose: true }));
-    const { default: handler } = await import("../../api/font-aliases.js");
+    const { default: handler } = await import("../../api/_lib/font-alias-handler.js");
     const unauthenticated = createResponseRecorder();
     await handler({ method: "GET", headers: {} }, unauthenticated);
     expect(unauthenticated.statusCode).toBe(401);

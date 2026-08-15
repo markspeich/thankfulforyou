@@ -35,6 +35,15 @@ describe("Vercel routing", () => {
     });
   });
 
+  it("routes font aliases through the existing fonts function", async () => {
+    const config = JSON.parse(await readFile("vercel.json", "utf8"));
+
+    expect(config.rewrites).toContainEqual({
+      source: "/api/font-aliases",
+      destination: "/api/fonts?resource=aliases",
+    });
+  });
+
   it("excludes the local preset writer from Vercel while keeping its development route", async () => {
     const ignoredPaths = (await readFile(".vercelignore", "utf8"))
       .split(/\r?\n/)

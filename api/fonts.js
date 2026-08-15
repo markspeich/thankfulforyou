@@ -1,4 +1,5 @@
 import { resolveProductionBatchAuth } from "./_lib/production-batch-auth.js";
+import fontAliasHandler from "./_lib/font-alias-handler.js";
 import {
   createWorkspaceFont,
   archiveWorkspaceFont,
@@ -50,6 +51,11 @@ function sendError(res, error, fallbackMessage = "Unable to manage fonts.") {
 }
 
 export default async function handler(req, res) {
+  if (req.query?.resource === "aliases") {
+    await fontAliasHandler(req, res);
+    return;
+  }
+
   try {
     req.auth = await resolveProductionBatchAuth(req);
 
