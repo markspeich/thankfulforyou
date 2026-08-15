@@ -68,7 +68,6 @@ function validateImportResult(data, requestedIds) {
 
 function buildTransactionalItem(item, context) {
   const orderItem = buildImportedOrderItemRow(item, context);
-  delete orderItem.etsy_import_diagnostics;
 
   return {
     orderItem,

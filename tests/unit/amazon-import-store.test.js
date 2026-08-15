@@ -267,7 +267,6 @@ describe("Amazon import store", () => {
         }],
       },
     }]);
-    expect(database.calls[0].args.p_items[0].orderItem).not.toHaveProperty("etsy_import_diagnostics");
     expect(database.calls[0].args.p_items[0].lines[0]).not.toHaveProperty("design_id");
   });
 
