@@ -3320,6 +3320,52 @@ test(PRODUCTION_BATCH_AMAZON_FONT_TEST_TITLE, async ({ page }) => {
   await expect(page.locator('.line-control-card[data-line-index="1"] select[data-setting="fontId"]')).toHaveValue("somekind");
 });
 
+test("applies a loaded alias when a later imported text line is materialized", async ({ page }) => {
+  // Break caught: later line creation ignores aliases loaded with the production batch snapshot.
+  await installSupabaseSession(page);
+  await page.route("**/api/batch-session", route => route.fulfill({
+    json: {
+      operator: { id: "user-1", email: "mark@example.com" },
+      workspace: { id: "workspace-1", name: "Thankful For You" },
+      batch: { id: "batch-1", workspaceId: "workspace-1" },
+    },
+  }));
+  await page.route("**/api/production-batch**", route => route.fulfill({
+    json: {
+      batch: { id: "batch-1", workspaceId: "workspace-1" },
+      activeOrderItemId: "amazon-item-1",
+      fontAliases: [{ aliasName: "Lemonade", normalizedAlias: "lemonade", fontId: "skywalk" }],
+      orderItems: [{
+        id: "amazon-item-1",
+        revision: 1,
+        text: "Maria",
+        status: "in-progress",
+        source: {
+          marketplace: "amazon",
+          orderNumber: "114-0233450-6206634",
+          customerFontSelections: [{ lineIndex: 1, name: "Lemonade" }],
+        },
+        settings: {
+          text: "Maria",
+          presetId: "preset-a1f4c8e2b601",
+          backingMm: 3.1,
+          weldExportedDesign: true,
+          lines: [{ fontId: "candlepin", bridgeMm: 0.5, lineBridgeMm: 0.5, offsetXMm: 0, fontSizeMm: 34, horizontalScale: 1, verticalScale: 1, lockTextHeight: false }],
+        },
+      }],
+    },
+  }));
+  await page.route("**/api/orders**", route => route.fulfill({ json: { orders: [] } }));
+  await page.route("**/api/layout-analyze", route => route.fulfill({ json: buildMockAnalysisResponse() }));
+
+  await page.goto("/production-batch");
+  await waitForProductionBatchStartup(page);
+  await page.locator("#textInput").fill("Maria\nRN");
+
+  await expect(page.locator('.line-control-card[data-line-index="1"] select[data-setting="fontId"]')).toHaveValue("skywalk");
+  await expect(page.locator("#customerFontSelections")).toContainText("Line 2 Font: Lemonade");
+});
+
 test("skips already imported Etsy line items when importing another batch", async ({ page }) => {
   const firstPayload = JSON.stringify({
     items: [

@@ -7,6 +7,7 @@ import { importWorkspaceOrderItems } from "./_lib/orders-store.js";
 import { loadPresetSnapshot } from "./_lib/preset-store.js";
 import { createEtsyImportService, EtsyImportError } from "./_lib/etsy-import-service.js";
 import { listWorkspaceFonts } from "./_lib/font-store.js";
+import { listWorkspaceFontAliases } from "./_lib/font-alias-store.js";
 import { createAmazonItemEnricher } from "./_lib/amazon-import-enrichment.js";
 import { isResponseWritable, writeNdjson } from "./_lib/ndjson-writer.js";
 function lookup(snapshot) {
@@ -23,10 +24,18 @@ export function createEtsyImportHandler({ resolveAuth = resolveProductionBatchAu
       const snapshot = await (dependencies.loadPresetSnapshot || loadPresetSnapshot)(auth.workspaceId);
       const needsWorkspaceContext = serviceFactory === createEtsyImportService
         || dependencies.listWorkspaceFonts
+        || dependencies.listWorkspaceFontAliases
         || dependencies.enrichItem;
+      const shouldLoadFontAliases = serviceFactory === createEtsyImportService
+        || dependencies.listWorkspaceFontAliases;
       let enrichItem = dependencies.enrichItem;
       if (!enrichItem && needsWorkspaceContext) {
-        const fonts = await (dependencies.listWorkspaceFonts || listWorkspaceFonts)({ workspaceId: auth.workspaceId });
+        const [fonts, fontAliases] = await Promise.all([
+          (dependencies.listWorkspaceFonts || listWorkspaceFonts)({ workspaceId: auth.workspaceId }),
+          shouldLoadFontAliases
+            ? (dependencies.listWorkspaceFontAliases || listWorkspaceFontAliases)({ workspaceId: auth.workspaceId })
+            : Promise.resolve([]),
+        ]);
         enrichItem = itemEnricherFactory({
           presetSnapshot: snapshot?.snapshot ?? snapshot,
           fontOptions: (fonts || []).map((font) => ({
@@ -34,6 +43,7 @@ export function createEtsyImportHandler({ resolveAuth = resolveProductionBatchAu
             displayName: font?.displayName ?? font?.display_name,
             label: font?.label,
           })),
+          fontAliases,
         });
       }
       const service = serviceFactory({

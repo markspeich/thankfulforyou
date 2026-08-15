@@ -177,6 +177,7 @@ const orderMetadataOriginalValues = {
 
 let FONT_OPTIONS = buildFontOptions();
 let FONT_BY_ID = new Map(FONT_OPTIONS.map((font) => [font.id, font]));
+let workspaceFontAliases = [];
 const DEFAULT_PREVIEW_WIDTH_MM = PREVIEW_BOX_WIDTH_MM + PREVIEW_MARGIN_MM * 2 + PREVIEW_LABEL_RIGHT_MM;
 const DEFAULT_PREVIEW_HEIGHT_MM = PREVIEW_BOX_HEIGHT_MM + PREVIEW_MARGIN_MM * 2;
 const PREVIEW_INNER_GUIDE_WIDTH_MM = 1.6 * 25.4;
@@ -5008,6 +5009,7 @@ function applyPersistedBatchState(parsed) {
   }
 
   setProductionBatchContext(parsed.batch || productionBatchContext || batchSessionContext?.batch || null);
+  workspaceFontAliases = Array.isArray(parsed.fontAliases) ? parsed.fontAliases : [];
   const restoredOrders = parsed.orderItems
     .map((order, index) => hydrateStoredOrder(order, index))
     .filter(Boolean);
@@ -5501,6 +5503,7 @@ function buildOrderPresetSynchronizedSettings(order, presetId) {
       presetSettings.lines,
       order?.source?.customerFontSelections,
       FONT_OPTIONS,
+      workspaceFontAliases,
     ),
   });
 }
@@ -8884,6 +8887,7 @@ function applyCustomerFontToNewTextLine(lineSettings, order, textLineIndex) {
     [lineSettings],
     [{ ...selection, lineIndex: 0 }],
     FONT_OPTIONS,
+    workspaceFontAliases,
   )[0];
 }
 
@@ -11087,6 +11091,7 @@ async function importFromClipboard({ clipboardText: providedClipboardText = null
       getPresetIdForListingId,
       getPresetSettingsForImport: buildImportedPresetSettings,
       fontOptions: FONT_OPTIONS,
+      fontAliases: workspaceFontAliases,
     });
     assertImportableItems(importedItems);
     const { filteredItems, skippedCount } = filterNewProductionBatchImportItems(importedItems);
@@ -11160,6 +11165,7 @@ async function importOrdersFromClipboard({ clipboardText: providedClipboardText 
       getPresetIdForListingId,
       getPresetSettingsForImport: buildImportedPresetSettings,
       fontOptions: FONT_OPTIONS,
+      fontAliases: workspaceFontAliases,
     });
     assertImportableItems(importedItems);
     const accessToken = await resolveProductionBatchMutationAccessToken();

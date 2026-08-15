@@ -51,6 +51,7 @@ function realServiceDependencies({ client, releaseAmazonImportLock }) {
     appendNoteBlocks: vi.fn(),
     loadPresetSnapshot: vi.fn().mockResolvedValue({ defaultPresetId: null, presets: [] }),
     listWorkspaceFonts: vi.fn().mockResolvedValue([]),
+    listWorkspaceFontAliases: vi.fn().mockResolvedValue([]),
   };
 }
 
@@ -373,6 +374,37 @@ describe("Amazon import API", () => {
       source: { customerFontSelections: [{ lineIndex: 0, name: "Skywalk" }] },
     });
     expect(enriched.settings.lines[0].fontId).toBe("skywalk");
+  });
+
+  it("loads workspace aliases with Amazon import context", async () => {
+    // Break caught: Amazon imports resolve only display names and ignore a workspace mapping.
+    const listWorkspaceFontAliases = vi.fn().mockResolvedValue([{
+      aliasName: "Lemonade", normalizedAlias: "lemonade", fontId: "skywalk",
+    }]);
+    const serviceFactory = vi.fn(() => ({
+      prepare: async () => ({ run: async () => {}, release: vi.fn() }),
+    }));
+
+    await createAmazonImportHandler({
+      resolveAuth: vi.fn().mockResolvedValue({ workspaceId: "workspace-1", userId: "user-1" }),
+      serviceFactory,
+      dependencies: {
+        loadPresetSnapshot: vi.fn().mockResolvedValue({
+          defaultPresetId: "preset-1",
+          presets: [{ id: "preset-1", globalDefaults: {}, lineDefaults: { fontId: "candlepin" }, lineRules: [], listingAssignments: [] }],
+        }),
+        listWorkspaceFonts: vi.fn().mockResolvedValue([{ id: "skywalk", display_name: "Skywalk" }]),
+        listWorkspaceFontAliases,
+      },
+    })({ method: "POST" }, response());
+
+    expect(listWorkspaceFontAliases).toHaveBeenCalledWith({ workspaceId: "workspace-1" });
+    const enriched = serviceFactory.mock.calls[0][0].enrichItem({
+      text: "Maria",
+      source: { customerFontSelections: [{ lineIndex: 0, name: "Lemonade" }] },
+    });
+    expect(enriched.settings.lines[0].fontId).toBe("skywalk");
+    expect(enriched.source.customerFontSelections).toEqual([{ lineIndex: 0, name: "Lemonade" }]);
   });
 
   it.each([

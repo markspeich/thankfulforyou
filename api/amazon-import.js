@@ -9,6 +9,7 @@ import { AmazonImportError, createAmazonImportService } from "./_lib/amazon-impo
 import { isResponseWritable, writeNdjson } from "./_lib/ndjson-writer.js";
 import { loadPresetSnapshot } from "./_lib/preset-store.js";
 import { listWorkspaceFonts } from "./_lib/font-store.js";
+import { listWorkspaceFontAliases } from "./_lib/font-alias-store.js";
 import { createAmazonItemEnricher } from "./_lib/amazon-import-enrichment.js";
 import { createAmazonImportDiagnostics } from "./_lib/amazon-import-diagnostics.js";
 
@@ -286,14 +287,20 @@ export function createAmazonImportHandler({
       }
       const needsWorkspaceContext = serviceFactory === createAmazonImportService
         || dependencies.loadPresetSnapshot
-        || dependencies.listWorkspaceFonts;
+        || dependencies.listWorkspaceFonts
+        || dependencies.listWorkspaceFontAliases;
+      const shouldLoadFontAliases = serviceFactory === createAmazonImportService
+        || dependencies.listWorkspaceFontAliases;
       let enrichItem = dependencies.enrichItem;
       if (!enrichItem && needsWorkspaceContext) {
         stage = "context_loading";
         diagnosticStage = "context_loading";
-        const [presetSnapshot, fonts] = await Promise.all([
+        const [presetSnapshot, fonts, fontAliases] = await Promise.all([
           (dependencies.loadPresetSnapshot || loadPresetSnapshot)(auth.workspaceId),
           (dependencies.listWorkspaceFonts || listWorkspaceFonts)({ workspaceId: auth.workspaceId }),
+          shouldLoadFontAliases
+            ? (dependencies.listWorkspaceFontAliases || listWorkspaceFontAliases)({ workspaceId: auth.workspaceId })
+            : Promise.resolve([]),
         ]);
         enrichItem = itemEnricherFactory({
           presetSnapshot: presetSnapshot?.snapshot ?? presetSnapshot,
@@ -302,6 +309,7 @@ export function createAmazonImportHandler({
             displayName: font?.displayName ?? font?.display_name,
             label: font?.label,
           })),
+          fontAliases,
           diagnostics,
         });
       }
