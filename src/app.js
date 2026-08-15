@@ -9849,6 +9849,21 @@ function rebaseFontAliasDraftSettings({ draftSettings, previousPublishedSettings
   const latestToPrevious = new Map([...previousToLatest].map(([previousIndex, latestIndex]) => [latestIndex, previousIndex]));
   const previousCounts = countFontAliasLineIdentities(previousSequence);
   const draftCounts = countFontAliasLineIdentities(draftSequence);
+  const draftItemsByIdentity = new Map();
+  for (const item of draftSequence) {
+    const matchingItems = draftItemsByIdentity.get(item.identity) || [];
+    matchingItems.push(item);
+    draftItemsByIdentity.set(item.identity, matchingItems);
+  }
+  const draftInsertionSettingsIndexes = new Set();
+  for (const [identity, matchingItems] of draftItemsByIdentity) {
+    const surplusCount = matchingItems.length - (previousCounts.get(identity) || 0);
+    if (surplusCount <= 0) continue;
+    const unmatchedItems = matchingItems.filter((item) => !draftToPrevious.has(item.settingsIndex));
+    for (const item of unmatchedItems.slice(-surplusCount)) {
+      draftInsertionSettingsIndexes.add(item.settingsIndex);
+    }
+  }
   const rebased = { ...latest };
   for (const key of ["presetId", "boundingSizePresetId", "backingMm", "weldExportedDesign"]) {
     if (settingsValueChanged(draft[key], previous[key])) rebased[key] = draft[key];
@@ -9860,7 +9875,7 @@ function rebaseFontAliasDraftSettings({ draftSettings, previousPublishedSettings
   const localInsertionsBeforeLatestIndex = new Map();
   for (let draftSequenceIndex = 0; draftSequenceIndex < draftSequence.length; draftSequenceIndex += 1) {
     const draftItem = draftSequence[draftSequenceIndex];
-    if (draftToPrevious.has(draftItem.settingsIndex) || previousCounts.has(draftItem.identity)) continue;
+    if (draftToPrevious.has(draftItem.settingsIndex) || !draftInsertionSettingsIndexes.has(draftItem.settingsIndex)) continue;
 
     let targetLatestIndex = latestSequence.length;
     for (let nextDraftIndex = draftSequenceIndex + 1; nextDraftIndex < draftSequence.length; nextDraftIndex += 1) {
