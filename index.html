@@ -1185,6 +1185,48 @@
       </div>
     </dialog>
 
+    <dialog id="fontAliasDialog" class="font-alias-dialog" aria-labelledby="fontAliasDialogTitle" aria-describedby="fontAliasExplanation">
+      <div class="confirmation-dialog-card font-alias-card">
+        <header class="confirmation-dialog-header">
+          <div>
+            <p class="confirmation-dialog-eyebrow">Marketplace Import</p>
+            <h2 id="fontAliasDialogTitle">Map Marketplace Font</h2>
+          </div>
+          <button id="closeFontAliasDialogButton" class="confirmation-dialog-close" type="button" aria-label="Close font mapping dialog">
+            <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+              <path d="M6 6l12 12M18 6 6 18" />
+            </svg>
+          </button>
+        </header>
+        <dl class="font-alias-marketplace-value">
+          <div>
+            <dt>Marketplace font</dt>
+            <dd id="fontAliasMarketplaceName"></dd>
+          </div>
+        </dl>
+        <p id="fontAliasExplanation" class="confirmation-dialog-description">
+          This mapping applies to all marketplace imports in the current workspace.
+        </p>
+        <label class="field" for="fontAliasSearchInput">
+          Search workspace fonts
+          <input id="fontAliasSearchInput" type="search" autocomplete="off" placeholder="Search active fonts">
+        </label>
+        <label class="field" for="fontAliasFontSelect">
+          Workspace font
+          <select id="fontAliasFontSelect"></select>
+        </label>
+        <section class="font-alias-preview-panel" aria-label="Current line preview">
+          <span>Current line preview</span>
+          <div id="fontAliasPreview" class="font-alias-preview"></div>
+        </section>
+        <p id="fontAliasStatus" class="font-alias-status" aria-live="polite" hidden></p>
+        <div class="confirmation-dialog-actions">
+          <button id="cancelFontAliasDialogButton" class="confirmation-dialog-button confirmation-dialog-cancel" type="button">Cancel</button>
+          <button id="fontAliasConfirmButton" class="confirmation-dialog-button confirmation-dialog-confirm" type="button" disabled>Map Font</button>
+        </div>
+      </div>
+    </dialog>
+
     <div
       id="confirmationDialog"
       class="confirmation-dialog"
