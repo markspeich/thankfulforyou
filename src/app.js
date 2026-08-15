@@ -9736,6 +9736,19 @@ function settingsValueChanged(currentValue, previousValue) {
   return JSON.stringify(currentValue) !== JSON.stringify(previousValue);
 }
 
+function fontAliasSelectedLineWasRetained(previousSettings, latestSettings, selection) {
+  const previousLine = getTextLineItemsFromSettings(previousSettings)
+    .find((item) => item.textLineIndex === selection?.lineIndex);
+  const latestLine = getTextLineItemsFromSettings(latestSettings)
+    .find((item) => item.textLineIndex === selection?.lineIndex);
+  if (!previousLine || !latestLine) return false;
+
+  const previousLineId = previousLine.line?.lineId || previousLine.line?.id || null;
+  const latestLineId = latestLine.line?.lineId || latestLine.line?.id || null;
+  if (previousLineId || latestLineId) return Boolean(previousLineId && latestLineId && previousLineId === latestLineId);
+  return previousLine.text === latestLine.text;
+}
+
 function rebaseFontAliasDraftSettings({ draftSettings, previousPublishedSettings, latestPublishedSettings, selection }) {
   const draft = normalizeSettings(draftSettings);
   const previous = normalizeSettings(previousPublishedSettings);
@@ -9749,6 +9762,7 @@ function rebaseFontAliasDraftSettings({ draftSettings, previousPublishedSettings
     .find((item) => item.textLineIndex === selection?.lineIndex);
   const selectedLatestLine = getTextLineItemsFromSettings(latest)
     .find((item) => item.textLineIndex === selection?.lineIndex);
+  const selectedLineWasRetained = fontAliasSelectedLineWasRetained(previous, latest, selection);
   const selectedSettingsIndex = selectedPreviousLine?.settingsIndex ?? -1;
   const lines = latest.lines.map((line) => ({ ...line }));
   const lineCount = Math.max(previous.lines.length, draft.lines.length);
@@ -9757,7 +9771,7 @@ function rebaseFontAliasDraftSettings({ draftSettings, previousPublishedSettings
     if (draft.lines[index]) lines[index] = { ...draft.lines[index] };
     else if (index < lines.length) lines.splice(index, 1);
   }
-  if (selectedPreviousLine && selectedLatestLine && draft.lines[selectedSettingsIndex]) {
+  if (selectedLineWasRetained && selectedPreviousLine && selectedLatestLine && draft.lines[selectedSettingsIndex]) {
     lines[selectedLatestLine.settingsIndex] = rebaseFontAliasDraftLine({
       draftLine: draft.lines[selectedSettingsIndex],
       previousLine: selectedPreviousLine.line,
@@ -9813,6 +9827,11 @@ async function recoverFontAliasConflict(error, request, order) {
     const remoteOrder = snapshot?.orderItems?.find((candidate) => candidate?.id === order?.id);
     const latestPublishedOrder = normalizeStoredPublishedSnapshot(remoteOrder);
     if (latestPublishedOrder && selection) {
+      request.omitLineMutation = !fontAliasSelectedLineWasRetained(
+        request.previousPublishedSettings,
+        latestPublishedOrder.settings,
+        selection,
+      );
       order.publishedSnapshot = latestPublishedOrder;
       applyProductionBatchAuditToOrder(order, latestPublishedOrder);
       order.settings = rebaseFontAliasDraftSettings({
@@ -9861,8 +9880,10 @@ async function submitFontAliasMapping() {
   }
 
   const publishedSettings = order.publishedSnapshot?.settings || order.settings;
-  const persistedLine = getTextLineItemsFromSettings(publishedSettings)
-    .find((item) => item.textLineIndex === request.selection.lineIndex);
+  const persistedLine = request.omitLineMutation
+    ? null
+    : getTextLineItemsFromSettings(publishedSettings)
+      .find((item) => item.textLineIndex === request.selection.lineIndex);
   const payload = { aliasName: request.selection.name, fontId: target.id };
   if (persistedLine) {
     if (!order.designId || order.revision == null || order.designRevision == null) {
