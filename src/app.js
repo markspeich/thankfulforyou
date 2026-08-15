@@ -9689,18 +9689,21 @@ function rebaseFontAliasDraftLine({ draftLine, previousLine, authoritativeLine, 
   const rebasedLine = { ...authoritativeLine };
   if (!draftLine || !previousLine) return rebasedLine;
 
-  const draftKeys = [
-    "bridgeMm",
-    "lineBridgeMm",
-    "offsetXMm",
-    "offsetYMm",
-    "fontSizeMm",
-    "horizontalScale",
-    "verticalScale",
-    "lockTextHeight",
-    "fontBridgingEnabled",
-  ];
-  if (preserveDraftFont) draftKeys.push("fontId");
+  const fixedLine = draftLine.kind === "fixedSvg" || authoritativeLine.kind === "fixedSvg";
+  const draftKeys = fixedLine
+    ? ["svgSizeMm", "offsetXMm", "offsetYMm", "backingBorder"]
+    : [
+        "bridgeMm",
+        "lineBridgeMm",
+        "offsetXMm",
+        "offsetYMm",
+        "fontSizeMm",
+        "horizontalScale",
+        "verticalScale",
+        "lockTextHeight",
+        "fontBridgingEnabled",
+      ];
+  if (!fixedLine && preserveDraftFont) draftKeys.push("fontId");
   for (const key of draftKeys) {
     if (settingsValueChanged(draftLine[key], previousLine[key])) rebasedLine[key] = draftLine[key];
   }
@@ -9765,21 +9768,31 @@ function getFontAliasLineSequence(settings) {
   const textBySettingsIndex = new Map(
     getTextLineItemsFromSettings(normalized).map((item) => [item.settingsIndex, item.text]),
   );
-  return normalized.lines.map((line, settingsIndex) => ({
-    settingsIndex,
-    identity: line.kind === "fixedSvg"
-      ? `fixed:${line.fixedDesignId || ""}:${line.fixedDesignVersion || ""}`
-      : `text:${textBySettingsIndex.get(settingsIndex) ?? ""}`,
-  }));
+  return normalized.lines.map((line, settingsIndex) => {
+    const text = line.kind === "fixedSvg" ? null : textBySettingsIndex.get(settingsIndex) ?? "";
+    return {
+      settingsIndex,
+      kind: line.kind,
+      line,
+      text,
+      identity: line.kind === "fixedSvg"
+        ? `fixed:${line.fixedDesignId || ""}:${line.fixedDesignVersion || ""}`
+        : `text:${text}`,
+    };
+  });
+}
+
+function countFontAliasLineIdentities(sequence) {
+  const counts = new Map();
+  for (const item of sequence) counts.set(item.identity, (counts.get(item.identity) || 0) + 1);
+  return counts;
 }
 
 function buildUnambiguousFontAliasLineRebase(previousSettings, latestSettings) {
   const previous = getFontAliasLineSequence(previousSettings);
   const latest = getFontAliasLineSequence(latestSettings);
-  const previousCounts = new Map();
-  const latestCounts = new Map();
-  for (const item of previous) previousCounts.set(item.identity, (previousCounts.get(item.identity) || 0) + 1);
-  for (const item of latest) latestCounts.set(item.identity, (latestCounts.get(item.identity) || 0) + 1);
+  const previousCounts = countFontAliasLineIdentities(previous);
+  const latestCounts = countFontAliasLineIdentities(latest);
 
   const eligibleIdentity = (identity) => previousCounts.get(identity) === 1 && latestCounts.get(identity) === 1;
   const lengths = Array.from({ length: previous.length + 1 }, () => Array(latest.length + 1).fill(0));
@@ -9827,39 +9840,80 @@ function rebaseFontAliasDraftSettings({ draftSettings, previousPublishedSettings
   const draft = normalizeSettings(draftSettings);
   const previous = normalizeSettings(previousPublishedSettings);
   const latest = normalizeSettings(latestPublishedSettings);
-  const lineRebase = buildUnambiguousFontAliasLineRebase(previous, latest);
+  const previousSequence = getFontAliasLineSequence(previous);
+  const draftSequence = getFontAliasLineSequence(draft);
+  const latestSequence = getFontAliasLineSequence(latest);
+  const previousToDraft = buildUnambiguousFontAliasLineRebase(previous, draft);
+  const previousToLatest = buildUnambiguousFontAliasLineRebase(previous, latest);
+  const draftToPrevious = new Map([...previousToDraft].map(([previousIndex, draftIndex]) => [draftIndex, previousIndex]));
+  const latestToPrevious = new Map([...previousToLatest].map(([previousIndex, latestIndex]) => [latestIndex, previousIndex]));
+  const previousCounts = countFontAliasLineIdentities(previousSequence);
+  const draftCounts = countFontAliasLineIdentities(draftSequence);
   const rebased = { ...latest };
-  for (const key of ["text", "presetId", "boundingSizePresetId", "backingMm", "weldExportedDesign"]) {
+  for (const key of ["presetId", "boundingSizePresetId", "backingMm", "weldExportedDesign"]) {
     if (settingsValueChanged(draft[key], previous[key])) rebased[key] = draft[key];
   }
 
   const selectedPreviousLine = getTextLineItemsFromSettings(previous)
     .find((item) => item.textLineIndex === selection?.lineIndex);
-  const selectedLatestLine = getRetainedFontAliasLine(previous, latest, selection, lineRebase);
-  const selectedLineWasRetained = Boolean(selectedLatestLine);
   const selectedSettingsIndex = selectedPreviousLine?.settingsIndex ?? -1;
-  const lines = latest.lines.map((line) => ({ ...line }));
-  const lineCount = Math.max(previous.lines.length, draft.lines.length);
-  for (let index = 0; index < lineCount; index += 1) {
-    if (index === selectedSettingsIndex || !settingsValueChanged(draft.lines[index], previous.lines[index])) continue;
-    const latestSettingsIndex = lineRebase.get(index);
-    if (Number.isInteger(latestSettingsIndex) && draft.lines[index]) {
-      lines[latestSettingsIndex] = rebaseFontAliasDraftLine({
-        draftLine: draft.lines[index],
-        previousLine: previous.lines[index],
-        authoritativeLine: lines[latestSettingsIndex],
-        preserveDraftFont: true,
-      });
+  const localInsertionsBeforeLatestIndex = new Map();
+  for (let draftSequenceIndex = 0; draftSequenceIndex < draftSequence.length; draftSequenceIndex += 1) {
+    const draftItem = draftSequence[draftSequenceIndex];
+    if (draftToPrevious.has(draftItem.settingsIndex) || previousCounts.has(draftItem.identity)) continue;
+
+    let targetLatestIndex = latestSequence.length;
+    for (let nextDraftIndex = draftSequenceIndex + 1; nextDraftIndex < draftSequence.length; nextDraftIndex += 1) {
+      const nextPreviousIndex = draftToPrevious.get(draftSequence[nextDraftIndex].settingsIndex);
+      const nextLatestIndex = previousToLatest.get(nextPreviousIndex);
+      if (Number.isInteger(nextLatestIndex)) {
+        targetLatestIndex = nextLatestIndex;
+        break;
+      }
     }
+    const insertions = localInsertionsBeforeLatestIndex.get(targetLatestIndex) || [];
+    insertions.push({ ...draftItem, line: { ...draftItem.line } });
+    localInsertionsBeforeLatestIndex.set(targetLatestIndex, insertions);
   }
-  if (selectedLineWasRetained && selectedPreviousLine && selectedLatestLine && draft.lines[selectedSettingsIndex]) {
-    lines[selectedLatestLine.settingsIndex] = rebaseFontAliasDraftLine({
-      draftLine: draft.lines[selectedSettingsIndex],
-      previousLine: selectedPreviousLine.line,
-      authoritativeLine: selectedLatestLine.line,
+
+  const mergedSequence = [];
+  for (let latestSequenceIndex = 0; latestSequenceIndex <= latestSequence.length; latestSequenceIndex += 1) {
+    mergedSequence.push(...(localInsertionsBeforeLatestIndex.get(latestSequenceIndex) || []));
+    if (latestSequenceIndex === latestSequence.length) break;
+
+    const latestItem = latestSequence[latestSequenceIndex];
+    const previousIndex = latestToPrevious.get(latestItem.settingsIndex);
+    if (!Number.isInteger(previousIndex)) {
+      mergedSequence.push({ ...latestItem, line: { ...latestItem.line } });
+      continue;
+    }
+
+    const previousItem = previousSequence.find((item) => item.settingsIndex === previousIndex);
+    const draftIndex = previousToDraft.get(previousIndex);
+    if (!Number.isInteger(draftIndex)) {
+      const definitelyDeletedLocally = previousCounts.get(previousItem?.identity) === 1
+        && !draftCounts.has(previousItem?.identity);
+      if (!definitelyDeletedLocally) mergedSequence.push({ ...latestItem, line: { ...latestItem.line } });
+      continue;
+    }
+
+    const draftItem = draftSequence.find((item) => item.settingsIndex === draftIndex);
+    mergedSequence.push({
+      ...latestItem,
+      line: rebaseFontAliasDraftLine({
+        draftLine: draftItem?.line,
+        previousLine: previousItem?.line,
+        authoritativeLine: latestItem.line,
+        preserveDraftFont: previousIndex !== selectedSettingsIndex,
+      }),
     });
   }
-  rebased.lines = lines;
+
+  rebased.text = mergedSequence
+    .filter((item) => item.kind !== "fixedSvg")
+    .map((item) => item.text ?? "")
+    .join("\n");
+  rebased.lines = mergedSequence.map((item) => item.line);
   return normalizeSettings(rebased);
 }
 
@@ -9993,6 +10047,12 @@ async function submitFontAliasMapping() {
   request.draftSettings = order.id === activeOrderItemId
     ? normalizeSettings(getCurrentSettings())
     : normalizeSettings(order.settings);
+  if (typeof request.selectionWasDraftOnly !== "boolean") {
+    request.selectionWasDraftOnly = !persistedLine && Boolean(
+      getTextLineItemsFromSettings(request.draftSettings)
+        .find((item) => item.textLineIndex === request.selection.lineIndex),
+    );
+  }
   request.previousPublishedSettings = normalizeSettings(publishedSettings);
   setFontAliasDialogSubmitting(true);
   setFontAliasStatus("Saving font mapping…");
@@ -10014,7 +10074,7 @@ async function submitFontAliasMapping() {
         result.designStateInvalidated,
       );
     }
-    const appliedToDraftLine = !result.line && !request.omitLineMutation
+    const appliedToDraftLine = !result.line && request.selectionWasDraftOnly
       ? applyMappedFontToDraftLine(
         order,
         request.draftSettings,
