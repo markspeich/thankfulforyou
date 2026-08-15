@@ -761,6 +761,96 @@ test("recovers a font alias revision conflict and keeps the selected target for 
   await expect(page.locator("#textInput")).toHaveValue("Avery");
 });
 
+test("preserves selected-line draft layout through font alias conflict recovery and retry", async ({ page }) => {
+  // Break caught: 409 recovery and its retry drop unsaved non-font edits on a selected line that still exists.
+  await installSupabaseSession(page);
+  let snapshotReads = 0;
+  const originalLine = {
+    fontId: "candlepin", bridgeMm: 0.5, lineBridgeMm: 0.5, offsetXMm: 0,
+    fontSizeMm: 34, horizontalScale: 1, verticalScale: 1, lockTextHeight: false,
+  };
+  const remoteOrder = buildCompletedRemoteOrder({
+    revision: 7, designId: "design-1", designRevision: 11,
+    text: "Avery", status: "in-progress", savedSettingsSignature: null, completedSettingsSignature: null, cachedBuild: null,
+    source: { marketplace: "amazon", orderNumber: "CONFLICT-3", customerFontSelections: [{ lineIndex: 0, name: "Lemonade" }] },
+    settings: { text: "Avery", presetId: "preset-a1f4c8e2b601", backingMm: 3.1, weldExportedDesign: true, lines: [originalLine] },
+  });
+  const latestLine = { ...originalLine, fontId: "somekind", bridgeMm: 0.7, offsetXMm: 0.25, horizontalScale: 1.1 };
+  const latestOrder = {
+    ...remoteOrder,
+    revision: 8,
+    designRevision: 12,
+    settings: { ...remoteOrder.settings, lines: [latestLine] },
+  };
+  await page.route("**/api/batch-session", route => route.fulfill({ json: {
+    operator: { id: "user-1", email: "mark@example.com" },
+    workspace: { id: "workspace-1", name: "Thankful For You" },
+    batch: { id: "batch-1", workspaceId: "workspace-1" },
+  } }));
+  await page.route("**/api/production-batch?batchId=batch-1", route => route.fulfill({ json: snapshotReads++ === 0
+    ? { batch: { id: "batch-1", workspaceId: "workspace-1" }, activeOrderItemId: remoteOrder.id, fontAliases: [], orderItems: [remoteOrder] }
+    : {
+        batch: { id: "batch-1", workspaceId: "workspace-1" }, activeOrderItemId: latestOrder.id,
+        fontAliases: [{ id: "alias-1", aliasName: "Lemonade", normalizedAlias: "lemonade", fontId: "somekind", font: { id: "somekind", displayName: "Somekind", archivedAt: null, deletedAt: null } }],
+        orderItems: [latestOrder],
+      } }));
+  await page.route("**/api/production-batch", route => route.request().method() === "PUT"
+    ? route.fulfill({ json: route.request().postDataJSON()?.snapshot })
+    : route.fallback());
+  const mappingBodies = [];
+  await page.route("**/api/font-aliases", route => {
+    mappingBodies.push(route.request().postDataJSON());
+    if (mappingBodies.length === 1) {
+      return route.fulfill({ status: 409, json: {
+        error: "This mapping changed while you were editing it. Refresh and try again.",
+        code: "FONT_ALIAS_CONFLICT",
+        fontAliases: [{ id: "alias-1", aliasName: "Lemonade", normalizedAlias: "lemonade", fontId: "somekind", font: { id: "somekind", displayName: "Somekind", archivedAt: null, deletedAt: null } }],
+      } });
+    }
+    return route.fulfill({ json: {
+      alias: { id: "alias-1", aliasName: "Lemonade", normalizedAlias: "lemonade", fontId: "skywalk", font: { id: "skywalk", displayName: "Skywalk Laser", archivedAt: null, deletedAt: null } },
+      previousFont: { id: "somekind", displayName: "Somekind" },
+      line: { ...latestLine, lineIndex: 0, kind: "text", text: "Avery", fontId: "skywalk" },
+      orderRevision: 9,
+      designRevision: 13,
+    } });
+  });
+
+  await page.goto("/production-batch");
+  await page.locator("#backingInput").fill("4.2");
+  await page.locator('.line-control-card[data-line-index="0"] [data-setting="bridgeMm"]').fill("0.9");
+  await page.locator('.line-control-card[data-line-index="0"] [data-setting="horizontalScale"]').fill("1.4");
+  await page.getByRole("button", { name: "Map font" }).click();
+  await page.locator("#fontAliasFontSelect").selectOption("skywalk");
+  await page.locator("#fontAliasConfirmButton").click();
+
+  await expect(page.locator("#fontAliasStatus")).toContainText("This mapping changed while you were editing it");
+  await expect(page.locator('.line-control-card[data-line-index="0"] select[data-setting="fontId"]')).toHaveValue("somekind");
+  await expect(page.locator('.line-control-card[data-line-index="0"] [data-setting="bridgeMm"]')).toHaveValue("0.9");
+  await expect(page.locator('.line-control-card[data-line-index="0"] [data-setting="horizontalScale"]')).toHaveValue("1.4");
+  await expect(page.locator("#backingInput")).toHaveValue("4.2");
+
+  await page.locator("#fontAliasConfirmButton").click();
+  await expect(page.locator("#fontAliasStatus")).toContainText("Lemonade is currently mapped to Somekind. Replace this mapping with Skywalk Laser?");
+  await page.locator("#fontAliasConfirmButton").click();
+  await expect.poll(() => mappingBodies.length).toBe(2);
+  expect(mappingBodies[1]).toEqual({
+    aliasName: "Lemonade", fontId: "skywalk", orderItemId: remoteOrder.id, designId: "design-1",
+    lineIndex: 0, expectedOrderRevision: 8, expectedDesignRevision: 12,
+  });
+  await expect(page.getByRole("dialog", { name: "Map Marketplace Font" })).not.toBeVisible();
+  await expect(page.locator('.line-control-card[data-line-index="0"] select[data-setting="fontId"]')).toHaveValue("skywalk");
+  await expect(page.locator('.line-control-card[data-line-index="0"] [data-setting="bridgeMm"]')).toHaveValue("0.9");
+  await expect(page.locator('.line-control-card[data-line-index="0"] [data-setting="horizontalScale"]')).toHaveValue("1.4");
+  await expect(page.locator("#backingInput")).toHaveValue("4.2");
+
+  await page.locator("#cancelDesignButton").click();
+  await expect(page.locator('.line-control-card[data-line-index="0"] select[data-setting="fontId"]')).toHaveValue("skywalk");
+  await expect(page.locator('.line-control-card[data-line-index="0"] [data-setting="bridgeMm"]')).toHaveValue("0.7");
+  await expect(page.locator('.line-control-card[data-line-index="0"] [data-setting="horizontalScale"]')).toHaveValue("1.1");
+  await expect(page.locator("#backingInput")).toHaveValue("3.1");
+});
+
 test("leaves alias and design state unchanged when font mapping fails", async ({ page }) => {
   // Break caught: a failed request optimistically mutates the line or alias label.
   await installSupabaseSession(page);

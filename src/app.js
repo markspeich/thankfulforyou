@@ -9685,9 +9685,36 @@ function renderReconciledFontAliasOrder(order) {
   render();
 }
 
+function rebaseFontAliasDraftLine({ draftLine, previousLine, authoritativeLine }) {
+  const rebasedLine = { ...authoritativeLine };
+  if (!draftLine || !previousLine) return rebasedLine;
+
+  for (const key of [
+    "bridgeMm",
+    "lineBridgeMm",
+    "offsetXMm",
+    "offsetYMm",
+    "fontSizeMm",
+    "horizontalScale",
+    "verticalScale",
+    "lockTextHeight",
+    "fontBridgingEnabled",
+  ]) {
+    if (settingsValueChanged(draftLine[key], previousLine[key])) rebasedLine[key] = draftLine[key];
+  }
+  return rebasedLine;
+}
+
 function reconcileMappedDesignLine(order, draftSettings, savedLine, orderRevision, designRevision) {
   if (!order || !savedLine || !Number.isInteger(savedLine.lineIndex)) return;
-  order.settings = replaceSettingsLine(draftSettings, savedLine.lineIndex, savedLine);
+  const draft = normalizeSettings(draftSettings);
+  const previousPublishedSettings = normalizeSettings(order.publishedSnapshot?.settings || order.settings);
+  const rebasedDraftLine = rebaseFontAliasDraftLine({
+    draftLine: draft.lines[savedLine.lineIndex],
+    previousLine: previousPublishedSettings.lines[savedLine.lineIndex],
+    authoritativeLine: savedLine,
+  });
+  order.settings = replaceSettingsLine(draft, savedLine.lineIndex, rebasedDraftLine);
   order.text = order.settings.text;
   order.revision = normalizeStoredRevision(orderRevision);
   order.designRevision = normalizeStoredRevision(designRevision);
@@ -9718,14 +9745,24 @@ function rebaseFontAliasDraftSettings({ draftSettings, previousPublishedSettings
     if (settingsValueChanged(draft[key], previous[key])) rebased[key] = draft[key];
   }
 
-  const selectedSettingsIndex = getTextLineItemsFromSettings(previous)
-    .find((item) => item.textLineIndex === selection?.lineIndex)?.settingsIndex ?? -1;
+  const selectedPreviousLine = getTextLineItemsFromSettings(previous)
+    .find((item) => item.textLineIndex === selection?.lineIndex);
+  const selectedLatestLine = getTextLineItemsFromSettings(latest)
+    .find((item) => item.textLineIndex === selection?.lineIndex);
+  const selectedSettingsIndex = selectedPreviousLine?.settingsIndex ?? -1;
   const lines = latest.lines.map((line) => ({ ...line }));
   const lineCount = Math.max(previous.lines.length, draft.lines.length);
   for (let index = 0; index < lineCount; index += 1) {
     if (index === selectedSettingsIndex || !settingsValueChanged(draft.lines[index], previous.lines[index])) continue;
     if (draft.lines[index]) lines[index] = { ...draft.lines[index] };
     else if (index < lines.length) lines.splice(index, 1);
+  }
+  if (selectedPreviousLine && selectedLatestLine && draft.lines[selectedSettingsIndex]) {
+    lines[selectedLatestLine.settingsIndex] = rebaseFontAliasDraftLine({
+      draftLine: draft.lines[selectedSettingsIndex],
+      previousLine: selectedPreviousLine.line,
+      authoritativeLine: selectedLatestLine.line,
+    });
   }
   rebased.lines = lines;
   return normalizeSettings(rebased);
