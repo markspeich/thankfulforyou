@@ -250,6 +250,7 @@ export function buildSnapshotFromProductionBatchRows({
   orderItems = [],
   designs = [],
   designLines = [],
+  fontAliases,
 } = {}) {
   if (!batch) {
     return null;
@@ -294,5 +295,6 @@ export function buildSnapshotFromProductionBatchRows({
     },
     activeOrderItemId: batch.active_order_item_id ?? null,
     orderItems: restoredOrderItems,
+    ...(Array.isArray(fontAliases) ? { fontAliases } : {}),
   };
 }

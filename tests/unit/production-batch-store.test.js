@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 const supabaseMock = vi.hoisted(() => ({
   calls: [],
   batchItems: null,
+  fontAliases: [],
   presets: [],
   sizeGuides: [],
 }));
@@ -109,6 +110,9 @@ function createSelectChain(table) {
       return this;
     },
     order() {
+      if (table === "font_aliases") {
+        return Promise.resolve({ data: supabaseMock.fontAliases, error: null });
+      }
       if (table === "batch_items") {
         return Promise.resolve({
           data: supabaseMock.batchItems || [{ order_item_id: "order-1", batch_position: 0, status: "active" }],
@@ -197,6 +201,7 @@ function createSelectChain(table) {
 afterEach(() => {
   supabaseMock.calls = [];
   supabaseMock.batchItems = null;
+  supabaseMock.fontAliases = [];
   supabaseMock.sizeGuides = [];
   vi.resetModules();
 });
@@ -214,6 +219,26 @@ describe("production batch store", () => {
     expect(orderItemsSelect.columns).not.toContain("amazon_customization_json");
     expect(result.orderItems[0]).not.toHaveProperty("amazonCustomizationJson");
     expect(result.orderItems[0]).not.toHaveProperty("amazon_customization_json");
+  });
+
+  it("includes browser-safe workspace aliases in the bootstrap snapshot", async () => {
+    // Break caught: the batch bootstrap omits aliases or leaks import diagnostics with them.
+    supabaseMock.fontAliases = [{
+      id: "alias-1", alias_name: "Lemonade", normalized_alias: "lemonade", font_id: "font-1",
+      created_at: "2026-08-15T12:00:00.000Z", updated_at: "2026-08-15T12:00:00.000Z",
+      etsy_import_diagnostics: { private: true },
+      fonts: { id: "font-1", display_name: "Crushed Lemonade", archived_at: null, deleted_at: null },
+    }];
+    const { loadProductionBatch } = await import("../../api/_lib/production-batch-store.js");
+
+    const result = await loadProductionBatch({ batchId: "batch-1", workspaceId: "workspace-1" });
+
+    expect(result.fontAliases).toEqual(expect.any(Array));
+    expect(result.fontAliases[0]).toMatchObject({
+      id: "alias-1", aliasName: "Lemonade", fontId: "font-1",
+      font: { displayName: "Crushed Lemonade", archivedAt: null, deletedAt: null },
+    });
+    expect(result.fontAliases[0]).not.toHaveProperty("etsyImportDiagnostics");
   });
 
   it("creates order items before saving a batch that references the active order item", async () => {
