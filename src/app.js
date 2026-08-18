@@ -69,6 +69,7 @@ import {
   resolveNextLineOffsetMm,
 } from "./glyph-layout.js";
 import { buildReloadedPresetSettings } from "./preset-selection.js";
+import { sortDesignsByImportedColor } from "./production-batch-export-order.js";
 import {
   completeProductionBatch,
   fetchProductionBatchSnapshot,
@@ -13252,7 +13253,7 @@ async function exportAllOrders() {
   saveActiveOrderDraft();
   renderOrderList();
 
-  const exportableOrders = orders.filter(orderHasRenderableDesign);
+  const exportableOrders = sortDesignsByImportedColor(orders.filter(orderHasRenderableDesign));
   if (!exportableOrders.length) {
     return;
   }
@@ -13308,7 +13309,7 @@ async function copyAllOrders() {
   saveActiveOrderDraft();
   renderOrderList();
 
-  const exportableOrders = orders.filter(orderHasRenderableDesign);
+  const exportableOrders = sortDesignsByImportedColor(orders.filter(orderHasRenderableDesign));
   if (!exportableOrders.length || !canCopySvgToClipboard()) {
     return;
   }
