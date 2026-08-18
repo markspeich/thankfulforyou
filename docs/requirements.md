@@ -480,6 +480,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - In batch export SVG output, each order's text path should be grouped separately from its backing path so the name can be selected as one group without including the backing border.
 - Copied and exported SVG output should emit each design instance as separate top-level selectable objects: one mirrored grouped design object, one grouped design object, one mirrored backing-border path object, and one color-label text object when color metadata is present.
 - Batch export SVG output should lay those objects out in fixed-width mirrored-design, design, mirrored-backing-border, and color columns, with each object horizontally and vertically centered in its row/column position.
+- Production Batch `Export All Designs` and `Copy All Designs` should order exported design instances alphabetically by trimmed, case-insensitive, human-friendly imported color name, with blank or missing colors after named colors and equal-color instances retaining their current queue order; the visible and persisted production batch order must not change.
 - The exported backing layer should be an actual outline path for LightBurn, not only a filled shape or SVG stroke effect. The path can be imported and manually assigned to a LightBurn cut layer.
 - Exported face-layer paths should also be welded/unioned so overlapping letters do not create internal cut lines.
 - Exported cut paths should be smooth enough for laser production and should avoid visibly pixelated/stair-stepped contours.
