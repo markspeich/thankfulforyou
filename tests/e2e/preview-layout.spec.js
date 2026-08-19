@@ -3379,7 +3379,7 @@ test(FONT_ALIAS_DIALOG_TEST_TITLE, async ({ page }) => {
   await expect(dialog.locator("#fontAliasFontSelect option")).toHaveText(["Select a font", "Somekind"]);
   await dialog.locator("#fontAliasFontSelect").selectOption("somekind");
   await expect(dialog.locator("#fontAliasConfirmButton")).toBeEnabled();
-  await expect(dialog.locator("#fontAliasPreview")).toHaveCSS("font-family", /Somekind/i);
+  await expect(dialog.locator("#fontAliasPreview")).toHaveCSS("font-family", /WorkspaceFont_736f6d656b696e64/i);
   await page.keyboard.press("Escape");
   await expect(dialog).not.toBeVisible();
   await expect(mapButton).toBeFocused();

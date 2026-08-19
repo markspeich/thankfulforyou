@@ -486,7 +486,7 @@ test("switches between order items, presets, and size guides from the left nav",
   await expect(candlepinPreview).toHaveText("Candlepin Laser");
   await expect.poll(async () => (
     candlepinPreview.evaluate((element) => window.getComputedStyle(element).fontFamily)
-  )).toContain("CandlepinLaser");
+  )).toContain("WorkspaceFont_63616e646c6570696e");
   const fontRowTitleTypography = await fontsWorkspace.locator(".font-library-row .font-library-name").first().evaluate((element) => {
     const style = window.getComputedStyle(element);
     return {
@@ -576,7 +576,7 @@ test("loads workspace fonts into the Fonts workspace and line controls", async (
   await expect(page.locator('[data-line-index="0"] [data-setting="fontId"]')).toContainText("Clinic Sans");
   await page.getByRole("button", { name: "Fonts" }).click();
   await expect(page.locator("#fontsWorkspace").getByRole("button", { name: /Clinic Sans/ })).toBeVisible();
-  await expect(page.locator('.font-library-row[data-font-id="font-clinic-sans"] .font-library-preview')).toHaveCSS("font-family", /ClinicSans/);
+  await expect(page.locator('.font-library-row[data-font-id="font-clinic-sans"] .font-library-preview')).toHaveCSS("font-family", /WorkspaceFont_666f6e742d636c696e69632d73616e73/);
   await expect(page.locator("#fontsWorkspace").getByText("Uploaded", { exact: true })).toHaveCount(0);
 });
 
@@ -657,7 +657,7 @@ test("registers a replaced Candlepin asset instead of rendering a fallback font"
           {
             id: "candlepin",
             display_name: "Candlepin Shop Version",
-            family_name: "WorkspaceFont_Candlepin_Shop_Version",
+            family_name: "WorkspaceFont_63616e646c6570696e",
             public_url: "public/fonts/Candlepin-Laser.otf?v=2",
             file_format: "otf",
             version: 2,
@@ -672,13 +672,13 @@ test("registers a replaced Candlepin asset instead of rendering a fallback font"
   await expect(page.locator("#selectedFontName")).toHaveText("Candlepin Shop Version");
   const candlepinPreview = page.locator("#selectedFontPreview");
   await expect.poll(async () => candlepinPreview.evaluate((element) => window.getComputedStyle(element).fontFamily))
-    .toContain("WorkspaceFont_Candlepin_Shop_Version");
+    .toContain("WorkspaceFont_63616e646c6570696e");
   await expect.poll(async () => candlepinPreview.evaluate(() => (
-    document.fonts.check('16px "WorkspaceFont_Candlepin_Shop_Version"')
+    document.fonts.check('16px "WorkspaceFont_63616e646c6570696e"')
   ))).toBe(true);
   await expect.poll(async () => page.evaluate(() => window.__registeredWorkspaceFontFaces))
     .toContainEqual({
-      family: "WorkspaceFont_Candlepin_Shop_Version",
+      family: "WorkspaceFont_63616e646c6570696e",
       source: 'url("/public/fonts/Candlepin-Laser.otf?v=2")',
     });
   await expect(page.locator("#selectedFontMeta")).toContainText("Available");
@@ -722,7 +722,7 @@ test("registers a replaced Candlepin asset instead of rendering a fallback font"
 
 test("retains the current archived font but excludes other archived fonts from production choices", async ({ page }) => {
   const archivedAssetUrl = "public/fonts/Candlepin-Laser.otf?v=2";
-  const archivedFamily = "WorkspaceFont_Candlepin_Archived";
+  const archivedFamily = "WorkspaceFont_63616e646c6570696e";
   const archivedSettings = {
     text: "Archived Nurse",
     presetId: "preset-a1f4c8e2b601",

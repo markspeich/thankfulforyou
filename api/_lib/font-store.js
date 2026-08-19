@@ -3,6 +3,7 @@ import { basename, extname } from "node:path";
 import zlib from "node:zlib";
 
 import { createSupabaseAdminClient } from "./supabase-admin.js";
+import { buildWorkspaceFontFamily } from "../../src/font-identity.js";
 
 export const FONT_STORAGE_BUCKET = "workspace-fonts";
 const FONT_STORAGE_BUCKET_OPTIONS = Object.freeze({
@@ -37,11 +38,6 @@ function cleanPathPart(value) {
     .trim()
     .replace(/[^a-z0-9._-]+/gi, "-")
     .replace(/^-+|-+$/g, "");
-}
-
-function inferFamilyName(displayName, fontId) {
-  const base = cleanPathPart(displayName).replace(/[-.]+/g, "_");
-  return `WorkspaceFont_${base || fontId}`;
 }
 
 function readUploadedFontBodySync(file) {
@@ -359,7 +355,7 @@ export async function createWorkspaceFont({ workspaceId, displayName, file }) {
     id: fontId,
     workspace_id: workspaceId,
     display_name: resolvedDisplayName,
-    family_name: inferFamilyName(resolvedDisplayName, fontId),
+    family_name: buildWorkspaceFontFamily(fontId),
     storage_bucket: FONT_STORAGE_BUCKET,
     storage_path: storagePath,
     public_url: publicUrl,
@@ -425,7 +421,7 @@ export async function replaceWorkspaceFont({ workspaceId, fontId, file }) {
     .from("fonts")
     .update({
       display_name: resolvedDisplayName,
-      family_name: inferFamilyName(resolvedDisplayName, fontId),
+      family_name: buildWorkspaceFontFamily(fontId),
       storage_bucket: FONT_STORAGE_BUCKET,
       storage_path: storagePath,
       public_url: publicUrl,
@@ -457,7 +453,6 @@ export async function updateWorkspaceFontSettings({ workspaceId, fontId, display
   };
   if (trimmedDisplayName) {
     updates.display_name = trimmedDisplayName;
-    updates.family_name = inferFamilyName(trimmedDisplayName, fontId);
   }
 
   const { data, error } = await supabase

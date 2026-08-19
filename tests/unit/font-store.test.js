@@ -9,8 +9,21 @@ import {
   rejectMissingFontReplacement,
   resolveUploadedFontDisplayName,
 } from "../../api/_lib/font-store.js";
+import { buildWorkspaceFontFamily } from "../../src/font-identity.js";
 
 describe("font store helpers", () => {
+  it("derives a stable browser family from the font id instead of its display name", () => {
+    expect(buildWorkspaceFontFamily("font-e761a52b-7536-4f5c-83b3-ade08f11f4c8"))
+      .toBe("WorkspaceFont_666f6e742d65373631613532622d373533362d346635632d383362332d616465303866313166346338");
+  });
+
+  it("keeps case and punctuation-distinct ids in distinct browser families", () => {
+    expect(buildWorkspaceFontFamily("Font.A")).toBe("WorkspaceFont_466f6e742e41");
+    expect(buildWorkspaceFontFamily("Font_A")).toBe("WorkspaceFont_466f6e745f41");
+    expect(buildWorkspaceFontFamily("font.a")).toBe("WorkspaceFont_666f6e742e61");
+    expect(buildWorkspaceFontFamily(" font.a ")).toBe("WorkspaceFont_20666f6e742e6120");
+  });
+
   it("builds workspace and version scoped storage paths", () => {
     expect(buildFontStoragePath({
       workspaceId: "workspace-1",
