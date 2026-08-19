@@ -19,8 +19,36 @@ describe("font registry", () => {
     expect(normalizeFontRecord({ ...active, is_builtin: true })).toEqual(normalizeFontRecord(active));
   });
 
-  it("uses a replacement seeded font family and versioned URL", () => {
-    expect(buildFontOptions([active])[0]).toMatchObject({ id: "candlepin", family: "CandlepinReplacement", url: "https://example.test/candlepin/v2.otf", version: 2 });
+  it("rejects blank-only font ids before deriving a browser family", () => {
+    expect(normalizeFontRecord({
+      id: "   ",
+      display_name: "Blank Id Font",
+      public_url: "https://example.test/blank-id.otf",
+    })).toBeNull();
+  });
+
+  it("derives browser font families from immutable font ids", () => {
+    expect(buildFontOptions([active])[0]).toMatchObject({ id: "candlepin", family: "WorkspaceFont_63616e646c6570696e", url: "https://example.test/candlepin/v2.otf", version: 2 });
+  });
+
+  it("keeps active and archived fonts with a legacy family collision distinct in the browser registry", async () => {
+    const records = [
+      { id: "active-candlepin", display_name: "Candlepin", family_name: "CrushedLemonade", public_url: "https://example.test/candlepin.otf" },
+      { id: "archived-crushed-lemonade", display_name: "Crushed Lemonade", family_name: "CrushedLemonade", public_url: "https://example.test/lemonade.otf", archived_at: "2026-08-05T00:00:00Z" },
+    ];
+    const fonts = buildFontOptions(records, { includeArchived: true });
+    const added = [];
+    class Face { constructor(family, source) { this.family = family; this.source = source; } async load() { return this; } }
+    vi.stubGlobal("FontFace", Face);
+    vi.stubGlobal("document", { fonts: { add: (face) => added.push(face), delete: vi.fn() } });
+
+    await registerBrowserFonts(fonts);
+
+    expect(fonts.map((font) => font.family)).toEqual([
+      "WorkspaceFont_6163746976652d63616e646c6570696e",
+      "WorkspaceFont_61726368697665642d637275736865642d6c656d6f6e616465",
+    ]);
+    expect(added.map((face) => face.family)).toEqual(fonts.map((font) => font.family));
   });
 
   it("excludes archived fonts from new assignments but retains the current archived reference", () => {

@@ -6,6 +6,7 @@ import {
   restoreWorkspaceFont,
   updateWorkspaceFontSettings,
 } from "./font-api.js";
+import { buildWorkspaceFontFamily } from "./font-identity.js";
 
 const registeredBrowserFontFaces = new Map();
 
@@ -14,15 +15,15 @@ function url(record) { return text(record.public_url) || text(record.publicUrl) 
 
 export function normalizeFontRecord(record, { includeArchived = false } = {}) {
   if (!record || typeof record !== "object") return null;
-  const id = text(record.id);
+  const id = typeof record.id === "string" ? record.id : "";
   const displayName = text(record.display_name) || text(record.displayName) || id;
   const publicUrl = url(record);
   const browserUrl = !publicUrl || /^https?:|^\//i.test(publicUrl) ? publicUrl : `/${publicUrl}`;
   const archivedAt = record.archived_at ?? record.archivedAt ?? record.deleted_at ?? record.deletedAt ?? null;
-  if (!id || !displayName || (archivedAt && !includeArchived)) return null;
+  if (!id.trim() || !displayName || (archivedAt && !includeArchived)) return null;
   return {
     id, displayName, label: archivedAt ? `${displayName} (archived)` : displayName,
-    family: text(record.family_name) || text(record.familyName) || `WorkspaceFont_${id.replace(/[^a-z0-9_-]/gi, "_")}`,
+    family: buildWorkspaceFontFamily(id),
     url: browserUrl, exportPath: publicUrl,
     fileFormat: text(record.file_format) || text(record.fileFormat),
     version: Number.isFinite(Number(record.version)) ? Number(record.version) : 1,

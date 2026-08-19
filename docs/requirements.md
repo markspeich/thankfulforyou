@@ -75,6 +75,8 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 
 ## Current Production Requirements
 
+- Each workspace font's browser `family_name` must be derived solely from the UTF-8 hex encoding of its immutable `fonts.id` as `WorkspaceFont_<utf8-hex-id>`. Display-name changes must not change that identity, and active and archived fonts must remain independently loadable even when legacy family names collide.
+
 - Empty-search Orders pagination must remain page-bounded as history grows for every lifecycle and active-batch filter, including sparse `Complete`, `Skipped`, `In Batch`, and `Not in Batch` result sets. The database may maintain a transactionally refreshed, compact order-group search projection solely to meet this requirement. The projection must not expose raw customization diagnostics, design lines, cached geometry, or prior builds, and full design details must continue to come from the bounded detail route.
 
 - Authenticated app requests must silently recover from an expired Supabase access token by refreshing the session and retrying the failed request once. Operators should only be returned to sign-in when the session cannot be refreshed or the retried request is still unauthorized.
