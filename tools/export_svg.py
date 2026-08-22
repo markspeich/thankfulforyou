@@ -35,6 +35,8 @@ FIXED_SVG_BACKING_TRACE_PADDING_MM = 4.0
 FIXED_SVG_VECTOR_OFFSET_SCALE = 1000
 COLOR_LABEL_FONT_SIZE_MM = 9.0
 COLOR_LABEL_LINE_HEIGHT_MM = 4.8
+IMPORTANT_NOTES_FONT_SIZE_MM = 7.0
+IMPORTANT_NOTES_LINE_HEIGHT_MM = 8.4
 REMOTE_FONT_MAX_BYTES = 2 * 1024 * 1024
 REMOTE_SVG_MAX_BYTES = 2 * 1024 * 1024
 BLOCKED_FIXED_SVG_TAGS = {
@@ -1379,6 +1381,7 @@ def build_precomputed_order_paths(payload):
         "text": svg_escape(payload.get("text", "")),
         "connected_component_count": int(analysis.get("connectedComponentCount", 0)),
         "color_name": color_name,
+        "weld_exported_design": payload.get("weldExportedDesign", True) is not False,
         "quantity": quantity,
     }
 
@@ -1409,6 +1412,7 @@ def build_single_order_paths(root, payload):
         "text": svg_escape(analysis["text"]),
         "connected_component_count": analysis["connectedComponentCount"],
         "color_name": color_name,
+        "weld_exported_design": payload.get("weldExportedDesign", True) is not False,
         "quantity": quantity,
     }
 
@@ -1435,6 +1439,27 @@ def build_color_label(order, instance_id, translate_y, x=None, y=None, center_ve
         f'  <text id="{instance_id}-color-label" x="{x:.3f}" y="{y:.3f}" '
         f'font-family="Arial" font-size="{COLOR_LABEL_FONT_SIZE_MM:.3f}mm" '
         f'fill="rgb(255, 0, 0)" text-anchor="middle"{baseline}>{color_name}</text>'
+    )
+
+
+def build_important_notes(order, instance_id, x, center_y):
+    notes = []
+    if "white" in order.get("color_name", "").lower():
+        notes.append("BLACK TEXT")
+    if not order.get("weld_exported_design", True):
+        notes.append("NOT WELDED")
+    if not notes:
+        return ""
+
+    first_y = center_y - IMPORTANT_NOTES_LINE_HEIGHT_MM * (len(notes) - 1) / 2
+    tspans = "".join(
+        f'<tspan x="{x:.3f}" dy="{("0" if index == 0 else f"{IMPORTANT_NOTES_LINE_HEIGHT_MM:.3f}")}">{note}</tspan>'
+        for index, note in enumerate(notes)
+    )
+    return (
+        f'  <text id="{instance_id}-important-notes" x="{x:.3f}" y="{first_y:.3f}" '
+        f'font-family="Arial" font-size="{IMPORTANT_NOTES_FONT_SIZE_MM:.3f}mm" '
+        f'fill="rgb(255, 0, 0)" text-anchor="middle" dominant-baseline="middle">{tspans}</text>'
     )
 
 
@@ -2058,7 +2083,7 @@ def build_svg_document(title, desc, instances, fixed_columns=False):
             BATCH_EXPORT_COLUMN_WIDTH_MM,
             *(instance["order"]["width"] for instance in instances),
         )
-        export_width = column_width * 4
+        export_width = column_width * 5
     else:
         export_width = max(instance["order"]["export_width"] for instance in instances)
 
@@ -2088,13 +2113,18 @@ def build_svg_document(title, desc, instances, fixed_columns=False):
         center_color_label = False
         if fixed_columns:
             column_item_x = (column_width - order["width"]) / 2
-            mirror_face_x = column_item_x
-            face_x = column_width + column_item_x
-            backing_x = column_width * 2 + column_item_x
-            color_label_x = column_width * 3 + column_width / 2
+            notes_x = column_width / 2
+            mirror_face_x = column_width + column_item_x
+            face_x = column_width * 2 + column_item_x
+            backing_x = column_width * 3 + column_item_x
+            color_label_x = column_width * 4 + column_width / 2
             item_y = current_y + max(0.0, (BATCH_EXPORT_START_STEP_MM - order["height"]) / 2)
             color_label_y = current_y + BATCH_EXPORT_START_STEP_MM / 2
             center_color_label = True
+
+            important_notes = build_important_notes(order, instance_id, notes_x, color_label_y)
+            if important_notes:
+                parts.append(important_notes)
 
         if fixed_columns:
             parts.append(build_name_group(order, instance_id, mirror_face_x, item_y, mirrored=True))
@@ -2140,7 +2170,7 @@ def build_svg(payload):
     order = build_single_order_paths(root, payload)
     instances = expand_export_instances([order])
     desc = (
-        f'Text: {order["text"]}. Columns are mirrored design, design, mirrored backing border, and color. '
+        f'Text: {order["text"]}. Columns are important notes, mirrored design, design, mirrored backing border, and color. '
         f'Generated as vector paths from the selected production fonts. Connected components: {order["connected_component_count"]}.'
     )
     if order.get("color_name"):
@@ -2158,7 +2188,7 @@ def build_batch_svg(root, layouts):
     ]
     desc = (
         f'{"; ".join(desc_items)}. Each exported instance is stacked below the previous one. '
-        f'Columns are mirrored design, design, mirrored backing border, and color. Generated as vector paths from the selected production fonts.'
+        f'Columns are important notes, mirrored design, design, mirrored backing border, and color. Generated as vector paths from the selected production fonts.'
     )
     return build_svg_document("Badge reel batch layout", desc, expand_export_instances(order_paths), fixed_columns=True)
 
