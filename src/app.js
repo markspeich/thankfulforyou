@@ -69,7 +69,7 @@ import {
   resolveNextLineOffsetMm,
 } from "./glyph-layout.js";
 import { buildReloadedPresetSettings } from "./preset-selection.js";
-import { sortDesignsByImportedColor } from "./production-batch-export-order.js";
+import { buildBatchExportSources, sortDesignsByImportedColor } from "./production-batch-export-order.js";
 import {
   completeProductionBatch,
   fetchProductionBatchSnapshot,
@@ -13273,6 +13273,7 @@ async function exportAllOrders() {
   let exported = false;
 
   try {
+    const exportSources = buildBatchExportSources(exportableOrders);
     const builtLayouts = exportableOrders.map((order) => {
       const cachedBuild = getSavedCachedBuild(order);
       return {
@@ -13283,7 +13284,7 @@ async function exportAllOrders() {
     });
 
     await requestSvgExport({
-      layouts: builtLayouts.map(({ order, layout, analysis }) => buildExportPayload(layout, analysis, order.source)),
+      layouts: builtLayouts.map(({ layout, analysis }, index) => buildExportPayload(layout, analysis, exportSources[index])),
       filename: "badge-reel-layout-batch.svg",
     });
 
@@ -13329,6 +13330,7 @@ async function copyAllOrders() {
   let copied = false;
 
   try {
+    const exportSources = buildBatchExportSources(exportableOrders);
     const builtLayouts = exportableOrders.map((order) => {
       const cachedBuild = getSavedCachedBuild(order);
       return {
@@ -13339,7 +13341,7 @@ async function copyAllOrders() {
     });
 
     const svgSourcePromise = requestSvgSource({
-      layouts: builtLayouts.map(({ order, layout, analysis }) => buildExportPayload(layout, analysis, order.source)),
+      layouts: builtLayouts.map(({ layout, analysis }, index) => buildExportPayload(layout, analysis, exportSources[index])),
     });
     await copySvgSourceToClipboard(svgSourcePromise);
     copied = true;
