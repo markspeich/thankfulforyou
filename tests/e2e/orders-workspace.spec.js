@@ -1084,7 +1084,9 @@ test("debounces server-filtered order searches and ignores an older response", a
   await page.route("**/api/orders**", async (route) => {
     const url = new URL(route.request().url());
     if (url.searchParams.get("view") === "detail") {
-      await route.fulfill({ json: { order: null } });
+      const orderId = url.searchParams.get("orderId");
+      const buyerName = orderId === "order:grace" ? "Grace Hopper" : "Initial order";
+      await route.fulfill({ json: { order: responseFor(orderId, buyerName).orders[0] } });
       return;
     }
     const search = url.searchParams.get("search");
@@ -1119,6 +1121,7 @@ test("debounces server-filtered order searches and ignores an older response", a
 
   resolveGraceResponse();
   await expect(ordersWorkspace.locator(".database-order-row")).toContainText("Grace Hopper");
+  await expect(ordersWorkspace.locator(".database-order-row.is-selected")).toContainText("Grace Hopper");
   resolveAdaResponse();
   await expect(ordersWorkspace.locator(".database-order-row")).toContainText("Grace Hopper");
   await expect(ordersWorkspace.locator(".database-order-row")).not.toContainText("Ada Lovelace");

@@ -710,6 +710,7 @@ For batch Etsy order sessions, the preferred workflow is:
 - Orders search must use case-insensitive substring matching across the entire authenticated workspace rather than only records already loaded in the browser.
 - Orders list and search responses must use deterministic cursor pagination, return no more than 50 complete order groups per page, and never split a multi-item order across pages.
 - Changing Orders search, lifecycle status, or batch-membership filters must reset pagination; loading another page must preserve checked orders and the selected order.
+- When the Orders workspace has visible rows but no valid selected row, it must automatically select the first visible order, including after initial navigation or a query change removes the previous selection.
 - The initial scalable Orders search implementation must not add fuzzy matching, a denormalized search projection, or search-maintenance triggers; specialized search indexing should be added only after representative query measurements justify it.
 - The Orders workspace should provide a batch-membership filter for all orders, orders in the active batch, and orders not in the active batch.
 - The Orders workspace should provide a `Select all visible` checkbox that selects or clears every order currently shown after search, status, and batch filters. The checkbox should show an indeterminate state when only some visible orders are selected and should feed the existing `Add Checked to Production Batch` action.

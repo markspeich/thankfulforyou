@@ -6820,10 +6820,7 @@ async function performDatabaseOrdersLoad({ reset, append }) {
       hasMore: payload?.hasMore,
       reset,
     });
-    updateDatabaseOrdersState({
-      ...nextState,
-      selectedOrderId: selectedDatabaseOrderId || nextState.selectedOrderId,
-    });
+    updateDatabaseOrdersState(nextState);
     databaseOrdersNextCursor = nextState.nextCursor;
     databaseOrdersHasMore = nextState.hasMore;
     loadedDatabaseOrdersKey = loadKey;
