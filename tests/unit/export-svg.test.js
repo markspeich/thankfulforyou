@@ -945,7 +945,7 @@ else:
     expect(svg).toContain('id="order-2-copy-1-mirror-backing-border" d="M20 0 L30 0 L30 10 Z" transform="translate(195.467 67.343) scale(-1 1)"');
     expect(svg).toContain('id="order-1-copy-1-color-label" x="232.029" y="25.781"');
     expect(svg).toContain('id="order-2-copy-1-color-label" x="232.029" y="77.343"');
-    expect(svg).toContain('font-size="9.000mm"');
+    expect(svg).toContain('font-size="18.000mm"');
     expect(svg).toContain('text-anchor="middle"');
     expect(svg).toContain('dominant-baseline="middle"');
   });
