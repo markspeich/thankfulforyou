@@ -15,6 +15,7 @@
     "db:local:orders:purge": "node tools/db_admin/order_data.mjs orders:purge --target=local",
     "db:prod:orders:count": "node tools/db_admin/order_data.mjs orders:count --target=production",
     "db:prod:orders:purge": "node tools/db_admin/order_data.mjs orders:purge --target=production",
+    "db:etsy:attempts": "node tools/db_admin/etsy_import_attempts.mjs",
     "db:prod:migrations:check": "node tools/check_migration_drift.mjs",
     "supabase:start:local": "node tools/supabase_start_local.mjs",
     "supabase:status:local": "node tools/supabase_status_local.mjs",

@@ -338,7 +338,7 @@ async function queryExistingOrderItems({ supabase, workspaceId, orderItemIds }) 
 
   const { data, error } = await supabase
     .from("order_items")
-    .select("id, source_json")
+    .select("id, workspace_id, status, order_number, buyer_name, listing_id, transaction_id, imported_color, ship_by_date, quantity, source_json, revision, updated_by")
     .eq("workspace_id", workspaceId)
     .in("id", ids);
 
@@ -347,6 +347,25 @@ async function queryExistingOrderItems({ supabase, workspaceId, orderItemIds }) 
   }
 
   return data || [];
+}
+
+function orderItemPersistenceMetadata(row) {
+  if (!row || typeof row !== "object") return null;
+  return {
+    id: row.id,
+    workspace_id: row.workspace_id,
+    status: row.status,
+    order_number: row.order_number,
+    buyer_name: row.buyer_name,
+    listing_id: row.listing_id,
+    transaction_id: row.transaction_id,
+    imported_color: row.imported_color,
+    ship_by_date: row.ship_by_date,
+    quantity: row.quantity,
+    source_json: row.source_json,
+    revision: row.revision,
+    updated_by: row.updated_by,
+  };
 }
 
 export async function listWorkspaceOrders({ workspaceId, activeBatchId = null, statusFilter = "open" }) {
@@ -856,6 +875,7 @@ export async function importWorkspaceOrderItems({
   items,
   target = "orders",
   batchId = null,
+  includePersistenceAudit = false,
 }) {
   const importItems = Array.isArray(items) ? items : [];
   if (!importItems.length) {
@@ -865,6 +885,7 @@ export async function importWorkspaceOrderItems({
       importedCount: 0,
       addedToBatchCount: 0,
       addedOrderItemIds: [],
+      ...(includePersistenceAudit ? { persistenceAudit: [] } : {}),
     };
   }
 
@@ -882,6 +903,7 @@ export async function importWorkspaceOrderItems({
   });
   const existingOrderItemIds = new Set(existingOrderItems.map((item) => item.id));
   const existingOrderItemById = new Map(existingOrderItems.map((item) => [item.id, item]));
+  const persistedExistingById = new Map(existingOrderItems.map((item) => [item.id, orderItemPersistenceMetadata(item)]));
   const existingOrderItemUpdates = orderRows.flatMap((row) => {
     const existingItem = existingOrderItemById.get(row.id);
     const hasExpectedShipDate = Object.hasOwn(row.source_json, "expected_ship_date");
@@ -916,6 +938,11 @@ export async function importWorkspaceOrderItems({
   const shipDateUpdateError = shipDateUpdateResults.find((result) => result?.error)?.error;
   if (shipDateUpdateError) {
     throw shipDateUpdateError;
+  }
+
+  for (const update of existingOrderItemUpdates) {
+    const before = persistedExistingById.get(update.id);
+    if (before) persistedExistingById.set(update.id, orderItemPersistenceMetadata({ ...before, ...update.payload }));
   }
 
   const newOrderRows = orderRows.filter((row) => !existingOrderItemIds.has(row.id));
@@ -1020,6 +1047,17 @@ export async function importWorkspaceOrderItems({
     importedCount: importedOrderItemIds.length,
     addedToBatchCount: target === "productionBatch" ? addedOrderItemIds.length : 0,
     addedOrderItemIds,
+    ...(includePersistenceAudit ? {
+      persistenceAudit: orderRows.map((row) => {
+        const existing = existingOrderItemIds.has(row.id);
+        return {
+          orderItemId: row.id,
+          importDecision: existing ? "existing" : "new",
+          storedBefore: existing ? orderItemPersistenceMetadata(existingOrderItemById.get(row.id)) : null,
+          storedAfter: existing ? persistedExistingById.get(row.id) : orderItemPersistenceMetadata(row),
+        };
+      }),
+    } : {}),
   };
 }
 

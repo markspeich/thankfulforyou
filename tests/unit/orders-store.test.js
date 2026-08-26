@@ -710,6 +710,31 @@ describe("orders store", () => {
       addedToBatchCount: 1,
     });
   });
+  it("returns private per-item persistence audit only when explicitly requested", async () => {
+    resetDb({
+      order_items: [{
+        id: "transaction:existing", workspace_id: "workspace-1", status: "complete", order_number: "2001",
+        buyer_name: "Ada", listing_id: "listing-old", transaction_id: "existing", imported_color: "Pink",
+        ship_by_date: null, quantity: 1, source_json: { persisted: "before" }, revision: 4, updated_by: "user-old",
+      }],
+    });
+    const { importWorkspaceOrderItems } = await import("../../api/_lib/orders-store.js");
+    const items = [
+      { text: "Existing", source: { orderNumber: "2001", transactionId: "existing", buyerName: "Ada" } },
+      { text: "New", source: { orderNumber: "2002", transactionId: "new", buyerName: "Bea" } },
+    ];
+
+    const privateResult = await importWorkspaceOrderItems({ workspaceId: "workspace-1", userId: "user-1", items, includePersistenceAudit: true });
+
+    expect(privateResult.persistenceAudit).toEqual(expect.arrayContaining([
+      expect.objectContaining({ orderItemId: "transaction:existing", importDecision: "existing", storedBefore: expect.objectContaining({ status: "complete", source_json: { persisted: "before" } }), storedAfter: expect.objectContaining({ status: "complete" }) }),
+      expect.objectContaining({ orderItemId: "transaction:new", importDecision: "new", storedBefore: null, storedAfter: expect.objectContaining({ order_number: "2002", transaction_id: "new" }) }),
+    ]));
+
+    resetDb();
+    const normalResult = await importWorkspaceOrderItems({ workspaceId: "workspace-1", userId: "user-1", items: [{ text: "Normal", source: { transactionId: "normal" } }] });
+    expect(normalResult).not.toHaveProperty("persistenceAudit");
+  });
   it("preserves Etsy customization metadata through persistence and response mapping", async () => {
     resetDb();
     const { importWorkspaceOrderItems, listWorkspaceOrders } = await import("../../api/_lib/orders-store.js");
@@ -1572,4 +1597,3 @@ describe("orders store", () => {
     ]);
   });
 });
-
