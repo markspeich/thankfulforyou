@@ -82,6 +82,122 @@ describe("Etsy import service", () => {
     await (await f.service.prepare({ workspaceId: "w", onProgress: (e) => f.events.push(e) })).run();
     expect(f.events).toEqual([{ type: "progress", stage: "fetching_receipts", processed: 0, total: null }, { type: "progress", stage: "importing_items", processed: 0, total: 0 }, { type: "complete", imported: 0, existing: 0, customizationNeeded: 0, failed: 0 }]);
   });
+  it("records one full-payload audit attempt with a separate import run id after persistence", async () => {
+    const randomUUID = vi.fn()
+      .mockReturnValueOnce("lock-id")
+      .mockReturnValueOnce("run-id");
+    const f = fixture({ randomUUID });
+    f.client.listReceipts.mockResolvedValue([{
+      receipt_id: 1, is_paid: true, is_shipped: false, receipt_special: "retain-this",
+    }]);
+    f.client.listReceiptTransactions.mockResolvedValue([{ transaction_id: 2, listing_id: 3, transaction_special: "retain-this" }]);
+    f.client.getListing.mockResolvedValue({ listing_id: 3, listing_special: "retain-this" });
+    f.client.getListingImages.mockResolvedValue([{ image_special: "retain-this" }, { image_special: "retain-this-too" }]);
+    const normalized = { id: "transaction:2", source: { customizationNeeded: false } };
+    const persistedItem = { ...normalized, enriched: true };
+    f.store.importWorkspaceOrderItems.mockResolvedValue({
+      importedCount: 1,
+      persistenceAudit: [{ importDecision: "new", storedBefore: null, storedAfter: { id: "transaction:2" } }],
+    });
+    f.store.appendEtsyImportAttempt = vi.fn().mockResolvedValue();
+    f.service = createEtsyImportService({
+      store: f.store, createClient: () => f.client, refreshAccess: vi.fn(),
+      normalizeTransaction: vi.fn(() => normalized), enrichItem: vi.fn(() => persistedItem), clock: () => f.now, randomUUID,
+    });
+
+    await (await f.service.prepare({ workspaceId: "w", userId: "u" })).run();
+
+    expect(randomUUID).toHaveBeenCalledTimes(2);
+    expect(f.store.appendEtsyImportAttempt).toHaveBeenCalledWith(expect.objectContaining({
+      runId: "run-id", workspaceId: "w", initiatedBy: "u", orderNumber: "1",
+      transactionId: "2", listingId: "3", outcome: "imported", stage: "persisted",
+      rawReceipt: expect.objectContaining({ receipt_special: "retain-this" }),
+      rawTransaction: expect.objectContaining({ transaction_special: "retain-this" }),
+      rawListing: expect.objectContaining({ listing_special: "retain-this" }),
+      rawImage: [{ image_special: "retain-this" }, { image_special: "retain-this-too" }],
+      normalizedItem: normalized,
+      persistence: expect.objectContaining({ outcome: "imported", importDecision: "new", importedCount: 1, item: persistedItem, storedAfter: { id: "transaction:2" } }),
+    }));
+    expect(f.store.importWorkspaceOrderItems).toHaveBeenCalledWith(expect.objectContaining({ includePersistenceAudit: true }));
+  });
+
+  it("continues a normal import when audit persistence fails without logging Etsy payloads", async () => {
+    const logError = vi.fn();
+    const f = fixture({ logError, randomUUID: vi.fn().mockReturnValueOnce("lock-id").mockReturnValueOnce("run-id") });
+    f.client.listReceipts.mockResolvedValue([{ receipt_id: 1, is_paid: true, is_shipped: false, receipt_secret: "do-not-log" }]);
+    f.client.listReceiptTransactions.mockResolvedValue([{ transaction_id: 2, listing_id: 3 }]);
+    f.store.appendEtsyImportAttempt = vi.fn().mockRejectedValue(new Error("audit unavailable"));
+    f.service = createEtsyImportService({
+      store: f.store, createClient: () => f.client, refreshAccess: vi.fn(),
+      normalizeTransaction: ({ transaction }) => ({ id: `transaction:${transaction.transaction_id}`, source: {} }),
+      clock: () => f.now, randomUUID: vi.fn().mockReturnValueOnce("lock-id").mockReturnValueOnce("run-id"), logError,
+    });
+
+    await expect((await f.service.prepare({ workspaceId: "w", userId: "u" })).run()).resolves.toMatchObject({ imported: 1, failed: 0 });
+
+    expect(logError).toHaveBeenCalledWith({
+      event: "etsy_import_attempt_audit_failed", runId: "run-id", receiptId: "1", transactionId: "2",
+    });
+    expect(JSON.stringify(logError.mock.calls)).not.toContain("do-not-log");
+  });
+  it("continues importing when the safe audit logger throws", async () => {
+    const f = fixture({ randomUUID: vi.fn().mockReturnValueOnce("lock-id").mockReturnValueOnce("run-id") });
+    f.store.appendEtsyImportAttempt = vi.fn().mockRejectedValue(new Error("audit unavailable"));
+    f.service = createEtsyImportService({
+      store: f.store, createClient: () => f.client, refreshAccess: vi.fn(),
+      normalizeTransaction: ({ transaction }) => ({ id: `transaction:${transaction.transaction_id}`, source: {} }),
+      clock: () => f.now, randomUUID: vi.fn().mockReturnValueOnce("lock-id").mockReturnValueOnce("run-id"),
+      logError: () => { throw new Error("logger unavailable"); },
+    });
+
+    await expect((await f.service.prepare({ workspaceId: "w", userId: "u" })).run()).resolves.toMatchObject({ imported: 1, failed: 0 });
+  });
+  it("retains nonblocking listing and image fetch failures in stage-specific audit data", async () => {
+    const f = fixture({ randomUUID: vi.fn().mockReturnValueOnce("lock-id").mockReturnValueOnce("run-id") });
+    f.client.getListing.mockRejectedValue(new Error("listing unavailable"));
+    f.client.getListingImages.mockRejectedValue(new Error("images unavailable"));
+    f.store.appendEtsyImportAttempt = vi.fn().mockResolvedValue();
+    f.service = createEtsyImportService({
+      store: f.store, createClient: () => f.client, refreshAccess: vi.fn(),
+      normalizeTransaction: ({ transaction }) => ({ id: `transaction:${transaction.transaction_id}`, source: {} }),
+      clock: () => f.now, randomUUID: vi.fn().mockReturnValueOnce("lock-id").mockReturnValueOnce("run-id"),
+    });
+
+    await expect((await f.service.prepare({ workspaceId: "w" })).run()).resolves.toMatchObject({ imported: 1, failed: 0 });
+    expect(f.store.appendEtsyImportAttempt).toHaveBeenCalledWith(expect.objectContaining({
+      outcome: "imported",
+      fetchErrors: {
+        fetching_listing: { name: "Error", message: "listing unavailable" },
+        fetching_images: { name: "Error", message: "images unavailable" },
+      },
+    }));
+  });
+  it("records the enriched item and structured Supabase details when persistence rejects it", async () => {
+    const f = fixture({ randomUUID: vi.fn().mockReturnValueOnce("lock-id").mockReturnValueOnce("run-id") });
+    const normalizedItem = { id: "transaction:2", source: { orderNumber: "1001", transactionId: "2", listingId: "3" } };
+    const enrichedItem = { ...normalizedItem, enrichment: { applied: true } };
+    const persistenceError = Object.assign(new Error("constraint failed"), {
+      code: "23505", details: "Key (id) already exists.", hint: "Use the existing order item.", statusCode: 409,
+    });
+    f.store.importWorkspaceOrderItems.mockRejectedValue(persistenceError);
+    f.store.appendEtsyImportAttempt = vi.fn().mockResolvedValue();
+    f.service = createEtsyImportService({
+      store: f.store, createClient: () => f.client, refreshAccess: vi.fn(),
+      normalizeTransaction: () => normalizedItem, enrichItem: () => enrichedItem,
+      clock: () => f.now, randomUUID: vi.fn().mockReturnValueOnce("lock-id").mockReturnValueOnce("run-id"),
+    });
+
+    await expect((await f.service.prepare({ workspaceId: "w", userId: "u" })).run()).resolves.toMatchObject({ imported: 0, failed: 1 });
+
+    expect(f.store.appendEtsyImportAttempt).toHaveBeenCalledWith(expect.objectContaining({
+      outcome: "failed", stage: "persisting",
+      persistence: { outcome: "failed", importDecision: "failed", item: enrichedItem },
+      error: {
+        name: "Error", message: "constraint failed", code: "23505",
+        details: "Key (id) already exists.", hint: "Use the existing order item.", statusCode: 409,
+      },
+    }));
+  });
   it("refreshes near-expired access and marks reconnect required on reauthorization", async () => {
     const refreshAccess = vi.fn().mockResolvedValue({ accessToken: "new-token" });
     let f = fixture({ refreshAccess });

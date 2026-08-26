@@ -4,6 +4,7 @@ import { refreshEtsyAuthorization } from "./_lib/etsy-oauth.js";
 import { createEtsyClient } from "./_lib/etsy-client.js";
 import { normalizeEtsyTransaction } from "./_lib/etsy-import-normalizer.js";
 import { importWorkspaceOrderItems } from "./_lib/orders-store.js";
+import { appendEtsyImportAttempt } from "./_lib/etsy-import-attempt-store.js";
 import { loadPresetSnapshot } from "./_lib/preset-store.js";
 import { createEtsyImportService, EtsyImportError } from "./_lib/etsy-import-service.js";
 import { listWorkspaceFonts } from "./_lib/font-store.js";
@@ -47,7 +48,7 @@ export function createEtsyImportHandler({ resolveAuth = resolveProductionBatchAu
         });
       }
       const service = serviceFactory({
-        store: dependencies.store || { ...connectionStore, importWorkspaceOrderItems },
+        store: dependencies.store || { ...connectionStore, importWorkspaceOrderItems, appendEtsyImportAttempt },
         refreshAccess: dependencies.refreshAccess || refreshEtsyAuthorization,
         createClient: dependencies.createClient || createEtsyClient,
         normalizeTransaction: dependencies.normalizeTransaction || normalizeEtsyTransaction,

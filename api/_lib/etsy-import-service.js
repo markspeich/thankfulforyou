@@ -9,8 +9,27 @@ const HEARTBEAT_INTERVAL = 300_000;
 const reauth = (error) => error?.category === "reauthorize" || error?.code === "reauthorize";
 const aborted = (error, signal) => Boolean(signal?.aborted || error?.name === "AbortError" || error?.code === "ABORT_ERR");
 const eligible = (r) => { const s = String(r?.status || "").toLowerCase(); return r?.is_paid === true && r?.is_shipped === false && r?.was_canceled !== true && r?.was_cancelled !== true && !["canceled", "cancelled"].includes(s); };
-const compactReceipt = (r) => ({ receipt_id: r.receipt_id, name: r.name, buyer_name: r.buyer_name, create_timestamp: r.create_timestamp, update_timestamp: r.update_timestamp, paid_timestamp: r.paid_timestamp, expected_ship_date: r.expected_ship_date, transaction_sold_count: r.transaction_sold_count });
-export function createEtsyImportService({ store, refreshAccess, createClient, normalizeTransaction, enrichItem = (item) => item, getPresetIdForListingId = () => null, clock = () => new Date(), randomUUID = uuid, maxImportItems = DEFAULT_MAX_IMPORT_ITEMS }) {
+const identifier = (value) => value == null ? null : String(value);
+const serializable = (value) => {
+  try {
+    const encoded = JSON.stringify(value);
+    return encoded === undefined ? undefined : JSON.parse(encoded);
+  } catch {
+    return undefined;
+  }
+};
+const errorDetails = (error) => {
+  const details = {
+    name: typeof error?.name === "string" ? error.name : "Error",
+    message: typeof error?.message === "string" ? error.message : "Unknown import error.",
+  };
+  for (const key of ["code", "details", "hint", "statusCode"]) {
+    const value = serializable(error?.[key]);
+    if (value !== undefined) details[key] = value;
+  }
+  return details;
+};
+export function createEtsyImportService({ store, refreshAccess, createClient, normalizeTransaction, enrichItem = (item) => item, getPresetIdForListingId = () => null, clock = () => new Date(), randomUUID = uuid, maxImportItems = DEFAULT_MAX_IMPORT_ITEMS, logError = console.error }) {
   async function prepare({ workspaceId, userId, signal, onProgress = () => {} }) {
     const started = clock();
     let connection = await store.getEtsyConnectionCredentials({ workspaceId });
@@ -24,6 +43,22 @@ export function createEtsyImportService({ store, refreshAccess, createClient, no
     if (!await store.acquireEtsyImportLock({ workspaceId, now: started, lockToken })) throw new EtsyImportError("import_in_progress", "An Etsy import is already in progress.", 409);
     let released = false;
     const release = async () => { if (!released) { released = true; await store.releaseEtsyImportLock({ workspaceId, lockToken }); } };
+    const runId = randomUUID();
+    const appendAttempt = async (attempt) => {
+      if (typeof store.appendEtsyImportAttempt !== "function") return;
+      try {
+        await store.appendEtsyImportAttempt({ runId, workspaceId, initiatedBy: userId || null, ...attempt });
+      } catch (error) {
+        try {
+          logError({
+            event: "etsy_import_attempt_audit_failed",
+            runId,
+            receiptId: identifier(attempt.rawReceipt?.receipt_id),
+            transactionId: identifier(attempt.transactionId),
+          });
+        } catch {}
+      }
+    };
     let client;
     let lastRenewedAt = started.getTime();
     const renewIfDue = async () => {
@@ -50,12 +85,12 @@ export function createEtsyImportService({ store, refreshAccess, createClient, no
               await renewIfDue();
                 if (!eligible(receipt)) continue;
                 if (eligibleReceipts.length >= maxImportItems) throw new EtsyImportError("import_too_large", "This Etsy import is too large. Please retry with a smaller window.", 413);
-                eligibleReceipts.push(compactReceipt(receipt));
+                eligibleReceipts.push(receipt);
               }
             }
           } else {
             const receipts = await client.listReceipts({ shopId: connection.etsyShopId, signal, ...filters });
-            for (const receipt of receipts) if (eligible(receipt)) eligibleReceipts.push(compactReceipt(receipt));
+            for (const receipt of receipts) if (eligible(receipt)) eligibleReceipts.push(receipt);
             if (eligibleReceipts.length > maxImportItems) throw new EtsyImportError("import_too_large", "This Etsy import is too large. Please retry with a smaller window.", 413);
           }
         } catch (error) { if (reauth(error)) await store.markEtsyConnectionReconnectRequired({ workspaceId }); throw error; }
@@ -82,32 +117,85 @@ export function createEtsyImportService({ store, refreshAccess, createClient, no
         let imported = 0, existing = 0, customizationNeeded = 0, processed = failed;
         for (const { receiptIndex, transaction } of work) {
           const receipt = eligibleReceipts[receiptIndex]; await renewIfDue();
+          let listing = {}, listingImages = [], image = {}, normalizedItem = null, item = null, stage = "fetching_listing";
+          const fetchErrors = {};
           try {
-            let listing = {}, image = {};
             await renewIfDue();
             try { listing = await client.getListing({ listingId: transaction.listing_id, signal }); } catch (error) {
               if (aborted(error, signal)) throw error;
               if (reauth(error)) throw error;
+              fetchErrors.fetching_listing = errorDetails(error);
             }
+            stage = "fetching_image";
             await renewIfDue();
-            try { image = (await client.getListingImages({ listingId: transaction.listing_id, signal }))[0] || {}; } catch (error) {
+            try {
+              const response = await client.getListingImages({ listingId: transaction.listing_id, signal });
+              listingImages = Array.isArray(response) ? response : [];
+              image = listingImages[0] || {};
+            } catch (error) {
               if (aborted(error, signal)) throw error;
               if (reauth(error)) throw error;
+              fetchErrors.fetching_images = errorDetails(error);
             }
+            stage = "normalizing";
             await renewIfDue();
-            const normalizedItem = normalizeTransaction({ receipt, transaction, listing, image, getPresetIdForListingId });
+            normalizedItem = normalizeTransaction({ receipt, transaction, listing, image, getPresetIdForListingId });
             let enrichmentSummary = null;
-            const item = await enrichItem(normalizedItem, {
+            item = await enrichItem(normalizedItem, {
               onEnriched(summary) { enrichmentSummary = summary; },
             });
             if (item?.etsyImportDiagnostics && enrichmentSummary && typeof enrichmentSummary === "object") {
               item.etsyImportDiagnostics = { ...item.etsyImportDiagnostics, fontResolution: enrichmentSummary };
             }
-            const result = await store.importWorkspaceOrderItems({ workspaceId, userId, items: [item], target: "orders", batchId: null });
+            stage = "persisting";
+            const result = await store.importWorkspaceOrderItems({ workspaceId, userId, items: [item], target: "orders", batchId: null, includePersistenceAudit: true });
             const count = Number(result?.importedCount ?? result?.importedOrderItemIds?.length ?? 0);
             imported += count; existing += Math.max(0, 1 - count);
             if (item?.source?.customizationNeeded) customizationNeeded += 1;
+            const stored = Array.isArray(result?.persistenceAudit) ? result.persistenceAudit[0] : null;
+            const outcome = stored?.importDecision === "existing" || count === 0 ? "existing" : "imported";
+            await appendAttempt({
+              orderNumber: identifier(item?.source?.orderNumber ?? receipt?.receipt_id),
+              transactionId: identifier(item?.source?.transactionId ?? transaction?.transaction_id),
+              listingId: identifier(item?.source?.listingId ?? transaction?.listing_id),
+              outcome,
+              stage: "persisted",
+              rawReceipt: receipt,
+              rawTransaction: transaction,
+              rawListing: listing,
+              rawImage: listingImages,
+              normalizedItem,
+              persistence: {
+                outcome,
+                importDecision: stored?.importDecision || (outcome === "imported" ? "new" : "existing"),
+                importedCount: count,
+                existingCount: Math.max(0, 1 - count),
+                item,
+                storedBefore: stored?.storedBefore ?? null,
+                storedAfter: stored?.storedAfter ?? null,
+              },
+              fetchErrors: Object.keys(fetchErrors).length ? fetchErrors : null,
+            });
           } catch (error) {
+            await appendAttempt({
+              orderNumber: identifier(item?.source?.orderNumber ?? normalizedItem?.source?.orderNumber ?? receipt?.receipt_id),
+              transactionId: identifier(item?.source?.transactionId ?? normalizedItem?.source?.transactionId ?? transaction?.transaction_id),
+              listingId: identifier(item?.source?.listingId ?? normalizedItem?.source?.listingId ?? transaction?.listing_id),
+              outcome: "failed",
+              stage,
+              rawReceipt: receipt,
+              rawTransaction: transaction,
+              rawListing: listing,
+              rawImage: listingImages,
+              normalizedItem,
+              persistence: {
+                outcome: "failed",
+                importDecision: "failed",
+                item,
+              },
+              fetchErrors: Object.keys(fetchErrors).length ? fetchErrors : null,
+              error: errorDetails(error),
+            });
             if (aborted(error, signal)) throw error;
             if (reauth(error)) { await store.markEtsyConnectionReconnectRequired({ workspaceId }); throw error; }
             failed += 1;
@@ -121,7 +209,7 @@ export function createEtsyImportService({ store, refreshAccess, createClient, no
         await onProgress(result); return result;
       } finally { await release(); }
     };
-    return { run, release, lockToken };
+    return { run, release, lockToken, runId };
   }
   return { prepare };
 }
