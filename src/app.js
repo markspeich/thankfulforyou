@@ -57,6 +57,7 @@ import {
 import {
   isBatchSnapshotEmpty,
   isRevisionOnlyProductionBatchConflict,
+  isAttemptedProductionBatchOrderAcknowledged,
 } from "./production-batch-sync.js";
 import { buildBatchSyncStatus } from "./production-batch-sync-status.js";
 import {
@@ -378,6 +379,9 @@ const confirmationDialogDescription = document.querySelector("#confirmationDialo
 const confirmationDialogCloseButton = document.querySelector("#confirmationDialogCloseButton");
 const confirmationDialogCancelButton = document.querySelector("#confirmationDialogCancelButton");
 const confirmationDialogConfirmButton = document.querySelector("#confirmationDialogConfirmButton");
+const productionBatchSaveFailureDialog = document.querySelector("#productionBatchSaveFailureDialog");
+const keepProductionBatchSaveFailureOpenButton = document.querySelector("#keepProductionBatchSaveFailureOpenButton");
+const reloadProductionBatchAfterSaveFailureButton = document.querySelector("#reloadProductionBatchAfterSaveFailureButton");
 const savePresetAsDialog = document.querySelector("#savePresetAsDialog");
 const savePresetAsForm = document.querySelector("#savePresetAsForm");
 const savePresetAsNameInput = document.querySelector("#savePresetAsNameInput");
@@ -603,6 +607,7 @@ let productionBatchContext = null;
 let productionBatchAutosaveTimeoutId = null;
 let productionBatchAutosaveInFlight = false;
 let productionBatchAutosavePending = false;
+let productionBatchSaveFailureBlocked = false;
 let suppressProductionBatchAutosave = false;
 let lastProductionBatchSaveKey = null;
 let productionBatchSyncState = "disabled";
@@ -4155,6 +4160,10 @@ function setProductionBatchSyncState(mode, detail = "") {
 }
 
 function enableProductionBatchSync(batch = productionBatchContext) {
+  if (productionBatchSaveFailureBlocked) {
+    return false;
+  }
+
   if (batch) {
     setProductionBatchContext(batch);
   }
@@ -4173,11 +4182,15 @@ function disableProductionBatchSync(detail = "Production batch sync is unavailab
 }
 
 function isProductionBatchSyncEnabled() {
-  return productionBatchSyncState === "enabled" && hasProductionBatchSyncContext();
+  return !productionBatchSaveFailureBlocked
+    && productionBatchSyncState === "enabled"
+    && hasProductionBatchSyncContext();
 }
 
 function canAttemptProductionBatchSave() {
-  return hasProductionBatchSyncContext() && productionBatchSyncState === "enabled";
+  return !productionBatchSaveFailureBlocked
+    && hasProductionBatchSyncContext()
+    && productionBatchSyncState === "enabled";
 }
 
 function hasProductionBatchSyncContext() {
@@ -5134,6 +5147,78 @@ function reloadProductionBatchFromToast() {
   window.location.reload();
 }
 
+function closeProductionBatchSaveFailureDialog() {
+  if (productionBatchSaveFailureDialog instanceof HTMLDialogElement && productionBatchSaveFailureDialog.open) {
+    productionBatchSaveFailureDialog.close();
+  }
+}
+
+function showProductionBatchSaveFailureDialog() {
+  if (!(productionBatchSaveFailureDialog instanceof HTMLDialogElement) || productionBatchSaveFailureDialog.open) {
+    return;
+  }
+
+  productionBatchSaveFailureDialog.showModal();
+  reloadProductionBatchAfterSaveFailureButton?.focus();
+}
+
+function isTransientProductionBatchSaveError(error) {
+  if (error instanceof ProductionBatchConflictError || isProductionBatchAuthenticationError(error)) {
+    return false;
+  }
+
+  const status = Number(error?.status ?? error?.statusCode);
+  if (Number.isFinite(status)) {
+    return status >= 500 && status <= 599;
+  }
+
+  const name = typeof error?.name === "string" ? error.name : "";
+  const message = typeof error?.message === "string" ? error.message : "";
+  return error instanceof TypeError
+    || name === "AbortError"
+    || name === "TimeoutError"
+    || /network|fetch|timeout|connection/i.test(message);
+}
+
+function buildProductionBatchSaveErrorDetails(error, {
+  attempt,
+  keepalive = false,
+  phase,
+  publishOrderIds,
+  retryable,
+} = {}) {
+  return {
+    event: "production_batch_save_failure",
+    phase,
+    attempt,
+    retryable,
+    keepalive,
+    online: navigator.onLine,
+    status: Number.isFinite(Number(error?.status ?? error?.statusCode))
+      ? Number(error?.status ?? error?.statusCode)
+      : null,
+    errorName: typeof error?.name === "string" ? error.name : "Error",
+    message: typeof error?.message === "string" ? error.message : "Unable to save the production batch.",
+    batchId: productionBatchContext?.id || null,
+    orderItemIds: Array.isArray(publishOrderIds)
+      ? publishOrderIds.filter((value) => typeof value === "string" && value)
+      : resolveProductionBatchSaveOrderIds(publishOrderIds) || [],
+  };
+}
+
+function logProductionBatchSaveFailure(label, error, details) {
+  const serializedDetails = JSON.stringify(buildProductionBatchSaveErrorDetails(error, details));
+  if (label === "Production batch save attempt failed") {
+    console.warn(label, serializedDetails);
+    return;
+  }
+  console.error(label, serializedDetails);
+}
+
+function waitForProductionBatchSaveRetry() {
+  return new Promise((resolve) => window.setTimeout(resolve, 250));
+}
+
 function scheduleRenderOrderList() {
   if (orderListRenderFrameId != null) {
     return;
@@ -5160,6 +5245,7 @@ function scheduleDeferredPreviewRender() {
 
 async function retryRevisionOnlyProductionBatchConflict({
   accessToken,
+  attemptedSnapshot = null,
   conflictDetails = null,
   conflictingOrder,
   options,
@@ -5187,6 +5273,18 @@ async function retryRevisionOnlyProductionBatchConflict({
     return false;
   }
 
+  const attemptedOrder = Array.isArray(attemptedSnapshot?.orderItems)
+    ? attemptedSnapshot.orderItems.find((order) => order?.id === conflictingOrder.id)
+    : null;
+  if (isAttemptedProductionBatchOrderAcknowledged({
+    attemptedOrder,
+    remoteOrder: latestPublishedOrder,
+  })) {
+    return {
+      acknowledgedSnapshot: latestSnapshot,
+    };
+  }
+
   if (!isRevisionOnlyProductionBatchConflict({
     localPublishedOrder: conflictingOrder.publishedSnapshot,
     remoteOrder: latestPublishedOrder,
@@ -5201,11 +5299,56 @@ async function retryRevisionOnlyProductionBatchConflict({
   }
   mergeProductionBatchAuditFromSnapshot(latestSnapshot);
 
-  return saveBatchSnapshotToRemote({
+  const saved = await saveBatchSnapshotToRemote({
     ...options,
     recoverRevisionOnlyConflict: false,
   });
+  return { handled: true, saved };
 }
+
+function applySuccessfulProductionBatchSave({
+  changedOrderItemIds,
+  fallbackSnapshot,
+  publishOrderIds,
+  savedSnapshot,
+  successAlertAutoHideMs,
+  successMessage,
+}) {
+  const authoritativeSnapshot = savedSnapshot || fallbackSnapshot;
+  const displayOrderIds = Array.isArray(publishOrderIds) && publishOrderIds.length
+    ? publishOrderIds
+    : changedOrderItemIds;
+  clearSaveErrorsForOrderIds(displayOrderIds);
+  if (authoritativeSnapshot?.batch) {
+    enableProductionBatchSync(authoritativeSnapshot.batch);
+  }
+  mergeProductionBatchPublishedStateFromSnapshot(authoritativeSnapshot);
+  mergeProductionBatchAuditFromSnapshot(savedSnapshot);
+  invalidateDatabaseOrders();
+  if (activeWorkspace === "databaseOrders") {
+    void loadDatabaseOrders({ force: true });
+  }
+  lastProductionBatchSaveKey = buildProductionBatchSaveKey(authoritativeSnapshot);
+  suppressBatchSyncLocalNotice = true;
+  suppressProductionBatchAutosave = true;
+  persistBatchState({ skipRemoteSave: true });
+  suppressProductionBatchAutosave = false;
+  suppressBatchSyncLocalNotice = false;
+
+  if (isBatchSnapshotEmpty(authoritativeSnapshot)) {
+    updateBatchSyncStatus("empty");
+    return true;
+  }
+
+  if (typeof successMessage === "string" && successMessage.trim()) {
+    updateWorkflowAlert(successMessage.trim(), "success", {
+      autoHideMs: successAlertAutoHideMs,
+    });
+  }
+  updateBatchSyncStatus("saved-remote", { count: authoritativeSnapshot.orderItems.length });
+  return true;
+}
+
 async function saveBatchSnapshotToRemote(options = {}) {
   const {
     persistActiveDraft = true,
@@ -5218,6 +5361,7 @@ async function saveBatchSnapshotToRemote(options = {}) {
   } = options;
   let snapshot = null;
   let accessToken = null;
+  let transientSaveRetryAttempted = false;
 
   if (persistActiveDraft) {
     saveActiveOrderDraft();
@@ -5247,43 +5391,46 @@ async function saveBatchSnapshotToRemote(options = {}) {
     }
     productionBatchAccessToken = accessToken;
 
-    const savedSnapshot = await runProductionBatchRequestWithSessionRefresh(
-      (requestToken) => saveProductionBatchSnapshot(snapshot, { keepalive, accessToken: requestToken, changedOrderItemIds }),
-      accessToken,
-    );
+    let savedSnapshot = null;
+    try {
+      savedSnapshot = await runProductionBatchRequestWithSessionRefresh(
+        (requestToken) => saveProductionBatchSnapshot(snapshot, { keepalive, accessToken: requestToken, changedOrderItemIds }),
+        accessToken,
+      );
+    } catch (error) {
+      if (!keepalive && isTransientProductionBatchSaveError(error)) {
+        transientSaveRetryAttempted = true;
+        logProductionBatchSaveFailure("Production batch save attempt failed", error, {
+          attempt: 1,
+          keepalive,
+          phase: "initial",
+          publishOrderIds,
+          retryable: true,
+        });
+        await waitForProductionBatchSaveRetry();
+        if (productionBatchSaveFailureBlocked) {
+          return false;
+        }
+        savedSnapshot = await runProductionBatchRequestWithSessionRefresh(
+          (requestToken) => saveProductionBatchSnapshot(snapshot, { keepalive, accessToken: requestToken, changedOrderItemIds }),
+          productionBatchAccessToken || accessToken,
+        );
+      } else {
+        throw error;
+      }
+    }
     if (productionBatchConflictState) {
       renderProductionBatchToast();
       return false;
     }
-    clearSaveErrorsForOrderIds(changedOrderItemIds);
-    if (savedSnapshot?.batch) {
-      enableProductionBatchSync(savedSnapshot.batch);
-    }
-    mergeProductionBatchPublishedStateFromSnapshot(savedSnapshot || snapshot);
-    mergeProductionBatchAuditFromSnapshot(savedSnapshot);
-    invalidateDatabaseOrders();
-    if (activeWorkspace === "databaseOrders") {
-      void loadDatabaseOrders({ force: true });
-    }
-    lastProductionBatchSaveKey = buildProductionBatchSaveKey(savedSnapshot || snapshot);
-    suppressBatchSyncLocalNotice = true;
-    suppressProductionBatchAutosave = true;
-    persistBatchState({ skipRemoteSave: true });
-    suppressProductionBatchAutosave = false;
-    suppressBatchSyncLocalNotice = false;
-
-    if (isBatchSnapshotEmpty(savedSnapshot || snapshot)) {
-      updateBatchSyncStatus("empty");
-      return true;
-    }
-
-    if (typeof successMessage === "string" && successMessage.trim()) {
-      updateWorkflowAlert(successMessage.trim(), "success", {
-        autoHideMs: successAlertAutoHideMs,
-      });
-    }
-    updateBatchSyncStatus("saved-remote", { count: (savedSnapshot || snapshot).orderItems.length });
-    return true;
+    return applySuccessfulProductionBatchSave({
+      changedOrderItemIds,
+      fallbackSnapshot: snapshot,
+      publishOrderIds,
+      savedSnapshot,
+      successAlertAutoHideMs,
+      successMessage,
+    });
   } catch (error) {
     suppressProductionBatchAutosave = false;
     suppressBatchSyncLocalNotice = false;
@@ -5301,14 +5448,25 @@ async function saveBatchSnapshotToRemote(options = {}) {
         || getActiveOrder();
       const conflictingOrderId = conflictDetailOrderId || conflictingOrder?.id || "";
       if (recoverRevisionOnlyConflict && conflictingOrder) {
-        const recovered = await retryRevisionOnlyProductionBatchConflict({
-          accessToken,
+        const recovery = await retryRevisionOnlyProductionBatchConflict({
+          accessToken: productionBatchAccessToken || accessToken,
+          attemptedSnapshot: snapshot,
           conflictDetails: error.details,
           conflictingOrder,
           options,
         });
-        if (recovered) {
-          return true;
+        if (recovery?.acknowledgedSnapshot) {
+          return applySuccessfulProductionBatchSave({
+            changedOrderItemIds: resolveProductionBatchSaveOrderIds(publishOrderIds),
+            fallbackSnapshot: snapshot,
+            publishOrderIds,
+            savedSnapshot: recovery.acknowledgedSnapshot,
+            successAlertAutoHideMs,
+            successMessage,
+          });
+        }
+        if (recovery?.handled) {
+          return recovery.saved;
         }
       }
       if (conflictingOrder) {
@@ -5334,6 +5492,18 @@ async function saveBatchSnapshotToRemote(options = {}) {
       return false;
     }
 
+    logProductionBatchSaveFailure("Production batch save failed after recovery", error, {
+      attempt: transientSaveRetryAttempted ? 2 : 1,
+      keepalive,
+      phase: "terminal",
+      publishOrderIds,
+      retryable: transientSaveRetryAttempted,
+    });
+
+    if (keepalive) {
+      return false;
+    }
+
     if (degradeOnFailure && !isConflictError) {
       disableProductionBatchSync(
         error instanceof Error && error.message
@@ -5344,7 +5514,9 @@ async function saveBatchSnapshotToRemote(options = {}) {
     }
     productionBatchConflictState = null;
     markSaveErrorForOrderIds(
-      resolveProductionBatchSaveOrderIds(publishOrderIds),
+      Array.isArray(publishOrderIds)
+        ? publishOrderIds
+        : resolveProductionBatchSaveOrderIds(publishOrderIds),
       error instanceof Error ? error.message : "Unable to save the production batch.",
     );
     renderProductionBatchToast();
@@ -5352,6 +5524,9 @@ async function saveBatchSnapshotToRemote(options = {}) {
       error instanceof Error ? error.message : "Unable to save the production batch.",
       "error",
     );
+    productionBatchSaveFailureBlocked = true;
+    showProductionBatchSaveFailureDialog();
+    render();
     return false;
   }
 }
@@ -9434,7 +9609,7 @@ function updateCaptureButtonState(activeOrder) {
   setEditorActionLabel(cancelDesignButton, "Cancel");
   setEditorActionLabel(completeNextButton, "Save & Next");
 
-  if (!activeOrder || ordersDatabaseMutationInFlight) {
+  if (!activeOrder || ordersDatabaseMutationInFlight || productionBatchSaveFailureBlocked) {
     captureButton.disabled = true;
     captureButton.removeAttribute("aria-busy");
     cancelDesignButton.disabled = true;
@@ -14057,6 +14232,11 @@ confirmationDialogElement?.addEventListener("keydown", (event) => {
 
   event.preventDefault();
   finishConfirmationDialog(false);
+});
+keepProductionBatchSaveFailureOpenButton?.addEventListener("click", closeProductionBatchSaveFailureDialog);
+reloadProductionBatchAfterSaveFailureButton?.addEventListener("click", reloadProductionBatchFromToast);
+productionBatchSaveFailureDialog?.addEventListener("cancel", (event) => {
+  event.preventDefault();
 });
 savePresetAsForm?.addEventListener("submit", (event) => {
   event.preventDefault();

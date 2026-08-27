@@ -1267,6 +1267,33 @@
       </div>
     </div>
 
+    <dialog
+      id="productionBatchSaveFailureDialog"
+      class="batch-summary-dialog"
+      aria-labelledby="productionBatchSaveFailureTitle"
+      aria-describedby="productionBatchSaveFailureDescription"
+    >
+      <div class="confirmation-dialog-card" role="document">
+        <header class="confirmation-dialog-header">
+          <div>
+            <p class="confirmation-dialog-eyebrow">Save Error</p>
+            <h2 id="productionBatchSaveFailureTitle">Design Could Not Be Saved</h2>
+          </div>
+        </header>
+        <p id="productionBatchSaveFailureDescription" class="confirmation-dialog-description">
+          This design could not be saved, and the app may no longer have the latest production-batch state. Your current changes have not been confirmed by the server. Reload the app before continuing.
+        </p>
+        <div class="confirmation-dialog-actions">
+          <button id="keepProductionBatchSaveFailureOpenButton" class="confirmation-dialog-button confirmation-dialog-cancel" type="button">
+            Keep App Open
+          </button>
+          <button id="reloadProductionBatchAfterSaveFailureButton" class="confirmation-dialog-button confirmation-dialog-confirm" type="button">
+            Reload App
+          </button>
+        </div>
+      </div>
+    </dialog>
+
     <dialog id="savePresetAsDialog" class="batch-summary-dialog save-preset-as-dialog" aria-labelledby="savePresetAsTitle">
       <div class="confirmation-dialog-card save-preset-as-card">
         <header class="confirmation-dialog-header">

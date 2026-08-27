@@ -2817,7 +2817,135 @@ test("restores modified exported designs as complete rather than exported after 
   await page.unrouteAll({ behavior: "ignoreErrors" });
 });
 
-test("shows a row save error when completed analysis cannot be persisted", async ({ page }) => {
+test("silently retries a transient completed-design save failure", async ({ page }) => {
+  let putAttempts = 0;
+  const consoleMessages = [];
+  page.on("console", (message) => {
+    consoleMessages.push(message.text());
+  });
+  await page.route("**/api/layout-analyze", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify(buildMockAnalysisResponse()),
+    });
+  });
+  await page.route("**/api/production-batch**", async (route) => {
+    const snapshot = route.request().postDataJSON()?.snapshot;
+    if (route.request().method() !== "PUT" || snapshot?.orderItems?.[0]?.status !== "captured") {
+      await route.fallback();
+      return;
+    }
+
+    putAttempts += 1;
+    if (putAttempts === 1) {
+      await route.fulfill({
+        status: 503,
+        contentType: "application/json; charset=utf-8",
+        body: JSON.stringify({ error: "temporary persistence failure" }),
+      });
+      return;
+    }
+
+    await route.fallback();
+  });
+
+  await page.locator("#textInput").fill("Savannah\nRN");
+  await completeButton(page).click();
+
+  const row = page.locator("#orderList .order-row").filter({ hasText: "Design 1" });
+  await expect.poll(() => putAttempts >= 2, { timeout: 20000 }).toBe(true);
+  await expect(row.locator(".order-analysis-indicator.ok")).toBeVisible();
+  await expect(row.locator(".order-analysis-indicator.error")).toHaveCount(0);
+  await expect(page.locator("#productionBatchSaveFailureDialog")).not.toBeVisible();
+  await expect.poll(() => consoleMessages.some((message) => (
+    message.includes("Production batch save attempt failed")
+    && message.includes("temporary persistence failure")
+  ))).toBe(true);
+  await expectSavedProductionBatchSnapshot(page, (snapshot) => snapshot?.orderItems?.[0]?.text === "Savannah\nRN");
+
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+});
+
+test("treats a committed save with a lost response as successfully saved", async ({ page }) => {
+  let capturedPutAttempts = 0;
+  let committedSnapshot = null;
+  await page.route("**/api/layout-analyze", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify(buildMockAnalysisResponse()),
+    });
+  });
+  await page.route("**/api/production-batch**", async (route) => {
+    if (route.request().method() === "GET" && committedSnapshot) {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json; charset=utf-8",
+        body: JSON.stringify(committedSnapshot),
+      });
+      return;
+    }
+
+    const requestSnapshot = route.request().postDataJSON()?.snapshot;
+    if (route.request().method() !== "PUT" || requestSnapshot?.orderItems?.[0]?.status !== "captured") {
+      await route.fallback();
+      return;
+    }
+
+    capturedPutAttempts += 1;
+    if (capturedPutAttempts === 1) {
+      committedSnapshot = structuredClone(requestSnapshot);
+      committedSnapshot.orderItems[0].revision = 2;
+      committedSnapshot.orderItems[0].designRevision = 2;
+      productionBatchSnapshots.set(page, committedSnapshot);
+      await route.abort("connectionreset");
+      return;
+    }
+
+    if (capturedPutAttempts === 2) {
+      await route.fulfill({
+        status: 409,
+        contentType: "application/json; charset=utf-8",
+        body: JSON.stringify({
+          error: "Revision conflict",
+          details: {
+            orderItemId: committedSnapshot.orderItems[0].id,
+            revision: 2,
+            designRevision: 2,
+          },
+        }),
+      });
+      return;
+    }
+
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify(committedSnapshot),
+    });
+  });
+
+  await page.locator("#textInput").fill("Savannah\nRN");
+  await completeButton(page).click();
+
+  const row = page.locator("#orderList .order-row").filter({ hasText: "Design 1" });
+  await expect.poll(() => capturedPutAttempts >= 2, { timeout: 20000 }).toBe(true);
+  await expect(row.locator(".order-analysis-indicator.ok")).toBeVisible();
+  await expect(row.locator(".order-analysis-indicator.error")).toHaveCount(0);
+  await expect(page.locator("#productionBatchSaveFailureDialog")).not.toBeVisible();
+  await expect(page.locator("#importStatus")).not.toContainText("newer version");
+  await expect(completeButton(page)).toBeDisabled();
+
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+});
+
+test("shows reload guidance and blocks later saves when completed analysis cannot be persisted", async ({ page }) => {
+  let putAttempts = 0;
+  const consoleMessages = [];
+  page.on("console", (message) => {
+    consoleMessages.push(message.text());
+  });
   await page.route("**/api/layout-analyze", async (route) => {
     await route.fulfill({
       status: 200,
@@ -2860,11 +2988,13 @@ test("shows a row save error when completed analysis cannot be persisted", async
       return;
     }
 
-    if (route.request().method() !== "PUT") {
+    const snapshot = route.request().postDataJSON()?.snapshot;
+    if (route.request().method() !== "PUT" || snapshot?.orderItems?.[0]?.status !== "captured") {
       await route.fallback();
       return;
     }
 
+    putAttempts += 1;
     await route.fulfill({
       status: 500,
       contentType: "application/json; charset=utf-8",
@@ -2879,10 +3009,41 @@ test("shows a row save error when completed analysis cannot be persisted", async
   await expect(row.locator(".order-analysis-indicator.error")).toBeVisible({ timeout: 20000 });
   await expect(row.locator(".order-analysis-indicator.ok")).toHaveCount(0);
   await expect(row.locator(".order-analysis-indicator.error")).toHaveAttribute("title", /Save failed:/);
-  await expect(completeButton(page)).toBeEnabled();
+  await expect(completeButton(page)).toBeDisabled();
   await expect(exportDesignButton(page)).toBeDisabled();
   await expect(page.locator("#importStatus")).toContainText("forced persistence failure");
   await expect(page.locator("#importStatus")).toHaveAttribute("data-state", "error");
+  await expect.poll(() => putAttempts >= 2).toBe(true);
+
+  const dialog = page.locator("#productionBatchSaveFailureDialog");
+  await expect(dialog).toBeVisible();
+  await expect(dialog.locator("#productionBatchSaveFailureTitle")).toHaveText("Design Could Not Be Saved");
+  await expect(dialog.locator("#productionBatchSaveFailureDescription")).toContainText("Reload the app before continuing");
+  await expect(dialog.locator("#reloadProductionBatchAfterSaveFailureButton")).toHaveText("Reload App");
+  await expect(dialog.locator("#keepProductionBatchSaveFailureOpenButton")).toHaveText("Keep App Open");
+  await dialog.locator("#keepProductionBatchSaveFailureOpenButton").click();
+  await expect(dialog).not.toBeVisible();
+  const attemptsAfterBlocking = putAttempts;
+  await page.waitForTimeout(500);
+  expect(putAttempts).toBe(attemptsAfterBlocking);
+  await expect(completeButton(page)).toBeDisabled();
+  await expect(completeAndNextButton(page)).toBeDisabled();
+  await expect(page.locator("#textInput")).toHaveValue("Savannah\nRN");
+  await expect.poll(() => consoleMessages.some((message) => (
+    message.includes("Production batch save failed after recovery")
+    && message.includes("forced persistence failure")
+  ))).toBe(true);
+
+  await page.evaluate(() => {
+    document.querySelector("#productionBatchSaveFailureDialog")?.showModal();
+  });
+  await Promise.all([
+    page.waitForEvent("load"),
+    dialog.locator("#reloadProductionBatchAfterSaveFailureButton").click(),
+  ]);
+  await waitForProductionBatchStartup(page);
+  await expect.poll(() => page.evaluate(() => performance.getEntriesByType("navigation")[0]?.type)).toBe("reload");
+  await expect(dialog).not.toBeVisible();
 
   await page.unrouteAll({ behavior: "ignoreErrors" });
 });
@@ -3683,6 +3844,12 @@ test("shows imported Etsy color and quantity below design text and highlights wh
   await expect(page.locator("#importedColorValue")).not.toHaveClass(/highlight-light-color/);
   await expect(page.locator("#importedQuantityField")).toBeVisible();
   await expect(page.locator("#importedQuantityValue")).toHaveText("1");
+
+  await expectSavedProductionBatchSnapshot(page, (snapshot) => snapshot.orderItems.some((order) => (
+    order.source?.orderNumber === "4057629148"
+    && order.source?.colorName === "Red"
+    && order.source?.quantity === "1"
+  )));
 
   await page.reload();
 

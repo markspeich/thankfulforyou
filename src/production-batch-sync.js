@@ -69,3 +69,32 @@ export function isRevisionOnlyProductionBatchConflict({
     && comparableLocalOrder.status === comparableRemoteOrder.status
     && JSON.stringify(comparableLocalOrder.source) === JSON.stringify(comparableRemoteOrder.source);
 }
+
+function buildComparableAttemptedOrder(order) {
+  if (!order || typeof order !== "object") {
+    return null;
+  }
+
+  const {
+    revision: _revision,
+    designId: _designId,
+    designRevision: _designRevision,
+    updatedAt: _updatedAt,
+    updatedBy: _updatedBy,
+    ...persistedDesign
+  } = order;
+  return persistedDesign;
+}
+
+export function isAttemptedProductionBatchOrderAcknowledged({
+  attemptedOrder,
+  remoteOrder,
+} = {}) {
+  const comparableAttemptedOrder = buildComparableAttemptedOrder(attemptedOrder);
+  const comparableRemoteOrder = buildComparableAttemptedOrder(remoteOrder);
+  return Boolean(
+    comparableAttemptedOrder
+    && comparableRemoteOrder
+    && JSON.stringify(comparableAttemptedOrder) === JSON.stringify(comparableRemoteOrder)
+  );
+}

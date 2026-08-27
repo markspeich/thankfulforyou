@@ -5,6 +5,7 @@ import {
   chooseInitialBatchSnapshot,
   isBatchSnapshotEmpty,
   isRevisionOnlyProductionBatchConflict,
+  isAttemptedProductionBatchOrderAcknowledged,
 } from "../../src/production-batch-sync.js";
 
 describe("production batch sync helpers", () => {
@@ -146,5 +147,57 @@ describe("production batch sync helpers", () => {
       localPublishedOrder,
       remoteOrder,
     })).toBe(false);
+  });
+
+  it("does not acknowledge a lost-response save when cached export geometry differs", () => {
+    const attemptedOrder = {
+      id: "order-1",
+      revision: 1,
+      designRevision: 1,
+      updatedAt: "2026-08-27T10:00:00.000Z",
+      updatedBy: { email: "operator@example.com" },
+      text: "Avery\nRN",
+      status: "captured",
+      settings: { text: "Avery\nRN", backingMm: 3.1 },
+      cachedBuild: { signature: "sig-1", layout: { facePath: "M0 0L10 0Z" } },
+      savedSettingsSignature: "sig-1",
+    };
+    const remoteOrder = {
+      ...attemptedOrder,
+      revision: 2,
+      designRevision: 2,
+      updatedAt: "2026-08-27T10:01:00.000Z",
+      cachedBuild: { signature: "sig-1", layout: { facePath: "M0 0L20 0Z" } },
+    };
+
+    expect(isAttemptedProductionBatchOrderAcknowledged({ attemptedOrder, remoteOrder })).toBe(false);
+  });
+
+  it("acknowledges an exact attempted save when only revision and audit fields differ", () => {
+    const attemptedOrder = {
+      id: "order-1",
+      revision: 1,
+      designId: "design-1",
+      designRevision: 1,
+      updatedAt: "2026-08-27T10:00:00.000Z",
+      updatedBy: { email: "first@example.com" },
+      text: "Avery\nRN",
+      status: "captured",
+      settings: { text: "Avery\nRN", backingMm: 3.1 },
+      cachedBuild: { signature: "sig-1", layout: { facePath: "M0 0L10 0Z" } },
+      savedSettingsSignature: "sig-1",
+      completedSettingsSignature: "sig-1",
+      analysisBadge: { state: "ok", shortLabel: "1", fullLabel: "Connected" },
+      pendingAnalysisSignature: null,
+    };
+    const remoteOrder = {
+      ...attemptedOrder,
+      revision: 2,
+      designRevision: 2,
+      updatedAt: "2026-08-27T10:01:00.000Z",
+      updatedBy: { email: "second@example.com" },
+    };
+
+    expect(isAttemptedProductionBatchOrderAcknowledged({ attemptedOrder, remoteOrder })).toBe(true);
   });
 });
