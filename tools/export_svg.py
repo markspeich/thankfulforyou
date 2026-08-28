@@ -1827,6 +1827,7 @@ def fixed_svg_vector_offset_backing_path(fixed_svg):
     offset.AddPaths(unioned, pyclipper.JT_ROUND, pyclipper.ET_CLOSEDPOLYGON)
     expanded = offset.Execute(backing * FIXED_SVG_VECTOR_OFFSET_SCALE)
     expanded = pyclipper.CleanPolygons(expanded, 0.015 * FIXED_SVG_VECTOR_OFFSET_SCALE)
+    expanded = [path for path in expanded if pyclipper.Area(path) > 0]
     if not expanded:
         return ""
 
