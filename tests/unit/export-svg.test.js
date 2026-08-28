@@ -663,6 +663,38 @@ describe("export_svg face tracing", () => {
     ]);
     expect(analysis.fixedSvgBackingPaths[0].path).toContain("Q");
   });
+
+  test("fills enclosed holes in fixed SVG backing borders", () => {
+    const analysis = analyzeLayout({
+      text: "",
+      widthMm: 20,
+      heightMm: 20,
+      backingMm: 1,
+      letters: [],
+      fixedSvgs: [
+        {
+          id: "square-frame",
+          name: "Square Frame",
+          svgText: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
+            <rect x="2" y="2" width="16" height="2"/>
+            <rect x="2" y="16" width="16" height="2"/>
+            <rect x="2" y="4" width="2" height="12"/>
+            <rect x="16" y="4" width="2" height="12"/>
+          </svg>`,
+          xMm: 0,
+          yMm: 0,
+          widthMm: 20,
+          heightMm: 20,
+          backingBorder: true,
+          backingMm: 1,
+        },
+      ],
+    });
+
+    const backingPath = analysis.fixedSvgBackingPaths[0]?.path || "";
+    expect(countPathCommands(backingPath, "M")).toBe(1);
+  });
+
   test("traces fixed SVG backing across smooth curves without clipping at layout edges", () => {
     const analysis = analyzeLayout({
       text: "",
