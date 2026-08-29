@@ -3,7 +3,7 @@ import { buildLegacySettingsSignature } from "../../src/order-signatures.js";
 import { installSeededFontRoute } from "./font-test-routes.js";
 
 const FIRST_SVG = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 20 20\"><path d=\"M10 18 2 9a5 5 0 0 1 8-6 5 5 0 0 1 8 6Z\" fill=\"#0f766e\"/></svg>";
-const SECOND_SVG = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><circle cx=\"12\" cy=\"12\" r=\"10\" fill=\"#be123c\"/></svg>";
+const SECOND_SVG = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\"><path d=\"M2 12a10 10 0 1 0 20 0 10 10 0 1 0-20 0Z\" fill=\"none\" stroke=\"#be123c\"/></svg>";
 const DELETED_SVG = "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 18 18\"><path d=\"M9 1 17 17H1Z\" fill=\"#7c3aed\"/></svg>";
 const STORAGE_ORIGIN = "https://example.supabase.co";
 const STORAGE_ROOT = `${STORAGE_ORIGIN}/storage/v1/object/public/workspace-fixed-designs`;
@@ -597,19 +597,23 @@ test("inserts a fixed SVG design from the preset tools menu with SVG-only contro
   await expect(fixedCard.getByText("Lock Text Height")).toHaveCount(0);
 
   const backingBorderInput = fixedCard.getByLabel("Backing Border");
+  const fixedPreview = page.locator('#preview [data-fixed-svg-id="fixed-design-2"]');
   await expect(backingBorderInput).not.toBeChecked();
+  await expect(fixedPreview).toHaveAttribute("href", /paw-print\.svg/);
   await backingBorderInput.check();
   const fixedBackingPreview = page.locator('#preview image[data-fixed-svg-backing-id="fixed-design-2"]');
   await expect(fixedBackingPreview).toBeVisible();
   await expect.poll(async () => fixedBackingPreview.getAttribute("href")).toMatch(/^data:image\/png;base64,/);
   await expect(fixedBackingPreview).not.toHaveAttribute("filter", /fixed-svg-backing-filter/);
+  await expect.poll(async () => fixedPreview.getAttribute("href")).toMatch(/^data:image\/svg\+xml/);
+  await expect.poll(async () => fixedPreview.getAttribute("href")).toContain("fill-rule%3D%22evenodd%22");
   await expect(page.locator('#preview path[data-fixed-svg-backing-id="fixed-design-2"]')).toHaveCount(0);
   await backingBorderInput.uncheck();
   await expect(page.locator('#preview [data-fixed-svg-backing-id="fixed-design-2"]')).toHaveCount(0);
+  await expect(fixedPreview).toHaveAttribute("href", /paw-print\.svg/);
 
   await expect(page.locator('.line-control-card[data-line-kind="text"][data-line-index="0"]').getByText("Font").first()).toBeVisible();
 
-  const fixedPreview = page.locator('#preview [data-fixed-svg-id="fixed-design-2"]');
   await expect(fixedPreview).toBeVisible();
   await expect(fixedPreview).toHaveAttribute("href", /paw-print\.svg/);
   await expect.poll(async () => page.locator("#preview").evaluate((preview) => {
@@ -718,6 +722,8 @@ test("renders fixed SVG backing as analyzed vector geometry after Save", async (
   const vectorBacking = page.locator('#preview path[data-fixed-svg-backing-id="fixed-design-2"]');
   await expect(vectorBacking).toBeVisible();
   await expect(vectorBacking).toHaveAttribute("d", /Q14 0 20 4/);
+  await expect(vectorBacking).toHaveAttribute("fill", "rgb(255, 0, 0)");
+  await expect.poll(async () => page.locator('#preview [data-fixed-svg-id="fixed-design-2"]').getAttribute("href")).toMatch(/^data:image\/svg\+xml/);
   await expect(page.locator('#preview image[data-fixed-svg-backing-id="fixed-design-2"]')).toHaveCount(0);
 });
 test("resolves deleted fixed SVG references for saved designs without offering them for insert", async ({ page }) => {
