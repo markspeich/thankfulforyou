@@ -539,6 +539,7 @@ const frozenTextHeightOutputLineIndexes = new Set();
 let suppressBatchSyncLocalNotice = false;
 let copiedLayoutControlsSnapshot = null;
 const fixedSvgBackingPreviewCache = new Map();
+const fixedSvgWhitePreviewCache = new Map();
 const TRANSPARENT_PREVIEW_PIXEL = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
 const FIXED_SVG_BACKING_TRACE_PADDING_MM = 4;
 const initialAppRoute = readAppRoute();
@@ -13041,6 +13042,108 @@ function createFixedSvgBackingPreviewElements(fixedSvgs = [], frame, analysis = 
     })];
   });
 }
+
+function createWhiteFilledFixedSvgHref(svgText) {
+  if (typeof svgText !== "string" || !svgText.trim()) {
+    return "";
+  }
+
+  const parsed = new DOMParser().parseFromString(svgText, "image/svg+xml");
+  const sourceRoot = parsed.documentElement;
+  if (sourceRoot.localName !== "svg" || parsed.querySelector("parsererror")) {
+    return "";
+  }
+
+  const namespace = "http://www.w3.org/2000/svg";
+  const output = document.createElementNS(namespace, "svg");
+  output.setAttribute("xmlns", namespace);
+  for (const attribute of ["viewBox", "width", "height", "preserveAspectRatio"]) {
+    const value = sourceRoot.getAttribute(attribute);
+    if (value) {
+      output.setAttribute(attribute, value);
+    }
+  }
+
+  const pathGroups = new Map();
+  for (const path of sourceRoot.querySelectorAll("path[d]")) {
+    const transform = path.getAttribute("transform") || "";
+    const paths = pathGroups.get(transform) || [];
+    paths.push(path.getAttribute("d"));
+    pathGroups.set(transform, paths);
+  }
+
+  for (const [transform, paths] of pathGroups) {
+    const compoundPath = document.createElementNS(namespace, "path");
+    compoundPath.setAttribute("d", paths.join(" "));
+    compoundPath.setAttribute("fill", "#f8fbfc");
+    compoundPath.setAttribute("fill-rule", "evenodd");
+    compoundPath.setAttribute("stroke", "#f8fbfc");
+    compoundPath.setAttribute("stroke-width", "0.05mm");
+    if (transform) {
+      compoundPath.setAttribute("transform", transform);
+    }
+    output.append(compoundPath);
+  }
+
+  const shapeSelector = "circle,ellipse,line,polygon,polyline,rect";
+  for (const sourceShape of sourceRoot.querySelectorAll(shapeSelector)) {
+    const shape = sourceShape.cloneNode(false);
+    shape.removeAttribute("style");
+    shape.setAttribute("fill", "#f8fbfc");
+    shape.setAttribute("stroke", "#f8fbfc");
+    output.append(shape);
+  }
+
+  if (!output.children.length) {
+    return "";
+  }
+
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(new XMLSerializer().serializeToString(output))}`;
+}
+
+function resolveFixedSvgWhitePreviewHref(fixedSvg, imageElement) {
+  const cacheKey = fixedSvg.publicUrl || fixedSvg.id || fixedSvg.name;
+  const applyHref = (href) => {
+    if (href) {
+      imageElement.setAttribute("href", href);
+    }
+  };
+
+  if (fixedSvg.svgText) {
+    const href = createWhiteFilledFixedSvgHref(fixedSvg.svgText);
+    fixedSvgWhitePreviewCache.set(cacheKey, href);
+    applyHref(href);
+    return;
+  }
+
+  const cached = fixedSvgWhitePreviewCache.get(cacheKey);
+  if (typeof cached === "string") {
+    applyHref(cached);
+    return;
+  }
+  if (cached instanceof Promise) {
+    cached.then(applyHref);
+    return;
+  }
+  if (!fixedSvg.publicUrl) {
+    return;
+  }
+
+  const pending = fetch(fixedSvg.publicUrl)
+    .then((response) => response.ok ? response.text() : "")
+    .then(createWhiteFilledFixedSvgHref)
+    .then((href) => {
+      fixedSvgWhitePreviewCache.set(cacheKey, href);
+      applyHref(href);
+      return href;
+    })
+    .catch(() => {
+      fixedSvgWhitePreviewCache.delete(cacheKey);
+      return "";
+    });
+  fixedSvgWhitePreviewCache.set(cacheKey, pending);
+}
+
 function createFixedSvgPreviewElements(fixedSvgs = [], frame) {
   return fixedSvgs.map((fixedSvg) => {
     const commonAttributes = {
@@ -13051,7 +13154,7 @@ function createFixedSvgPreviewElements(fixedSvgs = [], frame) {
     const y = frame.designY + fixedSvg.yMm;
 
     if (fixedSvg.publicUrl) {
-      return makeSvgElement("image", {
+      const image = makeSvgElement("image", {
         ...commonAttributes,
         href: fixedSvg.publicUrl,
         x,
@@ -13059,6 +13162,10 @@ function createFixedSvgPreviewElements(fixedSvgs = [], frame) {
         width: fixedSvg.widthMm,
         height: fixedSvg.heightMm,
       });
+      if (fixedSvg.backingBorder) {
+        resolveFixedSvgWhitePreviewHref(fixedSvg, image);
+      }
+      return image;
     }
 
     const group = makeSvgElement("g", {
