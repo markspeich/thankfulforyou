@@ -37,6 +37,20 @@ describe("Etsy transaction normalizer", () => {
     expect(result.source.shipByDate).toBe("");
   });
 
+  it("imports Heart Color as the Etsy item color", () => {
+    const result = normalizeEtsyTransaction({
+      receipt: { receipt_id: 4159559713 },
+      transaction: {
+        transaction_id: 987,
+        variations: [
+          { property_id: 513, formatted_name: "Heart Color", formatted_value: "Pink" },
+        ],
+      },
+    });
+
+    expect(result.source.colorName).toBe("Pink");
+  });
+
   it("supports renamed questions/dropdowns, excludes ordinary variations, and cleans imported text", () => {
     const result = normalizeEtsyTransaction({ receipt: {}, transaction: { transaction_id: "1", variations: [
       { property_id: "54", formatted_name: "Who is this for?", formatted_value: "JosÃ© &amp; Ana" },
