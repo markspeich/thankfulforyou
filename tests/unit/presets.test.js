@@ -10,6 +10,7 @@ import {
   getPresetFixedDesignText,
   getPresetGlobalDefaults,
   getPresetOptions,
+  getPresetTargetedLineFontId,
   getPresetSnapshot,
   getPresetIdForListingId,
   loadPresetRegistry,
@@ -119,6 +120,31 @@ describe("presets", () => {
       "skywalk",
       "skywalk",
     ]);
+  });
+
+  it("distinguishes targeted line fonts from baseline line defaults", () => {
+    setPresetRegistryForTests(
+      { defaultPresetId: "preset-font-targets" },
+      [{
+        schemaVersion: 1,
+        id: "preset-font-targets",
+        name: "Font targets",
+        lineDefaults: { fontId: "candlepin" },
+        lineRules: [
+          { match: { kind: "first" }, settings: { fontId: "skywalk" } },
+          { match: { kind: "index", lineIndex: 2 }, settings: { fontId: "somekind" } },
+        ],
+        listingAssignments: [{
+          listingId: "listing-1",
+          lineOverrides: [{ lineIndex: 1, settings: { fontId: "somekind" } }],
+        }],
+      }],
+    );
+
+    expect(getPresetTargetedLineFontId("preset-font-targets", 0)).toBe("skywalk");
+    expect(getPresetTargetedLineFontId("preset-font-targets", 1)).toBeNull();
+    expect(getPresetTargetedLineFontId("preset-font-targets", 1, "listing-1")).toBe("somekind");
+    expect(getPresetTargetedLineFontId("preset-font-targets", 2)).toBe("somekind");
   });
 
   it("resets every generated line to the preset defaults before assigning rule overrides", () => {

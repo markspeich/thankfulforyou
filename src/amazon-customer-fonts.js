@@ -83,6 +83,31 @@ export function overlayCustomerFontsOnLines(lines, selections, fontOptions, font
   });
 }
 
+export function resolveNewTextLineFontSettings({
+  lineSettings,
+  textLineIndex,
+  firstLineFontId = null,
+  hasTargetedPresetFont = false,
+  selections,
+  fontOptions,
+  fontAliases = [],
+}) {
+  const current = lineSettings && typeof lineSettings === "object" ? { ...lineSettings } : {};
+  const exactSelection = normalizeCustomerFontSelections(selections)
+    .find((selection) => selection.lineIndex === textLineIndex);
+
+  if (exactSelection) {
+    const fontId = resolveCustomerFontId(exactSelection.name, fontOptions, fontAliases);
+    return fontId ? { ...current, fontId } : current;
+  }
+
+  if (hasTargetedPresetFont || textLineIndex < 1 || !clean(firstLineFontId)) {
+    return current;
+  }
+
+  return { ...current, fontId: clean(firstLineFontId) };
+}
+
 export function summarizeCustomerFontResolution(lines, selections, fontOptions, fontAliases = []) {
   const normalized = normalizeCustomerFontSelections(selections);
   const materializedLineCount = Array.isArray(lines) ? lines.length : 0;

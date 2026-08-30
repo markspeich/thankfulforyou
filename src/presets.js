@@ -620,6 +620,31 @@ export function getPresetLineOverrides(presetId, lineIndex, listingId = null) {
   };
 }
 
+export function getPresetTargetedLineFontId(presetId, lineIndex, listingId = null) {
+  const preset = getPresetDefinition(presetId);
+  if (!preset) {
+    return null;
+  }
+
+  let fontId = null;
+  for (const rule of preset.lineRules) {
+    if (matchesLineRule(rule.match, lineIndex) && typeof rule.settings?.fontId === "string" && rule.settings.fontId.trim()) {
+      fontId = rule.settings.fontId.trim();
+    }
+  }
+
+  const listingAssignment = getListingAssignment(listingId);
+  if (listingAssignment?.presetId === preset.id) {
+    for (const override of listingAssignment.lineOverrides) {
+      if (override.lineIndex === lineIndex && typeof override.settings?.fontId === "string" && override.settings.fontId.trim()) {
+        fontId = override.settings.fontId.trim();
+      }
+    }
+  }
+
+  return fontId;
+}
+
 export function buildPresetLines(presetId, lineCount, createLineSettings, options = {}) {
   const { listingId = null } = options;
 

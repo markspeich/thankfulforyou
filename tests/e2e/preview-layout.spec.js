@@ -9,6 +9,7 @@ const PRODUCTION_BATCH_CONFLICT_TEST_TITLE = "keeps shared sync enabled on revis
 const PRODUCTION_BATCH_PAGEHIDE_TEST_TITLE = "pagehide keepalive saves even while a shared autosave is in flight";
 const PRODUCTION_BATCH_AMAZON_LABEL_TEST_TITLE = "labels imported Amazon orders as Amazon in the production batch editor";
 const PRODUCTION_BATCH_AMAZON_FONT_TEST_TITLE = "shows supplied Amazon fonts on the production batch screen";
+const PRODUCTION_BATCH_INHERITED_FONT_TEST_TITLE = "inherits an imported line 1 font when splitting text without a line 2 preset font";
 const PRODUCTION_BATCH_EMPTY_ALIAS_IMPORT_TEST_TITLE = "applies a loaded alias to the first clipboard import in an empty production batch";
 const FONT_ALIAS_DIALOG_TEST_TITLE = "shows marketplace font resolution and an accessible active-font mapping dialog";
 const SAMPLE_CLIPBOARD_URL = new URL("../../docs/sample-clipboard.txt", import.meta.url);
@@ -672,6 +673,7 @@ test.beforeEach(async ({ page, request }, testInfo) => {
     || testInfo.title === PRODUCTION_BATCH_PAGEHIDE_TEST_TITLE
     || testInfo.title === PRODUCTION_BATCH_AMAZON_LABEL_TEST_TITLE
     || testInfo.title === PRODUCTION_BATCH_AMAZON_FONT_TEST_TITLE
+    || testInfo.title === PRODUCTION_BATCH_INHERITED_FONT_TEST_TITLE
     || testInfo.title === PRODUCTION_BATCH_EMPTY_ALIAS_IMPORT_TEST_TITLE
     || testInfo.title === FONT_ALIAS_DIALOG_TEST_TITLE
   ) {
@@ -3590,6 +3592,69 @@ test("applies a loaded alias when a later imported text line is materialized", a
 
   await expect(page.locator('.line-control-card[data-line-index="1"] select[data-setting="fontId"]')).toHaveValue("skywalk");
   await expect(page.locator("#customerFontSelections")).toContainText("Line 2 Font: Lemonade");
+});
+
+test(PRODUCTION_BATCH_INHERITED_FONT_TEST_TITLE, async ({ page }) => {
+  await installSupabaseSession(page);
+  await page.route("**/api/preset-snapshot**", route => route.fulfill({
+    json: {
+      workspaceKey: "primary",
+      snapshot: {
+        version: 1,
+        defaultPresetId: "preset-line-one-font",
+        presets: [{
+          schemaVersion: 1,
+          id: "preset-line-one-font",
+          name: "Line one font",
+          globalDefaults: { backingMm: 3.1, weldExportedDesign: true },
+          lineDefaults: { fontId: "candlepin", bridgeMm: 0.5 },
+          lineRules: [],
+          listingAssignments: [{ listingId: "listing-4159641554", lineOverrides: [] }],
+        }],
+      },
+    },
+  }));
+  await page.route("**/api/batch-session", route => route.fulfill({
+    json: {
+      operator: { id: "user-1", email: "mark@example.com" },
+      workspace: { id: "workspace-1", name: "Thankful For You" },
+      batch: { id: "batch-1", workspaceId: "workspace-1" },
+    },
+  }));
+  await page.route("**/api/production-batch**", route => route.fulfill({
+    json: {
+      batch: { id: "batch-1", workspaceId: "workspace-1" },
+      activeOrderItemId: "etsy-item-4159641554",
+      orderItems: [{
+        id: "etsy-item-4159641554",
+        revision: 1,
+        text: "Avery RN",
+        status: "in-progress",
+        source: {
+          marketplace: "etsy",
+          orderNumber: "4159641554",
+          listingId: "listing-4159641554",
+          customerFontSelections: [{ lineIndex: 0, name: "Skywalk" }],
+        },
+        settings: {
+          text: "Avery RN",
+          presetId: "preset-line-one-font",
+          backingMm: 3.1,
+          weldExportedDesign: true,
+          lines: [{ fontId: "skywalk", bridgeMm: 0.5 }],
+        },
+      }],
+    },
+  }));
+  await page.route("**/api/orders**", route => route.fulfill({ json: { orders: [] } }));
+  await page.route("**/api/layout-analyze", route => route.fulfill({ json: buildMockAnalysisResponse() }));
+
+  await page.goto("/production-batch");
+  await waitForProductionBatchStartup(page);
+  await page.locator("#textInput").fill("Avery\nRN");
+
+  await expect(page.locator('.line-control-card[data-line-index="0"] select[data-setting="fontId"]')).toHaveValue("skywalk");
+  await expect(page.locator('.line-control-card[data-line-index="1"] select[data-setting="fontId"]')).toHaveValue("skywalk");
 });
 
 test(PRODUCTION_BATCH_EMPTY_ALIAS_IMPORT_TEST_TITLE, async ({ page }) => {

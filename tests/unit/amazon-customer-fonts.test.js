@@ -6,6 +6,7 @@ import {
   overlayCustomerFontsOnLines,
   resolveCustomerFont,
   resolveCustomerFontId,
+  resolveNewTextLineFontSettings,
   summarizeCustomerFontResolution,
 } from "../../src/amazon-customer-fonts.js";
 
@@ -157,6 +158,46 @@ describe("Amazon customer fonts", () => {
       { fontId: "candlepin" },
       { fontId: "super-boys", bridgeMm: 0.7 },
     ]);
+  });
+
+  it("inherits line 1 font when a new line has no customer or targeted preset font", () => {
+    expect(resolveNewTextLineFontSettings({
+      lineSettings: { fontId: "candlepin", bridgeMm: 0.7 },
+      textLineIndex: 1,
+      firstLineFontId: "skywalk",
+      hasTargetedPresetFont: false,
+      selections: [{ lineIndex: 0, name: "Skywalk" }],
+      fontOptions: fonts,
+    })).toEqual({ fontId: "skywalk", bridgeMm: 0.7 });
+  });
+
+  it("preserves exact customer and targeted preset fonts ahead of line 1 inheritance", () => {
+    expect(resolveNewTextLineFontSettings({
+      lineSettings: { fontId: "somekind" },
+      textLineIndex: 1,
+      firstLineFontId: "skywalk",
+      hasTargetedPresetFont: true,
+      selections: [{ lineIndex: 0, name: "Skywalk" }],
+      fontOptions: fonts,
+    })).toEqual({ fontId: "somekind" });
+
+    expect(resolveNewTextLineFontSettings({
+      lineSettings: { fontId: "somekind" },
+      textLineIndex: 1,
+      firstLineFontId: "skywalk",
+      hasTargetedPresetFont: true,
+      selections: [{ lineIndex: 1, name: "Candlepin" }],
+      fontOptions: fonts,
+    })).toEqual({ fontId: "candlepin" });
+
+    expect(resolveNewTextLineFontSettings({
+      lineSettings: { fontId: "somekind" },
+      textLineIndex: 1,
+      firstLineFontId: "skywalk",
+      hasTargetedPresetFont: false,
+      selections: [{ lineIndex: 1, name: "Unknown" }],
+      fontOptions: fonts,
+    })).toEqual({ fontId: "somekind" });
   });
 
   it("summarizes resolved fonts without retaining customer-facing font values", () => {

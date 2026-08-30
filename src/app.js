@@ -21,6 +21,7 @@ import {
   normalizeCustomerFontSelections,
   overlayCustomerFontsOnLines,
   resolveCustomerFont,
+  resolveNewTextLineFontSettings,
 } from "./amazon-customer-fonts.js";
 import {
   buildPresetLines,
@@ -35,6 +36,7 @@ import {
   getPresetIdForListingId,
   getPresetOptions,
   getPresetSnapshot,
+  getPresetTargetedLineFontId,
   hasPresetMappingForListingId,
   inferPresetDefinitionFromSettings,
   isValidPresetId,
@@ -9084,16 +9086,18 @@ function createCheckboxField(lineIndex, setting, labelText, checked) {
   return label;
 }
 
-function applyCustomerFontToNewTextLine(lineSettings, order, textLineIndex) {
-  const selection = normalizeCustomerFontSelections(order?.source?.customerFontSelections)
-    .find((candidate) => candidate.lineIndex === textLineIndex);
-  if (!selection) return lineSettings;
-  return overlayCustomerFontsOnLines(
-    [lineSettings],
-    [{ ...selection, lineIndex: 0 }],
-    FONT_OPTIONS,
-    workspaceFontAliases,
-  )[0];
+function applyCustomerFontToNewTextLine(lineSettings, order, textLineIndex, options = {}) {
+  const presetId = options.presetId ?? order?.settings?.presetId;
+  const listingId = options.listingId ?? order?.source?.listingId ?? null;
+  return resolveNewTextLineFontSettings({
+    lineSettings,
+    textLineIndex,
+    firstLineFontId: options.firstLineFontId,
+    hasTargetedPresetFont: Boolean(getPresetTargetedLineFontId(presetId, textLineIndex, listingId)),
+    selections: order?.source?.customerFontSelections,
+    fontOptions: FONT_OPTIONS,
+    fontAliases: workspaceFontAliases,
+  });
 }
 
 function getCurrentSettings() {
@@ -9125,7 +9129,11 @@ function getCurrentSettings() {
     if (textLineIndex < rawLines.length) {
       const fallbackLineSettings = textLineIndex < existingTextLineCount
         ? line
-        : applyCustomerFontToNewTextLine(line, activeOrder, textLineIndex);
+        : applyCustomerFontToNewTextLine(line, activeOrder, textLineIndex, {
+            presetId,
+            listingId,
+            firstLineFontId: lines.find((candidate) => !isFixedSvgLineSettings(candidate))?.fontId,
+          });
       lines.push(readTextLineSettingsFromControls({
         presetId,
         textLineIndex,
@@ -9138,7 +9146,11 @@ function getCurrentSettings() {
 
   while (textLineIndex < rawLines.length) {
     const presetLineSettings = createPresetLineSettings(presetId, textLineIndex, { listingId });
-    const newLineSettings = applyCustomerFontToNewTextLine(presetLineSettings, activeOrder, textLineIndex);
+    const newLineSettings = applyCustomerFontToNewTextLine(presetLineSettings, activeOrder, textLineIndex, {
+      presetId,
+      listingId,
+      firstLineFontId: lines.find((candidate) => !isFixedSvgLineSettings(candidate))?.fontId,
+    });
     lines.push(readTextLineSettingsFromControls({
       presetId,
       textLineIndex,
