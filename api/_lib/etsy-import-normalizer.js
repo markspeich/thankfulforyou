@@ -4,6 +4,7 @@ const PERSONALIZATION_PROPERTY_ID = "54";
 const URL_PATTERN = /^https?:\/\/\S+$/i;
 const FONT_LABEL_PATTERN = /\bfont\b/i;
 const FONT_LINE_LABEL_PATTERN = /\bline\s*(\d+)\b/i;
+const COLOR_LABEL_ALIASES = new Set(["color", "heart color"]);
 
 function text(value) { return normalizeImportedText(value); }
 function id(value) { return value == null ? "" : String(value).trim(); }
@@ -110,7 +111,7 @@ export function normalizeEtsyTransaction({ receipt = {}, transaction = {}, listi
     .sort((left, right) => left.lineIndex - right.lineIndex);
   const listingId = id(transaction.listing_id ?? listing.listing_id);
   const transactionId = id(transaction.transaction_id);
-  const color = variations.find((variation) => text(variation.formatted_name).toLowerCase() === "color");
+  const color = variations.find((variation) => COLOR_LABEL_ALIASES.has(text(variation.formatted_name).toLowerCase()));
   const buyerName = text(receipt.name ?? receipt.buyer_name);
   const orderNumber = id(receipt.receipt_id);
   const listingTitle = text(transaction.title ?? listing.title);
