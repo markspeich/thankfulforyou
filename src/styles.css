@@ -854,6 +854,7 @@ select {
 }
 
 .paste-summary-counts[hidden],
+.marketplace-import-summary[hidden],
 .paste-fallback[hidden],
 #pasteSummaryActions[hidden],
 #closePasteSummaryButton[hidden] {
@@ -923,6 +924,24 @@ select {
   font-size: 1.75rem;
   font-weight: 850;
   line-height: 1;
+}
+
+.marketplace-import-summary {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.marketplace-import-summary th,
+.marketplace-import-summary td {
+  padding: 9px 10px;
+  border-bottom: 1px solid #d7e4e9;
+  text-align: right;
+}
+
+.marketplace-import-summary th:first-child,
+.marketplace-import-summary tbody th {
+  text-align: left;
 }
 
 @media (max-width: 560px) {

@@ -425,6 +425,12 @@ test("Amazon import failure details remain actionable in the operation dialog", 
   await installSupabaseSession(page);
   await installProductionBatchRoutes(page);
   await installOrdersWorkspaceRoutes(page);
+  await page.route("**/api/etsy-connection", route => route.fulfill({ json: { status: "connected", shopName: "Badge Shop" } }));
+  await page.route("**/api/etsy-import", route => route.fulfill({
+    status: 200,
+    contentType: "application/x-ndjson",
+    body: `${JSON.stringify({ type: "complete", imported: 3, existing: 1, customizationNeeded: 0, failed: 0 })}\n`,
+  }));
   await page.route("**/api/amazon-import", async (route) => {
     await route.fulfill({
       status: 200,
@@ -463,26 +469,21 @@ test("Amazon import failure details remain actionable in the operation dialog", 
   await gotoAfterBatchLoads(page);
   await expect(page.getByRole("region", { name: "Orders workspace" })).toBeVisible();
   await page.locator("#ordersToolsMenu summary").click();
-  await page.getByRole("button", { name: "Import Amazon" }).click();
+  await page.getByRole("button", { name: "Import", exact: true }).click();
 
   const dialog = page.locator("#pasteSummaryDialog");
   await expect(dialog).toBeVisible();
-  await expect(dialog.locator("#pasteSummaryTitle")).toHaveText("Operation Failed");
-  await expect(dialog.locator("#pasteSummaryDescription")).toHaveText([
+  await expect(dialog.locator("#pasteSummaryTitle")).toHaveText("Import Completed with Issues");
+  await expect(dialog.locator("#pasteSummaryDescription")).toHaveText(["Amazon and Etsy orders have been checked.",
     "Amazon order 111-0318024-9415409 failed while updating ShipStation notes: Package weight is required.",
     "Amazon order 111-0000002-0000002 was imported, but ShipStation Notes to Buyer could not be updated.",
     "Amazon order 111-0000003-0000003 was imported, but the ShipStation Customization Needed tag could not be removed.",
   ].join(" "));
-  await expect(dialog.locator("#pasteSummaryCounts dt")).toHaveText([
-    "Shipments processed",
-    "Items imported",
-    "Existing items",
-    "Not awaiting customization",
-    "Needs review",
-    "Warnings",
-    "Failed",
+  await expect(dialog.locator("#marketplaceImportSummary tbody td")).toHaveText([
+    "4", "3", "7",
+    "2", "1", "3",
+    "1", "0", "1",
   ]);
-  await expect(dialog.locator("#pasteSummaryCounts dd")).toHaveText(["3", "4", "2", "1", "2", "2", "1"]);
   await expect(dialog.getByRole("button", { name: "Close paste summary" })).toBeVisible();
 });
 

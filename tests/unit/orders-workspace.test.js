@@ -9,6 +9,7 @@ import {
   getAmazonImportFailureDescription,
   getAmazonImportWarningDescription,
   getAmazonImportSummary,
+  getMarketplaceImportPresentation,
   getOrderItemCustomizationWarning,
   getCopyableSavedBuild,
   getOrderLifecycleStatusDescriptor,
@@ -500,6 +501,28 @@ describe("Etsy workspace descriptors", () => {
 });
 
 describe("Amazon workspace descriptors", () => {
+  it("summarizes Amazon and Etsy item outcomes separately with totals and no review row", () => {
+    // Break caught: the combined dialog loses marketplace attribution, calculates totals incorrectly,
+    // or restores the redundant customization-review metric.
+    expect(getMarketplaceImportPresentation({
+      amazon: { importedItems: 6, existingItems: 2, failed: 1 },
+      etsy: { imported: 3, existing: 4, failed: 0 },
+    })).toEqual({
+      title: "Import Completed with Issues",
+      description: "Amazon and Etsy orders have been checked.",
+      rows: [
+        { label: "Imported", amazon: 6, etsy: 3, total: 9 },
+        { label: "Existing", amazon: 2, etsy: 4, total: 6 },
+        { label: "Failed", amazon: 1, etsy: 0, total: 1 },
+      ],
+    });
+
+    expect(getMarketplaceImportPresentation({
+      amazon: { importedItems: 2, existingItems: 1, failed: 0 },
+      etsy: { imported: 1, existing: 0, failed: 0 },
+    }).title).toBe("Import Complete");
+  });
+
   it("formats a safe Amazon Notes to Buyer synchronization warning", () => {
     // Break caught: a non-blocking note warning is rendered as a failure, or its safe order/action context is lost.
     expect(getAmazonImportWarningDescription({

@@ -445,6 +445,23 @@ export function getAmazonImportSummary(summary = {}) {
     noun(failed, "failure", "failures"),
   ].join(", ") + ".";
 }
+
+export function getMarketplaceImportPresentation({ amazon = {}, etsy = {} } = {}) {
+  const outcomes = [
+    { label: "Imported", amazon: normalizeAmazonCount(amazon.importedItems), etsy: normalizeEtsyCount(etsy.imported) },
+    { label: "Existing", amazon: normalizeAmazonCount(amazon.existingItems), etsy: normalizeEtsyCount(etsy.existing) },
+    { label: "Failed", amazon: normalizeAmazonCount(amazon.failed), etsy: normalizeEtsyCount(etsy.failed) },
+  ];
+  const rows = outcomes.map((outcome) => ({
+    ...outcome,
+    total: outcome.amazon + outcome.etsy,
+  }));
+  return {
+    title: rows.at(-1).total > 0 ? "Import Completed with Issues" : "Import Complete",
+    description: "Amazon and Etsy orders have been checked.",
+    rows,
+  };
+}
 export function getOrderItemCustomizationWarning(item) {
   const source = item?.source?.source && typeof item.source.source === "object" ? item.source.source : item?.source;
   return source?.customizationNeeded

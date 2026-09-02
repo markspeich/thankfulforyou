@@ -106,6 +106,7 @@ import {
   getAmazonImportFailureDescription,
   getAmazonImportWarningDescription,
   getAmazonImportSummary,
+  getMarketplaceImportPresentation,
   getOrderItemCustomizationWarning,
   getCheckedOrderIdsForBulkAction,
   getCopyableSavedBuild,
@@ -361,6 +362,7 @@ const pasteSummaryDoneButton = document.querySelector("#pasteSummaryDoneButton")
 const pasteSummaryTitle = document.querySelector("#pasteSummaryTitle");
 const pasteSummaryDescription = document.querySelector("#pasteSummaryDescription");
 const pasteSummaryCounts = document.querySelector("#pasteSummaryCounts");
+const marketplaceImportSummary = document.querySelector("#marketplaceImportSummary");
 const pasteSummaryActions = document.querySelector("#pasteSummaryActions");
 const pasteSummaryLabels = [document.querySelector("#pasteSummaryImportedLabel"), document.querySelector("#pasteSummarySkippedLabel"), document.querySelector("#pasteSummaryAddedLabel")];
 const operationProgress = document.querySelector("#operationProgress");
@@ -572,6 +574,7 @@ let etsyOAuthStatus = "";
 let amazonImporting = false;
 let amazonImportResult = null;
 let amazonImportError = null;
+let marketplaceImporting = false;
 let amazonSessionRequest = null;
 let databaseOrdersImporting = false;
 let ordersDatabaseMutationInFlight = false;
@@ -6248,6 +6251,7 @@ function startOperationDialog({ title, description, progressLabel = "Working..."
   pasteFallbackInput.value = "";
   pasteFallbackTarget = null;
   operationProgress.hidden = false; pasteSummaryCounts.hidden = true; pasteSummaryActions.hidden = true; closePasteSummaryButton.hidden = true;
+  marketplaceImportSummary.hidden = true;
   pasteSummaryDialog.querySelector(".batch-summary-card").dataset.operationState = "progress";
   if (!pasteSummaryDialog.open) {
     if (modal) pasteSummaryDialog.showModal();
@@ -6265,7 +6269,7 @@ function ensureOperationMetricSlots(count) {
   }
   return slots;
 }
-function completeOperationDialog({ title, description, metrics = [] }) {
+function completeOperationDialog({ title, description, metrics = [], marketplaceRows = [] }) {
   if (!(pasteSummaryDialog instanceof HTMLDialogElement)) return;
   pasteSummaryTitle.textContent = title; pasteSummaryDescription.textContent = description;
   const slots = ensureOperationMetricSlots(Math.max(3, metrics.length));
@@ -6277,6 +6281,20 @@ function completeOperationDialog({ title, description, metrics = [] }) {
     slot.querySelector("dd").textContent = String(Math.max(0, Number(metric.value) || 0));
   });
   operationProgress.hidden = true; pasteSummaryCounts.hidden = metrics.length === 0; pasteSummaryActions.hidden = false; closePasteSummaryButton.hidden = false;
+  const marketplaceBody = marketplaceImportSummary.querySelector("tbody");
+  marketplaceBody.replaceChildren(...marketplaceRows.map((row) => {
+    const tableRow = document.createElement("tr");
+    const label = document.createElement("th");
+    label.scope = "row";
+    label.textContent = row.label;
+    tableRow.append(label, ...[row.amazon, row.etsy, row.total].map((value) => {
+      const cell = document.createElement("td");
+      cell.textContent = String(value);
+      return cell;
+    }));
+    return tableRow;
+  }));
+  marketplaceImportSummary.hidden = marketplaceRows.length === 0;
   pasteSummaryDialog.querySelector(".batch-summary-card").dataset.operationState = "complete";
   if (!pasteSummaryDialog.open) pasteSummaryDialog.showModal();
 }
@@ -6608,17 +6626,10 @@ function isEtsyReauthorizationError(error) {
 }
 
 function renderEtsyImportUi() {
-  const descriptor = getEtsyConnectionActionDescriptor({
-    ...etsyConnection,
-    importing: etsyImporting,
-  });
-  etsyImportButtonLabel.textContent = descriptor.label;
-  if (etsyImportError) {
-    etsyImportButtonLabel.textContent = isEtsyReauthorizationError(etsyImportError) ? "Reconnect Etsy Shop" : "Retry";
-  }
-  etsyImportButtonSpinner.hidden = !etsyImporting;
-  etsyImportButton.disabled = descriptor.disabled || etsyImporting || amazonImporting || etsyConnectionLoading || !productionBatchAccessToken;
-  etsyImportButton.setAttribute("aria-busy", String(etsyConnectionLoading || etsyImporting));
+  etsyImportButtonLabel.textContent = marketplaceImporting ? "Importing…" : "Import";
+  etsyImportButtonSpinner.hidden = !marketplaceImporting;
+  etsyImportButton.disabled = marketplaceImporting || etsyConnectionLoading || !productionBatchAccessToken;
+  etsyImportButton.setAttribute("aria-busy", String(etsyConnectionLoading || marketplaceImporting));
 
   let message = "";
   let state = "pending";
@@ -6628,15 +6639,11 @@ function renderEtsyImportUi() {
     message = etsyOAuthStatus;
     state = etsyOAuthStatus.startsWith("Connected") ? "success" : "error";
   }
-  if (etsyImportResult && !etsyImporting) {
-    message = getEtsyImportSummary(etsyImportResult);
-    state = "success";
-  }
-  if (etsyImportError) {
+  if (etsyImportError && isEtsyReauthorizationError(etsyImportError)) {
     message = etsyImportError.message || "Unable to import Etsy orders.";
     state = "error";
   }
-  etsyImportDismissButton.hidden = !etsyImportResult || etsyImporting || Boolean(etsyImportError);
+  etsyImportDismissButton.hidden = true;
   etsyImportStatus.textContent = message;
   etsyImportFeedback.dataset.state = state;
   etsyImportFeedback.hidden = !message;
@@ -6724,11 +6731,11 @@ async function beginEtsyConnection() {
   }
 }
 
-async function startEtsyImport() {
+async function startEtsyImport({ showDialog = true, refreshOrders = true } = {}) {
   etsyOAuthStatus = "";
   const request = resetEtsySessionRequest(productionBatchAccessToken);
   if (!request || etsyImporting || amazonImporting) return;
-  startOperationDialog({ title: "Importing from Etsy", description: "Importing new Etsy orders into the Orders workspace.", progressLabel: "Fetching Etsy receipts..." });
+  if (showDialog) startOperationDialog({ title: "Importing from Etsy", description: "Importing new Etsy orders into the Orders workspace.", progressLabel: "Fetching Etsy receipts..." });
   etsyImporting = true;
   etsyImportError = null;
   etsyImportResult = null;
@@ -6745,7 +6752,7 @@ async function startEtsyImport() {
         await Promise.resolve();
       },
     }), request.accessToken);
-    if (etsySessionRequest === request) {
+    if (etsySessionRequest === request && refreshOrders) {
       const selectedOrderId = selectedDatabaseOrderId;
       invalidateDatabaseOrders();
       await loadDatabaseOrders({ force: true });
@@ -6765,8 +6772,8 @@ async function startEtsyImport() {
     if (etsySessionRequest === request) {
       etsyImporting = false;
       renderEtsyImportUi();
-      if (etsyImportResult) completeOperationDialog({ title: "Etsy Import Complete", description: getEtsyImportSummary(etsyImportResult), metrics: [{ label: "Imported", value: etsyImportResult.imported }, { label: "Existing", value: etsyImportResult.existing }, { label: "Needs review", value: etsyImportResult.customizationNeeded }] });
-      else if (etsyImportError) showActionOperationError(etsyImportError, "Unable to import Etsy orders.");
+      if (showDialog && etsyImportResult) completeOperationDialog({ title: "Etsy Import Complete", description: getEtsyImportSummary(etsyImportResult), metrics: [{ label: "Imported", value: etsyImportResult.imported }, { label: "Existing", value: etsyImportResult.existing }] });
+      else if (showDialog && etsyImportError) showActionOperationError(etsyImportError, "Unable to import Etsy orders.");
     }
   }
 }
@@ -6785,15 +6792,6 @@ async function handleEtsyImportAction() {
 }
 
 function initializeAmazonImportUi() {
-  if (!ordersImportActions) return;
-  amazonImportButton.type = "button";
-  amazonImportButton.className = "batch-tool-button amazon-import-button";
-  amazonImportButtonSpinner.className = "amazon-import-button-spinner";
-  amazonImportButtonSpinner.setAttribute("aria-hidden", "true");
-  amazonImportButtonSpinner.hidden = true;
-  amazonImportButtonLabel.className = "amazon-import-button-label";
-  amazonImportButton.append(amazonImportButtonSpinner, amazonImportButtonLabel);
-  ordersImportActions.append(amazonImportButton);
   renderAmazonImportUi();
 }
 
@@ -6823,10 +6821,10 @@ function resetAmazonSessionRequest(accessToken) {
   return amazonSessionRequest;
 }
 
-async function startAmazonImport() {
+async function startAmazonImport({ showDialog = true, refreshOrders = true } = {}) {
   const request = resetAmazonSessionRequest(productionBatchAccessToken);
   if (!request || amazonImporting || etsyImporting) return;
-  startOperationDialog({
+  if (showDialog) startOperationDialog({
     title: "Importing from Amazon",
     description: "Importing pending Amazon orders from ShipStation.",
     progressLabel: "Fetching Amazon orders...",
@@ -6850,7 +6848,7 @@ async function startAmazonImport() {
         await Promise.resolve();
       },
     }), request.accessToken);
-    if (amazonSessionRequest === request) {
+    if (amazonSessionRequest === request && refreshOrders) {
       const selectedOrderId = selectedDatabaseOrderId;
       await loadDatabaseOrders({ force: true });
       if (selectedOrderId && databaseOrders.some((order) => order.id === selectedOrderId)) {
@@ -6866,7 +6864,7 @@ async function startAmazonImport() {
     if (amazonSessionRequest === request) {
       amazonImporting = false;
       renderEtsyImportUi();
-      if (amazonImportResult) {
+      if (showDialog && amazonImportResult) {
         const amazonImportFailed = amazonImportResult.failed > 0;
         const amazonImportWarningDescription = getAmazonImportWarningDescription(amazonImportResult);
         completeOperationDialog({
@@ -6884,13 +6882,56 @@ async function startAmazonImport() {
             { label: "Failed", value: amazonImportResult.failed },
           ],
         });
-      } else if (amazonImportError) {
+      } else if (showDialog && amazonImportError) {
         completeOperationDialog({
           title: "Amazon Import Failed",
           description: "Unable to import Amazon orders.",
         });
       }
     }
+  }
+}
+
+async function startMarketplaceImport() {
+  if (marketplaceImporting || etsyConnectionLoading) return;
+  if (etsyConnection?.status !== "connected") {
+    await beginEtsyConnection();
+    return;
+  }
+
+  marketplaceImporting = true;
+  startOperationDialog({
+    title: "Importing Orders",
+    description: "Importing orders from Etsy and Amazon.",
+    progressLabel: "Fetching Etsy orders...",
+  });
+  renderEtsyImportUi();
+  try {
+    await startEtsyImport({ showDialog: false, refreshOrders: false });
+    updateOperationProgress("Fetching Amazon orders...");
+    await startAmazonImport({ showDialog: false, refreshOrders: false });
+    if (activeWorkspace !== "databaseOrders" || !productionBatchAccessToken) return;
+    invalidateDatabaseOrders();
+    await loadDatabaseOrders({ force: true });
+
+    const presentation = getMarketplaceImportPresentation({ amazon: amazonImportResult, etsy: etsyImportResult });
+    const amazonDetails = [
+      getAmazonImportFailureDescription(amazonImportResult),
+      getAmazonImportWarningDescription(amazonImportResult),
+    ].filter(Boolean).join(" ");
+    const requestErrors = [
+      etsyImportError ? "Unable to import Etsy orders." : "",
+      amazonImportError ? "Unable to import Amazon orders." : "",
+    ].filter(Boolean).join(" ");
+    completeOperationDialog({
+      ...presentation,
+      title: requestErrors ? "Import Completed with Issues" : presentation.title,
+      description: [presentation.description, requestErrors, amazonDetails].filter(Boolean).join(" "),
+      marketplaceRows: presentation.rows,
+    });
+  } finally {
+    marketplaceImporting = false;
+    renderEtsyImportUi();
   }
 }
 
@@ -13962,11 +14003,7 @@ pasteOrdersButton?.addEventListener("click", () => {
 });
 etsyImportButton.addEventListener("click", () => {
   ordersToolsMenu?.removeAttribute("open");
-  void handleEtsyImportAction();
-});
-amazonImportButton.addEventListener("click", () => {
-  ordersToolsMenu?.removeAttribute("open");
-  void startAmazonImport();
+  void startMarketplaceImport();
 });
 addCheckedOrdersToBatchButton?.addEventListener("click", () => {
   void addCheckedDatabaseOrdersToBatch();

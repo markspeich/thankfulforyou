@@ -131,6 +131,16 @@ async function open(page, url = "/orders") {
   await page.locator("#ordersToolsMenu summary").click();
 }
 
+async function beginAmazonPhase(page, etsyResult = { imported: 0, existing: 0, customizationNeeded: 0, failed: 0 }) {
+  await page.getByRole("button", { name: "Import", exact: true }).click();
+  await expect.poll(() => page.evaluate(() => window.etsyCalls)).toBe(1);
+  await page.evaluate(result => {
+    pushEtsyEvent({ type: "complete", ...result });
+    closeEtsyStream();
+  }, etsyResult);
+  await expect.poll(() => page.evaluate(() => window.amazonCalls)).toBe(1);
+}
+
 const completion = {
   type: "complete",
   processedShipments: 3,
@@ -142,7 +152,7 @@ const completion = {
   failed: 0,
 };
 
-test("Orders imports are ordered inside the tools menu and import once with mutual exclusion", async ({ page }) => {
+test("one Import action runs Etsy then Amazon and reports marketplace totals", async ({ page }) => {
   await session(page);
   await routes(page);
   await amazonStream(page);
@@ -153,41 +163,52 @@ test("Orders imports are ordered inside the tools menu and import once with mutu
   await expect(actions.locator(":scope > *").nth(0)).toHaveAttribute("id", "pasteOrdersButton");
   await expect(actions.locator(":scope > *").nth(1)).toHaveAttribute("id", "ordersToolsMenu");
   const importActions = page.locator("#ordersImportActions");
-  await expect(importActions.locator(":scope > button")).toHaveCount(2);
-  await expect(importActions.locator(":scope > button").nth(0)).toHaveClass(/etsy-import-button/);
-  await expect(importActions.locator(":scope > button").nth(1)).toHaveClass(/amazon-import-button/);
-
-  const amazon = page.locator(".amazon-import-button");
-  const etsy = page.locator(".etsy-import-button");
-  await expect(amazon).toHaveText("Import Amazon");
-  await amazon.click();
-  await expect(amazon).toBeDisabled();
-  await expect(amazon).toHaveAttribute("aria-busy", "true");
-  await expect(amazon.locator(".amazon-import-button-spinner")).not.toHaveAttribute("hidden", "");
+  await expect(importActions.locator(":scope > button")).toHaveCount(1);
+  const importButton = importActions.locator(".etsy-import-button");
+  await expect(importButton).toHaveText("Import");
+  await importButton.click();
+  await expect(importButton).toBeDisabled();
+  await expect(importButton).toHaveAttribute("aria-busy", "true");
   await expect(page.locator("#ordersToolsMenu")).not.toHaveAttribute("open", "");
-  await expect(etsy).toBeDisabled();
-  await amazon.evaluate(element => element.click());
+  await expect.poll(() => page.evaluate(() => window.etsyCalls)).toBe(1);
+  await page.evaluate(() => {
+    pushEtsyEvent({ type: "complete", imported: 3, existing: 4, customizationNeeded: 9, failed: 0 });
+    closeEtsyStream();
+  });
   await expect.poll(() => page.evaluate(() => window.amazonCalls)).toBe(1);
+  await page.evaluate(event => {
+    pushAmazonEvent(event);
+    closeAmazonStream();
+  }, { ...completion, importedItems: 6, existingItems: 2, failed: 0 });
+
+  const dialog = page.locator("#pasteSummaryDialog");
+  await expect(dialog.locator("#pasteSummaryTitle")).toHaveText("Import Complete");
+  await expect(dialog.locator("#marketplaceImportSummary tbody th")).toHaveText(["Imported", "Existing", "Failed"]);
+  await expect(dialog.locator("#marketplaceImportSummary tbody td")).toHaveText([
+    "6", "3", "9",
+    "2", "4", "6",
+    "0", "0", "0",
+  ]);
+  await expect(dialog).not.toContainText("Needs review");
 });
 
-test("a held Etsy import disables Amazon until workspace teardown", async ({ page }) => {
+test("a held Etsy phase keeps the unified import action busy until workspace teardown", async ({ page }) => {
   await session(page);
   await routes(page);
   await amazonStream(page);
   await open(page);
 
   const etsy = page.locator(".etsy-import-button");
-  const amazon = page.locator(".amazon-import-button");
   await etsy.click();
   await expect.poll(() => page.evaluate(() => window.etsyCalls)).toBe(1);
   await expect(etsy).toHaveAttribute("aria-busy", "true");
-  await expect(amazon).toBeDisabled();
+  await expect(etsy).toBeDisabled();
 
   await page.locator("#orderWorkspaceButton").evaluate(element => element.click());
   await expect.poll(() => page.evaluate(() => sessionStorage.getItem("etsy-test-aborted"))).toBe("true");
 });
 
-test("Amazon warning-only completion shows every safe warning beyond ten with all seven metrics", async ({ page }) => {
+test("Amazon warning-only completion keeps safe details beside the unified metrics", async ({ page }) => {
   await session(page);
   const gets = await routes(page);
   await amazonStream(page);
@@ -197,12 +218,12 @@ test("Amazon warning-only completion shows every safe warning beyond ten with al
   await page.getByRole("button", { name: /Order 1001/ }).click();
 
   await page.locator("#ordersToolsMenu summary").click();
-  await page.getByRole("button", { name: "Import Amazon" }).click();
+  await beginAmazonPhase(page);
   const dialog = page.locator("#pasteSummaryDialog");
   await expect(dialog).toBeVisible();
-  await expect(dialog.locator("#pasteSummaryTitle")).toHaveText("Importing from Amazon");
+  await expect(dialog.locator("#pasteSummaryTitle")).toHaveText("Importing Orders");
   await expect(dialog.locator("#pasteSummaryDescription")).toHaveText(
-    "Importing pending Amazon orders from ShipStation.",
+    "Importing orders from Etsy and Amazon.",
   );
   await expect(dialog.locator("#operationProgressLabel")).toHaveText("Fetching Amazon orders...");
 
@@ -229,67 +250,36 @@ test("Amazon warning-only completion shows every safe warning beyond ten with al
         : "ShipStation synchronization could not be completed.",
     })),
   });
-  await expect(dialog.locator("#pasteSummaryTitle")).toHaveText("Amazon Import Complete");
+  await expect(dialog.locator("#pasteSummaryTitle")).toHaveText("Import Complete");
   await expect(dialog.locator("#pasteSummaryDescription")).toContainText(
     "Amazon order 111-0000001-0000001 was imported, but ShipStation Notes to Buyer could not be updated because the note is too long.",
   );
   await expect(dialog.locator("#pasteSummaryDescription")).toContainText(
     "Amazon order 111-0000011-0000011 was imported, but the ShipStation Customization Needed tag could not be removed.",
   );
-  await expect(dialog.locator("#pasteSummaryCounts dt")).toHaveText([
-    "Shipments processed",
-    "Items imported",
-    "Existing items",
-    "Not awaiting customization",
-    "Needs review",
-    "Warnings",
-    "Failed",
-  ]);
-  await expect(dialog.locator("#pasteSummaryCounts dd")).toHaveText(["3", "6", "2", "1", "2", "11", "0"]);
+  await expect(dialog.locator("#marketplaceImportSummary tbody th")).toHaveText(["Imported", "Existing", "Failed"]);
+  await expect(dialog).not.toContainText("Needs review");
   await expect.poll(gets).toBeGreaterThan(1);
   await expect(page.locator(".database-order-row.is-selected")).toContainText("Order 1001");
-  await expect(page.locator(".amazon-import-button")).toHaveText("Import Amazon");
+  await expect(page.locator(".etsy-import-button")).toHaveText("Import");
 });
 
-test("Etsy completion hides stale Amazon-only metrics", async ({ page }) => {
+test("combined completion hides the generic operation metrics", async ({ page }) => {
   await session(page);
   await routes(page);
   await amazonStream(page);
   await open(page);
 
-  await page.getByRole("button", { name: "Import Amazon" }).click();
+  await beginAmazonPhase(page);
   await page.evaluate(event => {
     pushAmazonEvent(event);
     closeAmazonStream();
   }, { ...completion, warnings: 1 });
-  await expect(page.locator("#pasteSummaryCounts dt")).toHaveText([
-    "Shipments processed",
-    "Items imported",
-    "Existing items",
-    "Not awaiting customization",
-    "Needs review",
-    "Warnings",
-    "Failed",
-  ]);
-  await page.getByRole("button", { name: "Done" }).click();
-
-  await page.locator("#ordersToolsMenu summary").click();
-  await page.getByRole("button", { name: "Import from Etsy" }).click();
-  await page.evaluate(() => {
-    pushEtsyEvent({ type: "complete", imported: 0, existing: 0, customizationNeeded: 0, failed: 0 });
-    closeEtsyStream();
-  });
-
-  await expect(page.locator("#pasteSummaryTitle")).toHaveText("Etsy Import Complete");
-  await expect(page.locator("#pasteSummaryCounts > div:visible")).toHaveCount(3);
-  await expect(page.locator("#pasteSummaryCounts dt:visible")).toHaveText([
-    "Imported",
-    "Existing",
-    "Needs review",
-  ]);
+  await expect(page.locator("#pasteSummaryCounts")).toBeHidden();
+  await expect(page.locator("#marketplaceImportSummary")).toBeVisible();
 });
 
-test("terminal validation failure never renders success or refreshes Orders", async ({ page }) => {
+test("Amazon item failures render the combined issue state and refresh Orders", async ({ page }) => {
   await session(page);
   const gets = await routes(page);
   await amazonStream(page);
@@ -297,50 +287,41 @@ test("terminal validation failure never renders success or refreshes Orders", as
   await expect(page.locator(".database-order-row").first()).toBeVisible();
   const initialGets = gets();
 
-  await page.getByRole("button", { name: "Import Amazon" }).click();
+  await beginAmazonPhase(page);
   await page.evaluate(event => {
-    pushAmazonEvent(event);
-    pushAmazonEvent(event);
+    pushAmazonEvent({ ...event, failed: 1 });
     closeAmazonStream();
   }, completion);
 
   const dialog = page.locator("#pasteSummaryDialog");
-  await expect(dialog.locator("#pasteSummaryTitle")).toHaveText("Amazon Import Failed");
-  await expect(dialog.locator("#pasteSummaryDescription")).toHaveText("Unable to import Amazon orders.");
-  await expect(dialog.locator("#pasteSummaryTitle")).not.toHaveText("Amazon Import Complete");
-  expect(gets()).toBe(initialGets);
+  await expect(dialog.locator("#pasteSummaryTitle")).toHaveText("Import Completed with Issues");
+  await expect(dialog.locator("#marketplaceImportSummary tbody tr").last().locator("td")).toHaveText(["1", "0", "1"]);
+  await expect.poll(gets).toBeGreaterThan(initialGets);
 });
 
-test("Amazon safe failure retries without rendering upstream or customer fields", async ({ page }) => {
+test("Amazon safe failure details do not render upstream or customer fields", async ({ page }) => {
   await session(page);
   await routes(page);
   await amazonStream(page);
   await open(page);
 
-  await page.getByRole("button", { name: "Import Amazon" }).click();
-  await page.evaluate(() => pushAmazonEvent({
-    type: "error",
-    code: "import_failed",
-    message: "API-Key secret-key customer Jane note body https://zme-caps.amazon.com/signed",
-  }));
+  await beginAmazonPhase(page);
+  await page.evaluate(event => {
+    pushAmazonEvent({
+      ...event,
+      failed: 1,
+      failures: [{ orderNumber: "114-7445306-8228220", stage: "persistence", reasonCode: "required_field", summary: "Package weight is required." }],
+    });
+    closeAmazonStream();
+  }, completion);
 
   const dialog = page.locator("#pasteSummaryDialog");
-  await expect(dialog.locator("#pasteSummaryTitle")).toHaveText("Amazon Import Failed");
-  await expect(dialog.locator("#pasteSummaryDescription")).toHaveText("Unable to import Amazon orders.");
-  await dialog.getByRole("button", { name: "Done" }).click();
-  await page.locator("#ordersToolsMenu summary").click();
-  await expect(page.getByRole("button", { name: "Retry" })).toBeVisible();
+  await expect(dialog.locator("#pasteSummaryTitle")).toHaveText("Import Completed with Issues");
+  await expect(dialog.locator("#pasteSummaryDescription")).toContainText("Package weight is required.");
   for (const sensitive of ["secret-key", "customer Jane", "note body", "zme-caps.amazon.com"]) {
     await expect(page.locator("body")).not.toContainText(sensitive);
   }
 
-  await page.getByRole("button", { name: "Retry" }).click();
-  await expect.poll(() => page.evaluate(() => window.amazonCalls)).toBe(2);
-  await page.evaluate(event => {
-    pushAmazonEvent(event);
-    closeAmazonStream();
-  }, completion);
-  await expect(dialog.locator("#pasteSummaryTitle")).toHaveText("Amazon Import Complete");
 });
 
 test("Amazon refreshes an expired session and retries the import once", async ({ page }) => {
@@ -351,6 +332,9 @@ test("Amazon refreshes an expired session and retries the import once", async ({
     window.amazonAuthHeaders = [];
     window.fetch = (input, init = {}) => {
       const path = new URL(typeof input === "string" ? input : input.url, location.href).pathname;
+      if (path === "/api/etsy-import") {
+        return Promise.resolve(new Response(`${JSON.stringify({ type: "complete", imported: 0, existing: 0, customizationNeeded: 0, failed: 0 })}\n`, { status: 200, headers: { "Content-Type": "application/x-ndjson" } }));
+      }
       if (path !== "/api/amazon-import") return originalFetch(input, init);
       window.amazonAuthHeaders.push(init.headers?.Authorization || null);
       if (window.amazonAuthHeaders.length === 1) {
@@ -364,14 +348,14 @@ test("Amazon refreshes an expired session and retries the import once", async ({
   }, completion);
   await open(page);
 
-  await page.getByRole("button", { name: "Import Amazon" }).click();
+  await page.getByRole("button", { name: "Import", exact: true }).click();
 
   await expect.poll(() => page.evaluate(() => window.amazonRefreshCalls || 0)).toBe(1);
   await expect.poll(() => page.evaluate(() => window.amazonAuthHeaders)).toEqual([
     "Bearer token",
     "Bearer refreshed-token",
   ]);
-  await expect(page.locator("#pasteSummaryTitle")).toHaveText("Amazon Import Complete");
+  await expect(page.locator("#pasteSummaryTitle")).toHaveText("Import Complete");
 });
 
 test("Amazon completion queues one forced refresh behind an in-flight Orders load", async ({ page }) => {
@@ -388,7 +372,7 @@ test("Amazon completion queues one forced refresh behind an in-flight Orders loa
   await page.locator("#databaseOrdersStatusFilter").selectOption("all");
   await expect.poll(gets).toBe(2);
 
-  await page.getByRole("button", { name: "Import Amazon" }).click();
+  await beginAmazonPhase(page);
   await page.evaluate(event => {
     pushAmazonEvent(event);
     closeAmazonStream();
@@ -409,8 +393,8 @@ test("sign-out aborts Amazon before a delayed auth request settles", async ({ pa
   const initialGets = gets();
   await page.evaluate(() => { window.amazonTestDelaySignOut = true; });
 
-  await page.getByRole("button", { name: "Import Amazon" }).click();
-  await expect(page.locator(".amazon-import-button")).toHaveAttribute("aria-busy", "true");
+  await beginAmazonPhase(page);
+  await expect(page.locator(".etsy-import-button")).toHaveAttribute("aria-busy", "true");
   await page.locator("#productionBatchLogoutButton").click();
   await expect.poll(() => page.evaluate(() => window.amazonTestSignOutStarted)).toBe(true);
   await expect.poll(() => page.evaluate(() => sessionStorage.getItem("amazon-test-aborted"))).toBe("true");
@@ -433,8 +417,7 @@ test("leaving Orders aborts a held Amazon request and ignores later events", asy
   await expect(page.locator(".database-order-row").first()).toBeVisible();
   const initialGets = gets();
 
-  await page.getByRole("button", { name: "Import Amazon" }).click();
-  await expect.poll(() => page.evaluate(() => window.amazonCalls)).toBe(1);
+  await beginAmazonPhase(page);
   await page.locator("#orderWorkspaceButton").evaluate(element => element.click());
   await expect.poll(() => page.evaluate(() => sessionStorage.getItem("amazon-test-aborted"))).toBe("true");
   await page.evaluate(() => {
@@ -461,7 +444,6 @@ test("compact Orders layout keeps Paste and the tools menu visible above filters
   await expect(page.locator("#pasteOrdersButton")).toBeEnabled();
   await expect(page.locator("#ordersToolsMenu")).toBeVisible();
   await expect(page.locator(".etsy-import-button")).toBeEnabled();
-  await expect(page.locator(".amazon-import-button")).toBeEnabled();
 
   const [actionsBox, filtersBox, rowBox] = await Promise.all([
     actions.boundingBox(),

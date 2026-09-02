@@ -732,6 +732,9 @@ For batch Etsy order sessions, the preferred workflow is:
 - Orders workspace paste may send the active production batch id as read-only membership context so the returned Orders list preserves accurate `In batch` labels; it must still import to Orders only and must not create batch memberships.
 - Order import and batch-assignment actions should keep their in-progress UI state, and should keep selected-design save controls disabled, until the database mutation and any required production-batch snapshot refresh have completed.
 - Successful order paste actions should open a paste summary dialog showing newly imported designs, skipped duplicate designs, and designs added to the active production batch when applicable.
+- The Orders workspace should provide one `Import` action that imports from Etsy and Amazon as one operator operation.
+- The combined import status dialog should report `Imported`, `Existing`, and `Failed` counts separately for Amazon and Etsy plus a sum total for each result. It should not show a `Needs review` result because every production-batch design receives operator review.
+- Amazon-specific synchronization warnings and safe failure details should remain visible below the combined import summary when applicable.
 - When an operation progress dialog opens, it must immediately clear and hide metrics from the previous operation until the current operation completes.
 - When a save receives a production-batch revision conflict but the latest saved design content is unchanged and only revision/audit metadata moved forward for the same row, the app should refresh its revision metadata and retry the save once instead of forcing the operator to reload and redo the design.
 - When a production-batch design save fails because of a transient network error, timeout, or server error, the app should retry the same scoped save once without interrupting the operator.
