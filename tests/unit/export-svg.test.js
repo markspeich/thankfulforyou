@@ -81,6 +81,82 @@ function pathBounds(path) {
 }
 
 describe("export_svg face tracing", () => {
+  test("reports accented characters that silently reuse an unaccented glyph", { timeout: 15000 }, () => {
+    const analysis = analyzeLayout({
+      text: "Nañez",
+      widthMm: 60,
+      heightMm: 40,
+      backingMm: 3.1,
+      letters: Array.from("Nañez", (character, index) => ({
+        character,
+        lineIndex: 0,
+        fontId: "candlepin",
+        fontName: "Candlepin",
+        fontPath: "public/fonts/Candlepin-Laser.otf",
+        fontSizeMm: 20,
+        x: 5 + index * 8,
+        y: 28,
+      })),
+    });
+
+    expect(analysis.unsupportedCharacters).toEqual([{
+      character: "ñ",
+      fontId: "candlepin",
+      fontName: "Candlepin",
+      lineNumber: 1,
+      reason: "uses-base-glyph",
+    }]);
+  });
+
+  test("accepts an accented character with a distinct glyph", { timeout: 15000 }, () => {
+    const analysis = analyzeLayout({
+      text: "Nañez",
+      widthMm: 60,
+      heightMm: 40,
+      backingMm: 3.1,
+      letters: Array.from("Nañez", (character, index) => ({
+        character,
+        lineIndex: 0,
+        fontId: "somekind",
+        fontName: "Somekind",
+        fontPath: "public/fonts/Somekind.ttf",
+        fontSizeMm: 20,
+        x: 5 + index * 8,
+        y: 28,
+      })),
+    });
+
+    expect(analysis.unsupportedCharacters).toEqual([]);
+  });
+
+  test("normalizes decomposed accents before checking font coverage", { timeout: 15000 }, () => {
+    const text = "Nan\u0303ez";
+    const analysis = analyzeLayout({
+      text,
+      widthMm: 60,
+      heightMm: 40,
+      backingMm: 3.1,
+      letters: Array.from(text, (character, index) => ({
+        character,
+        lineIndex: 0,
+        fontId: "candlepin",
+        fontName: "Candlepin",
+        fontPath: "public/fonts/Candlepin-Laser.otf",
+        fontSizeMm: 20,
+        x: 5 + index * 8,
+        y: 28,
+      })),
+    });
+
+    expect(analysis.unsupportedCharacters).toEqual([{
+      character: "ñ",
+      fontId: "candlepin",
+      fontName: "Candlepin",
+      lineNumber: 1,
+      reason: "uses-base-glyph",
+    }]);
+  });
+
   test("builds Candlepin face paths directly from font outlines", { timeout: 15000 }, () => {
     const analysis = analyzeLayout({
       text: "T",
@@ -1016,5 +1092,30 @@ else:
     expect(svg).toContain('<tspan x="25.781" dy="0">BLACK TEXT</tspan>');
     expect(svg).toContain('<tspan x="25.781" dy="8.400">NOT WELDED</tspan>');
     expect(svg).not.toContain('id="order-2-copy-1-important-notes"');
+  });
+
+  test("adds unsupported font characters to the non-blocking important notes column", () => {
+    const svg = exportSvg({
+      text: "Nañez",
+      widthMm: 40,
+      heightMm: 20,
+      backingMm: 3.1,
+      weldExportedDesign: true,
+      letters: [],
+      analysis: {
+        exportFacePath: "M0 0 L10 0 L10 10 Z",
+        backingPath: "M0 0 L12 0 L12 12 Z",
+        connectedComponentCount: 1,
+        unsupportedCharacters: [{
+          character: "ñ",
+          fontId: "candlepin",
+          fontName: "Candlepin",
+          lineNumber: 1,
+          reason: "uses-base-glyph",
+        }],
+      },
+    });
+
+    expect(svg).toContain("CHECK FONT: Candlepin missing &#241; (Line 1)");
   });
 });

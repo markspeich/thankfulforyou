@@ -1037,8 +1037,8 @@ def mask_bounds_mm(mask, scale):
     }
 
 
-def build_face_outline_path(root, payload, scale=50, tolerance_mm=0.025, smooth_iterations=1, curve_mode="quadratic"):
-    font_cache = {}
+def build_face_outline_path(root, payload, scale=50, tolerance_mm=0.025, smooth_iterations=1, curve_mode="quadratic", font_cache=None):
+    font_cache = font_cache if font_cache is not None else {}
     path_fragments = []
     min_x = None
     min_y = None
@@ -1129,6 +1129,62 @@ def build_face_outline_path(root, payload, scale=50, tolerance_mm=0.025, smooth_
         "path": " ".join(path_fragments),
         "bounds": bounds,
     }
+
+
+def find_unsupported_characters(root, payload, font_cache):
+    unsupported = []
+    seen = set()
+
+    runs = []
+    for letter in payload.get("letters", []):
+        run_key = (
+            letter.get("lineIndex", 0),
+            letter.get("fontId", ""),
+            letter.get("fontName", ""),
+            letter.get("fontPath", ""),
+        )
+        if not runs or runs[-1]["key"] != run_key:
+            runs.append({"key": run_key, "letter": letter, "text": ""})
+        runs[-1]["text"] += sanitize_text_token(letter.get("character", ""))
+
+    for run in runs:
+        letter = run["letter"]
+        font_data = load_outline_font(root, letter.get("fontPath"), font_cache)
+        line_number = max(1, int(letter.get("lineIndex", 0)) + 1)
+        font_id = str(letter.get("fontId", ""))
+        font_name = str(letter.get("fontName") or font_id or "Selected font")
+
+        for character in unicodedata.normalize("NFC", run["text"]):
+            if character.isspace():
+                continue
+
+            glyph_name = font_data["cmap"].get(ord(character))
+            reason = None
+            if not glyph_name or glyph_name == ".notdef":
+                reason = "missing"
+            else:
+                decomposition = unicodedata.normalize("NFD", character)
+                if len(decomposition) > 1:
+                    base_glyph_name = font_data["cmap"].get(ord(decomposition[0]))
+                    if base_glyph_name and glyph_name == base_glyph_name:
+                        reason = "uses-base-glyph"
+
+            if not reason:
+                continue
+
+            key = (character, font_id, line_number, reason)
+            if key in seen:
+                continue
+            seen.add(key)
+            unsupported.append({
+                "character": character,
+                "fontId": font_id,
+                "fontName": font_name,
+                "lineNumber": line_number,
+                "reason": reason,
+            })
+
+    return unsupported
 
 
 def render_text_mask(
@@ -1275,6 +1331,7 @@ def analyze_single_layout(root, payload):
     scale = profile["scale"]
     backing = float(payload["backingMm"])
     weld_exported_design = payload.get("weldExportedDesign", True)
+    outline_font_cache = {}
     face_outline = build_face_outline_path(
         root,
         payload,
@@ -1282,6 +1339,7 @@ def analyze_single_layout(root, payload):
         tolerance_mm=profile["face_tolerance_mm"],
         smooth_iterations=profile["face_smooth_iterations"],
         curve_mode=profile["face_curve_mode"],
+        font_cache=outline_font_cache,
     )
     face_mask = render_text_mask(root, payload, scale=scale)
     has_scaled_letters = any(
@@ -1340,6 +1398,7 @@ def analyze_single_layout(root, payload):
         "fixedSvgBackingPaths": build_fixed_svg_backing_analysis_paths(payload, width_mm, height_mm),
         "connectedComponentCount": component_count,
         "isConnected": component_count <= 1,
+        "unsupportedCharacters": find_unsupported_characters(root, payload, outline_font_cache),
     }
 
 
@@ -1383,6 +1442,7 @@ def build_precomputed_order_paths(payload):
         "color_name": color_name,
         "weld_exported_design": payload.get("weldExportedDesign", True) is not False,
         "quantity": quantity,
+        "unsupported_characters": analysis.get("unsupportedCharacters", []),
     }
 
 
@@ -1414,6 +1474,7 @@ def build_single_order_paths(root, payload):
         "color_name": color_name,
         "weld_exported_design": payload.get("weldExportedDesign", True) is not False,
         "quantity": quantity,
+        "unsupported_characters": analysis.get("unsupportedCharacters", []),
     }
 
 
@@ -1448,12 +1509,19 @@ def build_important_notes(order, instance_id, x, center_y):
         notes.append("BLACK TEXT")
     if not order.get("weld_exported_design", True):
         notes.append("NOT WELDED")
+    for item in order.get("unsupported_characters", []):
+        if not isinstance(item, dict) or not item.get("character"):
+            continue
+        font_name = str(item.get("fontName") or item.get("fontId") or "Selected font")
+        line_number = item.get("lineNumber")
+        line_label = f" (Line {int(line_number)})" if isinstance(line_number, (int, float)) else ""
+        notes.append(f"CHECK FONT: {font_name} missing {item['character']}{line_label}")
     if not notes:
         return ""
 
     first_y = center_y - IMPORTANT_NOTES_LINE_HEIGHT_MM * (len(notes) - 1) / 2
     tspans = "".join(
-        f'<tspan x="{x:.3f}" dy="{("0" if index == 0 else f"{IMPORTANT_NOTES_LINE_HEIGHT_MM:.3f}")}">{note}</tspan>'
+        f'<tspan x="{x:.3f}" dy="{("0" if index == 0 else f"{IMPORTANT_NOTES_LINE_HEIGHT_MM:.3f}")}">{svg_escape(note).encode("ascii", "xmlcharrefreplace").decode("ascii")}</tspan>'
         for index, note in enumerate(notes)
     )
     return (
