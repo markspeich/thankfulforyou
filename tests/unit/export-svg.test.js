@@ -1088,19 +1088,21 @@ else:
       ],
     });
 
-    expect(svg).toContain('id="order-1-copy-1-important-notes" x="25.781" y="21.581"');
-    expect(svg).toContain('<tspan x="25.781" dy="0">BLACK TEXT</tspan>');
-    expect(svg).toContain('<tspan x="25.781" dy="8.400">NOT WELDED</tspan>');
+    expect(svg).toContain('id="order-1-copy-1-important-notes"');
+    expect(svg).toContain('id="order-1-copy-1-important-note-1" x="25.781" y="21.581"');
+    expect(svg).toContain('>BLACK TEXT</text>');
+    expect(svg).toContain('id="order-1-copy-1-important-note-2" x="25.781" y="29.981"');
+    expect(svg).toContain('>NOT WELDED</text>');
     expect(svg).not.toContain('id="order-2-copy-1-important-notes"');
   });
 
-  test("adds unsupported font characters to the non-blocking important notes column", () => {
+  test("places not-welded and font warnings on separate absolute SVG text lines", () => {
     const svg = exportSvg({
       text: "Nañez",
       widthMm: 40,
       heightMm: 20,
       backingMm: 3.1,
-      weldExportedDesign: true,
+      weldExportedDesign: false,
       letters: [],
       analysis: {
         exportFacePath: "M0 0 L10 0 L10 10 Z",
@@ -1116,6 +1118,10 @@ else:
       },
     });
 
-    expect(svg).toContain("CHECK FONT: Candlepin missing &#241; (Line 1)");
+    expect(svg).toContain('id="order-1-copy-1-important-note-1" x="25.781" y="21.581"');
+    expect(svg).toContain('id="order-1-copy-1-important-note-2" x="25.781" y="29.981"');
+    expect(svg).toContain('>NOT WELDED</text>');
+    expect(svg).toContain('>CHECK FONT: Candlepin missing &#241; (Line 1)</text>');
+    expect(svg).not.toContain("<tspan");
   });
 });

@@ -1520,14 +1520,18 @@ def build_important_notes(order, instance_id, x, center_y):
         return ""
 
     first_y = center_y - IMPORTANT_NOTES_LINE_HEIGHT_MM * (len(notes) - 1) / 2
-    tspans = "".join(
-        f'<tspan x="{x:.3f}" dy="{("0" if index == 0 else f"{IMPORTANT_NOTES_LINE_HEIGHT_MM:.3f}")}">{svg_escape(note).encode("ascii", "xmlcharrefreplace").decode("ascii")}</tspan>'
+    note_lines = "\n".join(
+        f'    <text id="{instance_id}-important-note-{index + 1}" x="{x:.3f}" '
+        f'y="{first_y + IMPORTANT_NOTES_LINE_HEIGHT_MM * index:.3f}" '
+        f'font-family="Arial" font-size="{IMPORTANT_NOTES_FONT_SIZE_MM:.3f}mm" '
+        f'fill="rgb(255, 0, 0)" text-anchor="middle" dominant-baseline="middle">'
+        f'{svg_escape(note).encode("ascii", "xmlcharrefreplace").decode("ascii")}</text>'
         for index, note in enumerate(notes)
     )
     return (
-        f'  <text id="{instance_id}-important-notes" x="{x:.3f}" y="{first_y:.3f}" '
-        f'font-family="Arial" font-size="{IMPORTANT_NOTES_FONT_SIZE_MM:.3f}mm" '
-        f'fill="rgb(255, 0, 0)" text-anchor="middle" dominant-baseline="middle">{tspans}</text>'
+        f'  <g id="{instance_id}-important-notes">\n'
+        f'{note_lines}\n'
+        f'  </g>'
     )
 
 
