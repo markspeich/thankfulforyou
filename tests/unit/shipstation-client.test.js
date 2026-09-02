@@ -461,6 +461,21 @@ describe("ShipStation V2 client", () => {
     );
   });
 
+  it("deletes an encoded shipment tag and validates the confirmed tag removal", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 204,
+      headers: new Headers(),
+    });
+    const client = createShipStationClient({ apiKey: "secret", fetchImpl });
+
+    await expect(client.removeShipmentTag({ shipmentId: "se/1", tagName: "Customization Needed" })).resolves.toBeUndefined();
+    expect(fetchImpl).toHaveBeenCalledWith(
+      "https://api.shipstation.com/v2/shipments/se%2F1/tags/Customization%20Needed",
+      expect.objectContaining({ method: "DELETE", headers: expect.objectContaining({ "API-Key": "secret" }) }),
+    );
+  });
+
   it("rejects tag responses that do not confirm the requested shipment and tag", async () => {
     for (const upstreamResponse of [
       response({ shipment_id: "se-other", tag: { name: "tag" } }),

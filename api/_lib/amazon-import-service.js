@@ -6,7 +6,7 @@ import {
 import { readShipStationConfig } from "./shipstation-client.js";
 import { safeAmazonImportError } from "./amazon-import-diagnostics.js";
 
-const PROCESSED_TAG = "Amazon Customization Imported";
+const REQUIRED_TAG = "Customization Needed";
 const CUSTOMIZED_URL_OPTION = "CustomizedURL";
 const HEARTBEAT_INTERVAL_MS = 5 * 60 * 1000;
 const MAX_PUBLIC_FAILURES = 10;
@@ -72,10 +72,10 @@ function isImportLifecycleFailure(error, signal) {
   return isAbort(error, signal) || error instanceof AmazonImportError;
 }
 
-function isProcessed(shipment) {
+function needsCustomization(shipment) {
   return shipment?.tags?.some((tag) => (
-    tag === PROCESSED_TAG
-    || (tag && typeof tag === "object" && tag.name === PROCESSED_TAG)
+    tag === REQUIRED_TAG
+    || (tag && typeof tag === "object" && tag.name === REQUIRED_TAG)
   )) ?? false;
 }
 
@@ -438,7 +438,7 @@ export function createAmazonImportService({
         for (let index = 0; index < shipments.length; index += 1) {
           const shipment = shipments[index];
           const shipmentContext = shipmentDiagnosticContext(shipment);
-          const processedTagPresent = isProcessed(shipment);
+          const customizationTagPresent = needsCustomization(shipment);
           currentShipmentContext = shipmentContext;
           currentStage = null;
           currentFailureContext = {};
@@ -446,13 +446,13 @@ export function createAmazonImportService({
           emitDiagnostic(diagnostics, "info", "shipment.started", {
             ...shipmentContext,
             itemCount: Array.isArray(shipment?.items) ? shipment.items.length : 0,
-            processedTagPresent,
+            customizationTagPresent,
           });
-          if (processedTagPresent) {
+          if (!customizationTagPresent) {
             alreadyProcessedShipments += 1;
             emitDiagnostic(diagnostics, "info", "shipment.skipped", {
               ...shipmentContext,
-              skipReason: "processed_tag_present",
+              skipReason: "customization_tag_absent",
             });
           } else {
             try {
@@ -548,9 +548,10 @@ export function createAmazonImportService({
                   });
                 }
               }
-              customizationNeeded += normalizedItems.filter(
+              const shipmentCustomizationNeeded = normalizedItems.filter(
                 (item) => item?.source?.customizationNeeded,
               ).length;
+              customizationNeeded += shipmentCustomizationNeeded;
 
               try {
                 const noteBlocks = [];
@@ -591,19 +592,21 @@ export function createAmazonImportService({
                   }));
                 }
 
-                currentStage = "tag_update";
-                await awaitActive(() => client.addShipmentTag({
-                  shipmentId: shipment.shipment_id,
-                  tagName: PROCESSED_TAG,
-                  signal,
-                }));
-                processedShipments += 1;
+                if (shipmentCustomizationNeeded === 0) {
+                  currentStage = "tag_update";
+                  await awaitActive(() => client.removeShipmentTag({
+                    shipmentId: shipment.shipment_id,
+                    tagName: REQUIRED_TAG,
+                    signal,
+                  }));
+                  processedShipments += 1;
+                }
                 emitDiagnostic(diagnostics, "info", "shipment.completed", {
                   ...shipmentContext,
                   importedItems: persistence.importedOrderItemIds.length,
                   existingItems: persistence.existingOrderItemIds.length,
                   notesUpdated: noteResult.notes !== existingNotes,
-                  processedTagUpdated: true,
+                  customizationTagRemoved: shipmentCustomizationNeeded === 0,
                 });
               } catch (error) {
                 if (isImportLifecycleFailure(error, signal)) throw error;

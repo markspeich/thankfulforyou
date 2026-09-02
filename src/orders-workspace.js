@@ -415,7 +415,7 @@ export function getAmazonImportWarningDescription(summary = {}) {
         return [`Amazon order ${warning.orderNumber} was imported, but ShipStation Notes to Buyer could not be updated.`];
       }
       if (warning.stage === "tag_update") {
-        return [`Amazon order ${warning.orderNumber} was imported, but the ShipStation processed tag could not be added.`];
+        return [`Amazon order ${warning.orderNumber} was imported, but the ShipStation Customization Needed tag could not be removed.`];
       }
       return [];
     });
@@ -439,7 +439,7 @@ export function getAmazonImportSummary(summary = {}) {
     noun(processedShipments, "shipment processed", "shipments processed"),
     noun(importedItems, "item imported", "items imported"),
     noun(existingItems, "existing item", "existing items"),
-    noun(alreadyProcessedShipments, "already-processed shipment"),
+    noun(alreadyProcessedShipments, "shipment not awaiting customization", "shipments not awaiting customization"),
     noun(customizationNeeded, "item needing customization", "items needing customization"),
     noun(warnings, "warning", "warnings"),
     noun(failed, "failure", "failures"),

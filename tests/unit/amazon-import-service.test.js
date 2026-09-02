@@ -11,7 +11,7 @@ import { createAmazonImportDiagnostics } from "../../api/_lib/amazon-import-diag
 import { createAmazonItemEnricher } from "../../api/_lib/amazon-import-enrichment.js";
 import { ShipStationError } from "../../api/_lib/shipstation-client.js";
 
-const PROCESSED_TAG = "Amazon Customization Imported";
+const REQUIRED_TAG = "Customization Needed";
 const STARTED_AT = new Date("2026-07-25T15:00:00.000Z");
 
 function deferred() {
@@ -77,8 +77,8 @@ function item(id, {
 }
 
 function shipment(id, {
-  items = [item(`${id}-item`)],
-  tags = [],
+  items = [item(`${id}-item`, { customizedUrl: `https://zme-caps.amazon.com/${id}.zip` })],
+  tags = [REQUIRED_TAG],
   notes = "",
   ...overrides
 } = {}) {
@@ -109,6 +109,9 @@ function fixture({
   let activeEnrichItem = enrichItem;
   const sequence = [];
   const events = [];
+  const updateShipmentTag = vi.fn(async ({ shipmentId }) => {
+    sequence.push(`tag:${shipmentId}`);
+  });
   const client = {
     iteratePendingShipments: vi.fn(async function* () {
       for (const current of shipments) {
@@ -119,9 +122,10 @@ function fixture({
     updateNotesToBuyer: vi.fn(async ({ shipmentId }) => {
       sequence.push(`notes:${shipmentId}`);
     }),
-    addShipmentTag: vi.fn(async ({ shipmentId }) => {
-      sequence.push(`tag:${shipmentId}`);
-    }),
+    // Keep the legacy alias temporarily so older failure-path tests exercise
+    // the same external tag mutation while the workflow changes direction.
+    addShipmentTag: updateShipmentTag,
+    removeShipmentTag: updateShipmentTag,
   };
   const store = {
     acquireAmazonImportLock: vi.fn(async () => {
@@ -275,13 +279,13 @@ describe("Amazon import service", () => {
     expect(diagnosticEvents).toEqual([
       { level: "info", event: "amazon_import.run.started", context: { runId: "run-123", workspaceId: "workspace-1" } },
       { level: "info", event: "amazon_import.shipments.fetched", context: { runId: "run-123", workspaceId: "workspace-1", shipmentCount: 1 } },
-      { level: "info", event: "amazon_import.shipment.started", context: { runId: "run-123", workspaceId: "workspace-1", shipmentId: "shipment-safe", orderNumber: "order-shipment-safe", itemCount: 1, processedTagPresent: false } },
+      { level: "info", event: "amazon_import.shipment.started", context: { runId: "run-123", workspaceId: "workspace-1", shipmentId: "shipment-safe", orderNumber: "order-shipment-safe", itemCount: 1, customizationTagPresent: true } },
       { level: "info", event: "amazon_import.item.started", context: { runId: "run-123", workspaceId: "workspace-1", shipmentId: "shipment-safe", orderNumber: "order-shipment-safe", orderItemId: "item-safe", customizationUrlPresent: true } },
       { level: "info", event: "amazon_import.item.customization_fetched", context: { runId: "run-123", workspaceId: "workspace-1", shipmentId: "shipment-safe", orderNumber: "order-shipment-safe", orderItemId: "item-safe", summary: { format: "v3", surfaceCount: 1, areaCount: 3, candidateNodeCount: 3, acceptedTextCount: 1, acceptedConfigurationCount: 2, acceptedLabels: ["Name", "Name Font", "Color"], rejectedCounts: {} } } },
       { level: "info", event: "amazon_import.item.normalized", context: { runId: "run-123", workspaceId: "workspace-1", shipmentId: "shipment-safe", orderNumber: "order-shipment-safe", orderItemId: "item-safe", textLineCount: 1, personalizationResponseCount: 3, fontSelectionCount: 1, customizationNeeded: false } },
       { level: "info", event: "amazon_import.item.enriched", context: { runId: "run-123", workspaceId: "workspace-1", shipmentId: "shipment-safe", orderNumber: "order-shipment-safe", orderItemId: "item-safe", presetId: "preset-amazon", designLineCount: 1, selectionCount: 1, recognizedCount: 1, unknownCount: 0, pendingCount: 0, effectiveFontIds: ["skywalk-internal"] } },
       { level: "info", event: "amazon_import.item.persisted", context: { runId: "run-123", workspaceId: "workspace-1", shipmentId: "shipment-safe", orderNumber: "order-shipment-safe", orderItemId: "item-safe", persistenceOutcome: "imported" } },
-      { level: "info", event: "amazon_import.shipment.completed", context: { runId: "run-123", workspaceId: "workspace-1", shipmentId: "shipment-safe", orderNumber: "order-shipment-safe", importedItems: 1, existingItems: 0, notesUpdated: true, processedTagUpdated: true } },
+      { level: "info", event: "amazon_import.shipment.completed", context: { runId: "run-123", workspaceId: "workspace-1", shipmentId: "shipment-safe", orderNumber: "order-shipment-safe", importedItems: 1, existingItems: 0, notesUpdated: true, customizationTagRemoved: true } },
       { level: "info", event: "amazon_import.run.completed", context: { runId: "run-123", workspaceId: "workspace-1", processedShipments: 1, importedItems: 1, existingItems: 0, alreadyProcessedShipments: 0, customizationNeeded: 0, warnings: 0, failed: 0 } },
     ]);
     expect(result).toMatchObject({ processedShipments: 1, importedItems: 1, failed: 0 });
@@ -959,7 +963,7 @@ describe("Amazon import service", () => {
     });
 
     await expect(run(f)).resolves.toMatchObject({
-      processedShipments: 1,
+      processedShipments: 0,
       importedItems: 1,
       customizationNeeded: 1,
       failed: 0,
@@ -1364,61 +1368,46 @@ describe("Amazon import service", () => {
       .toBeLessThan(f.sequence.indexOf("progress:processing_shipments:0"));
   });
 
-  it("skips processed tags represented by objects or validated strings", async () => {
-    const diagnosticEvents = [];
-    const diagnostics = createAmazonImportDiagnostics({
-      logger: flattenDiagnosticLogger({
-        info: (event, context) => diagnosticEvents.push({ event, context }),
-        error: vi.fn(),
-      }),
-      runId: "run-skipped",
-      workspaceId: "workspace-1",
-    });
+  it("imports only shipments tagged for customization and removes the tag after complete customization", async () => {
     const f = fixture({
-      diagnostics,
       shipments: [
-        shipment("object-tag", { tags: [{ name: PROCESSED_TAG }] }),
-        shipment("string-tag", { tags: [PROCESSED_TAG] }),
-        shipment("invalid-tag", { tags: [42, { name: "Other" }] }),
+        shipment("tagged", {
+          tags: [{ name: REQUIRED_TAG }],
+          items: [item("tagged-item", { customizedUrl: "https://zme-caps.amazon.com/tagged.zip" })],
+        }),
+        shipment("untagged", {
+          tags: [],
+          items: [item("untagged-item", { customizedUrl: "https://zme-caps.amazon.com/untagged.zip" })],
+        }),
       ],
     });
 
     const result = await run(f);
 
-    expect(result).toMatchObject({
-      processedShipments: 1,
-      alreadyProcessedShipments: 2,
-      failed: 0,
-    });
     expect(f.store.importAmazonOrderItemsTransactional).toHaveBeenCalledOnce();
-    expect(f.client.addShipmentTag).toHaveBeenCalledOnce();
-    expect(f.client.addShipmentTag).toHaveBeenCalledWith({
-      shipmentId: "invalid-tag",
-      tagName: PROCESSED_TAG,
+    expect(f.client.removeShipmentTag).toHaveBeenCalledWith({
+      shipmentId: "tagged",
+      tagName: REQUIRED_TAG,
       signal: undefined,
     });
-    expect(diagnosticEvents.filter(({ event }) => event === "amazon_import.shipment.skipped")).toEqual([
-      {
-        event: "amazon_import.shipment.skipped",
-        context: {
-          runId: "run-skipped",
-          workspaceId: "workspace-1",
-          shipmentId: "object-tag",
-          orderNumber: "order-object-tag",
-          skipReason: "processed_tag_present",
-        },
-      },
-      {
-        event: "amazon_import.shipment.skipped",
-        context: {
-          runId: "run-skipped",
-          workspaceId: "workspace-1",
-          shipmentId: "string-tag",
-          orderNumber: "order-string-tag",
-          skipReason: "processed_tag_present",
-        },
-      },
-    ]);
+    expect(result).toMatchObject({ processedShipments: 1, alreadyProcessedShipments: 1, failed: 0 });
+  });
+
+  it("leaves the customization-needed tag when any shipment item lacks usable text", async () => {
+    const f = fixture({
+      shipments: [shipment("incomplete", {
+        tags: [REQUIRED_TAG],
+        items: [
+          item("complete", { customizedUrl: "https://zme-caps.amazon.com/complete.zip" }),
+          item("incomplete"),
+        ],
+      })],
+    });
+
+    const result = await run(f);
+
+    expect(f.client.removeShipmentTag).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ processedShipments: 0, customizationNeeded: 1, warnings: 0, failed: 0 });
   });
 
   it("imports every line item and treats only exact CustomizedURL options as archives", async () => {
@@ -1719,7 +1708,7 @@ describe("Amazon import service", () => {
     expect(f.store.importAmazonOrderItemsTransactional).toHaveBeenCalledOnce();
     expect(f.client.addShipmentTag).toHaveBeenCalledWith({
       shipmentId: "retry",
-      tagName: PROCESSED_TAG,
+      tagName: REQUIRED_TAG,
       signal: undefined,
     });
     expect(result).toMatchObject({
@@ -1752,7 +1741,7 @@ describe("Amazon import service", () => {
       processedShipments: 0,
       importedItems: 1,
       existingItems: 0,
-      customizationNeeded: 1,
+      customizationNeeded: 0,
       warnings: 1,
       failed: 0,
     });
@@ -1782,7 +1771,7 @@ describe("Amazon import service", () => {
       processedShipments: 1,
       importedItems: 1,
       alreadyProcessedShipments: 0,
-      customizationNeeded: 1,
+      customizationNeeded: 0,
       failed: 1,
     });
     expect(f.store.importAmazonOrderItemsTransactional).toHaveBeenCalledOnce();

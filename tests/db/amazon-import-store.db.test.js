@@ -436,13 +436,13 @@ describe("Amazon import database integration", () => {
         quantity: AMAZON_CUSTOMIZATION_FIXTURE.quantity,
         options: [{ name: "CustomizedURL", value: "https://local.test/customization.zip" }],
       }],
-      tags: [],
+      tags: [{ name: "Customization Needed" }],
       notes_to_buyer: "",
     };
     const client = {
       async *iteratePendingShipments() { yield shipment; },
       async updateNotesToBuyer() {},
-      async addShipmentTag() {},
+      async removeShipmentTag() {},
     };
 
     try {

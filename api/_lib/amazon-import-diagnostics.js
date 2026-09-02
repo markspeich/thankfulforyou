@@ -237,7 +237,7 @@ function safeContext(context) {
     const count = safeCount(context[key]);
     if (count != null) details[key] = count;
   }
-  for (const key of ["customizationUrlPresent", "notesUpdated", "processedTagUpdated", "processedTagPresent"]) {
+  for (const key of ["customizationUrlPresent", "notesUpdated", "customizationTagRemoved", "customizationTagPresent"]) {
     if (typeof context[key] === "boolean") details[key] = context[key];
   }
   if (typeof context.customizationNeeded === "boolean") {

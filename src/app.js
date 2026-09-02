@@ -6876,7 +6876,7 @@ async function startAmazonImport() {
             { label: "Shipments processed", value: amazonImportResult.processedShipments },
             { label: "Items imported", value: amazonImportResult.importedItems },
             { label: "Existing items", value: amazonImportResult.existingItems },
-            { label: "Already processed", value: amazonImportResult.alreadyProcessedShipments },
+            { label: "Not awaiting customization", value: amazonImportResult.alreadyProcessedShipments },
             { label: "Needs review", value: amazonImportResult.customizationNeeded },
             { label: "Warnings", value: amazonImportResult.warnings },
             { label: "Failed", value: amazonImportResult.failed },

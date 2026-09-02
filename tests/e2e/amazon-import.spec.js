@@ -234,13 +234,13 @@ test("Amazon warning-only completion shows every safe warning beyond ten with al
     "Amazon order 111-0000001-0000001 was imported, but ShipStation Notes to Buyer could not be updated because the note is too long.",
   );
   await expect(dialog.locator("#pasteSummaryDescription")).toContainText(
-    "Amazon order 111-0000011-0000011 was imported, but the ShipStation processed tag could not be added.",
+    "Amazon order 111-0000011-0000011 was imported, but the ShipStation Customization Needed tag could not be removed.",
   );
   await expect(dialog.locator("#pasteSummaryCounts dt")).toHaveText([
     "Shipments processed",
     "Items imported",
     "Existing items",
-    "Already processed",
+    "Not awaiting customization",
     "Needs review",
     "Warnings",
     "Failed",
@@ -266,7 +266,7 @@ test("Etsy completion hides stale Amazon-only metrics", async ({ page }) => {
     "Shipments processed",
     "Items imported",
     "Existing items",
-    "Already processed",
+    "Not awaiting customization",
     "Needs review",
     "Warnings",
     "Failed",

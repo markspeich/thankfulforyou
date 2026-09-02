@@ -538,7 +538,7 @@ describe("Amazon workspace descriptors", () => {
     })).toBe([
       "Amazon order 111-0000001-0000001 was imported, but ShipStation Notes to Buyer could not be updated because the note is too long.",
       "Amazon order 111-0000002-0000002 was imported, but ShipStation Notes to Buyer could not be updated.",
-      "Amazon order 111-0000003-0000003 was imported, but the ShipStation processed tag could not be added.",
+      "Amazon order 111-0000003-0000003 was imported, but the ShipStation Customization Needed tag could not be removed.",
     ].join(" "));
   });
 
@@ -553,7 +553,7 @@ describe("Amazon workspace descriptors", () => {
     const description = getAmazonImportWarningDescription({ warnings: 11, warningDetails });
 
     expect(description).toContain(
-      "Amazon order 111-0000011-0000011 was imported, but the ShipStation processed tag could not be added.",
+      "Amazon order 111-0000011-0000011 was imported, but the ShipStation Customization Needed tag could not be removed.",
     );
     expect(description).not.toContain(
       "One or more Amazon orders were imported, but ShipStation synchronization could not be completed.",
@@ -643,7 +643,7 @@ describe("Amazon workspace descriptors", () => {
       customerName: "Do not render",
       signedUrl: "https://zme-caps.amazon.com/private",
     })).toBe(
-      "3 shipments processed, 4 items imported, 2 existing items, 1 already-processed shipment, 2 items needing customization, 1 warning, 0 failures.",
+      "3 shipments processed, 4 items imported, 2 existing items, 1 shipment not awaiting customization, 2 items needing customization, 1 warning, 0 failures.",
     );
   });
 
@@ -658,7 +658,7 @@ describe("Amazon workspace descriptors", () => {
       failed: 1,
       apiKey: "secret",
     })).toBe(
-      "0 shipments processed, 0 items imported, 0 existing items, 0 already-processed shipments, 0 items needing customization, 0 warnings, 1 failure.",
+      "0 shipments processed, 0 items imported, 0 existing items, 0 shipments not awaiting customization, 0 items needing customization, 0 warnings, 1 failure.",
     );
   });
 });

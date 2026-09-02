@@ -205,7 +205,7 @@ export function createShipStationClient({
     if (signal?.aborted) throw new ShipStationError("aborted");
   }
 
-  async function request({ path, method = "GET", body, signal, validate }) {
+  async function request({ path, method = "GET", body, signal, validate, noContent = false }) {
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
       if (signal?.aborted) throw new ShipStationError("aborted");
       const combined = combineSignals(signal, createTimeoutSignal(TIMEOUT_MS));
@@ -229,6 +229,10 @@ export function createShipStationClient({
       }
 
       if (response.ok) {
+        if (noContent && response.status === 204) {
+          combined.cleanup();
+          return undefined;
+        }
         try {
           const payload = await response.json();
           if (combined.signal?.aborted) throw new ShipStationError(signal?.aborted ? "aborted" : "temporary", { retryable: !signal?.aborted });
@@ -336,5 +340,15 @@ export function createShipStationClient({
     });
   }
 
-  return Object.freeze({ iteratePendingShipments, updateNotesToBuyer, addShipmentTag });
+  function removeShipmentTag({ shipmentId, tagName, signal } = {}) {
+    if (typeof shipmentId !== "string" || !shipmentId || typeof tagName !== "string" || !tagName) throw new ShipStationError("invalid_response");
+    return request({
+      path: '/shipments/' + encodeURIComponent(shipmentId) + '/tags/' + encodeURIComponent(tagName),
+      method: 'DELETE',
+      signal,
+      noContent: true,
+    });
+  }
+
+  return Object.freeze({ iteratePendingShipments, updateNotesToBuyer, addShipmentTag, removeShipmentTag });
 }

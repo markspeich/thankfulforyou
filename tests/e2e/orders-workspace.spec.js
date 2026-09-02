@@ -471,13 +471,13 @@ test("Amazon import failure details remain actionable in the operation dialog", 
   await expect(dialog.locator("#pasteSummaryDescription")).toHaveText([
     "Amazon order 111-0318024-9415409 failed while updating ShipStation notes: Package weight is required.",
     "Amazon order 111-0000002-0000002 was imported, but ShipStation Notes to Buyer could not be updated.",
-    "Amazon order 111-0000003-0000003 was imported, but the ShipStation processed tag could not be added.",
+    "Amazon order 111-0000003-0000003 was imported, but the ShipStation Customization Needed tag could not be removed.",
   ].join(" "));
   await expect(dialog.locator("#pasteSummaryCounts dt")).toHaveText([
     "Shipments processed",
     "Items imported",
     "Existing items",
-    "Already processed",
+    "Not awaiting customization",
     "Needs review",
     "Warnings",
     "Failed",
