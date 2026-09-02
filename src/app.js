@@ -48,6 +48,7 @@ import {
 } from "./presets.js";
 import { savePresetSnapshot } from "./preset-api.js";
 import { computeLineMaskMetrics } from "./text-metrics.js";
+import { buildFontCoverageSummary, formatUnsupportedCharacters } from "./font-coverage.js";
 import { getRenderableTextLines } from "./text-lines.js";
 import { shouldUsePostStretchBackingOffset, shouldUseRasterTextPreview } from "./preview-rendering.js";
 import { findPairOffsetPx } from "./bridge-geometry.js";
@@ -1692,6 +1693,7 @@ function buildExportPayload(layout, analysis = layout?.analysis || null, source 
         exportFacePath: analysis.exportFacePath,
         backingPath: analysis.backingPath,
         connectedComponentCount: analysis.connectedComponentCount,
+        unsupportedCharacters: Array.isArray(analysis.unsupportedCharacters) ? analysis.unsupportedCharacters : [],
       },
     };
   }
@@ -9654,6 +9656,11 @@ function buildCompletedAnalysisBadge(analysis) {
     return null;
   }
 
+  const fontCoverageSummary = buildFontCoverageSummary(analysis.unsupportedCharacters, analysis);
+  if (fontCoverageSummary) {
+    return fontCoverageSummary;
+  }
+
   if (analysis.isConnected) {
     return {
       state: "ok",
@@ -13308,6 +13315,20 @@ function renderPreviewFromLayout(layout) {
 
 function updateConnectionStatusFromAnalysis(analysis) {
   const analysisBadge = buildCompletedAnalysisBadge(analysis);
+  const fontCoverageWarning = formatUnsupportedCharacters(analysis.unsupportedCharacters);
+
+  if (fontCoverageWarning) {
+    const connectedness = analysis.isConnected
+      ? "Connectedness analysis found one face piece."
+      : `Connectedness analysis found ${analysis.connectedComponentCount} face pieces.`;
+    updateConnectionStatus(
+      "warning",
+      "Manual font correction needed",
+      `${fontCoverageWarning} ${connectedness}`,
+      analysisBadge,
+    );
+    return;
+  }
 
   if (analysis.isConnected) {
     updateConnectionStatus(
@@ -13666,7 +13687,7 @@ function assembleOrderLayout(normalized, sourceLines, fitScale, fitted, guide) {
   const textBoundsMm = buildScaledTextBounds(textWidthMm, textHeightMm, backingMm, 1);
   const widthMm = textBoundsMm.width + textBoundsMm.left * 2;
   const heightMm = textBoundsMm.height + textBoundsMm.top * 2;
-  const absoluteLetters = lineBounds.flatMap(({ line, centeredLeftMm }) => {
+  const absoluteLetters = lineBounds.flatMap(({ line, centeredLeftMm }, lineIndex) => {
     const font = getFontOption(line.settings.fontId);
     const rawLineX = textBoundsMm.left + centeredLeftMm - minLeftMm - line.mask.leftMm;
     const rawBaselineY = textBoundsMm.top + (line.y - minTopMm) + line.mask.baselineMm;
@@ -13676,7 +13697,9 @@ function assembleOrderLayout(normalized, sourceLines, fitScale, fitted, guide) {
       x: rawLineX + letter.x,
       y: rawBaselineY,
       fontId: line.settings.fontId,
+      fontName: font.displayName || font.label || line.settings.fontId,
       fontPath: font.exportPath,
+      lineIndex,
       fontSizeMm: line.settings.fontSizeMm,
       horizontalScale: line.settings.horizontalScale,
       verticalScale: line.settings.verticalScale,

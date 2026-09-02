@@ -76,7 +76,8 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 
 ## Current Production Requirements
 
-- Production Batch SVG exports must prepend an `Important Notes` column before the mirrored design, design, mirrored backing, and color columns. Each exported instance must show `BLACK TEXT` when its color contains `white` case-insensitively and `NOT WELDED` when its design is not welded. When both rules apply, the notes must appear on separate lines; when neither applies, the notes cell remains blank.
+- Production Batch SVG exports must prepend an `Important Notes` column before the mirrored design, design, mirrored backing, and color columns. Each exported instance must show `BLACK TEXT` when its color contains `white` case-insensitively and `NOT WELDED` when its design is not welded. Applicable notes must appear on separate lines; when no note rule applies, the notes cell remains blank.
+- Saved design analysis must identify characters that the selected font cannot render distinctly, including accented characters that silently reuse their unaccented base glyph. The Production Batch editor and order row must show a non-blocking manual-correction warning naming the font, character, and line. Export must remain available, and the batch SVG `Important Notes` column must include a `CHECK FONT` note so the operator can correct the character in LightBurn.
 
 - Each workspace font's browser `family_name` must be derived solely from the UTF-8 hex encoding of its immutable `fonts.id` as `WorkspaceFont_<utf8-hex-id>`. Display-name changes must not change that identity, and active and archived fonts must remain independently loadable even when legacy family names collide.
 
