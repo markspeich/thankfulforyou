@@ -60,6 +60,21 @@ When the user provides new product, workflow, material, manufacturing, design, o
 - Keep changes scoped and avoid unrelated refactors.
 - When the user says `finish this worktree`, complete the standard post-feature workflow: merge latest `main` into the current worktree and resolve conflicts, run appropriate verification, commit the worktree changes to the current feature branch, identify and apply any checked-in migrations that the target database still needs, verify the target migration history or schema, merge that feature branch into `main`, push `main`, and delete the finished feature branch. Apply required additive production migrations before pushing code that depends on them. A destructive migration still requires explicit confirmation before it is applied.
 
+### Subagent Budget Management
+
+- For implementation work, generally delegate well-bounded tasks to subagents when delegation is likely to save time or context without adding disproportionate coordination cost.
+- Prefer a model that balances capability and cost for implementation subagents; use `gpt-5.6-terra` at `medium` reasoning by default when available, and choose a cheaper or stronger model only when the task clearly warrants it.
+- Do not delegate trivial edits, tightly coupled work, or tasks that the primary agent can complete more efficiently itself.
+- Give every subagent a narrow scope, concrete deliverable, relevant context, verification command or acceptance criteria, and an explicit stop condition. Require the subagent to report blockers instead of expanding scope.
+- Limit initial delegation to the smallest useful number of agents and parallelize only independent work. Avoid duplicate investigation and do not allow subagents to spawn additional agents unless the primary agent explicitly authorizes it.
+- Use checkpoints: review each subagent's findings, diff, and verification evidence before assigning follow-up work or integrating changes. Interrupt or redirect agents that repeat failed approaches, exceed scope, or continue without useful progress.
+- The primary agent owns the plan, watches both its own work and delegated work for unnecessary effort, integrates changes, resolves conflicts, and runs final end-to-end verification.
+- Do not spend additional tokens merely to exhaust a budget. Stop delegating once the requested outcome is verified, and report any material tradeoff caused by choosing a cheaper model or narrower verification.
+
+Reusable delegation prompt:
+
+> Implement the bounded task below using the existing project conventions. Stay strictly within scope and do not perform speculative refactors or unrelated cleanup. Do not spawn additional agents. First inspect only the files needed to understand the task, then make the smallest complete change. Run the specified verification and report: files changed, verification results, assumptions, and blockers. Stop and return control if requirements are ambiguous, the task expands beyond scope, verification fails repeatedly, or further work would require a materially different approach. Task: `<task>`. Scope: `<files or subsystem>`. Acceptance criteria: `<criteria>`. Verification: `<command or check>`.
+
 ## Standard Local App Startup
 
 ### Local Supabase Shorthand
