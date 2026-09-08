@@ -2008,11 +2008,33 @@ h2 {
   gap: 12px;
 }
 
-.range-row output {
+.range-value-editor {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 3px;
+  width: 70px;
+}
+
+.range-value-editor input {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  height: 28px;
+  padding: 2px 2px 2px 4px;
   color: var(--ink);
-  font-size: 0.86rem;
+  background: var(--surface, #fff);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  font: inherit;
+  font-size: 0.78rem;
   text-align: right;
-  white-space: nowrap;
+}
+
+.range-value-editor span {
+  color: var(--muted);
+  font-size: 0.66rem;
+  line-height: 1;
 }
 
 button {

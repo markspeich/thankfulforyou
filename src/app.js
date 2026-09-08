@@ -1848,7 +1848,7 @@ function updatePresetBackingOutput() {
     return;
   }
 
-  presetBackingOutput.textContent = `${Number(presetBackingInput.value).toFixed(1)} mm`;
+  updateRangeValueEditor(presetBackingInput);
 }
 
 function updatePresetGlobalHorizontalScaleOutput() {
@@ -1856,7 +1856,7 @@ function updatePresetGlobalHorizontalScaleOutput() {
     return;
   }
 
-  presetGlobalHorizontalScaleOutput.textContent = lineValueText("horizontalScale", presetGlobalHorizontalScaleInput.value);
+  updateRangeValueEditor(presetGlobalHorizontalScaleInput);
 }
 
 function updatePresetGlobalVerticalScaleOutput() {
@@ -1864,7 +1864,7 @@ function updatePresetGlobalVerticalScaleOutput() {
     return;
   }
 
-  presetGlobalVerticalScaleOutput.textContent = lineValueText("verticalScale", presetGlobalVerticalScaleInput.value);
+  updateRangeValueEditor(presetGlobalVerticalScaleInput);
 }
 
 function normalizePresetGlobalDefaults(globalDefaults = {}) {
@@ -1966,10 +1966,8 @@ function createPresetEditorRangeField(ruleKey, setting, labelText, min, max, ste
   input.dataset.presetRuleKey = ruleKey;
   input.dataset.setting = setting;
 
-  const output = document.createElement("output");
-  output.textContent = lineValueText(setting, value);
-
-  row.append(input, output);
+  const valueEditor = createRangeValueEditor(input, setting, value, labelText);
+  row.append(input, valueEditor);
   label.append(span, row);
 
   return label;
@@ -8658,25 +8656,80 @@ function lineValueText(setting, value) {
   return `${Number(value).toFixed(1)} mm`;
 }
 
+function rangeValueConfig(setting, rangeInput) {
+  const isScale = setting === "horizontalScale" || setting === "verticalScale"
+    || setting === "globalHorizontalScale" || setting === "globalVerticalScale";
+  return {
+    factor: isScale ? 100 : 1,
+    unit: isScale ? "%" : "mm",
+    decimals: setting === "fontSizeMm" || isScale ? 0 : 1,
+    min: Number(rangeInput.min) * (isScale ? 100 : 1),
+    max: Number(rangeInput.max) * (isScale ? 100 : 1),
+    step: Number(rangeInput.step) * (isScale ? 100 : 1),
+  };
+}
+
+function createRangeValueEditor(rangeInput, setting, value, labelText) {
+  const config = rangeValueConfig(setting, rangeInput);
+  const wrapper = document.createElement("span");
+  wrapper.className = "range-value-editor";
+  const input = document.createElement("input");
+  input.type = "number";
+  input.min = String(config.min);
+  input.max = String(config.max);
+  input.step = String(config.step);
+  input.value = (Number(value) * config.factor).toFixed(config.decimals);
+  input.dataset.rangeValueFor = setting;
+  input.setAttribute("aria-label", `${labelText} value`);
+  const unit = document.createElement("span");
+  unit.textContent = config.unit;
+  wrapper.append(input, unit);
+  return wrapper;
+}
+
+function updateRangeValueEditor(rangeInput, { value = rangeInput.value, mixed = false } = {}) {
+  const numberInput = rangeInput.parentElement?.querySelector('[data-range-value-for]');
+  if (!(numberInput instanceof HTMLInputElement)) return;
+  const setting = numberInput.dataset.rangeValueFor || rangeInput.dataset.setting || "";
+  const config = rangeValueConfig(setting, rangeInput);
+  numberInput.value = mixed ? "" : (Number(value) * config.factor).toFixed(config.decimals);
+  numberInput.placeholder = mixed ? "Mixed" : "";
+}
+
+function syncRangeFromValueEditor(numberInput, rangeInput) {
+  if (numberInput.value === "" || !Number.isFinite(numberInput.valueAsNumber)) return false;
+  const setting = numberInput.dataset.rangeValueFor || rangeInput.dataset.setting || "";
+  const config = rangeValueConfig(setting, rangeInput);
+  let nextValue = numberInput.valueAsNumber / config.factor;
+  if (setting === "fontSizeMm") {
+    const lineIndex = readLineIndexFromControl(rangeInput);
+    const fitScale = Number(lastLayout?.fit?.lineScaleFactors?.[lineIndex]);
+    if (Number.isFinite(fitScale) && fitScale > 0 && !isTextHeightInputLocked(rangeInput)) {
+      nextValue /= fitScale;
+    }
+  }
+  nextValue = Math.min(Number(rangeInput.max), Math.max(Number(rangeInput.min), nextValue));
+  rangeInput.value = String(nextValue);
+  return true;
+}
+
 function updateBackingOutput() {
-  backingOutput.textContent = `${Number(backingInput.value).toFixed(1)} mm`;
+  updateRangeValueEditor(backingInput);
 }
 
 function updateRangeOutputForInput(input) {
-  if (!(input instanceof HTMLInputElement) || input.type !== "range") {
+  if (!(input instanceof HTMLInputElement)) {
     return;
   }
 
-  const output = input.parentElement?.querySelector("output");
-  if (!output) {
-    return;
+  if (input.dataset.rangeValueFor) {
+    const rangeInput = input.closest(".range-row")?.querySelector('input[type="range"]');
+    if (!(rangeInput instanceof HTMLInputElement) || !syncRangeFromValueEditor(input, rangeInput)) return;
+    input = rangeInput;
   }
+  if (input.type !== "range") return;
 
-  output.textContent = input.id === "presetBackingInput"
-    ? `${Number(input.value).toFixed(1)} mm`
-    : input.dataset.setting === "fontSizeMm"
-      ? "--"
-      : lineValueText(input.dataset.setting || "", input.value);
+  updateRangeValueEditor(input);
 }
 
 function summarizeHorizontalScale(lines = []) {
@@ -8727,7 +8780,7 @@ function updateGlobalHorizontalScaleControl(settings = getCurrentSettings()) {
   const normalized = normalizeSettings(settings);
   const { value, mixed } = summarizeHorizontalScale(normalized.lines);
   globalHorizontalScaleInput.value = String(value);
-  globalHorizontalScaleOutput.textContent = mixed ? "Mixed" : lineValueText("horizontalScale", value);
+  updateRangeValueEditor(globalHorizontalScaleInput, { value, mixed });
 }
 
 function updateGlobalVerticalScaleControl(settings = getCurrentSettings()) {
@@ -8738,7 +8791,7 @@ function updateGlobalVerticalScaleControl(settings = getCurrentSettings()) {
   const normalized = normalizeSettings(settings);
   const { value, mixed } = summarizeVerticalScale(normalized.lines);
   globalVerticalScaleInput.value = String(value);
-  globalVerticalScaleOutput.textContent = mixed ? "Mixed" : lineValueText("verticalScale", value);
+  updateRangeValueEditor(globalVerticalScaleInput, { value, mixed });
 }
 
 function setBatchActionLabel(button, label) {
@@ -9014,10 +9067,8 @@ function createRangeField(lineIndex, setting, labelText, min, max, step, value) 
   input.dataset.lineIndex = String(lineIndex);
   input.dataset.setting = setting;
 
-  const output = document.createElement("output");
-  output.textContent = setting === "fontSizeMm" ? "--" : lineValueText(setting, value);
-
-  row.append(input, output);
+  const valueEditor = createRangeValueEditor(input, setting, value, labelText);
+  row.append(input, valueEditor);
   label.append(span, row);
 
   return label;
@@ -9042,10 +9093,8 @@ function createFixedDesignRangeField(settingsIndex, setting, labelText, min, max
   input.dataset.settingsIndex = String(settingsIndex);
   input.dataset.setting = setting;
 
-  const output = document.createElement("output");
-  output.textContent = lineValueText(setting, value);
-
-  row.append(input, output);
+  const valueEditor = createRangeValueEditor(input, setting, value, labelText);
+  row.append(input, valueEditor);
   label.append(span, row);
 
   return label;
@@ -13265,8 +13314,8 @@ function isTextHeightInputLocked(input) {
 }
 
 function updateFittedTextHeightOutputs(layout = null) {
-  const outputs = lineControlCards.querySelectorAll('[data-setting="fontSizeMm"] + output');
-  if (!outputs.length) {
+  const numberInputs = lineControlCards.querySelectorAll('[data-range-value-for="fontSizeMm"]');
+  if (!numberInputs.length) {
     return;
   }
 
@@ -13274,8 +13323,8 @@ function updateFittedTextHeightOutputs(layout = null) {
   const textLines = settings.lines.filter((line) => !isFixedSvgLineSettings(line));
   const lineScaleFactors = Array.isArray(layout?.fit?.lineScaleFactors) ? layout.fit.lineScaleFactors : [];
 
-  outputs.forEach((output) => {
-    const input = output.previousElementSibling;
+  numberInputs.forEach((numberInput) => {
+    const input = numberInput.closest(".range-row")?.querySelector('input[type="range"]');
     const lineIndex = input instanceof HTMLInputElement ? Number(input.dataset.lineIndex) : NaN;
     if (frozenTextHeightOutputLineIndexes.has(lineIndex)) {
       return;
@@ -13286,11 +13335,13 @@ function updateFittedTextHeightOutputs(layout = null) {
     const fittedHeightMm = Number(line?.fontSizeMm) * Number(scaleFactor);
 
     if (!Number.isFinite(fittedHeightMm) || fittedHeightMm <= 0) {
-      output.textContent = "--";
+      numberInput.value = "";
+      numberInput.placeholder = "--";
       return;
     }
 
-    output.textContent = `${fittedHeightMm.toFixed(0)} mm`;
+    numberInput.value = fittedHeightMm.toFixed(0);
+    numberInput.placeholder = "";
   });
 }
 
@@ -13835,9 +13886,15 @@ function updatePreviewForControlEvent({ defer = false } = {}) {
 }
 
 function handleLineControlsChange(event) {
-  const target = event.target;
+  let target = event.target;
   if (!(target instanceof HTMLInputElement || target instanceof HTMLSelectElement)) {
     return;
+  }
+
+  if (target instanceof HTMLInputElement && target.dataset.rangeValueFor) {
+    const rangeInput = target.closest(".range-row")?.querySelector('input[type="range"]');
+    if (!(rangeInput instanceof HTMLInputElement) || !syncRangeFromValueEditor(target, rangeInput)) return;
+    target = rangeInput;
   }
 
   if (target instanceof HTMLSelectElement && target.dataset.setting === "fontId") {
@@ -13855,7 +13912,6 @@ function handleLineControlsChange(event) {
   }
 
   if (target instanceof HTMLInputElement && target.type === "range") {
-    const output = target.parentElement?.querySelector("output");
     if (target.dataset.setting === "fontSizeMm") {
       const lineIndex = readLineIndexFromControl(target);
       const locked = isTextHeightInputLocked(target);
@@ -13866,13 +13922,14 @@ function handleLineControlsChange(event) {
         frozenTextHeightOutputLineIndexes.delete(lineIndex);
       }
 
-      if (output && locked) {
-        output.textContent = lineValueText(target.dataset.setting, target.value);
-      } else if (output && event.type !== "input") {
-        output.textContent = "--";
+      if (locked) {
+        updateRangeValueEditor(target);
+      } else if (event.type !== "input") {
+        const numberInput = target.parentElement?.querySelector('[data-range-value-for="fontSizeMm"]');
+        if (numberInput instanceof HTMLInputElement) numberInput.placeholder = "--";
       }
-    } else if (output) {
-      output.textContent = lineValueText(target.dataset.setting, target.value);
+    } else {
+      updateRangeValueEditor(target);
     }
   }
 
@@ -13972,11 +14029,31 @@ globalHorizontalScaleInput?.addEventListener("input", () => {
 globalHorizontalScaleInput?.addEventListener("change", () => {
   applyGlobalHorizontalScale(globalHorizontalScaleInput.value);
 });
+globalHorizontalScaleOutput?.addEventListener("input", () => {
+  if (syncRangeFromValueEditor(globalHorizontalScaleOutput, globalHorizontalScaleInput)) {
+    applyGlobalHorizontalScale(globalHorizontalScaleInput.value, { deferPreview: true });
+  }
+});
+globalHorizontalScaleOutput?.addEventListener("change", () => {
+  if (syncRangeFromValueEditor(globalHorizontalScaleOutput, globalHorizontalScaleInput)) {
+    applyGlobalHorizontalScale(globalHorizontalScaleInput.value);
+  }
+});
 globalVerticalScaleInput?.addEventListener("input", () => {
   applyGlobalVerticalScale(globalVerticalScaleInput.value, { deferPreview: true });
 });
 globalVerticalScaleInput?.addEventListener("change", () => {
   applyGlobalVerticalScale(globalVerticalScaleInput.value);
+});
+globalVerticalScaleOutput?.addEventListener("input", () => {
+  if (syncRangeFromValueEditor(globalVerticalScaleOutput, globalVerticalScaleInput)) {
+    applyGlobalVerticalScale(globalVerticalScaleInput.value, { deferPreview: true });
+  }
+});
+globalVerticalScaleOutput?.addEventListener("change", () => {
+  if (syncRangeFromValueEditor(globalVerticalScaleOutput, globalVerticalScaleInput)) {
+    applyGlobalVerticalScale(globalVerticalScaleInput.value);
+  }
 });
 backingInput.addEventListener("input", () => {
   updateBackingOutput();
@@ -13984,6 +14061,17 @@ backingInput.addEventListener("input", () => {
   updateActiveOrderFromControls();
 });
 backingInput.addEventListener("change", () => {
+  updateBackingOutput();
+  render();
+  updateActiveOrderFromControls();
+});
+backingOutput.addEventListener("input", () => {
+  if (!syncRangeFromValueEditor(backingOutput, backingInput)) return;
+  updatePreviewForControlEvent({ defer: true });
+  updateActiveOrderFromControls();
+});
+backingOutput.addEventListener("change", () => {
+  if (!syncRangeFromValueEditor(backingOutput, backingInput)) return;
   updateBackingOutput();
   render();
   updateActiveOrderFromControls();
@@ -14186,6 +14274,17 @@ presetGlobalHorizontalScaleInput?.addEventListener("input", () => {
 presetGlobalVerticalScaleInput?.addEventListener("input", () => {
   updatePresetGlobalVerticalScaleOutput();
   updatePresetSaveButtonState();
+});
+[
+  [presetBackingOutput, presetBackingInput, updatePresetBackingOutput],
+  [presetGlobalHorizontalScaleOutput, presetGlobalHorizontalScaleInput, updatePresetGlobalHorizontalScaleOutput],
+  [presetGlobalVerticalScaleOutput, presetGlobalVerticalScaleInput, updatePresetGlobalVerticalScaleOutput],
+].forEach(([numberInput, rangeInput, updateOutput]) => {
+  numberInput?.addEventListener("input", () => {
+    if (!syncRangeFromValueEditor(numberInput, rangeInput)) return;
+    updateOutput();
+    updatePresetSaveButtonState();
+  });
 });
 presetWeldExportedDesignInput?.addEventListener("input", () => {
   updatePresetSaveButtonState();

@@ -709,14 +709,14 @@ test("shows the production defaults", async ({ page }) => {
   await expect(completeAndNextButton(page)).toHaveText("Save & Next");
   await expect(page.locator("#globalHorizontalScaleInput")).toHaveValue("1");
   await expect(page.locator("#globalHorizontalScaleInput")).toHaveAttribute("max", "2");
-  await expect(page.locator("#globalHorizontalScaleOutput")).toHaveText("100%");
+  await expect(page.locator("#globalHorizontalScaleOutput")).toHaveValue("100");
   await expect(page.locator("#globalVerticalScaleInput")).toHaveValue("1");
   await expect(page.locator("#globalVerticalScaleInput")).toHaveAttribute("max", "2");
-  await expect(page.locator("#globalVerticalScaleOutput")).toHaveText("100%");
+  await expect(page.locator("#globalVerticalScaleOutput")).toHaveValue("100");
   await expect(page.locator("#backingInput")).toHaveValue("3.1");
   await expect(page.locator("#backingInput")).toHaveAttribute("min", "0");
   await expect(page.locator("#backingInput")).toHaveAttribute("step", "0.1");
-  await expect(page.locator("#backingOutput")).toHaveText("3.1 mm");
+  await expect(page.locator("#backingOutput")).toHaveValue("3.1");
   await expect(page.locator("#weldExportedDesignInput")).toBeChecked();
   await expect(page.locator("#preview .preview-guide-label").first()).toHaveText('2.2"');
   await expect(page.locator("#preview circle.preview-guide-box")).toHaveCount(1);
@@ -746,6 +746,58 @@ test("shows the production defaults", async ({ page }) => {
 
   await page.locator("#textInput").fill("Ada");
   await expect(page.locator('.line-control-card[data-line-index="0"] [data-setting="fontSizeMm"]')).toHaveAttribute("min", "5");
+});
+
+test("edits slider values through compact stepped number fields", async ({ page }) => {
+  await page.locator("#textInput").fill("Ada");
+
+  const bridgeSlider = page.locator('.line-control-card[data-line-index="0"] [data-setting="bridgeMm"]');
+  const bridgeNumber = page.locator('.line-control-card[data-line-index="0"] [data-range-value-for="bridgeMm"]');
+  await expect(bridgeNumber).toHaveAttribute("type", "number");
+  await expect(bridgeNumber).toHaveAttribute("step", "0.1");
+  await bridgeNumber.fill("2.3");
+  await bridgeNumber.press("Enter");
+  await expect(bridgeSlider).toHaveValue("2.3");
+
+  const globalNumber = page.locator('[data-range-value-for="globalHorizontalScale"]');
+  await globalNumber.fill("125");
+  await globalNumber.press("Enter");
+  await expect(page.locator("#globalHorizontalScaleInput")).toHaveValue("1.25");
+  await expect(page.locator('.line-control-card[data-line-index="0"] [data-setting="horizontalScale"]')).toHaveValue("1.25");
+
+  const backingNumber = page.locator("#backingOutput");
+  await backingNumber.fill("4.2");
+  await backingNumber.press("ArrowUp");
+  await expect(page.locator("#backingInput")).toHaveValue("4.3");
+});
+
+test("keeps slider units clear of the number spinner lane", async ({ page }) => {
+  const spacing = await page.locator("#backingOutput").evaluate((input) => {
+    const wrapper = input.closest(".range-value-editor");
+    const unit = wrapper?.querySelector("span");
+    if (!wrapper || !unit) return null;
+    const wrapperRect = wrapper.getBoundingClientRect();
+    const inputRect = input.getBoundingClientRect();
+    const unitRect = unit.getBoundingClientRect();
+    return {
+      fieldWidth: wrapperRect.width,
+      inputRight: Math.round(inputRect.right),
+      unitLeft: Math.round(unitRect.left),
+    };
+  });
+
+  expect(spacing.fieldWidth).toBe(70);
+  expect(spacing.inputRight).toBeLessThanOrEqual(spacing.unitLeft);
+});
+
+test("shows mixed global stretch as a compact editable placeholder", async ({ page }) => {
+  await page.locator("#textInput").fill("Ada\nRN");
+  await page.locator('.line-control-card[data-line-index="0"] [data-setting="horizontalScale"]').fill("1.12");
+
+  const globalNumber = page.locator('[data-range-value-for="globalHorizontalScale"]');
+  await expect(globalNumber).toHaveValue("");
+  await expect(globalNumber).toHaveAttribute("placeholder", "Mixed");
+  await expect(globalNumber).toHaveAttribute("type", "number");
 });
 
 test("shows a size guide control in global settings", async ({ page }) => {
@@ -825,11 +877,12 @@ test("applies the global horizontal stretch slider to every line and persists th
   const globalHorizontalStretchOutput = page.locator("#globalHorizontalScaleOutput");
 
   await firstLineHorizontalStretch.fill("1.12");
-  await expect(globalHorizontalStretchOutput).toHaveText("Mixed");
+  await expect(globalHorizontalStretchOutput).toHaveValue("");
+  await expect(globalHorizontalStretchOutput).toHaveAttribute("placeholder", "Mixed");
 
   await globalHorizontalStretch.fill("2");
 
-  await expect(globalHorizontalStretchOutput).toHaveText("200%");
+  await expect(globalHorizontalStretchOutput).toHaveValue("200");
   await expect(firstLineHorizontalStretch).toHaveValue("2");
   await expect(secondLineHorizontalStretch).toHaveValue("2");
 
@@ -841,7 +894,7 @@ test("applies the global horizontal stretch slider to every line and persists th
   await page.reload();
 
   await expect(page.locator("#textInput")).toHaveValue("Savannah\nRN");
-  await expect(globalHorizontalStretchOutput).toHaveText("200%");
+  await expect(globalHorizontalStretchOutput).toHaveValue("200");
   await expect(firstLineHorizontalStretch).toHaveValue("2");
   await expect(secondLineHorizontalStretch).toHaveValue("2");
 });
@@ -864,11 +917,12 @@ test("applies the global vertical stretch slider to every line and persists the 
   const globalVerticalStretchOutput = page.locator("#globalVerticalScaleOutput");
 
   await firstLineVerticalStretch.fill("1.12");
-  await expect(globalVerticalStretchOutput).toHaveText("Mixed");
+  await expect(globalVerticalStretchOutput).toHaveValue("");
+  await expect(globalVerticalStretchOutput).toHaveAttribute("placeholder", "Mixed");
 
   await globalVerticalStretch.fill("2");
 
-  await expect(globalVerticalStretchOutput).toHaveText("200%");
+  await expect(globalVerticalStretchOutput).toHaveValue("200");
   await expect(firstLineVerticalStretch).toHaveValue("2");
   await expect(secondLineVerticalStretch).toHaveValue("2");
 
@@ -880,7 +934,7 @@ test("applies the global vertical stretch slider to every line and persists the 
   await page.reload();
 
   await expect(page.locator("#textInput")).toHaveValue("Savannah\nRN");
-  await expect(globalVerticalStretchOutput).toHaveText("200%");
+  await expect(globalVerticalStretchOutput).toHaveValue("200");
   await expect(firstLineVerticalStretch).toHaveValue("2");
   await expect(secondLineVerticalStretch).toHaveValue("2");
 });
@@ -1006,16 +1060,13 @@ test("shows fitted text height as the primary text height value", async ({ page 
   await page.locator("#presetInput").selectOption("preset-d9b4f2a6c731");
 
   const firstLineHeight = page.locator('.line-control-card[data-line-index="0"] [data-setting="fontSizeMm"]');
-  const firstLineHeightOutput = page.locator('.line-control-card[data-line-index="0"] [data-setting="fontSizeMm"] + output');
+  const firstLineHeightOutput = page.locator('.line-control-card[data-line-index="0"] [data-range-value-for="fontSizeMm"]');
 
   await expect(firstLineHeight).toHaveValue("34");
   await expect(page.locator('.line-control-card[data-line-index="0"] [data-fitted-setting="fontSizeMm"]')).toHaveCount(0);
-  await expect(firstLineHeightOutput).toContainText(/^\d+ mm$/);
+  await expect(firstLineHeightOutput).toHaveValue(/^\d+$/);
 
-  const displayedHeightMm = await firstLineHeightOutput.evaluate((element) => {
-    const match = element.textContent?.match(/^(\d+)\s+mm$/);
-    return match ? Number(match[1]) : NaN;
-  });
+  const displayedHeightMm = Number(await firstLineHeightOutput.inputValue());
 
   expect(displayedHeightMm).toBeGreaterThan(0);
   expect(displayedHeightMm).toBeLessThan(34);
@@ -1028,11 +1079,11 @@ test("updates displayed text height on release unless text height is locked", as
 
   const firstLineCard = page.locator('.line-control-card[data-line-index="0"]');
   const firstLineHeight = firstLineCard.locator('[data-setting="fontSizeMm"]');
-  const firstLineHeightOutput = firstLineCard.locator('[data-setting="fontSizeMm"] + output');
+  const firstLineHeightOutput = firstLineCard.locator('[data-range-value-for="fontSizeMm"]');
   const firstLineLock = firstLineCard.locator('[data-setting="lockTextHeight"]');
 
-  await expect(firstLineHeightOutput).toContainText(/^\d+ mm$/);
-  const initialDisplay = await firstLineHeightOutput.textContent();
+  await expect(firstLineHeightOutput).toHaveValue(/^\d+$/);
+  const initialDisplay = await firstLineHeightOutput.inputValue();
 
   await firstLineHeight.evaluate((input) => {
     input.value = "40";
@@ -1041,12 +1092,12 @@ test("updates displayed text height on release unless text height is locked", as
   await page.waitForTimeout(150);
 
   await expect(firstLineHeight).toHaveValue("40");
-  await expect(firstLineHeightOutput).toHaveText(initialDisplay || "");
+  await expect(firstLineHeightOutput).toHaveValue(initialDisplay);
 
   await firstLineHeight.evaluate((input) => {
     input.dispatchEvent(new Event("change", { bubbles: true }));
   });
-  await expect(firstLineHeightOutput).toContainText(/^\d+ mm$/);
+  await expect(firstLineHeightOutput).toHaveValue(/^\d+$/);
 
   await firstLineLock.check();
   await firstLineHeight.evaluate((input) => {
@@ -1054,7 +1105,7 @@ test("updates displayed text height on release unless text height is locked", as
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
 
-  await expect(firstLineHeightOutput).toHaveText("29 mm");
+  await expect(firstLineHeightOutput).toHaveValue("29");
 });
 test("does not render a queue sync status card in the queue tools menu", async ({ page }) => {
   await expect(page.locator("#queueSyncStatus")).toHaveCount(0);
@@ -1785,7 +1836,7 @@ test("pans the preview with middle-click drag", async ({ page }) => {
 test("allows the backing border slider to reach 0 mm", async ({ page }) => {
   await page.locator("#backingInput").fill("0");
   await expect(page.locator("#backingInput")).toHaveValue("0");
-  await expect(page.locator("#backingOutput")).toHaveText("0.0 mm");
+  await expect(page.locator("#backingOutput")).toHaveValue("0.0");
 });
 
 test("renders lock text height inline without its own bordered section", async ({ page }) => {

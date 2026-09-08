@@ -202,9 +202,12 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Per-line `Vertical Stretch` controls should allow values up to `200%`.
 - Provide one control group per text line.
 - Each per-line control group must include a Font dropdown, Letter Bridge slider, Horizontal Offset slider, Text Height slider, Horizontal Stretch slider, and Vertical Stretch slider.
+- Every slider on the design and preset editing interfaces must pair its right-side readout with a compact editable number field that preserves the existing control-row footprint, exposes native up/down stepping, uses the slider's minimum, maximum, and step, and stays synchronized with the slider in both directions.
+- Slider number fields must display millimeters or percentages in the same compact value area. Global stretch fields must show an editable `Mixed` placeholder when line values differ, and committing a value there must apply it to every text line.
 - The Production Batch editor Text Height control should allow values down to 5 mm.
 - Each per-line control group must also include a `Lock Text Height` control that prevents automatic boundary-fit resizing from changing that line's configured text height.
 - Each per-line `Text Height` slider must keep the authored text height as its internal control value while showing the current fitted text height produced by automatic size-guide resizing as the primary displayed millimeter value; for unlocked lines, that displayed fitted value updates when the slider is released, while locked text-height lines update the displayed value during slider movement.
+- Editing an unlocked line's fitted `Text Height` number field must translate the requested fitted height back to the corresponding authored slider value before recalculating the layout.
 - The `Lock Text Height` control should appear inline with the rest of the line controls and should not render inside its own bordered subsection.
 - Each per-line control group after the first must also include a Line Bridge slider for controlling the connection to the line above it.
 - Add or remove per-line control groups automatically as the user adds or removes text lines.

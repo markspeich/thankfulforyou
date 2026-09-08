@@ -557,7 +557,7 @@
                       <span>Horizontal Stretch</span>
                       <div class="range-row">
                         <input id="globalHorizontalScaleInput" type="range" min="0.75" max="2" step="0.01" value="1">
-                        <output id="globalHorizontalScaleOutput">100%</output>
+                        <span class="range-value-editor"><input id="globalHorizontalScaleOutput" type="number" min="75" max="200" step="1" value="100" data-range-value-for="globalHorizontalScale" aria-label="Horizontal Stretch value"><span>%</span></span>
                       </div>
                     </label>
 
@@ -565,7 +565,7 @@
                       <span>Vertical Stretch</span>
                       <div class="range-row">
                         <input id="globalVerticalScaleInput" type="range" min="0.75" max="2" step="0.01" value="1">
-                        <output id="globalVerticalScaleOutput">100%</output>
+                        <span class="range-value-editor"><input id="globalVerticalScaleOutput" type="number" min="75" max="200" step="1" value="100" data-range-value-for="globalVerticalScale" aria-label="Vertical Stretch value"><span>%</span></span>
                       </div>
                     </label>
 
@@ -573,7 +573,7 @@
                       <span>Backing Border</span>
                       <div class="range-row">
                         <input id="backingInput" type="range" min="0" max="10" step="0.1" value="3.1">
-                        <output id="backingOutput">3.1 mm</output>
+                        <span class="range-value-editor"><input id="backingOutput" type="number" min="0" max="10" step="0.1" value="3.1" data-range-value-for="backingMm" aria-label="Backing Border value"><span>mm</span></span>
                       </div>
                     </label>
                   </section>
@@ -768,21 +768,21 @@
                         <span>Horizontal Stretch</span>
                         <div class="range-row">
                           <input id="presetGlobalHorizontalScaleInput" type="range" min="0.75" max="2" step="0.01" value="1">
-                          <output id="presetGlobalHorizontalScaleOutput">100%</output>
+                          <span class="range-value-editor"><input id="presetGlobalHorizontalScaleOutput" type="number" min="75" max="200" step="1" value="100" data-range-value-for="horizontalScale" aria-label="Horizontal Stretch value"><span>%</span></span>
                         </div>
                       </label>
                       <label class="field compact-field">
                         <span>Vertical Stretch</span>
                         <div class="range-row">
                           <input id="presetGlobalVerticalScaleInput" type="range" min="0.75" max="2" step="0.01" value="1">
-                          <output id="presetGlobalVerticalScaleOutput">100%</output>
+                          <span class="range-value-editor"><input id="presetGlobalVerticalScaleOutput" type="number" min="75" max="200" step="1" value="100" data-range-value-for="verticalScale" aria-label="Vertical Stretch value"><span>%</span></span>
                         </div>
                       </label>
                       <label class="field compact-field">
                         <span>Backing Border</span>
                         <div class="range-row">
                           <input id="presetBackingInput" type="range" min="0" max="10" step="0.1" value="3.1">
-                          <output id="presetBackingOutput">3.1 mm</output>
+                          <span class="range-value-editor"><input id="presetBackingOutput" type="number" min="0" max="10" step="0.1" value="3.1" data-range-value-for="backingMm" aria-label="Backing Border value"><span>mm</span></span>
                         </div>
                       </label>
                     </section>
