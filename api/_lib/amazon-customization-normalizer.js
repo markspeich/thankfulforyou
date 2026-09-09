@@ -65,6 +65,15 @@ function field(name, value) {
   return classifyField(name, value).response;
 }
 
+function configurationCandidate(name, value) {
+  return {
+    kind: "configuration",
+    rawName: normalizedString(name),
+    rawValue: normalizedString(value),
+    ...classifyField(name, value),
+  };
+}
+
 function documentRoot(document) {
   return document?.customizationData && typeof document.customizationData === "object"
     ? document.customizationData
@@ -94,7 +103,7 @@ function v3Candidates(document) {
       };
     }
     if (type.includes("option") || area?.optionValue != null) {
-      return { kind: "configuration", ...classifyField(area?.label, firstNonBlank(area?.optionValue, area?.displayValue)) };
+      return configurationCandidate(area?.label, firstNonBlank(area?.optionValue, area?.displayValue));
     }
     return { kind: "unsupported", response: null, rejected: "unsupported" };
   });
@@ -132,7 +141,7 @@ function legacyCandidates(document) {
       return { kind: "text", ...classifyField(node.label, firstNonBlank(node.text, node.value, node.displayValue)) };
     }
     if (type.includes("option")) {
-      return { kind: "configuration", ...classifyField(node.label, firstNonBlank(node.optionSelection?.label, node.optionValue, node.displayValue)) };
+      return configurationCandidate(node.label, firstNonBlank(node.optionSelection?.label, node.optionValue, node.displayValue));
     }
     return { kind: "unsupported", response: null, rejected: "unsupported" };
   });
@@ -389,7 +398,10 @@ export function normalizeShipStationItem({ shipment = {}, item = {}, customizati
   const color = configurationFields.find(
     (response) => response.name.toLowerCase() === "color",
   );
-  const badgeReelType = findBadgeReelTypeCandidate(configurationFields, { label: "name", value: "value" });
+  const badgeReelType = findBadgeReelTypeCandidate(
+    classified.candidates.filter((candidate) => candidate.kind === "configuration"),
+    { label: "rawName", value: "rawValue" },
+  );
   const orderItemId = normalizedItemId(item.external_order_item_id);
   const text = textFields.map((response) => response.value).join("\n");
   const price = structuredUnitPrice(item.unit_price);

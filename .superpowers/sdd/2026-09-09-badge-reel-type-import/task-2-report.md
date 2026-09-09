@@ -35,3 +35,9 @@
 ## Blockers
 
 - None.
+
+## Fix round 1
+
+- Red: after changing the Amazon regression fixture so every unrecognized, blank, and malformed first `Badge Reel` value was followed by a recognized `Badge Reel Type`, the focused suite failed because blank or malformed first fields were discarded before canonical lookup and the later value resolved.
+- Fix: classified Amazon configuration candidates now retain normalized raw label/value fields for lookup ordering. The canonical lookup uses those raw fields while `personalizationResponses` continues using only existing accepted fields.
+- Green: `npx vitest run tests/unit/amazon-customization-normalizer.test.js tests/unit/etsy-import-normalizer.test.js` passed: 2 files, 35 tests.

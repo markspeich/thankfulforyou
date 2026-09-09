@@ -283,7 +283,7 @@ describe("Amazon customization normalizer", () => {
     for (const value of ["Unknown Clip", " ", 42]) {
       const areas = [
         { customizationType: "option", label: "Badge Reel", optionValue: value },
-        ...(value === "Unknown Clip" ? [{ customizationType: "option", label: "Badge Reel Type", optionValue: "Swivel Alligator" }] : []),
+        { customizationType: "option", label: "Badge Reel Type", optionValue: "Swivel Alligator" },
       ];
       const result = normalizeShipStationItem({
         item: { external_order_item_id: `item-${String(value)}` },
