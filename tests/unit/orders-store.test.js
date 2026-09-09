@@ -306,6 +306,8 @@ describe("orders store", () => {
       searchTerm: "  ADA  ",
       sortField: "orderDate",
       sortDirection: "asc",
+      shipByFrom: "2026-08-12",
+      shipByTo: "2026-08-14",
       limit: 1,
       cursor: { version: 1, sortKey: "cursor-key", groupId: "order:cursor" },
     });
@@ -339,6 +341,8 @@ describe("orders store", () => {
         p_requested_limit: 1,
         p_sort_by: "orderDate",
         p_sort_direction: "asc",
+        p_ship_by_from: "2026-08-12",
+        p_ship_by_to: "2026-08-14",
         p_cursor_sort_key: "cursor-key",
         p_cursor_group_id: "order:cursor",
       },
@@ -371,6 +375,8 @@ describe("orders store", () => {
       p_requested_limit: 50,
       p_sort_by: "shipByDate",
       p_sort_direction: "asc",
+      p_ship_by_from: null,
+      p_ship_by_to: null,
       p_cursor_sort_key: null,
       p_cursor_group_id: null,
     });

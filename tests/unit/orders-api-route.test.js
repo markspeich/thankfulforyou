@@ -91,6 +91,8 @@ describe("orders api route", () => {
         limit: "50",
         sort: "buyerName",
         direction: "desc",
+        shipByFrom: "2026-08-12",
+        shipByTo: "2026-08-14",
         cursor: encodeCursor({ version: 1, sortKey: "0:grace hopper", groupId: "order:1001" }),
       },
     }, response);
@@ -104,6 +106,8 @@ describe("orders api route", () => {
       limit: 50,
       sortField: "buyerName",
       sortDirection: "desc",
+      shipByFrom: "2026-08-12",
+      shipByTo: "2026-08-14",
       cursor: { version: 1, sortKey: "0:grace hopper", groupId: "order:1001" },
     });
     expect(listWorkspaceOrdersMock).not.toHaveBeenCalled();
@@ -129,6 +133,8 @@ describe("orders api route", () => {
       limit: 50,
       sortField: "shipByDate",
       sortDirection: "asc",
+      shipByFrom: null,
+      shipByTo: null,
       cursor: null,
     });
     expect(response.body).toEqual({ orders: [], nextCursor: null, hasMore: false });

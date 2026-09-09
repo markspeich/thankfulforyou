@@ -30,10 +30,12 @@ describe("orders api client", () => {
       cursor: " cursor-1 ",
       sortField: " shipByDate ",
       sortDirection: " asc ",
+      shipByFrom: " 2026-08-12 ",
+      shipByTo: " 2026-08-14 ",
       accessToken: "token-1",
       signal: controller.signal,
     })).resolves.toEqual(payload);
-    expect(fetchMock).toHaveBeenCalledWith("/api/orders?batchId=batch-1&status=all&view=compact&batch=notInBatch&search=4118855809&limit=50&cursor=cursor-1&sort=shipByDate&direction=asc", {
+    expect(fetchMock).toHaveBeenCalledWith("/api/orders?batchId=batch-1&status=all&view=compact&batch=notInBatch&search=4118855809&limit=50&cursor=cursor-1&sort=shipByDate&direction=asc&shipByFrom=2026-08-12&shipByTo=2026-08-14", {
       headers: { Accept: "application/json", Authorization: "Bearer token-1" },
       signal: controller.signal,
     });

@@ -831,6 +831,10 @@ test("renders grouped database orders and selected order item cards", async ({ p
   await page.getByRole("button", { name: "Orders", exact: true }).click();
 
   const ordersWorkspace = page.getByRole("region", { name: "Orders workspace" });
+  await expect(ordersWorkspace.locator(".database-orders-filter-row")).toHaveCSS(
+    "grid-template-columns",
+    "140px 170px 170px",
+  );
   await expect(ordersWorkspace.getByRole("button", { name: /Order 1001/ })).toBeVisible();
   await expect(ordersWorkspace.getByRole("button", { name: /Ada Lovelace/ })).toBeVisible();
   await expect(ordersWorkspace.getByRole("button", { name: /Order 1002/ })).toBeVisible();
@@ -1137,6 +1141,46 @@ test("debounces server-filtered order searches and ignores an older response", a
   await expect.poll(() => requestedFilters.some((query) => query.batch === "notInBatch" && query.cursor === null)).toBe(true);
   await page.locator("#databaseOrdersStatusFilter").selectOption("complete");
   await expect.poll(() => requestedFilters.some((query) => query.status === "complete" && query.cursor === null)).toBe(true);
+});
+
+test("filters Orders by quick and custom Ship By date ranges", async ({ page }) => {
+  await installSupabaseSession(page);
+  await installProductionBatchRoutes(page);
+  const requests = [];
+  await page.route("**/api/orders**", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.searchParams.get("view") === "detail") {
+      await route.fulfill({ json: { order: buildOrdersPayload().orders[0] } });
+      return;
+    }
+    requests.push({
+      from: url.searchParams.get("shipByFrom"),
+      to: url.searchParams.get("shipByTo"),
+      cursor: url.searchParams.get("cursor"),
+    });
+    await route.fulfill({ json: { orders: buildOrdersPayload().orders, nextCursor: null, hasMore: false } });
+  });
+
+  await page.goto("/orders");
+  const dateFilter = page.locator("#databaseOrdersShipByFilter");
+  await expect(dateFilter).toHaveValue("all");
+  await expect(page.locator("#databaseOrdersCustomDateRange")).toBeHidden();
+
+  await dateFilter.selectOption("today");
+  const today = await page.evaluate(() => {
+    const date = new Date();
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  });
+  await expect.poll(() => requests.some((request) => request.from === today && request.to === today && request.cursor === null)).toBe(true);
+
+  await dateFilter.selectOption("custom");
+  await expect(page.locator("#databaseOrdersCustomDateRange")).toBeVisible();
+  await page.locator("#databaseOrdersShipByFrom").fill("2026-08-12");
+  await page.locator("#databaseOrdersShipByTo").fill("2026-08-14");
+  await expect.poll(() => requests.some((request) => request.from === "2026-08-12" && request.to === "2026-08-14" && request.cursor === null)).toBe(true);
 });
 
 test("appends another Orders page without losing the current rows, selection, checks, or scroll position", async ({ page }) => {
