@@ -6142,7 +6142,9 @@ function getDatabaseOrderItemBadgeReelTypeText(item) {
     ? amazonCandidate()
     : marketplace === "etsy"
       ? etsyCandidate()
-      : amazonCandidate() || etsyCandidate();
+      : marketplace
+        ? null
+        : amazonCandidate() || etsyCandidate();
 
   return retainedCandidate ? "Unrecognized" : "Not set";
 }

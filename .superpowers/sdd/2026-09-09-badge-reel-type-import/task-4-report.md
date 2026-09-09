@@ -29,3 +29,10 @@
 ## Blockers
 
 - None.
+
+## Review round 1 follow-up
+
+- RED: the focused e2e test failed as expected for a `shopify`-tagged retained Amazon-shaped candidate: expected `Not set`, received `Unrecognized`.
+- GREEN: the focused e2e test passed after cross-shape diagnostic fallback was limited to items with absent marketplace metadata.
+- Added e2e coverage for Etsy-tagged `variations`, legacy no-marketplace fallback, and an unknown marketplace with a retained candidate. Each asserts status text and omits raw marketplace values.
+- Re-ran shared coverage: `npx vitest run tests/unit/badge-reel-types.test.js tests/unit/orders-workspace.test.js` passed (2 files, 37 tests).

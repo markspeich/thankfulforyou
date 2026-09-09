@@ -202,18 +202,59 @@ function buildOrdersPayload() {
           },
           {
             id: "item-4",
-            listingTitle: "Legacy badge reel",
+            listingTitle: "Etsy badge reel",
             isInActiveBatch: false,
-            badgeReelTypeId: "legacy-badge-reel",
+            badgeReelTypeId: null,
             source: {
               marketplace: "etsy",
               variations: [
-                { formatted_name: "Badge Reel", formatted_value: "Unknown Legacy Type" },
+                { formatted_name: "Badge Reel", formatted_value: "Swivel Alligator Clip" },
               ],
             },
             design: {
+              text: "Etsy",
+              lines: [{ lineIndex: 0, text: "Etsy", fontId: "candlepin" }],
+            },
+          },
+          {
+            id: "item-5",
+            listingTitle: "Unknown stored type badge reel",
+            isInActiveBatch: false,
+            badgeReelTypeId: "legacy-badge-reel",
+            design: {
               text: "Lin",
               lines: [{ lineIndex: 0, text: "Lin", fontId: "candlepin" }],
+            },
+          },
+          {
+            id: "item-6",
+            listingTitle: "Legacy source badge reel",
+            isInActiveBatch: false,
+            badgeReelTypeId: null,
+            source: {
+              variations: [
+                { formatted_name: "Badge Reel Type", formatted_value: "Swivel Alligator" },
+              ],
+            },
+            design: {
+              text: "Legacy",
+              lines: [{ lineIndex: 0, text: "Legacy", fontId: "candlepin" }],
+            },
+          },
+          {
+            id: "item-7",
+            listingTitle: "Unknown marketplace badge reel",
+            isInActiveBatch: false,
+            badgeReelTypeId: null,
+            source: {
+              marketplace: "shopify",
+              personalizationResponses: [
+                { name: "Badge Reel", value: "Swivel Alligator" },
+              ],
+            },
+            design: {
+              text: "Shopify",
+              lines: [{ lineIndex: 0, text: "Shopify", fontId: "candlepin" }],
             },
           },
         ],
@@ -964,6 +1005,15 @@ test("renders canonical badge reel type metadata in selected order item cards", 
     "Not available",
   ]);
   await expect(inBatchItemCard.locator(".database-order-item-meta")).not.toContainText("Swivel Alligator Clip");
+  const etsyTypeCard = ordersWorkspace.locator(".database-order-item-card").filter({ hasText: "Etsy" });
+  await expect(etsyTypeCard.locator(".database-order-item-meta > dd")).toContainText([
+    "Etsy",
+    "No color",
+    "Unrecognized",
+    "1",
+    "Not available",
+  ]);
+  await expect(etsyTypeCard.locator(".database-order-item-meta")).not.toContainText("Swivel Alligator Clip");
   const unknownTypeCard = ordersWorkspace.locator(".database-order-item-card").filter({ hasText: "Lin" });
   await expect(unknownTypeCard.locator(".database-order-item-meta > dd")).toContainText([
     "Lin",
@@ -973,6 +1023,24 @@ test("renders canonical badge reel type metadata in selected order item cards", 
     "Not available",
   ]);
   await expect(unknownTypeCard.locator(".database-order-item-meta")).not.toContainText("legacy-badge-reel");
+  const legacySourceCard = ordersWorkspace.locator(".database-order-item-card").filter({ hasText: "Legacy" });
+  await expect(legacySourceCard.locator(".database-order-item-meta > dd")).toContainText([
+    "Legacy",
+    "No color",
+    "Unrecognized",
+    "1",
+    "Not available",
+  ]);
+  await expect(legacySourceCard.locator(".database-order-item-meta")).not.toContainText("Swivel Alligator");
+  const unknownMarketplaceCard = ordersWorkspace.locator(".database-order-item-card").filter({ hasText: "Shopify" });
+  await expect(unknownMarketplaceCard.locator(".database-order-item-meta > dd")).toContainText([
+    "Shopify",
+    "No color",
+    "Not set",
+    "1",
+    "Not available",
+  ]);
+  await expect(unknownMarketplaceCard.locator(".database-order-item-meta")).not.toContainText("Swivel Alligator");
   await inBatchItemCard.getByRole("button", { name: "Item actions" }).click();
   await expect(inBatchItemCard.getByRole("button", { name: "Add to Production Batch" })).toBeDisabled();
 });
