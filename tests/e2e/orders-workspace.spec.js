@@ -861,9 +861,7 @@ test("renders canonical badge reel type metadata in selected order item cards", 
       badgeReelTypeId: null,
       source: {
         marketplace: "etsy",
-        variations: [
-          { formatted_name: "Badge Reel", formatted_value: "Swivel Alligator Clip" },
-        ],
+        badgeReelTypeCandidate: { present: true, id: null },
       },
       design: {
         text: "Etsy",

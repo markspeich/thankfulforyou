@@ -540,6 +540,39 @@ describe("orders store", () => {
     expect(supabaseMock.db.designs[0].design_text).toBe("Original");
   });
 
+  it("merges an unrecognized badge reel marker on an existing item without replacing order or design data", async () => {
+    // Break caught: manual re-imports lose safe unknown/blank reel markers, so Orders later shows Not set.
+    resetDb({
+      order_items: [{ id: "transaction:badge-marker", workspace_id: "workspace-1", status: "skipped", quantity: 2,
+        source_json: { marketplace: "etsy", retained: "metadata" }, badge_reel_type_id: null }],
+      designs: [{ id: "design-badge-marker", workspace_id: "workspace-1", order_item_id: "transaction:badge-marker",
+        design_text: "Original", production_status: "saved", saved_settings_signature: "saved" }],
+    });
+    const { importWorkspaceOrderItems } = await import("../../api/_lib/orders-store.js");
+
+    await importWorkspaceOrderItems({
+      workspaceId: "workspace-1",
+      userId: "user-1",
+      items: [{ text: "Replacement", source: {
+        transactionId: "badge-marker", expected_ship_date: 1783400340,
+        badgeReelTypeCandidate: { present: true, id: null },
+      } }],
+    });
+
+    expect(supabaseMock.db.order_items[0]).toMatchObject({
+      status: "skipped",
+      quantity: 2,
+      source_json: {
+        marketplace: "etsy",
+        retained: "metadata",
+        expected_ship_date: 1783400340,
+        badgeReelTypeCandidate: { present: true, id: null },
+      },
+      badge_reel_type_id: null,
+    });
+    expect(supabaseMock.db.designs[0].design_text).toBe("Original");
+  });
+
   it("guards canonical re-import enrichment at write time while retaining independent metadata updates", async () => {
     resetDb({
       order_items: [{ id: "transaction:badge-race", workspace_id: "workspace-1", status: "open", quantity: 1,

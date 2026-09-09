@@ -120,7 +120,9 @@ export function normalizeImportedEntry(entry, options = {}) {
   const badgeReelTypeCandidate = hasBadgeReelTypeCandidate
     ? {
         present: rawBadgeReelTypeCandidate.present,
-        id: badgeReelTypeLabel(rawBadgeReelTypeCandidate.id) ? rawBadgeReelTypeCandidate.id : null,
+        id: rawBadgeReelTypeCandidate.present && badgeReelTypeLabel(rawBadgeReelTypeCandidate.id)
+          ? rawBadgeReelTypeCandidate.id
+          : null,
       }
     : null;
 
@@ -186,7 +188,11 @@ export function buildImportedBatchIdentity(source, text = "") {
 
 export function parseImportedItems(payloadText, options = {}) {
   const parsed = JSON.parse(payloadText);
-  const marketplace = parsed?.source === "thankfulforyou-amazon-clipboard" ? "amazon" : "";
+  const marketplace = parsed?.source === "thankfulforyou-amazon-clipboard"
+    ? "amazon"
+    : parsed?.source === "thankfulforyou-etsy-clipboard"
+      ? "etsy"
+      : "";
   const rawItems = Array.isArray(parsed)
     ? parsed
     : Array.isArray(parsed?.items)

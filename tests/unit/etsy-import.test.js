@@ -172,12 +172,27 @@ describe("Etsy import parsing", () => {
         { transactionId: "known", badgeReelTypeCandidate: { present: true, id: "swivel-alligator" } },
         { transactionId: "unknown", badgeReelTypeCandidate: { present: true, id: null } },
         { transactionId: "blank", badgeReelTypeCandidate: { present: true, id: null } },
+        { transactionId: "contradictory", badgeReelTypeCandidate: { present: false, id: "swivel-alligator" } },
       ],
     }))).toMatchObject([
       { source: { badgeReelTypeId: "swivel-alligator", badgeReelTypeCandidate: { present: true, id: "swivel-alligator" } } },
       { source: { badgeReelTypeCandidate: { present: true, id: null } } },
       { source: { badgeReelTypeCandidate: { present: true, id: null } } },
+      { source: { badgeReelTypeCandidate: { present: false, id: null } } },
     ]);
+  });
+
+  it("preserves Etsy marketplace identity for manual clipboard candidates", () => {
+    // Break caught: manual Etsy candidates are treated as an unknown marketplace and render as Not set.
+    expect(parseImportedItems(JSON.stringify({
+      source: "thankfulforyou-etsy-clipboard",
+      items: [{ transactionId: "etsy-marker", badgeReelTypeCandidate: { present: true, id: null } }],
+    }))).toMatchObject([{
+      source: {
+        marketplace: "etsy",
+        badgeReelTypeCandidate: { present: true, id: null },
+      },
+    }]);
   });
 
   it("uses workspace aliases for clipboard imports without changing source customer font names", () => {

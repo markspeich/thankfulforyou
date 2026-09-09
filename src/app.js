@@ -6133,7 +6133,7 @@ function getDatabaseOrderItemBadgeReelTypeText(item) {
   const marketplace = typeof source?.marketplace === "string"
     ? source.marketplace.trim().toLowerCase()
     : "";
-  if (marketplace === "amazon" && typeof source?.badgeReelTypeCandidate?.present === "boolean") {
+  if ((marketplace === "amazon" || marketplace === "etsy") && typeof source?.badgeReelTypeCandidate?.present === "boolean") {
     return source.badgeReelTypeCandidate.present ? "Unrecognized" : "Not set";
   }
   const amazonCandidate = () => findBadgeReelTypeCandidate(source?.personalizationResponses, {

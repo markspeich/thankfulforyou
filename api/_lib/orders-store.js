@@ -1,4 +1,5 @@
 import { createSupabaseAdminClient } from "./supabase-admin.js";
+import { badgeReelTypeLabel } from "../../src/badge-reel-types.js";
 
 function normalizeString(value) {
   return typeof value === "string" ? value.trim() : "";
@@ -7,6 +8,17 @@ function normalizeString(value) {
 function nullableString(value) {
   const text = normalizeString(value);
   return text || null;
+}
+
+function normalizeBadgeReelTypeCandidate(value) {
+  if (!value || typeof value !== "object" || typeof value.present !== "boolean") {
+    return null;
+  }
+
+  return {
+    present: value.present,
+    id: value.present && badgeReelTypeLabel(value.id) ? value.id : null,
+  };
 }
 
 function toNumber(value, fallback) {
@@ -65,6 +77,9 @@ function buildImportedOrderItemId(item) {
 
 export function buildImportedOrderItemRow(item, { workspaceId, userId }) {
   const source = item?.source && typeof item.source === "object" ? item.source : {};
+  const badgeReelTypeCandidate = normalizeBadgeReelTypeCandidate(source.badgeReelTypeCandidate);
+  const sourceBadgeReelTypeId = badgeReelTypeLabel(source.badgeReelTypeId) ? source.badgeReelTypeId : null;
+  const { badgeReelTypeCandidate: _unsafeBadgeReelTypeCandidate, ...safeSource } = source;
 
   return {
     id: buildImportedOrderItemId(item),
@@ -75,7 +90,7 @@ export function buildImportedOrderItemRow(item, { workspaceId, userId }) {
     listing_id: nullableString(source.listingId),
     transaction_id: nullableString(source.transactionId),
     imported_color: nullableString(source.colorName),
-    badge_reel_type_id: nullableString(source.badgeReelTypeId),
+    badge_reel_type_id: badgeReelTypeCandidate ? badgeReelTypeCandidate.id : sourceBadgeReelTypeId,
     ship_by_date: nullableString(source.shipByDate),
     order_date: nullableString(source.orderDate),
     quantity: toPositiveInteger(source.quantity, 1),
@@ -87,7 +102,10 @@ export function buildImportedOrderItemRow(item, { workspaceId, userId }) {
       item?.etsyImportDiagnostics && typeof item.etsyImportDiagnostics === "object"
         ? item.etsyImportDiagnostics
         : null,
-    source_json: { ...source },
+    source_json: {
+      ...safeSource,
+      ...(badgeReelTypeCandidate ? { badgeReelTypeCandidate } : {}),
+    },
     revision: 1,
     updated_by: userId || null,
   };
@@ -931,23 +949,28 @@ export async function importWorkspaceOrderItems({
     const existingItem = existingOrderItemById.get(row.id);
     const hasExpectedShipDate = Object.hasOwn(row.source_json, "expected_ship_date");
     const hasEtsyImportDiagnostics = row.etsy_import_diagnostics && typeof row.etsy_import_diagnostics === "object";
-    if (!existingItem || (!row.ship_by_date && !row.order_date && !hasExpectedShipDate && !hasEtsyImportDiagnostics)) {
+    const hasBadgeReelTypeCandidate = Object.hasOwn(row.source_json, "badgeReelTypeCandidate");
+    if (!existingItem || (!row.ship_by_date && !row.order_date && !hasExpectedShipDate && !hasEtsyImportDiagnostics && !hasBadgeReelTypeCandidate)) {
       return [];
     }
     const existingSource = existingItem.source_json && typeof existingItem.source_json === "object"
       ? existingItem.source_json
       : {};
+    const sourceJsonUpdate = hasExpectedShipDate || hasBadgeReelTypeCandidate
+      ? {
+          ...existingSource,
+          ...(hasExpectedShipDate ? { expected_ship_date: row.source_json.expected_ship_date } : {}),
+          ...(hasBadgeReelTypeCandidate ? {
+            badgeReelTypeCandidate: row.source_json.badgeReelTypeCandidate,
+          } : {}),
+        }
+      : null;
     return [{
       id: row.id,
       payload: {
         ...row.ship_by_date ? { ship_by_date: row.ship_by_date } : {},
         ...row.order_date ? { order_date: row.order_date } : {},
-        ...hasExpectedShipDate ? {
-          source_json: {
-            ...existingSource,
-            expected_ship_date: row.source_json.expected_ship_date,
-          },
-        } : {},
+        ...(sourceJsonUpdate ? { source_json: sourceJsonUpdate } : {}),
         ...hasEtsyImportDiagnostics ? { etsy_import_diagnostics: row.etsy_import_diagnostics } : {},
       },
     }];

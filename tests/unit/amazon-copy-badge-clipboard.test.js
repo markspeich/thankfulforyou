@@ -261,6 +261,21 @@ describe("amazon copy badge clipboard", () => {
       badgeReelTypeCandidate: { present: true, id: "swivel-alligator" },
     });
   });
+
+  it("copies a clipboard-only Amazon reel selection without design fields", async () => {
+    // Break caught: badge-reel-only customizations are discarded because they do not contain text or color.
+    const { createdButton, clipboardWrites } = loadClipboardScript({
+      rows: [makeOrderItemRow()],
+      clipboardText: "Customizations:\nBadge Reel Type: Swivel Alligator",
+      existingCopyButton: false,
+    });
+
+    await createdButton.handlers.click();
+
+    expect(JSON.parse(clipboardWrites[0]).items[0]).toMatchObject({
+      badgeReelTypeCandidate: { present: true, id: "swivel-alligator" },
+    });
+  });
   it("copies color and quantity when Amazon customization text is copied as one paragraph", async () => {
     const row = makeOrderItemRow({ quantity: "3" });
     const { createdButton, clipboardWrites } = loadClipboardScript({

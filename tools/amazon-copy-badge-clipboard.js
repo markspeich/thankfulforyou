@@ -366,6 +366,7 @@ function getCustomizationFields(row, rowText, customizationBlock) {
     if (hasDesignCustomizationFields(clipboardFields)) {
       return clipboardFields;
     }
+    return addClipboardBadgeReelTypeFields(rowFields, customizationBlock);
   }
 
   return rowFields;
