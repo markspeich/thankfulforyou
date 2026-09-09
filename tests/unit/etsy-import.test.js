@@ -164,6 +164,22 @@ describe("Etsy import parsing", () => {
     ]);
   });
 
+  it("turns safe manual clipboard badge-reel candidates into canonical source data", () => {
+    // Break caught: manual-copy candidate markers reach persistence without the canonical type or lose an unrecognized choice.
+    expect(parseImportedItems(JSON.stringify({
+      source: "thankfulforyou-amazon-clipboard",
+      items: [
+        { transactionId: "known", badgeReelTypeCandidate: { present: true, id: "swivel-alligator" } },
+        { transactionId: "unknown", badgeReelTypeCandidate: { present: true, id: null } },
+        { transactionId: "blank", badgeReelTypeCandidate: { present: true, id: null } },
+      ],
+    }))).toMatchObject([
+      { source: { badgeReelTypeId: "swivel-alligator", badgeReelTypeCandidate: { present: true, id: "swivel-alligator" } } },
+      { source: { badgeReelTypeCandidate: { present: true, id: null } } },
+      { source: { badgeReelTypeCandidate: { present: true, id: null } } },
+    ]);
+  });
+
   it("uses workspace aliases for clipboard imports without changing source customer font names", () => {
     // Break caught: browser clipboard imports resolve only registered font names and lose alias selections.
     const result = parseImportedItems(JSON.stringify({

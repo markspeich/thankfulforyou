@@ -224,6 +224,43 @@ describe("amazon copy badge clipboard", () => {
       }),
     ]);
   });
+
+  it("copies the first public Amazon badge-reel field as a safe canonical candidate", async () => {
+    // Break caught: manual Amazon copies drop reel selections, use internal fields, or let a later field override the first.
+    const row = addCustomizationMarkup(makeOrderItemRow(), {
+      "^Badge Reel": "Swivel Alligator",
+      "Badge Reel": "Unknown Clip",
+      "Badge Reel Type": "Swivel Alligator",
+    });
+    const { createdButton, clipboardWrites } = loadClipboardScript({ rows: [row], existingCopyButton: false });
+
+    await createdButton.handlers.click();
+
+    expect(JSON.parse(clipboardWrites[0]).items[0]).toMatchObject({
+      badgeReelTypeCandidate: { present: true, id: null },
+    });
+  });
+
+  it("keeps a clipboard reel selection when page markup supplies the design fields", async () => {
+    // Break caught: page text/color fields cause the helper to discard the matching clipboard-only reel choice.
+    const row = addCustomizationMarkup(makeOrderItemRow(), {
+      Color: "Teal",
+      Name: "Avery",
+    });
+    const { createdButton, clipboardWrites } = loadClipboardScript({
+      rows: [row],
+      clipboardText: "Customizations:\nBadge Reel Type: Swivel Alligator Clip",
+      existingCopyButton: false,
+    });
+
+    await createdButton.handlers.click();
+
+    expect(JSON.parse(clipboardWrites[0]).items[0]).toMatchObject({
+      colorName: "Teal",
+      personalization: "Avery",
+      badgeReelTypeCandidate: { present: true, id: "swivel-alligator" },
+    });
+  });
   it("copies color and quantity when Amazon customization text is copied as one paragraph", async () => {
     const row = makeOrderItemRow({ quantity: "3" });
     const { createdButton, clipboardWrites } = loadClipboardScript({

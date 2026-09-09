@@ -141,6 +141,7 @@ function getOrderItemRows() {
 
 const CUSTOMIZATION_FIELD_LABELS = [
   "Surface 1",
+  "Badge Reel",
   "Badge Reel Type",
   "Text Line 10 Font",
   "Text Line 9 Font",
@@ -182,7 +183,12 @@ function getCanonicalCustomizationLabel(value) {
 
 function setCustomizationField(fields, key, value) {
   const normalizedValue = normalizeText(value);
-  if (!key || !normalizedValue) {
+  const isBadgeReelField = key === "Badge Reel" || key === "Badge Reel Type";
+  if (!key || (!normalizedValue && !isBadgeReelField)) {
+    return;
+  }
+
+  if (isBadgeReelField && fields.has(key)) {
     return;
   }
 
@@ -191,6 +197,31 @@ function setCustomizationField(fields, key, value) {
   }
 
   fields.set(key, normalizedValue);
+}
+
+function normalizeBadgeReelValue(value) {
+  return normalizeText(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+function badgeReelTypeId(value) {
+  const normalizedValue = normalizeBadgeReelValue(value);
+  return normalizedValue === "swivel alligator" || normalizedValue === "swivel alligator clip"
+    ? "swivel-alligator"
+    : null;
+}
+
+function buildBadgeReelTypeCandidate(fields) {
+  for (const [key, value] of fields) {
+    if (key === "Badge Reel" || key === "Badge Reel Type") {
+      return { present: true, id: badgeReelTypeId(value) };
+    }
+  }
+
+  return { present: false, id: null };
 }
 function parseColonCustomizationFields(fields, blockText) {
   const text = normalizeText(blockText).replace(/\n+/g, " ");
@@ -306,10 +337,28 @@ function hasDesignCustomizationFields(fields) {
   return Boolean(fields.get("Color") || buildPersonalization(fields));
 }
 
+function hasBadgeReelTypeCandidate(fields) {
+  return fields.has("Badge Reel") || fields.has("Badge Reel Type");
+}
+
+function addClipboardBadgeReelTypeFields(fields, customizationBlock) {
+  if (!customizationBlock || hasBadgeReelTypeCandidate(fields)) {
+    return fields;
+  }
+
+  const clipboardFields = parseCustomizationFields(customizationBlock);
+  for (const [key, value] of clipboardFields) {
+    if (key === "Badge Reel" || key === "Badge Reel Type") {
+      setCustomizationField(fields, key, value);
+    }
+  }
+  return fields;
+}
+
 function getCustomizationFields(row, rowText, customizationBlock) {
   const rowFields = parseRowCustomizationFields(row, rowText);
   if (hasDesignCustomizationFields(rowFields)) {
-    return rowFields;
+    return addClipboardBadgeReelTypeFields(rowFields, customizationBlock);
   }
 
   if (customizationBlock) {
@@ -362,6 +411,7 @@ async function analyzeAmazonOrderForClipboard() {
       shipByDate,
       personalization: buildPersonalization(fields),
       customerFontSelections: buildCustomerFontSelections(fields),
+      badgeReelTypeCandidate: buildBadgeReelTypeCandidate(fields),
     };
   });
 }

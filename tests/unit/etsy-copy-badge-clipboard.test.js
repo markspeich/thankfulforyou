@@ -176,4 +176,37 @@ describe("etsy copy badge clipboard", () => {
     ]);
     expect(warnings).toEqual([]);
   });
+
+  it("copies the first badge-reel variation as a safe canonical candidate", async () => {
+    // Break caught: manual Etsy copies drop reel selections or let a later choice override the first.
+    const { context, clipboardWrites } = loadClipboardScript([{
+      order_id: 12,
+      fulfillment: { to_address: { name: "Morgan" } },
+      transactions: [{
+        transaction_id: 120,
+        listing_id: 1200,
+        product: { title: "Badge Reel" },
+        variations: [
+          { property: "Badge Reel", value: "Unknown Clip" },
+          { property: "Badge Reel Type", value: "Swivel Alligator" },
+        ],
+      }],
+    }, {
+      order_id: 13,
+      fulfillment: { to_address: { name: "Riley" } },
+      transactions: [{
+        transaction_id: 130,
+        listing_id: 1300,
+        product: { title: "Badge Reel" },
+        variations: [{ property: "Badge Reel Type", value: "Swivel Alligator Clip" }],
+      }],
+    }]);
+
+    await context.copyBadgeBatchPayload();
+
+    expect(JSON.parse(clipboardWrites[0]).items).toMatchObject([
+      { badgeReelTypeCandidate: { present: true, id: null } },
+      { badgeReelTypeCandidate: { present: true, id: "swivel-alligator" } },
+    ]);
+  });
 });

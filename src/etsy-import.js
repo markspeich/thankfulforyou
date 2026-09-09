@@ -9,6 +9,8 @@ const HTML_ENTITIES = new Map([
 ]);
 const NO_IMPORTABLE_DESIGNS_MESSAGE = "Clipboard data did not contain any Etsy designs.";
 
+import { badgeReelTypeLabel } from "./badge-reel-types.js";
+
 function decodeCodePoint(entity, value, radix) {
   if (!value) {
     return entity;
@@ -111,6 +113,16 @@ export function normalizeImportedEntry(entry, options = {}) {
     ? entry.listingImageUrl75x75.trim()
     : "";
   const transactionId = entry.transactionId == null ? "" : String(entry.transactionId).trim();
+  const rawBadgeReelTypeCandidate = entry.badgeReelTypeCandidate;
+  const hasBadgeReelTypeCandidate = rawBadgeReelTypeCandidate
+    && typeof rawBadgeReelTypeCandidate === "object"
+    && typeof rawBadgeReelTypeCandidate.present === "boolean";
+  const badgeReelTypeCandidate = hasBadgeReelTypeCandidate
+    ? {
+        present: rawBadgeReelTypeCandidate.present,
+        id: badgeReelTypeLabel(rawBadgeReelTypeCandidate.id) ? rawBadgeReelTypeCandidate.id : null,
+      }
+    : null;
 
   if (!personalization && !orderNumber && !listingId && !transactionId && !buyerName) {
     return null;
@@ -142,6 +154,8 @@ export function normalizeImportedEntry(entry, options = {}) {
       listingTitle,
       listingImageUrl75x75,
       transactionId,
+      ...(badgeReelTypeCandidate?.id ? { badgeReelTypeId: badgeReelTypeCandidate.id } : {}),
+      ...(badgeReelTypeCandidate ? { badgeReelTypeCandidate } : {}),
       ...(customerFontSelections.length ? { customerFontSelections } : {}),
       ...(shipByDate ? { shipByDate } : {}),
     },

@@ -36,6 +36,40 @@ function getVariationValue(transaction, propertyName) {
   return variation?.value || "";
 }
 
+function normalizeBadgeReelLabel(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+function badgeReelTypeId(value) {
+  const normalizedValue = normalizeBadgeReelLabel(value);
+  return normalizedValue === "swivel alligator" || normalizedValue === "swivel alligator clip"
+    ? "swivel-alligator"
+    : null;
+}
+
+function getBadgeReelTypeCandidate(transaction) {
+  const variation = Array.isArray(transaction?.variations)
+    ? transaction.variations.find((entry) => {
+        const label = normalizeBadgeReelLabel(entry?.property);
+        return label === "badge reel" || label === "badge reel type";
+      })
+    : null;
+
+  if (!variation) {
+    return { present: false, id: null };
+  }
+
+  return {
+    present: true,
+    id: badgeReelTypeId(typeof variation.value === "string" ? variation.value : ""),
+  };
+}
+
 function getTransactionQuantity(transaction) {
   const quantity = transaction?.quantity;
   if (typeof quantity === "number" && Number.isFinite(quantity) && quantity > 0) {
@@ -97,6 +131,7 @@ function analyzeOrdersForClipboard() {
           listingImageUrl75x75: transaction?.product?.image_url_75x75 || "",
           label: buildOrderItemLabel(order.order_id, buyerName, itemNumber),
           personalization,
+          badgeReelTypeCandidate: getBadgeReelTypeCandidate(transaction),
         });
       });
     });
