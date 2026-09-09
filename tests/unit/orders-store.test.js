@@ -169,6 +169,10 @@ function createUpdateChain(table, payload) {
       filters.push({ type: "in", column, values: clone(values) });
       return chain;
     },
+    is(column, value) {
+      filters.push({ type: "is", column, value });
+      return chain;
+    },
     then(resolve, reject) {
       const matchingRows = supabaseMock.db[table].filter((row) => matchesFilters(row, filters));
       matchingRows.forEach((row) => {
@@ -207,6 +211,9 @@ function matchesFilters(row, filters) {
     }
     if (filter.type === "in") {
       return filter.values.includes(row[filter.column]);
+    }
+    if (filter.type === "is") {
+      return row[filter.column] === filter.value;
     }
     return true;
   });
@@ -490,6 +497,33 @@ describe("orders store", () => {
     await importWorkspaceOrderItems({ workspaceId: "workspace-1", userId: "user-1", items: [incoming] });
     expect(supabaseMock.db.order_items[0].badge_reel_type_id).toBe("canonical-existing");
     expect(supabaseMock.db.designs[0].design_text).toBe("Original");
+  });
+
+  it("guards canonical re-import enrichment at write time while retaining independent metadata updates", async () => {
+    resetDb({
+      order_items: [{ id: "transaction:badge-race", workspace_id: "workspace-1", status: "open", quantity: 1,
+        source_json: {}, badge_reel_type_id: null }],
+    });
+    const { importWorkspaceOrderItems } = await import("../../api/_lib/orders-store.js");
+
+    await importWorkspaceOrderItems({
+      workspaceId: "workspace-1",
+      userId: "user-1",
+      items: [{ text: "Ada", source: {
+        transactionId: "badge-race", badgeReelTypeId: "swivel-alligator", shipByDate: "2026-08-01",
+      } }],
+    });
+
+    const badgeUpdate = supabaseMock.calls.find((call) => call.table === "order_items"
+      && call.operation === "update" && call.payload.badge_reel_type_id === "swivel-alligator");
+    const metadataUpdate = supabaseMock.calls.find((call) => call.table === "order_items"
+      && call.operation === "update" && call.payload.ship_by_date === "2026-08-01");
+    expect(badgeUpdate.filters).toEqual(expect.arrayContaining([
+      { type: "is", column: "badge_reel_type_id", value: null },
+    ]));
+    expect(metadataUpdate.filters).not.toEqual(expect.arrayContaining([
+      { type: "is", column: "badge_reel_type_id", value: null },
+    ]));
   });
 
   it("lists non-archived workspace order items grouped by order number with designs and active batch membership", async () => {

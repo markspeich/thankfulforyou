@@ -43,3 +43,13 @@
 ## Blockers
 
 - None.
+
+## Review fix round 1
+
+- Added executable local database coverage in `tests/db/badge-reel-type-migration.db.test.js`. It runs the checked-in migration inside a rolled-back transaction and proves Amazon punctuation normalization accepts `Swivel—Alligator`, concatenated aliases do not match, Unicode letters are preserved rather than discarded, Etsy ignores Amazon-shaped responses, and a first unknown Etsy variation blocks a later recognized duplicate.
+- Changed SQL normalization from separator deletion to lowercase, punctuation-to-space replacement, and whitespace collapse using PostgreSQL character classes. Canonical aliases now remain exact space-separated values.
+- Limited Amazon backfill to `source_json.marketplace = 'amazon'` and Etsy backfill to `source_json.marketplace = 'etsy'`.
+- Split generic re-import metadata updates from canonical enrichment. The canonical update now includes `is('badge_reel_type_id', null)` at write time; date and diagnostic updates remain independent.
+- Red evidence: the focused unit suite failed on the missing write-time null predicate; the DB assertion failed with the prior migration by incorrectly accepting `SwivelAlligator` and populating an Etsy item through `personalizationResponses`.
+- Green evidence: `npx vitest run tests/unit/badge-reel-type-migration.test.js tests/unit/orders-store.test.js tests/unit/amazon-import-store.test.js` passed with 40 tests. `node tools/run_with_supabase_env.mjs --env local -- npx vitest run --config vitest.db.config.js tests/db/badge-reel-type-migration.db.test.js` passed with 1 test.
+- Production migration was not applied.

@@ -10,19 +10,20 @@ from (
   select candidate.id, selected.badge_reel_type_id
   from public.order_items candidate
   cross join lateral (
-    select case regexp_replace(lower(coalesce(entry.value ->> 'value', '')), '[^a-z0-9]+', '', 'g')
-      when 'swivelalligator' then 'swivel-alligator'
-      when 'swivelalligatorclip' then 'swivel-alligator'
+    select case btrim(regexp_replace(regexp_replace(lower(coalesce(entry.value ->> 'value', '')), '[^[:alnum:]]+', ' ', 'g'), '[[:space:]]+', ' ', 'g'))
+      when 'swivel alligator' then 'swivel-alligator'
+      when 'swivel alligator clip' then 'swivel-alligator'
       else null
     end as badge_reel_type_id
     from jsonb_array_elements(coalesce(candidate.source_json -> 'personalizationResponses', '[]'::jsonb))
       with ordinality as entry(value, ordinality)
-    where regexp_replace(lower(coalesce(entry.value ->> 'name', entry.value ->> 'label', '')), '[^a-z0-9]+', '', 'g')
-      in ('badgereel', 'badgereeltype')
+    where btrim(regexp_replace(regexp_replace(lower(coalesce(entry.value ->> 'name', entry.value ->> 'label', '')), '[^[:alnum:]]+', ' ', 'g'), '[[:space:]]+', ' ', 'g'))
+      in ('badge reel', 'badge reel type')
     order by entry.ordinality
     limit 1
   ) selected
-  where candidate.badge_reel_type_id is null
+  where lower(coalesce(candidate.source_json ->> 'marketplace', '')) = 'amazon'
+    and candidate.badge_reel_type_id is null
     and selected.badge_reel_type_id is not null
 ) incoming
 where stored.id = incoming.id
@@ -35,19 +36,20 @@ from (
   select candidate.id, selected.badge_reel_type_id
   from public.order_items candidate
   cross join lateral (
-    select case regexp_replace(lower(coalesce(entry.value ->> 'formatted_value', '')), '[^a-z0-9]+', '', 'g')
-      when 'swivelalligator' then 'swivel-alligator'
-      when 'swivelalligatorclip' then 'swivel-alligator'
+    select case btrim(regexp_replace(regexp_replace(lower(coalesce(entry.value ->> 'formatted_value', '')), '[^[:alnum:]]+', ' ', 'g'), '[[:space:]]+', ' ', 'g'))
+      when 'swivel alligator' then 'swivel-alligator'
+      when 'swivel alligator clip' then 'swivel-alligator'
       else null
     end as badge_reel_type_id
     from jsonb_array_elements(coalesce(candidate.source_json -> 'variations', '[]'::jsonb))
       with ordinality as entry(value, ordinality)
-    where regexp_replace(lower(coalesce(entry.value ->> 'formatted_name', '')), '[^a-z0-9]+', '', 'g')
-      in ('badgereel', 'badgereeltype')
+    where btrim(regexp_replace(regexp_replace(lower(coalesce(entry.value ->> 'formatted_name', '')), '[^[:alnum:]]+', ' ', 'g'), '[[:space:]]+', ' ', 'g'))
+      in ('badge reel', 'badge reel type')
     order by entry.ordinality
     limit 1
   ) selected
-  where candidate.badge_reel_type_id is null
+  where lower(coalesce(candidate.source_json ->> 'marketplace', '')) = 'etsy'
+    and candidate.badge_reel_type_id is null
     and selected.badge_reel_type_id is not null
 ) incoming
 where stored.id = incoming.id

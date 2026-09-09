@@ -930,8 +930,7 @@ export async function importWorkspaceOrderItems({
     const existingItem = existingOrderItemById.get(row.id);
     const hasExpectedShipDate = Object.hasOwn(row.source_json, "expected_ship_date");
     const hasEtsyImportDiagnostics = row.etsy_import_diagnostics && typeof row.etsy_import_diagnostics === "object";
-    const shouldFillBadgeReelType = existingItem && existingItem.badge_reel_type_id == null && row.badge_reel_type_id != null;
-    if (!existingItem || (!row.ship_by_date && !row.order_date && !hasExpectedShipDate && !hasEtsyImportDiagnostics && !shouldFillBadgeReelType)) {
+    if (!existingItem || (!row.ship_by_date && !row.order_date && !hasExpectedShipDate && !hasEtsyImportDiagnostics)) {
       return [];
     }
     const existingSource = existingItem.source_json && typeof existingItem.source_json === "object"
@@ -949,7 +948,6 @@ export async function importWorkspaceOrderItems({
           },
         } : {},
         ...hasEtsyImportDiagnostics ? { etsy_import_diagnostics: row.etsy_import_diagnostics } : {},
-        ...shouldFillBadgeReelType ? { badge_reel_type_id: row.badge_reel_type_id } : {},
       },
     }];
   });
@@ -965,9 +963,35 @@ export async function importWorkspaceOrderItems({
     throw shipDateUpdateError;
   }
 
+  const badgeReelTypeUpdates = orderRows.flatMap((row) => {
+    const existingItem = existingOrderItemById.get(row.id);
+    return existingItem?.badge_reel_type_id == null && row.badge_reel_type_id != null
+      ? [{ id: row.id, badgeReelTypeId: row.badge_reel_type_id }]
+      : [];
+  });
+  const badgeReelTypeUpdateResults = await Promise.all(badgeReelTypeUpdates.map((update) => (
+    supabase
+      .from("order_items")
+      .update({ badge_reel_type_id: update.badgeReelTypeId })
+      .eq("workspace_id", workspaceId)
+      .eq("id", update.id)
+      .is("badge_reel_type_id", null)
+  )));
+  const badgeReelTypeUpdateError = badgeReelTypeUpdateResults.find((result) => result?.error)?.error;
+  if (badgeReelTypeUpdateError) {
+    throw badgeReelTypeUpdateError;
+  }
+
   for (const update of existingOrderItemUpdates) {
     const before = persistedExistingById.get(update.id);
     if (before) persistedExistingById.set(update.id, orderItemPersistenceMetadata({ ...before, ...update.payload }));
+  }
+  for (const update of badgeReelTypeUpdates) {
+    const before = persistedExistingById.get(update.id);
+    if (before) persistedExistingById.set(update.id, orderItemPersistenceMetadata({
+      ...before,
+      badge_reel_type_id: update.badgeReelTypeId,
+    }));
   }
 
   const newOrderRows = orderRows.filter((row) => !existingOrderItemIds.has(row.id));
