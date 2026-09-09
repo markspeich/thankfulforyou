@@ -120,6 +120,10 @@ import {
   normalizeOrdersWorkspaceState,
 } from "./orders-workspace.js";
 import {
+  badgeReelTypeLabel,
+  findBadgeReelTypeCandidate,
+} from "./badge-reel-types.js";
+import {
   getAccessToken,
   getSignedInSession,
   signOutBrowserSession,
@@ -6117,6 +6121,32 @@ function getDatabaseOrderItemQuantityText(item) {
   return match ? String(match).trim() : "1";
 }
 
+function getDatabaseOrderItemBadgeReelTypeText(item) {
+  if (item?.badgeReelTypeId != null) {
+    return badgeReelTypeLabel(item.badgeReelTypeId) || "Unrecognized";
+  }
+
+  const source = item?.source;
+  const marketplace = typeof source?.marketplace === "string"
+    ? source.marketplace.trim().toLowerCase()
+    : "";
+  const amazonCandidate = () => findBadgeReelTypeCandidate(source?.personalizationResponses, {
+    label: "name",
+    value: "value",
+  });
+  const etsyCandidate = () => findBadgeReelTypeCandidate(source?.variations, {
+    label: "formatted_name",
+    value: "formatted_value",
+  });
+  const retainedCandidate = marketplace === "amazon"
+    ? amazonCandidate()
+    : marketplace === "etsy"
+      ? etsyCandidate()
+      : amazonCandidate() || etsyCandidate();
+
+  return retainedCandidate ? "Unrecognized" : "Not set";
+}
+
 function getDatabaseOrderItemFlattenedLines(item) {
   const lines = Array.isArray(item?.design?.lines) ? item.design.lines : [];
   const lineText = lines
@@ -7749,6 +7779,11 @@ function renderSelectedDatabaseOrderItems() {
     const colorValue = document.createElement("dd");
     colorValue.textContent = getDatabaseOrderItemColorText(item);
 
+    const badgeReelTerm = document.createElement("dt");
+    badgeReelTerm.textContent = "Badge reel";
+    const badgeReelValue = document.createElement("dd");
+    badgeReelValue.textContent = getDatabaseOrderItemBadgeReelTypeText(item);
+
     const quantityTerm = document.createElement("dt");
     quantityTerm.textContent = "Quantity";
     const quantityValue = document.createElement("dd");
@@ -7759,7 +7794,18 @@ function renderSelectedDatabaseOrderItems() {
     const shipByValue = document.createElement("dd");
     shipByValue.textContent = formatShipByDate(item?.shipByDate) || "Not available";
 
-    meta.append(personalizationTerm, personalizationValue, colorTerm, colorValue, quantityTerm, quantityValue, shipByTerm, shipByValue);
+    meta.append(
+      personalizationTerm,
+      personalizationValue,
+      colorTerm,
+      colorValue,
+      badgeReelTerm,
+      badgeReelValue,
+      quantityTerm,
+      quantityValue,
+      shipByTerm,
+      shipByValue,
+    );
 
     cardBody.append(listingColumn, previewColumn);
     card.append(cardHeader, cardBody, status, savedDesign, meta);

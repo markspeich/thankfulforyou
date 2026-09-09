@@ -138,6 +138,7 @@ function buildOrdersPayload() {
             id: "item-1",
             listingTitle: "Custom badge reel",
             isInActiveBatch: false,
+            badgeReelTypeId: "swivel-alligator",
             source: {
               colorName: "Red Glitter",
               quantity: "2",
@@ -187,9 +188,32 @@ function buildOrdersPayload() {
             id: "item-3",
             listingTitle: "Name badge reel",
             isInActiveBatch: true,
+            badgeReelTypeId: null,
+            source: {
+              marketplace: "amazon",
+              personalizationResponses: [
+                { name: "Badge Reel Type", value: "Swivel Alligator Clip" },
+              ],
+            },
             design: {
               text: "Grace",
               lines: [{ lineIndex: 0, text: "Grace", fontId: "candlepin" }],
+            },
+          },
+          {
+            id: "item-4",
+            listingTitle: "Legacy badge reel",
+            isInActiveBatch: false,
+            badgeReelTypeId: "legacy-badge-reel",
+            source: {
+              marketplace: "etsy",
+              variations: [
+                { formatted_name: "Badge Reel", formatted_value: "Unknown Legacy Type" },
+              ],
+            },
+            design: {
+              text: "Lin",
+              lines: [{ lineIndex: 0, text: "Lin", fontId: "candlepin" }],
             },
           },
         ],
@@ -818,7 +842,7 @@ test("identifies Etsy and Amazon in selected imported order headers", async ({ p
   await expect(selectedHeading).not.toContainText("Manual Order:");
 });
 
-test("renders grouped database orders and selected order item cards", async ({ page }) => {
+test("renders canonical badge reel type metadata in selected order item cards", async ({ page }) => {
   await installSupabaseSession(page);
   await installProductionBatchRoutes(page);
   await installOrdersWorkspaceRoutes(page);
@@ -893,8 +917,17 @@ test("renders grouped database orders and selected order item cards", async ({ p
   await expect(firstItemCard.getByRole("img", { name: "Custom badge reel" })).toBeVisible();
   await expect(firstItemCard.locator(".database-order-item-meta")).toContainText("Color");
   await expect(firstItemCard.locator(".database-order-item-meta")).toContainText("Red Glitter");
+  await expect(firstItemCard.locator(".database-order-item-meta")).toContainText("Badge reel");
+  await expect(firstItemCard.locator(".database-order-item-meta")).toContainText("Swivel Alligator");
   await expect(firstItemCard.locator(".database-order-item-meta")).toContainText("Quantity");
   await expect(firstItemCard.locator(".database-order-item-meta")).toContainText("2");
+  await expect(firstItemCard.locator(".database-order-item-meta > dt")).toHaveText([
+    "Personalization",
+    "Color",
+    "Badge reel",
+    "Quantity",
+    "Ship By Date",
+  ]);
   await expect(firstItemCard.locator(".database-order-item-preview-column .database-order-item-preview")).toBeVisible();
   await expect(firstItemCard.locator(".database-order-item-body > *")).toHaveCount(2);
   await expect(
@@ -906,6 +939,15 @@ test("renders grouped database orders and selected order item cards", async ({ p
   await expect(firstItemCard.getByRole("button", { name: "Add to Production Batch" })).toBeEnabled();
   await page.keyboard.press("Escape");
 
+  const missingTypeCard = ordersWorkspace.locator(".database-order-item-card").filter({ hasText: "PICU" });
+  await expect(missingTypeCard.locator(".database-order-item-meta > dd")).toContainText([
+    "PICU",
+    "No color",
+    "Not set",
+    "1",
+    "Not available",
+  ]);
+
   await ordersWorkspace
     .locator(".database-order-row")
     .filter({ hasText: "Order 1002" })
@@ -914,6 +956,23 @@ test("renders grouped database orders and selected order item cards", async ({ p
   await expect(ordersWorkspace.getByRole("heading", { name: "Order 1002" })).toBeVisible();
   const inBatchItemCard = ordersWorkspace.locator(".database-order-item-card").filter({ hasText: "Grace" });
   await expect(inBatchItemCard.locator(".database-order-item-meta")).toContainText("Grace");
+  await expect(inBatchItemCard.locator(".database-order-item-meta > dd")).toContainText([
+    "Grace",
+    "No color",
+    "Unrecognized",
+    "1",
+    "Not available",
+  ]);
+  await expect(inBatchItemCard.locator(".database-order-item-meta")).not.toContainText("Swivel Alligator Clip");
+  const unknownTypeCard = ordersWorkspace.locator(".database-order-item-card").filter({ hasText: "Lin" });
+  await expect(unknownTypeCard.locator(".database-order-item-meta > dd")).toContainText([
+    "Lin",
+    "No color",
+    "Unrecognized",
+    "1",
+    "Not available",
+  ]);
+  await expect(unknownTypeCard.locator(".database-order-item-meta")).not.toContainText("legacy-badge-reel");
   await inBatchItemCard.getByRole("button", { name: "Item actions" }).click();
   await expect(inBatchItemCard.getByRole("button", { name: "Add to Production Batch" })).toBeDisabled();
 });
