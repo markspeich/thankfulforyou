@@ -21,6 +21,7 @@ function clone(value) {
 }
 
 function resetDb(nextDb = {}) {
+  supabaseMock.beforeOrderInsert = null;
   supabaseMock.calls = [];
   supabaseMock.db = {
     production_batches: [],
@@ -65,8 +66,13 @@ function createTableMock(table) {
     },
     upsert(payload, options = {}) {
       supabaseMock.calls.push({ table, operation: "upsert", payload: clone(payload), options });
-      upsertRows(table, Array.isArray(payload) ? payload : [payload], options.onConflict);
-      return createMutationResult(table, Array.isArray(payload) ? payload : [payload]);
+      if (table === "order_items") supabaseMock.beforeOrderInsert?.();
+      const rows = Array.isArray(payload) ? payload : [payload];
+      const accepted = options.ignoreDuplicates
+        ? rows.filter((row) => !supabaseMock.db[table].some((existing) => existing.id === row.id))
+        : rows;
+      upsertRows(table, accepted, options.onConflict);
+      return createMutationResult(table, accepted);
     },
     insert(payload) {
       supabaseMock.calls.push({ table, operation: "insert", payload: clone(payload) });
@@ -90,6 +96,7 @@ function createMutationResult(table, payload) {
 
   return {
     select() {
+      if (table === "order_items") result.data = clone(payload);
       if (table === "designs") {
         result.data = payload.map((row) => {
           const saved = supabaseMock.db.designs.find((design) => design.order_item_id === row.order_item_id);
@@ -271,6 +278,40 @@ afterEach(() => {
   vi.resetModules();
 });
 describe("orders store", () => {
+  it("preserves a concurrently inserted order and draft design and reports only actual inserts", async () => {
+    resetDb();
+    const concurrent = { id: "transaction:concurrent", workspace_id: "workspace-1", status: "skipped",
+      quantity: 3, source_json: { retained: true }, badge_reel_type_id: "swivel-alligator" };
+    const design = { id: "concurrent-design", workspace_id: "workspace-1", order_item_id: concurrent.id,
+      design_text: "Operator draft", production_status: "draft" };
+    supabaseMock.beforeOrderInsert = () => {
+      supabaseMock.db.order_items.push(clone(concurrent));
+      supabaseMock.db.designs.push(clone(design));
+      supabaseMock.beforeOrderInsert = null;
+    };
+    const { importWorkspaceOrderItems } = await import("../../api/_lib/orders-store.js");
+    const result = await importWorkspaceOrderItems({ workspaceId: "workspace-1", userId: "user-1",
+      items: [{ text: "Replacement", source: { transactionId: "concurrent" } },
+        { text: "New item", source: { transactionId: "truly-new" } }], includePersistenceAudit: true });
+    expect(supabaseMock.db.order_items.find((row) => row.id === concurrent.id)).toEqual(concurrent);
+    expect(supabaseMock.db.designs.find((row) => row.id === design.id)).toEqual(design);
+    expect(result.importedOrderItemIds).toEqual(["transaction:truly-new"]);
+    expect(result.importedCount).toBe(1);
+    expect(result.persistenceAudit[0]).toMatchObject({ importDecision: "existing",
+      storedAfter: { badge_reel_type_id: "swivel-alligator" } });
+  });
+
+  it("maps compact candidate presence without raw retained values", async () => {
+    resetDb({ order_summary_rows: [{ group_id: "compact", items: [
+      { id: "unrecognized", badge_reel_type_id: null, badge_reel_type_candidate_present: true, source_json: {} },
+      { id: "missing", badge_reel_type_id: null, badge_reel_type_candidate_present: false, source_json: {} },
+    ] }] });
+    const { listWorkspaceOrderSummaries } = await import("../../api/_lib/orders-store.js");
+    const result = await listWorkspaceOrderSummaries({ workspaceId: "workspace-1" });
+    expect(result.orders[0].items).toMatchObject([
+      { hasBadgeReelTypeCandidate: true, source: {} }, { hasBadgeReelTypeCandidate: false, source: {} },
+    ]);
+  });
   it("lists a compact paginated RPC result without hydrating design details", async () => {
     // Break caught: the compact list falls back to unbounded table reads or leaks large design fields.
     resetDb({

@@ -6125,11 +6125,17 @@ function getDatabaseOrderItemBadgeReelTypeText(item) {
   if (item?.badgeReelTypeId != null) {
     return badgeReelTypeLabel(item.badgeReelTypeId) || "Unrecognized";
   }
+  if (typeof item?.hasBadgeReelTypeCandidate === "boolean") {
+    return item.hasBadgeReelTypeCandidate ? "Unrecognized" : "Not set";
+  }
 
   const source = item?.source;
   const marketplace = typeof source?.marketplace === "string"
     ? source.marketplace.trim().toLowerCase()
     : "";
+  if (marketplace === "amazon" && typeof source?.badgeReelTypeCandidate?.present === "boolean") {
+    return source.badgeReelTypeCandidate.present ? "Unrecognized" : "Not set";
+  }
   const amazonCandidate = () => findBadgeReelTypeCandidate(source?.personalizationResponses, {
     label: "name",
     value: "value",

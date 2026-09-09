@@ -818,6 +818,31 @@ test("identifies Etsy and Amazon in selected imported order headers", async ({ p
   await expect(selectedHeading).not.toContainText("Manual Order:");
 });
 
+test("keeps compact badge reel status accurate when detail hydration fails", async ({ page }) => {
+  const ordersPayload = buildOrdersPayload();
+  const items = ordersPayload.orders[0].items;
+  items[0].badgeReelTypeId = null;
+  items[0].hasBadgeReelTypeCandidate = true;
+  items[0].source = { marketplace: "amazon" };
+  items[1].badgeReelTypeId = null;
+  items[1].hasBadgeReelTypeCandidate = false;
+  items[1].source = { marketplace: "etsy" };
+  items.push({ id: "blank-marker", badgeReelTypeId: null,
+    source: { marketplace: "amazon", badgeReelTypeCandidate: { present: true, id: null }, personalizationResponses: [] },
+    design: { text: "Blank first", lines: [] } });
+  await installSupabaseSession(page);
+  await installProductionBatchRoutes(page);
+  await installOrdersWorkspaceRoutes(page, { ordersPayload });
+  await page.route("**/api/orders?*view=detail*", (route) => route.fulfill({ status: 500, json: { error: "Detail unavailable" } }));
+  await page.goto("/?workspace=orders");
+  const workspace = page.getByRole("region", { name: "Orders workspace" });
+  await workspace.locator(".database-order-row").filter({ hasText: "Order 1001" }).getByRole("button").click();
+  const cards = workspace.locator(".database-order-item-card");
+  await expect(cards.filter({ hasText: "Ada RN" }).locator(".database-order-item-meta > dd").nth(2)).toHaveText("Unrecognized");
+  await expect(cards.filter({ hasText: "PICU" }).locator(".database-order-item-meta > dd").nth(2)).toHaveText("Not set");
+  await expect(cards.filter({ hasText: "Blank first" }).locator(".database-order-item-meta > dd").nth(2)).toHaveText("Unrecognized");
+});
+
 test("renders canonical badge reel type metadata in selected order item cards", async ({ page }) => {
   const ordersPayload = buildOrdersPayload();
   ordersPayload.orders[0].items[0].badgeReelTypeId = "swivel-alligator";

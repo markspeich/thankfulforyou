@@ -257,6 +257,7 @@ function normalizeCompactRpcOrderItem(row) {
     transactionId: row.transaction_id ?? null,
     importedColor: row.imported_color ?? null,
     badgeReelTypeId: row.badge_reel_type_id ?? null,
+    hasBadgeReelTypeCandidate: row.badge_reel_type_candidate_present === true,
     shipByDate: row.ship_by_date ?? null,
     orderDate: row.order_date ?? null,
     quantity: toPositiveInteger(row.quantity, 1),
@@ -995,18 +996,30 @@ export async function importWorkspaceOrderItems({
   }
 
   const newOrderRows = orderRows.filter((row) => !existingOrderItemIds.has(row.id));
+  let importedOrderItemIds = [];
 
   if (newOrderRows.length) {
-    const { error: orderItemsError } = await supabase
+    const { data: insertedRows, error: orderItemsError } = await supabase
       .from("order_items")
-      .upsert(newOrderRows, { onConflict: "id" });
+      .upsert(newOrderRows, { onConflict: "id", ignoreDuplicates: true })
+      .select("id");
 
     if (orderItemsError) {
       throw orderItemsError;
     }
+    importedOrderItemIds = (insertedRows || []).map((row) => row.id);
+    const insertedIds = new Set(importedOrderItemIds);
+    const conflictedIds = newOrderRows.filter((row) => !insertedIds.has(row.id)).map((row) => row.id);
+    if (conflictedIds.length) {
+      const concurrentItems = await queryExistingOrderItems({ supabase, workspaceId, orderItemIds: conflictedIds });
+      for (const item of concurrentItems) {
+        existingOrderItemIds.add(item.id);
+        existingOrderItemById.set(item.id, item);
+        persistedExistingById.set(item.id, orderItemPersistenceMetadata(item));
+      }
+    }
   }
 
-  const importedOrderItemIds = newOrderRows.map((row) => row.id);
   const { data: existingDesigns, error: existingDesignsError } = await supabase
     .from("designs")
     .select("id, order_item_id, production_status, saved_settings_signature, completed_settings_signature")

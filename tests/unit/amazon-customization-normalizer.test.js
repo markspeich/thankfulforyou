@@ -348,6 +348,36 @@ describe("Amazon customization normalizer", () => {
 
     expect(result.source.badgeReelTypeId).toBe("swivel-alligator");
   });
+  it.each([
+    ["blank", " ", null],
+    ["unknown", "Unknown Clip", null],
+    ["asset", "https://example.com/private-upload.png", null],
+    ["known", "Swivel Alligator Clip", "swivel-alligator"],
+  ])("retains a safe first public reel candidate marker for %s values", (_name, value, id) => {
+    // Break caught: discarded values lose first-candidate ordering during later backfill.
+    const result = normalizeShipStationItem({
+      item: { external_order_item_id: "marker-test" },
+      customization: { "version3.0": { customizationInfo: { surfaces: [{ areas: [
+        { customizationType: "option", label: "^Badge Reel", optionValue: "Swivel Alligator" },
+        { customizationType: "option", label: "Badge Reel", optionValue: value },
+        { customizationType: "option", label: "Badge Reel Type", optionValue: "Swivel Alligator" },
+      ] }] } } },
+    });
+    expect(result.source.badgeReelTypeCandidate).toEqual({ present: true, id });
+    expect(result.text).toBe("");
+  });
+
+  it("records absence when only an internal reel candidate exists", () => {
+    const result = normalizeShipStationItem({
+      item: { external_order_item_id: "internal-marker" },
+      customization: { "version3.0": { customizationInfo: { surfaces: [{ areas: [
+        { customizationType: "option", label: "^Badge Reel", optionValue: "Swivel Alligator" },
+      ] }] } } },
+    });
+    expect(result.source.badgeReelTypeCandidate).toEqual({ present: false, id: null });
+    expect(result.source.personalizationResponses).toEqual([]);
+  });
+
   it("preserves observed v3 source order while excluding non-production fields", () => {
     // Break caught: accepting archive metadata or losing ordered text/configuration fields.
     expect(extractAmazonCustomizationFields(observedCustomization)).toEqual({
@@ -543,6 +573,7 @@ describe("Amazon customization normalizer", () => {
         quantity: "2",
         colorName: "Teal",
         shipByDate: "2026-08-01",
+        badgeReelTypeCandidate: { present: false, id: null },
         price: { amount: "14.95", currency: "USD" },
         personalizationResponses: [
           { name: "Text Line 1", value: "Jane" },

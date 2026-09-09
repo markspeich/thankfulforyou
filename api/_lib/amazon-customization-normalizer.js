@@ -424,6 +424,7 @@ export function normalizeShipStationItem({ shipment = {}, item = {}, customizati
       quantity: sourceString(item.quantity || 1),
       colorName: sourceString(color?.value),
       ...(badgeReelType?.id ? { badgeReelTypeId: badgeReelType.id } : {}),
+      badgeReelTypeCandidate: { present: Boolean(badgeReelType), id: badgeReelType?.id ?? null },
       shipByDate: sourceString(shipment.ship_by_date),
       ...(sourceString(shipment.payment_date) ? { orderDate: sourceString(shipment.payment_date) } : {}),
       ...(price ? { price } : {}),

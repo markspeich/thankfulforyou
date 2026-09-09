@@ -1,60 +1,64 @@
 alter table public.order_items
   add column if not exists badge_reel_type_id text;
 
--- The first reel-type field is authoritative even when its value is not a
--- recognized canonical type.  This prevents a later duplicate field from
--- silently changing a historical order's selection.
-update public.order_items stored
-set badge_reel_type_id = incoming.badge_reel_type_id
-from (
-  select candidate.id, selected.badge_reel_type_id
-  from public.order_items candidate
-  cross join lateral (
-    select case btrim(regexp_replace(regexp_replace(lower(coalesce(entry.value ->> 'value', '')), '[^[:alnum:]]+', ' ', 'g'), '[[:space:]]+', ' ', 'g'))
-      when 'swivel alligator' then 'swivel-alligator'
-      when 'swivel alligator clip' then 'swivel-alligator'
-      else null
-    end as badge_reel_type_id
-    from jsonb_array_elements(coalesce(candidate.source_json -> 'personalizationResponses', '[]'::jsonb))
-      with ordinality as entry(value, ordinality)
-    where btrim(regexp_replace(regexp_replace(lower(coalesce(entry.value ->> 'name', entry.value ->> 'label', '')), '[^[:alnum:]]+', ' ', 'g'), '[[:space:]]+', ' ', 'g'))
-      in ('badge reel', 'badge reel type')
-    order by entry.ordinality
-    limit 1
-  ) selected
-  where lower(coalesce(candidate.source_json ->> 'marketplace', '')) = 'amazon'
-    and candidate.badge_reel_type_id is null
-    and selected.badge_reel_type_id is not null
-) incoming
-where stored.id = incoming.id
-  and stored.badge_reel_type_id is null
-  and incoming.badge_reel_type_id is not null;
+-- A sanitized first-candidate marker preserves rejected/blank Amazon choices.
+-- Legacy Etsy API sources have no marketplace tag; their variations are authoritative.
+-- Reuse the same extraction for backfill and compact status without exposing raw values.
+create or replace function public.retained_badge_reel_type_candidate(p_source jsonb)
+returns jsonb
+language plpgsql
+immutable
+security invoker
+set search_path = ''
+as $$
+declare
+  v_marketplace text := lower(btrim(coalesce(p_source ->> 'marketplace', '')));
+  v_marker jsonb := p_source -> 'badgeReelTypeCandidate';
+  v_entries jsonb := '[]'::jsonb;
+  v_label_key text;
+  v_value_key text;
+  v_entry jsonb;
+  v_label text;
+  v_value text;
+begin
+  if v_marketplace = 'amazon' then
+    if jsonb_typeof(v_marker) = 'object' and jsonb_typeof(v_marker -> 'present') = 'boolean' then
+      return jsonb_build_object('present', v_marker -> 'present', 'id',
+        case when v_marker -> 'present' = 'true'::jsonb and v_marker ->> 'id' = 'swivel-alligator'
+          then 'swivel-alligator' else null end);
+    end if;
+    v_entries := case when jsonb_typeof(p_source -> 'personalizationResponses') = 'array'
+      then p_source -> 'personalizationResponses' else '[]'::jsonb end;
+    v_label_key := 'name';
+    v_value_key := 'value';
+  elsif v_marketplace = 'etsy' or (v_marketplace = '' and jsonb_typeof(p_source -> 'variations') = 'array') then
+    v_entries := case when jsonb_typeof(p_source -> 'variations') = 'array'
+      then p_source -> 'variations' else '[]'::jsonb end;
+    v_label_key := 'formatted_name';
+    v_value_key := 'formatted_value';
+  end if;
+
+  for v_entry in select entry.value from jsonb_array_elements(v_entries) with ordinality entry(value, position) order by entry.position loop
+    v_label := coalesce(v_entry ->> v_label_key, '');
+    if v_marketplace = 'amazon' and left(btrim(v_label), 1) = '^' then continue; end if;
+    v_label := btrim(regexp_replace(lower(v_label), '[^[:alnum:]]+', ' ', 'g'));
+    if v_label in ('badge reel', 'badge reel type') then
+      v_value := btrim(regexp_replace(lower(coalesce(v_entry ->> v_value_key, '')), '[^[:alnum:]]+', ' ', 'g'));
+      return jsonb_build_object('present', true, 'id', case
+        when v_value in ('swivel alligator', 'swivel alligator clip') then 'swivel-alligator' else null end);
+    end if;
+  end loop;
+  return jsonb_build_object('present', false, 'id', null);
+end;
+$$;
+
+revoke all on function public.retained_badge_reel_type_candidate(jsonb) from public, anon, authenticated;
+grant execute on function public.retained_badge_reel_type_candidate(jsonb) to service_role;
 
 update public.order_items stored
-set badge_reel_type_id = incoming.badge_reel_type_id
-from (
-  select candidate.id, selected.badge_reel_type_id
-  from public.order_items candidate
-  cross join lateral (
-    select case btrim(regexp_replace(regexp_replace(lower(coalesce(entry.value ->> 'formatted_value', '')), '[^[:alnum:]]+', ' ', 'g'), '[[:space:]]+', ' ', 'g'))
-      when 'swivel alligator' then 'swivel-alligator'
-      when 'swivel alligator clip' then 'swivel-alligator'
-      else null
-    end as badge_reel_type_id
-    from jsonb_array_elements(coalesce(candidate.source_json -> 'variations', '[]'::jsonb))
-      with ordinality as entry(value, ordinality)
-    where btrim(regexp_replace(regexp_replace(lower(coalesce(entry.value ->> 'formatted_name', '')), '[^[:alnum:]]+', ' ', 'g'), '[[:space:]]+', ' ', 'g'))
-      in ('badge reel', 'badge reel type')
-    order by entry.ordinality
-    limit 1
-  ) selected
-  where lower(coalesce(candidate.source_json ->> 'marketplace', '')) = 'etsy'
-    and candidate.badge_reel_type_id is null
-    and selected.badge_reel_type_id is not null
-) incoming
-where stored.id = incoming.id
-  and stored.badge_reel_type_id is null
-  and incoming.badge_reel_type_id is not null;
+set badge_reel_type_id = public.retained_badge_reel_type_candidate(stored.source_json) ->> 'id'
+where stored.badge_reel_type_id is null
+  and public.retained_badge_reel_type_candidate(stored.source_json) ->> 'id' is not null;
 
 create or replace function public.import_amazon_order_items(
   p_workspace_id uuid, p_user_id uuid, p_items jsonb
@@ -182,7 +186,7 @@ as $$
     left join public.designs designs on designs.workspace_id = p_workspace_id and designs.order_item_id = orders.id
   )
   select hydrated.group_id, hydrated.sort_key, (array_agg(hydrated.order_number order by hydrated.created_at, hydrated.id))[1], (array_agg(hydrated.buyer_name order by hydrated.created_at, hydrated.id))[1], case when bool_and(hydrated.status = 'complete') then 'complete' when bool_and(hydrated.status = 'skipped') then 'skipped' else 'open' end, bool_or(hydrated.item_is_in_active_batch), min(hydrated.ship_by_date), min(hydrated.order_date), count(*),
-    jsonb_agg(jsonb_build_object('id', hydrated.id, 'status', hydrated.status, 'order_number', hydrated.order_number, 'buyer_name', hydrated.buyer_name, 'listing_id', hydrated.listing_id, 'transaction_id', hydrated.transaction_id, 'imported_color', hydrated.imported_color, 'badge_reel_type_id', hydrated.badge_reel_type_id, 'ship_by_date', hydrated.ship_by_date, 'order_date', hydrated.order_date, 'quantity', hydrated.quantity, 'source_json', jsonb_strip_nulls(jsonb_build_object('marketplace', hydrated.source_json ->> 'marketplace', 'listingTitle', hydrated.source_json ->> 'listingTitle', 'listingImageUrl75x75', hydrated.source_json ->> 'listingImageUrl75x75')), 'revision', hydrated.revision, 'updated_at', hydrated.updated_at, 'updated_by', hydrated.updated_by, 'is_in_active_batch', hydrated.item_is_in_active_batch, 'design_id', hydrated.design_id, 'design_text', coalesce(hydrated.design_text, ''), 'design_production_status', hydrated.design_production_status) order by hydrated.created_at, hydrated.id)
+    jsonb_agg(jsonb_build_object('id', hydrated.id, 'status', hydrated.status, 'order_number', hydrated.order_number, 'buyer_name', hydrated.buyer_name, 'listing_id', hydrated.listing_id, 'transaction_id', hydrated.transaction_id, 'imported_color', hydrated.imported_color, 'badge_reel_type_id', hydrated.badge_reel_type_id, 'badge_reel_type_candidate_present', public.retained_badge_reel_type_candidate(hydrated.source_json) -> 'present', 'ship_by_date', hydrated.ship_by_date, 'order_date', hydrated.order_date, 'quantity', hydrated.quantity, 'source_json', jsonb_strip_nulls(jsonb_build_object('marketplace', hydrated.source_json ->> 'marketplace', 'listingTitle', hydrated.source_json ->> 'listingTitle', 'listingImageUrl75x75', hydrated.source_json ->> 'listingImageUrl75x75')), 'revision', hydrated.revision, 'updated_at', hydrated.updated_at, 'updated_by', hydrated.updated_by, 'is_in_active_batch', hydrated.item_is_in_active_batch, 'design_id', hydrated.design_id, 'design_text', coalesce(hydrated.design_text, ''), 'design_production_status', hydrated.design_production_status) order by hydrated.created_at, hydrated.id)
   from hydrated
   group by hydrated.group_id, hydrated.sort_key, hydrated.sort_value
   order by (hydrated.sort_value is null) asc, case when p_sort_direction = 'asc' then hydrated.sort_value end asc, case when p_sort_direction = 'desc' then hydrated.sort_value end desc, case when p_sort_direction = 'asc' then hydrated.group_id end asc, case when p_sort_direction = 'desc' then hydrated.group_id end desc
