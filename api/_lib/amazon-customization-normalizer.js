@@ -400,7 +400,7 @@ export function normalizeShipStationItem({ shipment = {}, item = {}, customizati
   );
   const badgeReelType = findBadgeReelTypeCandidate(
     classified.candidates.filter(
-      (candidate) => candidate.kind === "configuration" && candidate.rejected !== "internal",
+      (candidate) => candidate.kind === "configuration" && !candidate.rawName.startsWith("^"),
     ),
     { label: "rawName", value: "rawValue" },
   );

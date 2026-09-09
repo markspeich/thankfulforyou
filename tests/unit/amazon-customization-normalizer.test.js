@@ -335,6 +335,19 @@ describe("Amazon customization normalizer", () => {
       { name: "Badge Reel Type", value: "Swivel Alligator" },
     ]);
   });
+
+  it("does not let a blank internal Amazon badge-reel option block a public selection", () => {
+    // Break caught: a blank internal field blocks the first public marketplace badge-reel field.
+    const result = normalizeShipStationItem({
+      item: { external_order_item_id: "item-with-blank-internal-reel" },
+      customization: { "version3.0": { customizationInfo: { surfaces: [{ areas: [
+        { customizationType: "option", label: "^Badge Reel", optionValue: " " },
+        { customizationType: "option", label: "Badge Reel Type", optionValue: "Swivel Alligator" },
+      ] }] } } },
+    });
+
+    expect(result.source.badgeReelTypeId).toBe("swivel-alligator");
+  });
   it("preserves observed v3 source order while excluding non-production fields", () => {
     // Break caught: accepting archive metadata or losing ordered text/configuration fields.
     expect(extractAmazonCustomizationFields(observedCustomization)).toEqual({

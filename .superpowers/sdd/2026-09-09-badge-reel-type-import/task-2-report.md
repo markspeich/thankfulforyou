@@ -47,3 +47,9 @@
 - Red: an internally labeled `^Badge Reel: Swivel Alligator` preceding a public unknown badge-reel selection incorrectly emitted a canonical ID because raw lookup normalized the internal label.
 - Fix: raw configuration candidates rejected as `internal` are excluded from the canonical lookup; public rejected candidates remain in ordering.
 - Green: `npx vitest run tests/unit/amazon-customization-normalizer.test.js tests/unit/etsy-import-normalizer.test.js` passed: 2 files, 36 tests.
+
+## Fix round 3
+
+- Red: a blank `^Badge Reel` candidate was classified as `blank` before it could be marked `internal`, so it still blocked the following public `Badge Reel Type: Swivel Alligator` candidate.
+- Fix: the lookup filter excludes configuration candidates whose retained normalized raw label starts with `^`, independent of the candidate rejection reason. Public blank and malformed labels remain in first-match ordering.
+- Green: `npx vitest run tests/unit/amazon-customization-normalizer.test.js tests/unit/etsy-import-normalizer.test.js` passed: 2 files, 37 tests.
