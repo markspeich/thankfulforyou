@@ -41,3 +41,9 @@
 - Red: after changing the Amazon regression fixture so every unrecognized, blank, and malformed first `Badge Reel` value was followed by a recognized `Badge Reel Type`, the focused suite failed because blank or malformed first fields were discarded before canonical lookup and the later value resolved.
 - Fix: classified Amazon configuration candidates now retain normalized raw label/value fields for lookup ordering. The canonical lookup uses those raw fields while `personalizationResponses` continues using only existing accepted fields.
 - Green: `npx vitest run tests/unit/amazon-customization-normalizer.test.js tests/unit/etsy-import-normalizer.test.js` passed: 2 files, 35 tests.
+
+## Fix round 2
+
+- Red: an internally labeled `^Badge Reel: Swivel Alligator` preceding a public unknown badge-reel selection incorrectly emitted a canonical ID because raw lookup normalized the internal label.
+- Fix: raw configuration candidates rejected as `internal` are excluded from the canonical lookup; public rejected candidates remain in ordering.
+- Green: `npx vitest run tests/unit/amazon-customization-normalizer.test.js tests/unit/etsy-import-normalizer.test.js` passed: 2 files, 36 tests.

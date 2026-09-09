@@ -317,6 +317,24 @@ describe("Amazon customization normalizer", () => {
     expect(result.source).not.toHaveProperty("badgeReelTypeId");
     expect(result.source.personalizationResponses).toEqual([{ name: "Color", value: "Teal" }]);
   });
+
+  it("ignores internally labeled Amazon badge-reel options before selecting a public field", () => {
+    // Break caught: internal metadata emits a canonical type or blocks the first public marketplace selection.
+    const result = normalizeShipStationItem({
+      item: { external_order_item_id: "item-with-internal-reel" },
+      customization: { "version3.0": { customizationInfo: { surfaces: [{ areas: [
+        { customizationType: "option", label: "^Badge Reel", optionValue: "Swivel Alligator" },
+        { customizationType: "option", label: "Badge Reel", optionValue: "Unknown Clip" },
+        { customizationType: "option", label: "Badge Reel Type", optionValue: "Swivel Alligator" },
+      ] }] } } },
+    });
+
+    expect(result.source).not.toHaveProperty("badgeReelTypeId");
+    expect(result.source.personalizationResponses).toEqual([
+      { name: "Badge Reel", value: "Unknown Clip" },
+      { name: "Badge Reel Type", value: "Swivel Alligator" },
+    ]);
+  });
   it("preserves observed v3 source order while excluding non-production fields", () => {
     // Break caught: accepting archive metadata or losing ordered text/configuration fields.
     expect(extractAmazonCustomizationFields(observedCustomization)).toEqual({

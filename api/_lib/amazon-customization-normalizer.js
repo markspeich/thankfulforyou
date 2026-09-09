@@ -399,7 +399,9 @@ export function normalizeShipStationItem({ shipment = {}, item = {}, customizati
     (response) => response.name.toLowerCase() === "color",
   );
   const badgeReelType = findBadgeReelTypeCandidate(
-    classified.candidates.filter((candidate) => candidate.kind === "configuration"),
+    classified.candidates.filter(
+      (candidate) => candidate.kind === "configuration" && candidate.rejected !== "internal",
+    ),
     { label: "rawName", value: "rawValue" },
   );
   const orderItemId = normalizedItemId(item.external_order_item_id);
