@@ -138,7 +138,6 @@ function buildOrdersPayload() {
             id: "item-1",
             listingTitle: "Custom badge reel",
             isInActiveBatch: false,
-            badgeReelTypeId: "swivel-alligator",
             source: {
               colorName: "Red Glitter",
               quantity: "2",
@@ -188,73 +187,9 @@ function buildOrdersPayload() {
             id: "item-3",
             listingTitle: "Name badge reel",
             isInActiveBatch: true,
-            badgeReelTypeId: null,
-            source: {
-              marketplace: "amazon",
-              personalizationResponses: [
-                { name: "Badge Reel Type", value: "Swivel Alligator Clip" },
-              ],
-            },
             design: {
               text: "Grace",
               lines: [{ lineIndex: 0, text: "Grace", fontId: "candlepin" }],
-            },
-          },
-          {
-            id: "item-4",
-            listingTitle: "Etsy badge reel",
-            isInActiveBatch: false,
-            badgeReelTypeId: null,
-            source: {
-              marketplace: "etsy",
-              variations: [
-                { formatted_name: "Badge Reel", formatted_value: "Swivel Alligator Clip" },
-              ],
-            },
-            design: {
-              text: "Etsy",
-              lines: [{ lineIndex: 0, text: "Etsy", fontId: "candlepin" }],
-            },
-          },
-          {
-            id: "item-5",
-            listingTitle: "Unknown stored type badge reel",
-            isInActiveBatch: false,
-            badgeReelTypeId: "legacy-badge-reel",
-            design: {
-              text: "Lin",
-              lines: [{ lineIndex: 0, text: "Lin", fontId: "candlepin" }],
-            },
-          },
-          {
-            id: "item-6",
-            listingTitle: "Legacy source badge reel",
-            isInActiveBatch: false,
-            badgeReelTypeId: null,
-            source: {
-              variations: [
-                { formatted_name: "Badge Reel Type", formatted_value: "Swivel Alligator" },
-              ],
-            },
-            design: {
-              text: "Legacy",
-              lines: [{ lineIndex: 0, text: "Legacy", fontId: "candlepin" }],
-            },
-          },
-          {
-            id: "item-7",
-            listingTitle: "Unknown marketplace badge reel",
-            isInActiveBatch: false,
-            badgeReelTypeId: null,
-            source: {
-              marketplace: "shopify",
-              personalizationResponses: [
-                { name: "Badge Reel", value: "Swivel Alligator" },
-              ],
-            },
-            design: {
-              text: "Shopify",
-              lines: [{ lineIndex: 0, text: "Shopify", fontId: "candlepin" }],
             },
           },
         ],
@@ -884,9 +819,77 @@ test("identifies Etsy and Amazon in selected imported order headers", async ({ p
 });
 
 test("renders canonical badge reel type metadata in selected order item cards", async ({ page }) => {
+  const ordersPayload = buildOrdersPayload();
+  ordersPayload.orders[0].items[0].badgeReelTypeId = "swivel-alligator";
+  ordersPayload.orders[1].items[0].badgeReelTypeId = null;
+  ordersPayload.orders[1].items[0].source = {
+    marketplace: "amazon",
+    personalizationResponses: [
+      { name: "Badge Reel Type", value: "Swivel Alligator Clip" },
+    ],
+  };
+  ordersPayload.orders[1].items.push(
+    {
+      id: "item-4",
+      listingTitle: "Etsy badge reel",
+      isInActiveBatch: false,
+      badgeReelTypeId: null,
+      source: {
+        marketplace: "etsy",
+        variations: [
+          { formatted_name: "Badge Reel", formatted_value: "Swivel Alligator Clip" },
+        ],
+      },
+      design: {
+        text: "Etsy",
+        lines: [{ lineIndex: 0, text: "Etsy", fontId: "candlepin" }],
+      },
+    },
+    {
+      id: "item-5",
+      listingTitle: "Unknown stored type badge reel",
+      isInActiveBatch: false,
+      badgeReelTypeId: "legacy-badge-reel",
+      design: {
+        text: "Lin",
+        lines: [{ lineIndex: 0, text: "Lin", fontId: "candlepin" }],
+      },
+    },
+    {
+      id: "item-6",
+      listingTitle: "Legacy source badge reel",
+      isInActiveBatch: false,
+      badgeReelTypeId: null,
+      source: {
+        variations: [
+          { formatted_name: "Badge Reel Type", formatted_value: "Swivel Alligator" },
+        ],
+      },
+      design: {
+        text: "Legacy",
+        lines: [{ lineIndex: 0, text: "Legacy", fontId: "candlepin" }],
+      },
+    },
+    {
+      id: "item-7",
+      listingTitle: "Unknown marketplace badge reel",
+      isInActiveBatch: false,
+      badgeReelTypeId: null,
+      source: {
+        marketplace: "shopify",
+        personalizationResponses: [
+          { name: "Badge Reel", value: "Swivel Alligator" },
+        ],
+      },
+      design: {
+        text: "Shopify",
+        lines: [{ lineIndex: 0, text: "Shopify", fontId: "candlepin" }],
+      },
+    },
+  );
   await installSupabaseSession(page);
   await installProductionBatchRoutes(page);
-  await installOrdersWorkspaceRoutes(page);
+  await installOrdersWorkspaceRoutes(page, { ordersPayload });
 
   const batchReady = page.waitForResponse((response) => (
     response.url().includes("/api/production-batch?batchId=batch-1") && response.status() === 200

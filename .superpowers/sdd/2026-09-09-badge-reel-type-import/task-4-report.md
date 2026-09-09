@@ -36,3 +36,9 @@
 - GREEN: the focused e2e test passed after cross-shape diagnostic fallback was limited to items with absent marketplace metadata.
 - Added e2e coverage for Etsy-tagged `variations`, legacy no-marketplace fallback, and an unknown marketplace with a retained candidate. Each asserts status text and omits raw marketplace values.
 - Re-ran shared coverage: `npx vitest run tests/unit/badge-reel-types.test.js tests/unit/orders-workspace.test.js` passed (2 files, 37 tests).
+
+## Integration round 2 follow-up
+
+- RED: the existing `skips and reopens checked orders` and `adds checked orders to the active production batch` e2e tests failed because shared fixture order `1002` gained the badge-reel-only extra items.
+- GREEN: restored the shared fixture's original item count and inject badge-reel test cases only in the canonical metadata test. The combined focused e2e run passed all 3 tests.
+- Re-ran shared coverage: `npx vitest run tests/unit/badge-reel-types.test.js tests/unit/orders-workspace.test.js` passed (2 files, 37 tests).
