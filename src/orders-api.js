@@ -24,6 +24,8 @@ function buildOrdersUrl(batchId, statusFilter = null, {
   searchTerm = null,
   limit = null,
   cursor = null,
+  sortField = null,
+  sortDirection = null,
 } = {}) {
   const normalizedBatchId = normalizeString(batchId);
   const normalizedStatusFilter = normalizeString(statusFilter);
@@ -51,6 +53,12 @@ function buildOrdersUrl(batchId, statusFilter = null, {
   }
   if (normalizeString(cursor)) {
     params.set("cursor", normalizeString(cursor));
+  }
+  if (normalizeString(sortField)) {
+    params.set("sort", normalizeString(sortField));
+  }
+  if (normalizeString(sortDirection)) {
+    params.set("direction", normalizeString(sortDirection));
   }
   const query = params.toString();
   return query ? `/api/orders?${query}` : "/api/orders";
@@ -83,6 +91,8 @@ export async function fetchWorkspaceOrderSummaries({
   searchTerm = null,
   limit = null,
   cursor = null,
+  sortField = null,
+  sortDirection = null,
   accessToken = null,
   signal = null,
 } = {}) {
@@ -92,6 +102,8 @@ export async function fetchWorkspaceOrderSummaries({
     searchTerm,
     limit,
     cursor,
+    sortField,
+    sortDirection,
   }), {
     headers: buildAuthHeaders(accessToken, { Accept: "application/json" }),
     ...(signal ? { signal } : {}),

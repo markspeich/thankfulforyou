@@ -20,7 +20,7 @@ describe("Etsy transaction normalizer", () => {
       ] },
       image: { url_75x75: "https://image.test/75" }, getPresetIdForListingId: (id) => `preset-${id}`,
     });
-    expect(result).toMatchObject({ id: "transaction:987", text: "Jamie\nRN", presetId: "preset-456", source: { orderNumber: "1234567890", transactionId: "987", listingId: "456", colorName: "Teal", quantity: "2", expected_ship_date: 1783400340, shipByDate: "2026-07-06", listingImageUrl75x75: "https://image.test/75" } });
+    expect(result).toMatchObject({ id: "transaction:987", text: "Jamie\nRN", presetId: "preset-456", source: { orderNumber: "1234567890", transactionId: "987", listingId: "456", colorName: "Teal", quantity: "2", expected_ship_date: 1783400340, shipByDate: "2026-07-06", orderDate: "1970-01-01T00:00:10.000Z", listingImageUrl75x75: "https://image.test/75" } });
     expect(result.source).not.toHaveProperty("customizationNeeded");
     expect(result.source.personalizationResponses).toEqual([
       { kind: "text", name: "Name", value: "Jamie" }, { kind: "text", name: "Credentials", value: "RN" }, { kind: "file", name: "Upload", value: "https://files.test/a" },

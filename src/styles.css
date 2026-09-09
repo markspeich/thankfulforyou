@@ -2808,6 +2808,7 @@ button:disabled {
 
 .database-orders-workspace {
   background: #fff;
+  grid-template-columns: minmax(760px, 13fr) minmax(340px, 7fr);
 }
 
 .database-orders-list-panel {
@@ -2878,6 +2879,57 @@ button:disabled {
   padding: 0;
 }
 
+.database-orders-table-header,
+.database-order-row {
+  grid-template-columns: 30px 96px minmax(150px, 1.2fr) minmax(112px, 0.9fr) minmax(112px, 0.9fr) minmax(145px, 1.1fr) 70px minmax(130px, 0.95fr);
+  min-width: 965px;
+}
+
+.database-orders-table-header {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  display: grid;
+  align-items: stretch;
+  border-bottom: 1px solid var(--line);
+  background: #f7fafb;
+  box-shadow: 0 1px 0 rgba(24, 43, 54, 0.04);
+}
+
+.database-orders-column-header {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  min-height: 42px;
+  padding: 7px 9px;
+  color: #536873;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.025em;
+  text-transform: uppercase;
+}
+
+.database-orders-sort-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-align: left;
+  text-transform: inherit;
+  cursor: pointer;
+}
+
+.database-orders-sort-arrow {
+  color: #00807c;
+  font-size: 0.88rem;
+}
+
 .database-orders-list-state {
   display: grid;
   gap: 8px;
@@ -2907,10 +2959,10 @@ button:disabled {
 
 .database-order-row {
   display: grid;
-  grid-template-columns: 28px minmax(0, 1fr);
   align-items: center;
-  gap: 8px;
-  padding: 0 0 0 6px;
+  gap: 0;
+  min-height: 94px;
+  padding: 0;
   border: 1px solid var(--line);
   border-left: 4px solid transparent;
   border-radius: 12px;
@@ -2926,19 +2978,45 @@ button:disabled {
 }
 
 .database-order-row-button {
-  display: grid;
-  grid-template-columns: 92px minmax(0, 1fr);
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 12px;
+  gap: 6px;
   width: 100%;
   min-width: 0;
-  padding: 10px 12px 10px 0;
+  padding: 10px 9px;
   border: 0;
   border-radius: 0;
   background: transparent;
   color: var(--ink);
   text-align: left;
   cursor: pointer;
+}
+
+.database-order-cell {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  min-height: 92px;
+  padding: 8px 9px;
+  overflow: hidden;
+  color: #3e535d;
+  font-size: 0.84rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
+}
+
+.database-order-cell.is-select {
+  justify-content: center;
+  padding-inline: 4px;
+}
+
+.database-order-cell.is-images {
+  padding-inline: 2px;
+}
+
+.database-order-cell.is-itemCount {
+  justify-content: center;
 }
 
 .database-order-row-image-stack {
@@ -3213,6 +3291,14 @@ button:disabled {
   grid-template-columns: minmax(180px, 0.78fr) minmax(220px, 1fr);
   gap: 14px;
   align-items: stretch;
+}
+
+.database-orders-workspace .database-order-item-body {
+  grid-template-columns: 1fr;
+}
+
+.database-orders-workspace .database-order-item-listing-image {
+  max-width: 120px;
 }
 
 .database-order-item-listing-column,

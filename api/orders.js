@@ -63,6 +63,20 @@ function parseCompactLimit(value) {
   return { value: limit };
 }
 
+const COMPACT_SORT_FIELDS = new Set(["orderNumber", "orderDate", "shipByDate", "buyerName", "itemCount", "inBatch"]);
+
+function parseCompactSortField(value) {
+  const normalized = normalizeString(value);
+  if (!normalized) return { value: "shipByDate" };
+  return COMPACT_SORT_FIELDS.has(normalized) ? { value: normalized } : { error: "sort is invalid." };
+}
+
+function parseCompactSortDirection(value) {
+  const normalized = normalizeString(value);
+  if (!normalized) return { value: "asc" };
+  return normalized === "asc" || normalized === "desc" ? { value: normalized } : { error: "direction is invalid." };
+}
+
 function encodeCompactCursor({ sortKey, groupId }) {
   return Buffer.from(JSON.stringify({ version: 1, sortKey, groupId })).toString("base64url");
 }
@@ -95,6 +109,9 @@ function isCanonicalCursorTimestamp(value) {
 }
 
 function isCanonicalCompactCursor({ sortKey, groupId }) {
+  if (/^[01]:[^\u0000-\u001f]{0,512}$/.test(sortKey)) {
+    return /^(order|item):.+$/.test(groupId);
+  }
   const separatorIndex = sortKey.indexOf(":");
   if (separatorIndex !== 20 || !isCanonicalCursorTimestamp(sortKey.slice(0, separatorIndex))) return false;
 
@@ -142,6 +159,8 @@ function parseCompactQuery(query) {
     search: query?.search,
     limit: query?.limit,
     cursor: query?.cursor,
+    sort: query?.sort,
+    direction: query?.direction,
   })) {
     if (value != null && typeof value !== "string") {
       return { error: `${name} must be a single query value.` };
@@ -155,6 +174,10 @@ function parseCompactQuery(query) {
   if (limit.error) return limit;
   const cursor = decodeCompactCursor(query?.cursor);
   if (cursor.error) return cursor;
+  const sortField = parseCompactSortField(query?.sort);
+  if (sortField.error) return sortField;
+  const sortDirection = parseCompactSortDirection(query?.direction);
+  if (sortDirection.error) return sortDirection;
   return {
     value: {
       statusFilter: statusFilter.value,
@@ -162,6 +185,8 @@ function parseCompactQuery(query) {
       searchTerm: normalizeString(query?.search),
       limit: limit.value,
       cursor: cursor.value,
+      sortField: sortField.value,
+      sortDirection: sortDirection.value,
     },
   };
 }

@@ -20,9 +20,18 @@ import {
   getOrdersRetryLoadOptions,
   mergeOrdersPageState,
   normalizeOrdersWorkspaceState,
+  getNextOrdersSort,
 } from "../../src/orders-workspace.js";
 
 describe("orders workspace helpers", () => {
+  it("starts a new order-table column ascending and toggles the active column", () => {
+    expect(getNextOrdersSort({ field: "shipByDate", direction: "asc" }, "buyerName"))
+      .toEqual({ field: "buyerName", direction: "asc" });
+    expect(getNextOrdersSort({ field: "buyerName", direction: "asc" }, "buyerName"))
+      .toEqual({ field: "buyerName", direction: "desc" });
+    expect(getNextOrdersSort({ field: "buyerName", direction: "desc" }, "buyerName"))
+      .toEqual({ field: "buyerName", direction: "asc" });
+  });
   it("replaces a reset page, clears stale checks, and merges later pages without duplicate groups", () => {
     const resetState = mergeOrdersPageState({
       currentOrders: [

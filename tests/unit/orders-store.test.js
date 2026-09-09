@@ -275,10 +275,11 @@ describe("orders store", () => {
         group_status: "open",
         is_in_active_batch: true,
         ship_by_date: "2026-08-12",
+        order_date: "2026-08-05T14:23:00.000Z",
         items: [{
           id: "item-1", status: "open", order_number: "1001", buyer_name: "Ada",
           listing_id: "listing-1", transaction_id: "txn-1", imported_color: "Pink",
-          ship_by_date: "2026-08-12", quantity: 1,
+          ship_by_date: "2026-08-12", order_date: "2026-08-05T14:23:00.000Z", quantity: 1,
           source_json: { marketplace: "etsy", listingTitle: "Badge Reel" },
           revision: 3, updated_at: "2026-08-05T12:00:00.000Z", updated_by: null,
           is_in_active_batch: true, design_id: "design-1", design_text: "Ada\nRN",
@@ -303,6 +304,8 @@ describe("orders store", () => {
       statusFilter: "complete",
       batchFilter: "inBatch",
       searchTerm: "  ADA  ",
+      sortField: "orderDate",
+      sortDirection: "asc",
       limit: 1,
       cursor: { version: 1, sortKey: "cursor-key", groupId: "order:cursor" },
     });
@@ -312,6 +315,7 @@ describe("orders store", () => {
       designText: "Ada\nRN",
       designProductionStatus: "export_ready",
       source: { marketplace: "etsy", listingTitle: "Badge Reel" },
+      orderDate: "2026-08-05T14:23:00.000Z",
     });
     expect(result.orders[0].items[0]).not.toHaveProperty("design");
     expect(JSON.stringify(result)).not.toContain("geometry");
@@ -333,6 +337,8 @@ describe("orders store", () => {
         p_batch_filter: "inBatch",
         p_search_term: "ADA",
         p_requested_limit: 1,
+        p_sort_by: "orderDate",
+        p_sort_direction: "asc",
         p_cursor_sort_key: "cursor-key",
         p_cursor_group_id: "order:cursor",
       },
@@ -363,6 +369,8 @@ describe("orders store", () => {
       p_batch_filter: "all",
       p_search_term: "",
       p_requested_limit: 50,
+      p_sort_by: "shipByDate",
+      p_sort_direction: "asc",
       p_cursor_sort_key: null,
       p_cursor_group_id: null,
     });
@@ -406,7 +414,7 @@ describe("orders store", () => {
     const item = {
       id: "amazon-order-item:1",
       text: "Ada\nRN",
-      source: { orderNumber: "1001", quantity: "2" },
+      source: { orderNumber: "1001", quantity: "2", orderDate: "2026-08-05T14:23:00.000Z" },
       settings: {
         lines: [
           { fontId: "skywalk" },
@@ -420,6 +428,7 @@ describe("orders store", () => {
       id: "amazon-order-item:1",
       workspace_id: "workspace-1",
       order_number: "1001",
+      order_date: "2026-08-05T14:23:00.000Z",
       quantity: 2,
       updated_by: "user-1",
     });

@@ -74,6 +74,15 @@ export function getSelectedGroupedOrder(orders, selectedOrderId) {
   return orders.find((order) => order.id === selectedOrderId) || orders[0];
 }
 
+export function getNextOrdersSort(currentSort, field) {
+  const normalizedField = isNonEmptyString(field) ? field.trim() : "shipByDate";
+  const isSameField = currentSort?.field === normalizedField;
+  return {
+    field: normalizedField,
+    direction: isSameField && currentSort?.direction === "asc" ? "desc" : "asc",
+  };
+}
+
 function getOrderSearchText(order) {
   const parts = [
     order?.id,

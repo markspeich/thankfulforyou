@@ -89,7 +89,9 @@ describe("orders api route", () => {
         batch: " notInBatch ",
         search: " 4118855809 ",
         limit: "50",
-        cursor: encodeCursor({ version: 1, sortKey: "20260805000000000000:3:0000000000000000000000000000000000000000000000000000000000001001", groupId: "order:1001" }),
+        sort: "buyerName",
+        direction: "desc",
+        cursor: encodeCursor({ version: 1, sortKey: "0:grace hopper", groupId: "order:1001" }),
       },
     }, response);
 
@@ -100,7 +102,9 @@ describe("orders api route", () => {
       batchFilter: "notInBatch",
       searchTerm: "4118855809",
       limit: 50,
-      cursor: { version: 1, sortKey: "20260805000000000000:3:0000000000000000000000000000000000000000000000000000000000001001", groupId: "order:1001" },
+      sortField: "buyerName",
+      sortDirection: "desc",
+      cursor: { version: 1, sortKey: "0:grace hopper", groupId: "order:1001" },
     });
     expect(listWorkspaceOrdersMock).not.toHaveBeenCalled();
     expect(response.statusCode).toBe(200);
@@ -123,6 +127,8 @@ describe("orders api route", () => {
       batchFilter: "all",
       searchTerm: "",
       limit: 50,
+      sortField: "shipByDate",
+      sortDirection: "asc",
       cursor: null,
     });
     expect(response.body).toEqual({ orders: [], nextCursor: null, hasMore: false });
@@ -131,7 +137,7 @@ describe("orders api route", () => {
   it("serializes a store cursor without exposing its values", async () => {
     const cursorValues = {
       version: 1,
-      sortKey: "20260805000000000000:3:0000000000000000000000000000000000000000000000000000000000001050",
+      sortKey: "0:20260724",
       groupId: "order:1050",
     };
     resolveProductionBatchAuthMock.mockResolvedValue({ userId: "user-1", workspaceId: "workspace-1" });
@@ -176,6 +182,8 @@ describe("orders api route", () => {
     ["a limit above 50", { limit: "51" }],
     ["an unknown status", { status: "pending" }],
     ["an unknown batch filter", { batch: "archived" }],
+    ["an unknown sort field", { sort: "updatedAt" }],
+    ["an unknown sort direction", { direction: "sideways" }],
     ["a repeated cursor", { cursor: ["cursor-1", "cursor-2"] }],
     ["a repeated limit", { limit: ["25", "50"] }],
     ["a repeated status", { status: ["open", "all"] }],

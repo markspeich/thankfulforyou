@@ -31,6 +31,15 @@ const observedCustomization = {
 };
 
 describe("Amazon customization normalizer", () => {
+  it("preserves the marketplace payment date as the Amazon order date", () => {
+    const result = normalizeShipStationItem({
+      shipment: { payment_date: "2026-08-05T14:23:00.000Z" },
+      item: { external_order_item_id: "item-1" },
+    });
+
+    expect(result.source.orderDate).toBe("2026-08-05T14:23:00.000Z");
+  });
+
   it("summarizes v3 customization structure without retaining values", () => {
     const privateUrl = "https://amazon.example/customization/private-token";
     const customization = { "version3.0": { customizationInfo: { surfaces: [

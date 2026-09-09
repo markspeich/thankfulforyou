@@ -76,6 +76,7 @@ export function buildImportedOrderItemRow(item, { workspaceId, userId }) {
     transaction_id: nullableString(source.transactionId),
     imported_color: nullableString(source.colorName),
     ship_by_date: nullableString(source.shipByDate),
+    order_date: nullableString(source.orderDate),
     quantity: toPositiveInteger(source.quantity, 1),
     amazon_customization_json:
       item?.amazonCustomizationJson && typeof item.amazonCustomizationJson === "object"
@@ -231,6 +232,7 @@ function normalizeOrderItem(row, { design, lines, activeBatchItemIds }) {
     transactionId: row.transaction_id ?? null,
     importedColor: row.imported_color ?? null,
     shipByDate: row.ship_by_date ?? null,
+    orderDate: row.order_date ?? null,
     quantity: toPositiveInteger(row.quantity, 1),
     source,
     revision: Number.isInteger(row.revision) ? row.revision : null,
@@ -253,6 +255,7 @@ function normalizeCompactRpcOrderItem(row) {
     transactionId: row.transaction_id ?? null,
     importedColor: row.imported_color ?? null,
     shipByDate: row.ship_by_date ?? null,
+    orderDate: row.order_date ?? null,
     quantity: toPositiveInteger(row.quantity, 1),
     source,
     revision: Number.isInteger(row.revision) ? row.revision : null,
@@ -273,6 +276,8 @@ function normalizeCompactRpcGroup(row) {
     status: row.group_status ?? "open",
     isInActiveBatch: Boolean(row.is_in_active_batch),
     shipByDate: row.ship_by_date ?? null,
+    orderDate: row.order_date ?? null,
+    itemCount: toPositiveInteger(row.item_count, Array.isArray(row.items) ? row.items.length : 1),
     items: Array.isArray(row.items) ? row.items.map(normalizeCompactRpcOrderItem) : [],
   };
 }
@@ -293,6 +298,7 @@ function appendOrderItemToGroups(groups, orderItem) {
       status: "open",
       isInActiveBatch: false,
       shipByDate: orderItem.shipByDate,
+      orderDate: orderItem.orderDate,
       items: [],
     };
     groups.set(groupId, group);
@@ -302,6 +308,9 @@ function appendOrderItemToGroups(groups, orderItem) {
   group.isInActiveBatch = group.isInActiveBatch || orderItem.isInActiveBatch;
   if (orderItem.shipByDate && (!group.shipByDate || orderItem.shipByDate < group.shipByDate)) {
     group.shipByDate = orderItem.shipByDate;
+  }
+  if (orderItem.orderDate && (!group.orderDate || orderItem.orderDate < group.orderDate)) {
+    group.orderDate = orderItem.orderDate;
   }
   if (group.items.length > 0 && group.items.every((item) => item.status === "complete")) {
     group.status = "complete";
@@ -338,7 +347,7 @@ async function queryExistingOrderItems({ supabase, workspaceId, orderItemIds }) 
 
   const { data, error } = await supabase
     .from("order_items")
-    .select("id, workspace_id, status, order_number, buyer_name, listing_id, transaction_id, imported_color, ship_by_date, quantity, source_json, revision, updated_by")
+    .select("id, workspace_id, status, order_number, buyer_name, listing_id, transaction_id, imported_color, ship_by_date, order_date, quantity, source_json, revision, updated_by")
     .eq("workspace_id", workspaceId)
     .in("id", ids);
 
@@ -361,6 +370,7 @@ function orderItemPersistenceMetadata(row) {
     transaction_id: row.transaction_id,
     imported_color: row.imported_color,
     ship_by_date: row.ship_by_date,
+    order_date: row.order_date,
     quantity: row.quantity,
     source_json: row.source_json,
     revision: row.revision,
@@ -372,7 +382,7 @@ export async function listWorkspaceOrders({ workspaceId, activeBatchId = null, s
   const supabase = createSupabaseAdminClient();
   let orderItemsQuery = supabase
     .from("order_items")
-    .select("id, workspace_id, status, order_number, buyer_name, listing_id, transaction_id, imported_color, ship_by_date, quantity, source_json, revision, updated_at, updated_by")
+    .select("id, workspace_id, status, order_number, buyer_name, listing_id, transaction_id, imported_color, ship_by_date, order_date, quantity, source_json, revision, updated_at, updated_by")
     .eq("workspace_id", workspaceId);
   if (statusFilter === "complete") {
     orderItemsQuery = orderItemsQuery.eq("status", "complete");
@@ -459,6 +469,8 @@ export async function listWorkspaceOrderSummaries({
   statusFilter = "open",
   batchFilter = "all",
   searchTerm = "",
+  sortField = "shipByDate",
+  sortDirection = "asc",
   limit = 50,
   cursor = null,
 }) {
@@ -470,6 +482,10 @@ export async function listWorkspaceOrderSummaries({
     ? batchFilter
     : "all";
   const requestedLimit = Math.min(toPositiveInteger(limit, 50), 50);
+  const normalizedSortBy = ["orderNumber", "orderDate", "shipByDate", "buyerName", "itemCount", "inBatch"].includes(sortField)
+    ? sortField
+    : "shipByDate";
+  const normalizedSortDirection = sortDirection === "desc" ? "desc" : "asc";
   const { data, error } = await supabase.rpc("list_workspace_order_summaries", {
     p_workspace_id: normalizeString(workspaceId),
     p_active_batch_id: nullableString(activeBatchId),
@@ -477,6 +493,8 @@ export async function listWorkspaceOrderSummaries({
     p_batch_filter: normalizedBatchFilter,
     p_search_term: normalizeString(searchTerm),
     p_requested_limit: requestedLimit,
+    p_sort_by: normalizedSortBy,
+    p_sort_direction: normalizedSortDirection,
     p_cursor_sort_key: cursor && typeof cursor.sortKey === "string" ? cursor.sortKey : null,
     p_cursor_group_id: cursor && typeof cursor.groupId === "string" ? cursor.groupId : null,
   });
@@ -505,7 +523,7 @@ export async function getWorkspaceOrderDetail({ workspaceId, orderId, activeBatc
   const supabase = createSupabaseAdminClient();
   let query = supabase
     .from("order_items")
-    .select("id, workspace_id, status, order_number, buyer_name, listing_id, transaction_id, imported_color, ship_by_date, quantity, source_json, revision, updated_at, updated_by")
+    .select("id, workspace_id, status, order_number, buyer_name, listing_id, transaction_id, imported_color, ship_by_date, order_date, quantity, source_json, revision, updated_at, updated_by")
     .eq("workspace_id", workspaceId);
   query = kind === "order" ? query.eq("order_number", value) : query.eq("id", value);
   const { data: itemRows, error: orderItemsError } = await query.order("created_at", { ascending: true });
@@ -908,7 +926,7 @@ export async function importWorkspaceOrderItems({
     const existingItem = existingOrderItemById.get(row.id);
     const hasExpectedShipDate = Object.hasOwn(row.source_json, "expected_ship_date");
     const hasEtsyImportDiagnostics = row.etsy_import_diagnostics && typeof row.etsy_import_diagnostics === "object";
-    if (!existingItem || (!row.ship_by_date && !hasExpectedShipDate && !hasEtsyImportDiagnostics)) {
+    if (!existingItem || (!row.ship_by_date && !row.order_date && !hasExpectedShipDate && !hasEtsyImportDiagnostics)) {
       return [];
     }
     const existingSource = existingItem.source_json && typeof existingItem.source_json === "object"
@@ -918,6 +936,7 @@ export async function importWorkspaceOrderItems({
       id: row.id,
       payload: {
         ...row.ship_by_date ? { ship_by_date: row.ship_by_date } : {},
+        ...row.order_date ? { order_date: row.order_date } : {},
         ...hasExpectedShipDate ? {
           source_json: {
             ...existingSource,

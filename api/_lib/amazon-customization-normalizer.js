@@ -407,6 +407,7 @@ export function normalizeShipStationItem({ shipment = {}, item = {}, customizati
       quantity: sourceString(item.quantity || 1),
       colorName: sourceString(color?.value),
       shipByDate: sourceString(shipment.ship_by_date),
+      ...(sourceString(shipment.payment_date) ? { orderDate: sourceString(shipment.payment_date) } : {}),
       ...(price ? { price } : {}),
       personalizationResponses: [...freeTextFields, ...configurationFields],
       ...(customerFontSelections.length ? { customerFontSelections } : {}),

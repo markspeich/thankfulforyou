@@ -28,10 +28,12 @@ describe("orders api client", () => {
       searchTerm: " 4118855809 ",
       limit: 50,
       cursor: " cursor-1 ",
+      sortField: " shipByDate ",
+      sortDirection: " asc ",
       accessToken: "token-1",
       signal: controller.signal,
     })).resolves.toEqual(payload);
-    expect(fetchMock).toHaveBeenCalledWith("/api/orders?batchId=batch-1&status=all&view=compact&batch=notInBatch&search=4118855809&limit=50&cursor=cursor-1", {
+    expect(fetchMock).toHaveBeenCalledWith("/api/orders?batchId=batch-1&status=all&view=compact&batch=notInBatch&search=4118855809&limit=50&cursor=cursor-1&sort=shipByDate&direction=asc", {
       headers: { Accept: "application/json", Authorization: "Bearer token-1" },
       signal: controller.signal,
     });

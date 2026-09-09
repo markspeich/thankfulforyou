@@ -114,6 +114,7 @@ import {
   getOrderLifecycleStatusDescriptor,
   getOrderItemListingText as getDatabaseOrderItemListingText,
   getOrdersRetryLoadOptions,
+  getNextOrdersSort,
   getVisibleOrderSelectionState,
   mergeOrdersPageState,
   normalizeOrdersWorkspaceState,
@@ -583,6 +584,7 @@ let loadedDatabaseOrdersKey = null;
 let databaseOrdersSearchTerm = "";
 let databaseOrdersStatusFilterValue = "open";
 let databaseOrdersBatchFilterValue = "all";
+let databaseOrdersSort = { field: "shipByDate", direction: "asc" };
 let selectedFontId = "candlepin";
 let fontDisplayNameDraft = null;
 let showArchivedFonts = false;
@@ -6031,8 +6033,18 @@ function formatShipByDate(value) {
     .format(new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]))));
 }
 
+function formatOrderDate(value) {
+  if (typeof value !== "string" || !value.trim()) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })
+    .format(date);
+}
+
 function getDatabaseOrderMeta(order) {
   const parts = [];
+  const orderDate = formatOrderDate(order?.orderDate);
+  if (orderDate) parts.push(`Ordered: ${orderDate}`);
   if (typeof order?.buyerName === "string" && order.buyerName.trim()) {
     parts.push(order.buyerName.trim());
   }
@@ -6939,6 +6951,8 @@ function getDatabaseOrdersQueryKey() {
     databaseOrdersStatusFilterValue,
     databaseOrdersBatchFilterValue,
     databaseOrdersSearchTerm.trim(),
+    databaseOrdersSort.field,
+    databaseOrdersSort.direction,
   ].join("|");
 }
 
@@ -7024,6 +7038,8 @@ async function performDatabaseOrdersLoad({ reset, append }) {
       searchTerm: databaseOrdersSearchTerm,
       limit: 50,
       cursor: append ? databaseOrdersNextCursor : null,
+      sortField: databaseOrdersSort.field,
+      sortDirection: databaseOrdersSort.direction,
       accessToken,
       signal: controller.signal,
     }));
@@ -7302,10 +7318,51 @@ function renderDatabaseOrdersWorkspace() {
     return;
   }
 
+  const tableHeader = document.createElement("div");
+  tableHeader.className = "database-orders-table-header";
+  tableHeader.setAttribute("role", "row");
+  [["", "select"], ["Images", "images"]].forEach(([label, field]) => {
+    const header = document.createElement("span");
+    header.className = `database-orders-column-header is-${field}`;
+    header.setAttribute("role", "columnheader");
+    header.textContent = label;
+    tableHeader.append(header);
+  });
+  [["orderNumber", "Order"], ["orderDate", "Order Date"], ["shipByDate", "Ship By"], ["buyerName", "Buyer"], ["itemCount", "Items"], ["inBatch", "Production Batch"]]
+    .forEach(([field, label]) => {
+      const header = document.createElement("span");
+      header.className = `database-orders-column-header is-${field}`;
+      header.setAttribute("role", "columnheader");
+      const active = databaseOrdersSort.field === field;
+      const ariaSort = active ? (databaseOrdersSort.direction === "asc" ? "ascending" : "descending") : "none";
+      header.setAttribute("aria-sort", ariaSort);
+      const sortButton = document.createElement("button");
+      sortButton.className = "database-orders-sort-button";
+      sortButton.type = "button";
+      sortButton.setAttribute("aria-label", `Sort by ${label}${active ? `, currently ${ariaSort}` : ""}`);
+      sortButton.textContent = label;
+      const arrow = document.createElement("span");
+      arrow.className = "database-orders-sort-arrow";
+      arrow.setAttribute("aria-hidden", "true");
+      arrow.textContent = active ? (databaseOrdersSort.direction === "asc" ? "↑" : "↓") : "↕";
+      sortButton.append(arrow);
+      sortButton.addEventListener("click", () => {
+        databaseOrdersSort = getNextOrdersSort(databaseOrdersSort, field);
+        invalidateDatabaseOrders();
+        resetDatabaseOrdersQuery();
+      });
+      header.append(sortButton);
+      tableHeader.append(header);
+    });
+  databaseOrdersListShell.setAttribute("role", "table");
+  databaseOrdersListShell.setAttribute("aria-label", "Orders list");
+  databaseOrdersListShell.append(tableHeader);
+
   visibleOrders.forEach((order) => {
     const orderNumber = getDatabaseOrderNumber(order);
     const row = document.createElement("div");
     row.className = "database-order-row";
+    row.setAttribute("role", "row");
     row.dataset.orderId = order.id;
     row.classList.toggle("is-selected", order.id === selectedDatabaseOrderId);
 
@@ -7337,12 +7394,6 @@ function renderDatabaseOrdersWorkspace() {
 
     const imageStack = createDatabaseOrderRowImageStack(order);
 
-    const copy = document.createElement("span");
-    copy.className = "database-order-row-copy";
-
-    const titleRow = document.createElement("span");
-    titleRow.className = "database-order-row-title-line";
-
     const title = document.createElement("span");
     title.className = "database-order-row-title";
     title.textContent = getDatabaseOrderTitle(order);
@@ -7352,29 +7403,33 @@ function renderDatabaseOrdersWorkspace() {
     status.className = `database-order-status ${statusDescriptor.className}`;
     status.textContent = statusDescriptor.label;
 
-    titleRow.append(title, status);
+    button.setAttribute("aria-label", `${getDatabaseOrderTitle(order)}, ${getDatabaseOrderMeta(order)}`);
+    button.append(title, status);
 
-    const meta = document.createElement("span");
-    meta.className = "database-order-row-meta";
-    getDatabaseOrderMetaLines(order).forEach(({ label, value }) => {
-      const line = document.createElement("span");
-      line.className = "database-order-row-meta-line";
-
-      const labelElement = document.createElement("span");
-      labelElement.className = "database-order-row-meta-label";
-      labelElement.textContent = label;
-
-      const valueElement = document.createElement("span");
-      valueElement.className = "database-order-row-meta-value";
-      valueElement.textContent = value;
-
-      line.append(labelElement, valueElement);
-      meta.append(line);
-    });
-
-    copy.append(titleRow, meta);
-    button.append(imageStack, copy);
-    row.append(checkbox, button);
+    const makeCell = (className, label, value, child = null) => {
+      const cell = document.createElement("span");
+      cell.className = `database-order-cell is-${className}`;
+      cell.setAttribute("role", "cell");
+      cell.setAttribute("aria-label", label);
+      if (child) cell.append(child);
+      else cell.textContent = value || "—";
+      return cell;
+    };
+    const checkboxCell = makeCell("select", "Select", "", checkbox);
+    const imageCell = makeCell("images", "Images", "", imageStack);
+    const orderCell = makeCell("orderNumber", "Order", "", button);
+    const itemCount = Number.isInteger(order.itemCount)
+      ? order.itemCount
+      : Array.isArray(order.items) ? order.items.length : 0;
+    const dataCells = [
+      makeCell("orderDate", "Order Date", formatOrderDate(order.orderDate)),
+      makeCell("shipByDate", "Ship By", formatShipByDate(order.shipByDate)),
+      makeCell("buyerName", "Buyer", order.buyerName?.trim()),
+      makeCell("itemCount", "Items", String(itemCount)),
+      makeCell("inBatch", "Production Batch", order.isInActiveBatch ? "In batch" : "Not in batch"),
+    ];
+    dataCells.forEach((cell) => cell.addEventListener("click", () => selectDatabaseOrder(order.id)));
+    row.append(checkboxCell, imageCell, orderCell, ...dataCells);
     databaseOrdersListShell.append(row);
   });
 

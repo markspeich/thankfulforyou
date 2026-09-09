@@ -23,6 +23,11 @@ function dateFromTimestamp(value) {
   const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
   return `${values.year}-${values.month}-${values.day}`;
 }
+function isoFromTimestamp(value) {
+  const timestamp = Number(value);
+  if (!Number.isFinite(timestamp) || timestamp <= 0) return "";
+  return new Date(timestamp * 1000).toISOString();
+}
 
 function variationsOf(transaction) { return Array.isArray(transaction?.variations) ? transaction.variations.filter((v) => v && typeof v === "object") : []; }
 function imageUrl(image) {
@@ -134,6 +139,7 @@ export function normalizeEtsyTransaction({ receipt = {}, transaction = {}, listi
       ...(customerFontSelections.length ? { customerFontSelections } : {}),
       expected_ship_date: transaction.expected_ship_date ?? null,
       shipByDate: dateFromTimestamp(transaction.expected_ship_date),
+      orderDate: isoFromTimestamp(receipt.create_timestamp),
       variations: variations.map(({ property_id, value_id, formatted_name, formatted_value }) => ({ property_id, value_id, formatted_name, formatted_value })),
       createdTimestamp: receipt.create_timestamp ?? null,
       updatedTimestamp: receipt.update_timestamp ?? null,
