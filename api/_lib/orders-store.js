@@ -75,6 +75,7 @@ export function buildImportedOrderItemRow(item, { workspaceId, userId }) {
     listing_id: nullableString(source.listingId),
     transaction_id: nullableString(source.transactionId),
     imported_color: nullableString(source.colorName),
+    badge_reel_type_id: nullableString(source.badgeReelTypeId),
     ship_by_date: nullableString(source.shipByDate),
     order_date: nullableString(source.orderDate),
     quantity: toPositiveInteger(source.quantity, 1),
@@ -231,6 +232,7 @@ function normalizeOrderItem(row, { design, lines, activeBatchItemIds }) {
     listingId: row.listing_id ?? null,
     transactionId: row.transaction_id ?? null,
     importedColor: row.imported_color ?? null,
+    badgeReelTypeId: row.badge_reel_type_id ?? null,
     shipByDate: row.ship_by_date ?? null,
     orderDate: row.order_date ?? null,
     quantity: toPositiveInteger(row.quantity, 1),
@@ -254,6 +256,7 @@ function normalizeCompactRpcOrderItem(row) {
     listingId: row.listing_id ?? null,
     transactionId: row.transaction_id ?? null,
     importedColor: row.imported_color ?? null,
+    badgeReelTypeId: row.badge_reel_type_id ?? null,
     shipByDate: row.ship_by_date ?? null,
     orderDate: row.order_date ?? null,
     quantity: toPositiveInteger(row.quantity, 1),
@@ -347,7 +350,7 @@ async function queryExistingOrderItems({ supabase, workspaceId, orderItemIds }) 
 
   const { data, error } = await supabase
     .from("order_items")
-    .select("id, workspace_id, status, order_number, buyer_name, listing_id, transaction_id, imported_color, ship_by_date, order_date, quantity, source_json, revision, updated_by")
+    .select("id, workspace_id, status, order_number, buyer_name, listing_id, transaction_id, imported_color, badge_reel_type_id, ship_by_date, order_date, quantity, source_json, revision, updated_by")
     .eq("workspace_id", workspaceId)
     .in("id", ids);
 
@@ -369,6 +372,7 @@ function orderItemPersistenceMetadata(row) {
     listing_id: row.listing_id,
     transaction_id: row.transaction_id,
     imported_color: row.imported_color,
+    badge_reel_type_id: row.badge_reel_type_id,
     ship_by_date: row.ship_by_date,
     order_date: row.order_date,
     quantity: row.quantity,
@@ -382,7 +386,7 @@ export async function listWorkspaceOrders({ workspaceId, activeBatchId = null, s
   const supabase = createSupabaseAdminClient();
   let orderItemsQuery = supabase
     .from("order_items")
-    .select("id, workspace_id, status, order_number, buyer_name, listing_id, transaction_id, imported_color, ship_by_date, order_date, quantity, source_json, revision, updated_at, updated_by")
+    .select("id, workspace_id, status, order_number, buyer_name, listing_id, transaction_id, imported_color, badge_reel_type_id, ship_by_date, order_date, quantity, source_json, revision, updated_at, updated_by")
     .eq("workspace_id", workspaceId);
   if (statusFilter === "complete") {
     orderItemsQuery = orderItemsQuery.eq("status", "complete");
@@ -523,7 +527,7 @@ export async function getWorkspaceOrderDetail({ workspaceId, orderId, activeBatc
   const supabase = createSupabaseAdminClient();
   let query = supabase
     .from("order_items")
-    .select("id, workspace_id, status, order_number, buyer_name, listing_id, transaction_id, imported_color, ship_by_date, order_date, quantity, source_json, revision, updated_at, updated_by")
+    .select("id, workspace_id, status, order_number, buyer_name, listing_id, transaction_id, imported_color, badge_reel_type_id, ship_by_date, order_date, quantity, source_json, revision, updated_at, updated_by")
     .eq("workspace_id", workspaceId);
   query = kind === "order" ? query.eq("order_number", value) : query.eq("id", value);
   const { data: itemRows, error: orderItemsError } = await query.order("created_at", { ascending: true });
@@ -926,7 +930,8 @@ export async function importWorkspaceOrderItems({
     const existingItem = existingOrderItemById.get(row.id);
     const hasExpectedShipDate = Object.hasOwn(row.source_json, "expected_ship_date");
     const hasEtsyImportDiagnostics = row.etsy_import_diagnostics && typeof row.etsy_import_diagnostics === "object";
-    if (!existingItem || (!row.ship_by_date && !row.order_date && !hasExpectedShipDate && !hasEtsyImportDiagnostics)) {
+    const shouldFillBadgeReelType = existingItem && existingItem.badge_reel_type_id == null && row.badge_reel_type_id != null;
+    if (!existingItem || (!row.ship_by_date && !row.order_date && !hasExpectedShipDate && !hasEtsyImportDiagnostics && !shouldFillBadgeReelType)) {
       return [];
     }
     const existingSource = existingItem.source_json && typeof existingItem.source_json === "object"
@@ -944,6 +949,7 @@ export async function importWorkspaceOrderItems({
           },
         } : {},
         ...hasEtsyImportDiagnostics ? { etsy_import_diagnostics: row.etsy_import_diagnostics } : {},
+        ...shouldFillBadgeReelType ? { badge_reel_type_id: row.badge_reel_type_id } : {},
       },
     }];
   });

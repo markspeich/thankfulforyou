@@ -445,6 +445,53 @@ describe("orders store", () => {
     expect(buildImportedDesignLineRows(item)[0]).not.toHaveProperty("design_id");
   });
 
+  it("persists a recognized badge reel type on new items and exposes it in full and compact mappings", async () => {
+    resetDb({
+      order_summary_rows: [{
+        group_id: "order:badge-1", sort_key: "0:20260701", order_number: "badge-1", buyer_name: "Ada",
+        group_status: "open", is_in_active_batch: false, ship_by_date: "2026-07-01", order_date: null, item_count: 1,
+        items: [{ id: "transaction:badge-1", status: "open", order_number: "badge-1", quantity: 1,
+          badge_reel_type_id: "swivel-alligator", source_json: {}, is_in_active_batch: false }],
+      }],
+    });
+    const { importWorkspaceOrderItems, listWorkspaceOrders, listWorkspaceOrderSummaries } = await import("../../api/_lib/orders-store.js");
+
+    await importWorkspaceOrderItems({
+      workspaceId: "workspace-1",
+      userId: "user-1",
+      items: [{ text: "Ada", source: { transactionId: "badge-1", badgeReelTypeId: "swivel-alligator" } }],
+    });
+
+    const persisted = supabaseMock.db.order_items[0];
+    expect(persisted.badge_reel_type_id).toBe("swivel-alligator");
+    await expect(listWorkspaceOrders({ workspaceId: "workspace-1", statusFilter: "all" })).resolves.toMatchObject({
+      orders: [{ items: [{ badgeReelTypeId: "swivel-alligator" }] }],
+    });
+    await expect(listWorkspaceOrderSummaries({ workspaceId: "workspace-1" })).resolves.toMatchObject({
+      orders: [{ items: [{ badgeReelTypeId: "swivel-alligator" }] }],
+    });
+  });
+
+  it("fills a missing stored badge reel type during re-import without replacing canonical data or designs", async () => {
+    resetDb({
+      order_items: [{ id: "transaction:badge-existing", workspace_id: "workspace-1", status: "open", quantity: 1,
+        source_json: {}, badge_reel_type_id: null }],
+      designs: [{ id: "design-badge-existing", workspace_id: "workspace-1", order_item_id: "transaction:badge-existing",
+        design_text: "Original", production_status: "saved", saved_settings_signature: "saved" }],
+    });
+    const { importWorkspaceOrderItems } = await import("../../api/_lib/orders-store.js");
+    const incoming = { text: "Replacement", source: { transactionId: "badge-existing", badgeReelTypeId: "swivel-alligator" } };
+
+    await importWorkspaceOrderItems({ workspaceId: "workspace-1", userId: "user-1", items: [incoming], includePersistenceAudit: true });
+    expect(supabaseMock.db.order_items[0].badge_reel_type_id).toBe("swivel-alligator");
+    expect(supabaseMock.db.designs[0].design_text).toBe("Original");
+
+    supabaseMock.db.order_items[0].badge_reel_type_id = "canonical-existing";
+    await importWorkspaceOrderItems({ workspaceId: "workspace-1", userId: "user-1", items: [incoming] });
+    expect(supabaseMock.db.order_items[0].badge_reel_type_id).toBe("canonical-existing");
+    expect(supabaseMock.db.designs[0].design_text).toBe("Original");
+  });
+
   it("lists non-archived workspace order items grouped by order number with designs and active batch membership", async () => {
     resetDb({
       order_items: [

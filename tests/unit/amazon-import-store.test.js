@@ -202,6 +202,7 @@ describe("Amazon import store", () => {
         colorName: "Teal",
         shipByDate: "2026-07-28",
         quantity: 2,
+        badgeReelTypeId: "swivel-alligator",
       },
       settings: {
         boundingSizePresetId: "size-1",
@@ -236,6 +237,7 @@ describe("Amazon import store", () => {
             order_number: "114-1",
             ship_by_date: "2026-07-28",
             quantity: 2,
+            badge_reel_type_id: "swivel-alligator",
             amazon_customization_json: items[0].amazonCustomizationJson,
             etsy_import_diagnostics: null,
             source_json: items[0].source,
