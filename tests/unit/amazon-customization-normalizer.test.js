@@ -263,12 +263,59 @@ describe("Amazon customization normalizer", () => {
     })).toMatchObject({
       text: "Alicia\nRN",
       source: {
+        badgeReelTypeId: "swivel-alligator",
         customerFontSelections: [
           { lineIndex: 0, name: "Skywalk" },
           { lineIndex: 1, name: "Somekind" },
         ],
+        personalizationResponses: [
+          { name: "Name", value: "Alicia" },
+          { name: "Title", value: "RN" },
+          { name: "Color", value: "Glitter Blue" },
+          { name: "Badge Reel Type", value: "Swivel Alligator Clip" },
+        ],
       },
     });
+  });
+
+  it("leaves the canonical badge-reel type unset when the first Amazon selection is unrecognized or malformed", () => {
+    // Break caught: a later recognized selection overrides the first marketplace field, or invalid values fail import.
+    for (const value of ["Unknown Clip", " ", 42]) {
+      const areas = [
+        { customizationType: "option", label: "Badge Reel", optionValue: value },
+        ...(value === "Unknown Clip" ? [{ customizationType: "option", label: "Badge Reel Type", optionValue: "Swivel Alligator" }] : []),
+      ];
+      const result = normalizeShipStationItem({
+        item: { external_order_item_id: `item-${String(value)}` },
+        customization: { "version3.0": { customizationInfo: { surfaces: [{ areas }] } } },
+      });
+
+      expect(result.source).not.toHaveProperty("badgeReelTypeId");
+    }
+
+    expect(normalizeShipStationItem({
+      item: { external_order_item_id: "item-with-unknown-reel" },
+      customization: { "version3.0": { customizationInfo: { surfaces: [{ areas: [
+        { customizationType: "option", label: "Badge Reel", optionValue: "Unknown Clip" },
+        { customizationType: "option", label: "Badge Reel Type", optionValue: "Swivel Alligator" },
+      ] }] } } },
+    }).source.personalizationResponses).toEqual([
+      { name: "Badge Reel", value: "Unknown Clip" },
+      { name: "Badge Reel Type", value: "Swivel Alligator" },
+    ]);
+  });
+
+  it("leaves the canonical badge-reel type unset when Amazon customization has no badge-reel field", () => {
+    // Break caught: absent marketplace fields invent a canonical badge-reel type.
+    const result = normalizeShipStationItem({
+      item: { external_order_item_id: "item-without-reel" },
+      customization: { "version3.0": { customizationInfo: { surfaces: [{ areas: [
+        { customizationType: "option", label: "Color", optionValue: "Teal" },
+      ] }] } } },
+    });
+
+    expect(result.source).not.toHaveProperty("badgeReelTypeId");
+    expect(result.source.personalizationResponses).toEqual([{ name: "Color", value: "Teal" }]);
   });
   it("preserves observed v3 source order while excluding non-production fields", () => {
     // Break caught: accepting archive metadata or losing ordered text/configuration fields.

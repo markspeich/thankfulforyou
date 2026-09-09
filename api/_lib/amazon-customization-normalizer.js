@@ -1,3 +1,5 @@
+import { findBadgeReelTypeCandidate } from "../../src/badge-reel-types.js";
+
 const MAX_NOTES_LENGTH = 1000;
 const URL_PATTERN = /^(?:https?:)?\/\//i;
 const DATA_URL_PATTERN = /^data:/i;
@@ -387,6 +389,7 @@ export function normalizeShipStationItem({ shipment = {}, item = {}, customizati
   const color = configurationFields.find(
     (response) => response.name.toLowerCase() === "color",
   );
+  const badgeReelType = findBadgeReelTypeCandidate(configurationFields, { label: "name", value: "value" });
   const orderItemId = normalizedItemId(item.external_order_item_id);
   const text = textFields.map((response) => response.value).join("\n");
   const price = structuredUnitPrice(item.unit_price);
@@ -406,6 +409,7 @@ export function normalizeShipStationItem({ shipment = {}, item = {}, customizati
       listingImageUrl75x75: sourceString(item.image_url),
       quantity: sourceString(item.quantity || 1),
       colorName: sourceString(color?.value),
+      ...(badgeReelType?.id ? { badgeReelTypeId: badgeReelType.id } : {}),
       shipByDate: sourceString(shipment.ship_by_date),
       ...(sourceString(shipment.payment_date) ? { orderDate: sourceString(shipment.payment_date) } : {}),
       ...(price ? { price } : {}),

@@ -77,6 +77,7 @@ describe("Etsy transaction normalizer", () => {
     const result = normalizeEtsyTransaction({ receipt: {}, transaction: capturedFontChoiceTransaction });
 
     expect(result.text).toBe("CPL EDWARDS");
+    expect(result.source.badgeReelTypeId).toBe("swivel-alligator");
     expect(result.source.customerFontSelections).toEqual([{ lineIndex: 0, name: "Candlepin" }]);
     expect(result.source.variations).toEqual([
       {
@@ -103,6 +104,34 @@ describe("Etsy transaction normalizer", () => {
         formatted_name: "Font Choice",
         formatted_value: "Candlepin",
       },
+    ]);
+  });
+
+  it("leaves the canonical badge-reel type unset when the first Etsy selection is unrecognized or malformed", () => {
+    // Break caught: a later recognized selection overrides the first marketplace variation, or invalid values fail import.
+    for (const formatted_value of ["Unknown Clip", " ", 42]) {
+      const result = normalizeEtsyTransaction({ receipt: {}, transaction: { transaction_id: "1", variations: [
+        { formatted_name: "Badge Reel", formatted_value },
+        { formatted_name: "Badge Reel Type", formatted_value: "Swivel Alligator" },
+      ] } });
+
+      expect(result.source).not.toHaveProperty("badgeReelTypeId");
+      expect(result.source.variations).toEqual([
+        { property_id: undefined, value_id: undefined, formatted_name: "Badge Reel", formatted_value },
+        { property_id: undefined, value_id: undefined, formatted_name: "Badge Reel Type", formatted_value: "Swivel Alligator" },
+      ]);
+    }
+  });
+
+  it("leaves the canonical badge-reel type unset when Etsy variations have no badge-reel field", () => {
+    // Break caught: absent marketplace fields invent a canonical badge-reel type.
+    const result = normalizeEtsyTransaction({ receipt: {}, transaction: { transaction_id: "1", variations: [
+      { formatted_name: "Color", formatted_value: "Teal" },
+    ] } });
+
+    expect(result.source).not.toHaveProperty("badgeReelTypeId");
+    expect(result.source.variations).toEqual([
+      { property_id: undefined, value_id: undefined, formatted_name: "Color", formatted_value: "Teal" },
     ]);
   });
 
