@@ -649,6 +649,25 @@
                       <option value="notInBatch">Not In Batch</option>
                     </select>
                   </label>
+                  <label class="filter-field">
+                    <span>Ship By</span>
+                    <select id="databaseOrdersShipByFilter">
+                      <option value="all" selected>All Dates</option>
+                      <option value="today">Today</option>
+                      <option value="tomorrow">Tomorrow</option>
+                      <option value="custom">Custom Range</option>
+                    </select>
+                  </label>
+                </div>
+                <div id="databaseOrdersCustomDateRange" class="database-orders-custom-date-range" hidden>
+                  <label class="filter-field">
+                    <span>From</span>
+                    <input id="databaseOrdersShipByFrom" type="date">
+                  </label>
+                  <label class="filter-field">
+                    <span>To</span>
+                    <input id="databaseOrdersShipByTo" type="date">
+                  </label>
                 </div>
               </section>
               <label class="database-orders-select-all">

@@ -77,6 +77,15 @@ function parseCompactSortDirection(value) {
   return normalized === "asc" || normalized === "desc" ? { value: normalized } : { error: "direction is invalid." };
 }
 
+function parseCompactDate(value, name) {
+  const normalized = normalizeString(value);
+  if (!normalized) return { value: null };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized) || Number.isNaN(Date.parse(`${normalized}T00:00:00Z`))) {
+    return { error: `${name} must be a valid YYYY-MM-DD date.` };
+  }
+  return { value: normalized };
+}
+
 function encodeCompactCursor({ sortKey, groupId }) {
   return Buffer.from(JSON.stringify({ version: 1, sortKey, groupId })).toString("base64url");
 }
@@ -161,6 +170,8 @@ function parseCompactQuery(query) {
     cursor: query?.cursor,
     sort: query?.sort,
     direction: query?.direction,
+    shipByFrom: query?.shipByFrom,
+    shipByTo: query?.shipByTo,
   })) {
     if (value != null && typeof value !== "string") {
       return { error: `${name} must be a single query value.` };
@@ -178,6 +189,13 @@ function parseCompactQuery(query) {
   if (sortField.error) return sortField;
   const sortDirection = parseCompactSortDirection(query?.direction);
   if (sortDirection.error) return sortDirection;
+  const shipByFrom = parseCompactDate(query?.shipByFrom, "shipByFrom");
+  if (shipByFrom.error) return shipByFrom;
+  const shipByTo = parseCompactDate(query?.shipByTo, "shipByTo");
+  if (shipByTo.error) return shipByTo;
+  if (shipByFrom.value && shipByTo.value && shipByFrom.value > shipByTo.value) {
+    return { error: "shipByFrom must be on or before shipByTo." };
+  }
   return {
     value: {
       statusFilter: statusFilter.value,
@@ -187,6 +205,8 @@ function parseCompactQuery(query) {
       cursor: cursor.value,
       sortField: sortField.value,
       sortDirection: sortDirection.value,
+      shipByFrom: shipByFrom.value,
+      shipByTo: shipByTo.value,
     },
   };
 }

@@ -718,6 +718,8 @@ For batch Etsy order sessions, the preferred workflow is:
 - If any current production batch items are not visibly complete/exported or lack export-ready saved geometry where that can be checked, completing the production batch should show an explicit warning confirmation before proceeding.
 - The Orders workspace should default to showing only open orders.
 - The Orders workspace should provide a status filter with `Open`, `Skipped`, `Complete`, and `All` options.
+- The Orders workspace status and batch filters should remain compact and left-aligned instead of stretching across the full width of the orders table, while adapting to narrow mobile viewports without overflowing.
+- The Orders workspace should provide a server-side `Ship By` date filter with quick options for `Today` and `Tomorrow`, plus an inclusive custom date range that permits an open start or end date. Quick dates should use the operator's local calendar date, and changing the date filter should reset Orders pagination.
 - The Orders workspace should show a compact lifecycle status indicator on each grouped order row and in the selected-order detail header, using the durable order status values `Open`, `Skipped`, and `Complete`; `Open` and `Complete` indicators must use clearly different colors so active work does not read as finished work.
 - The Orders workspace should provide a search field matching order number, buyer, listing, transaction, color, and design text.
 - Orders search must use case-insensitive substring matching across the entire authenticated workspace rather than only records already loaded in the browser.

@@ -494,6 +494,8 @@ export async function listWorkspaceOrderSummaries({
   searchTerm = "",
   sortField = "shipByDate",
   sortDirection = "asc",
+  shipByFrom = null,
+  shipByTo = null,
   limit = 50,
   cursor = null,
 }) {
@@ -518,6 +520,8 @@ export async function listWorkspaceOrderSummaries({
     p_requested_limit: requestedLimit,
     p_sort_by: normalizedSortBy,
     p_sort_direction: normalizedSortDirection,
+    p_ship_by_from: nullableString(shipByFrom),
+    p_ship_by_to: nullableString(shipByTo),
     p_cursor_sort_key: cursor && typeof cursor.sortKey === "string" ? cursor.sortKey : null,
     p_cursor_group_id: cursor && typeof cursor.groupId === "string" ? cursor.groupId : null,
   });

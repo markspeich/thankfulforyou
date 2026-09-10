@@ -329,6 +329,10 @@ const pasteOrdersButton = document.querySelector("#pasteOrdersButton");
 const databaseOrdersSearchInput = document.querySelector("#databaseOrdersSearchInput");
 const databaseOrdersStatusFilter = document.querySelector("#databaseOrdersStatusFilter");
 const databaseOrdersBatchFilter = document.querySelector("#databaseOrdersBatchFilter");
+const databaseOrdersShipByFilter = document.querySelector("#databaseOrdersShipByFilter");
+const databaseOrdersCustomDateRange = document.querySelector("#databaseOrdersCustomDateRange");
+const databaseOrdersShipByFrom = document.querySelector("#databaseOrdersShipByFrom");
+const databaseOrdersShipByTo = document.querySelector("#databaseOrdersShipByTo");
 const selectVisibleOrdersInput = document.querySelector("#selectVisibleOrdersInput");
 const databaseOrdersListShell = document.querySelector(".database-orders-list-shell");
 const databaseOrdersListState = document.querySelector("#databaseOrdersListState");
@@ -588,6 +592,9 @@ let loadedDatabaseOrdersKey = null;
 let databaseOrdersSearchTerm = "";
 let databaseOrdersStatusFilterValue = "open";
 let databaseOrdersBatchFilterValue = "all";
+let databaseOrdersShipByFilterValue = "all";
+let databaseOrdersShipByFromValue = "";
+let databaseOrdersShipByToValue = "";
 let databaseOrdersSort = { field: "shipByDate", direction: "asc" };
 let selectedFontId = "candlepin";
 let fontDisplayNameDraft = null;
@@ -6988,6 +6995,8 @@ function getDatabaseOrdersQueryKey() {
     getActiveProductionBatchId(),
     databaseOrdersStatusFilterValue,
     databaseOrdersBatchFilterValue,
+    databaseOrdersShipByFromValue,
+    databaseOrdersShipByToValue,
     databaseOrdersSearchTerm.trim(),
     databaseOrdersSort.field,
     databaseOrdersSort.direction,
@@ -7078,6 +7087,8 @@ async function performDatabaseOrdersLoad({ reset, append }) {
       cursor: append ? databaseOrdersNextCursor : null,
       sortField: databaseOrdersSort.field,
       sortDirection: databaseOrdersSort.direction,
+      shipByFrom: databaseOrdersShipByFromValue,
+      shipByTo: databaseOrdersShipByToValue,
       accessToken,
       signal: controller.signal,
     }));
@@ -14477,6 +14488,48 @@ databaseOrdersBatchFilter?.addEventListener("change", () => {
   invalidateDatabaseOrders();
   resetDatabaseOrdersQuery();
 });
+
+function formatLocalDateOffset(dayOffset) {
+  const date = new Date();
+  date.setDate(date.getDate() + dayOffset);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function resetDatabaseOrdersForShipByFilter() {
+  selectedDatabaseOrderId = null;
+  checkedDatabaseOrderIds.clear();
+  invalidateDatabaseOrders();
+  resetDatabaseOrdersQuery();
+}
+
+databaseOrdersShipByFilter?.addEventListener("change", () => {
+  databaseOrdersShipByFilterValue = databaseOrdersShipByFilter.value;
+  databaseOrdersCustomDateRange.hidden = databaseOrdersShipByFilterValue !== "custom";
+  if (databaseOrdersShipByFilterValue === "today" || databaseOrdersShipByFilterValue === "tomorrow") {
+    const date = formatLocalDateOffset(databaseOrdersShipByFilterValue === "tomorrow" ? 1 : 0);
+    databaseOrdersShipByFromValue = date;
+    databaseOrdersShipByToValue = date;
+  } else if (databaseOrdersShipByFilterValue === "all") {
+    databaseOrdersShipByFromValue = "";
+    databaseOrdersShipByToValue = "";
+  } else {
+    databaseOrdersShipByFromValue = databaseOrdersShipByFrom.value;
+    databaseOrdersShipByToValue = databaseOrdersShipByTo.value;
+  }
+  resetDatabaseOrdersForShipByFilter();
+});
+
+function updateDatabaseOrdersCustomDateRange() {
+  databaseOrdersShipByFromValue = databaseOrdersShipByFrom.value;
+  databaseOrdersShipByToValue = databaseOrdersShipByTo.value;
+  resetDatabaseOrdersForShipByFilter();
+}
+
+databaseOrdersShipByFrom?.addEventListener("change", updateDatabaseOrdersCustomDateRange);
+databaseOrdersShipByTo?.addEventListener("change", updateDatabaseOrdersCustomDateRange);
 addSelectedOrderToBatchButton?.addEventListener("click", () => {
   void addSelectedDatabaseOrderToBatch();
 });

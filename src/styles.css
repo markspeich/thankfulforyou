@@ -2842,8 +2842,30 @@ button:disabled {
 
 .database-orders-filter-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: 140px 170px 170px;
+  justify-content: start;
   gap: 8px;
+}
+
+.database-orders-custom-date-range {
+  display: grid;
+  grid-template-columns: 170px 170px;
+  justify-content: start;
+  gap: 8px;
+}
+
+.database-orders-custom-date-range[hidden] {
+  display: none;
+}
+
+@media (max-width: 420px) {
+  .database-orders-filter-row {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .database-orders-custom-date-range {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
 }
 
 .database-orders-select-all {
