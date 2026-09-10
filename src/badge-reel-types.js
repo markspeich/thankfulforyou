@@ -4,6 +4,18 @@ const BADGE_REEL_TYPES = Object.freeze([
     label: "Swivel Alligator",
     aliases: Object.freeze(["Swivel Alligator", "Swivel Alligator Clip"]),
   }),
+  Object.freeze({
+    id: "heavy-duty-belt-clip",
+    label: "Heavy Duty Belt Clip",
+    aliases: Object.freeze(["Belt Clip-Heavy Duty", "Heavy Duty Belt Clip"]),
+  }),
+  Object.freeze({ id: "mri-safe", label: "MRI Safe", aliases: Object.freeze(["MRI Safe"]) }),
+  Object.freeze({ id: "belt-clip", label: "Belt Clip", aliases: Object.freeze(["Belt Clip"]) }),
+  Object.freeze({
+    id: "heavy-duty-carabiner",
+    label: "Heavy Duty Carabiner",
+    aliases: Object.freeze(["Heavy Duty Carabiner"]),
+  }),
 ]);
 
 function normalize(value) {

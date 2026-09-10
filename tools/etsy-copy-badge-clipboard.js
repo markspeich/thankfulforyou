@@ -47,9 +47,16 @@ function normalizeBadgeReelLabel(value) {
 
 function badgeReelTypeId(value) {
   const normalizedValue = normalizeBadgeReelLabel(value);
-  return normalizedValue === "swivel alligator" || normalizedValue === "swivel alligator clip"
-    ? "swivel-alligator"
-    : null;
+  const types = {
+    "swivel alligator": "swivel-alligator",
+    "swivel alligator clip": "swivel-alligator",
+    "belt clip heavy duty": "heavy-duty-belt-clip",
+    "heavy duty belt clip": "heavy-duty-belt-clip",
+    "mri safe": "mri-safe",
+    "belt clip": "belt-clip",
+    "heavy duty carabiner": "heavy-duty-carabiner",
+  };
+  return types[normalizedValue] || null;
 }
 
 function getBadgeReelTypeCandidate(transaction) {
@@ -64,10 +71,9 @@ function getBadgeReelTypeCandidate(transaction) {
     return { present: false, id: null };
   }
 
-  return {
-    present: true,
-    id: badgeReelTypeId(typeof variation.value === "string" ? variation.value : ""),
-  };
+  const rawValue = typeof variation.value === "string" ? variation.value.trim() : "";
+  const id = badgeReelTypeId(rawValue);
+  return { present: true, id, ...(!id && rawValue ? { rawValue } : {}) };
 }
 
 function getTransactionQuantity(transaction) {

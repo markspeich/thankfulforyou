@@ -205,8 +205,31 @@ describe("etsy copy badge clipboard", () => {
     await context.copyBadgeBatchPayload();
 
     expect(JSON.parse(clipboardWrites[0]).items).toMatchObject([
-      { badgeReelTypeCandidate: { present: true, id: null } },
+      { badgeReelTypeCandidate: { present: true, id: null, rawValue: "Unknown Clip" } },
       { badgeReelTypeCandidate: { present: true, id: "swivel-alligator" } },
+    ]);
+  });
+
+  it("normalizes every current Etsy badge-reel choice", async () => {
+    const values = ["Belt Clip-Heavy Duty", "MRI Safe", "Belt Clip", "Heavy Duty Carabiner"];
+    const { context, clipboardWrites } = loadClipboardScript(values.map((value, index) => ({
+      order_id: index + 1,
+      fulfillment: { to_address: { name: "Buyer" } },
+      transactions: [{
+        transaction_id: index + 10,
+        listing_id: index + 20,
+        product: { title: "Badge Reel" },
+        variations: [{ property: "Badge Reel", value }],
+      }],
+    })));
+
+    await context.copyBadgeBatchPayload();
+
+    expect(JSON.parse(clipboardWrites[0]).items.map((item) => item.badgeReelTypeCandidate.id)).toEqual([
+      "heavy-duty-belt-clip",
+      "mri-safe",
+      "belt-clip",
+      "heavy-duty-carabiner",
     ]);
   });
 });

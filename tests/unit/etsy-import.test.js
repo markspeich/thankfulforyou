@@ -170,13 +170,13 @@ describe("Etsy import parsing", () => {
       source: "thankfulforyou-amazon-clipboard",
       items: [
         { transactionId: "known", badgeReelTypeCandidate: { present: true, id: "swivel-alligator" } },
-        { transactionId: "unknown", badgeReelTypeCandidate: { present: true, id: null } },
+        { transactionId: "unknown", badgeReelTypeCandidate: { present: true, id: null, rawValue: "Unknown Clip" } },
         { transactionId: "blank", badgeReelTypeCandidate: { present: true, id: null } },
         { transactionId: "contradictory", badgeReelTypeCandidate: { present: false, id: "swivel-alligator" } },
       ],
     }))).toMatchObject([
       { source: { badgeReelTypeId: "swivel-alligator", badgeReelTypeCandidate: { present: true, id: "swivel-alligator" } } },
-      { source: { badgeReelTypeCandidate: { present: true, id: null } } },
+      { source: { badgeReelTypeCandidate: { present: true, id: null, rawValue: "Unknown Clip" } } },
       { source: { badgeReelTypeCandidate: { present: true, id: null } } },
       { source: { badgeReelTypeCandidate: { present: false, id: null } } },
     ]);

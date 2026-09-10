@@ -123,6 +123,11 @@ export function normalizeImportedEntry(entry, options = {}) {
         id: rawBadgeReelTypeCandidate.present && badgeReelTypeLabel(rawBadgeReelTypeCandidate.id)
           ? rawBadgeReelTypeCandidate.id
           : null,
+        ...(rawBadgeReelTypeCandidate.present
+          && !badgeReelTypeLabel(rawBadgeReelTypeCandidate.id)
+          && normalizeImportedText(rawBadgeReelTypeCandidate.rawValue)
+          ? { rawValue: normalizeImportedText(rawBadgeReelTypeCandidate.rawValue) }
+          : {}),
       }
     : null;
 

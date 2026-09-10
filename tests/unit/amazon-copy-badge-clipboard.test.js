@@ -237,7 +237,7 @@ describe("amazon copy badge clipboard", () => {
     await createdButton.handlers.click();
 
     expect(JSON.parse(clipboardWrites[0]).items[0]).toMatchObject({
-      badgeReelTypeCandidate: { present: true, id: null },
+      badgeReelTypeCandidate: { present: true, id: null, rawValue: "Unknown Clip" },
     });
   });
 
@@ -291,6 +291,7 @@ describe("amazon copy badge clipboard", () => {
       colorName: "Sky Blue",
       quantity: "3",
       personalization: "Sandi S\nRN",
+      badgeReelTypeCandidate: { present: true, id: "belt-clip" },
     });
   });
   it("copies color and design lines when Amazon customization text has labels and values on separate lines", async () => {

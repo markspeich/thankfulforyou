@@ -9,6 +9,11 @@ describe("badge reel type catalog", () => {
   it("resolves every recognized marketplace alias to the stable ID", () => {
     expect(resolveBadgeReelTypeId("Swivel Alligator")).toBe("swivel-alligator");
     expect(resolveBadgeReelTypeId("Swivel Alligator Clip")).toBe("swivel-alligator");
+    expect(resolveBadgeReelTypeId("Belt Clip-Heavy Duty")).toBe("heavy-duty-belt-clip");
+    expect(resolveBadgeReelTypeId("Heavy Duty Belt Clip")).toBe("heavy-duty-belt-clip");
+    expect(resolveBadgeReelTypeId("MRI Safe")).toBe("mri-safe");
+    expect(resolveBadgeReelTypeId("Belt Clip")).toBe("belt-clip");
+    expect(resolveBadgeReelTypeId("Heavy Duty Carabiner")).toBe("heavy-duty-carabiner");
   });
 
   it("normalizes casing, surrounding whitespace, punctuation, and repeated whitespace", () => {
@@ -22,6 +27,10 @@ describe("badge reel type catalog", () => {
 
   it("returns the display label for a known canonical ID", () => {
     expect(badgeReelTypeLabel("swivel-alligator")).toBe("Swivel Alligator");
+    expect(badgeReelTypeLabel("heavy-duty-belt-clip")).toBe("Heavy Duty Belt Clip");
+    expect(badgeReelTypeLabel("mri-safe")).toBe("MRI Safe");
+    expect(badgeReelTypeLabel("belt-clip")).toBe("Belt Clip");
+    expect(badgeReelTypeLabel("heavy-duty-carabiner")).toBe("Heavy Duty Carabiner");
   });
 
   it("returns null for unknown marketplace values and canonical IDs", () => {

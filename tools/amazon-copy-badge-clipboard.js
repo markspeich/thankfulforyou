@@ -209,15 +209,24 @@ function normalizeBadgeReelValue(value) {
 
 function badgeReelTypeId(value) {
   const normalizedValue = normalizeBadgeReelValue(value);
-  return normalizedValue === "swivel alligator" || normalizedValue === "swivel alligator clip"
-    ? "swivel-alligator"
-    : null;
+  const types = {
+    "swivel alligator": "swivel-alligator",
+    "swivel alligator clip": "swivel-alligator",
+    "belt clip heavy duty": "heavy-duty-belt-clip",
+    "heavy duty belt clip": "heavy-duty-belt-clip",
+    "mri safe": "mri-safe",
+    "belt clip": "belt-clip",
+    "heavy duty carabiner": "heavy-duty-carabiner",
+  };
+  return types[normalizedValue] || null;
 }
 
 function buildBadgeReelTypeCandidate(fields) {
   for (const [key, value] of fields) {
     if (key === "Badge Reel" || key === "Badge Reel Type") {
-      return { present: true, id: badgeReelTypeId(value) };
+      const rawValue = normalizeText(value);
+      const id = badgeReelTypeId(rawValue);
+      return { present: true, id, ...(!id && rawValue ? { rawValue } : {}) };
     }
   }
 
