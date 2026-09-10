@@ -33,11 +33,23 @@ const observedCustomization = {
 describe("Amazon customization normalizer", () => {
   it("preserves the marketplace payment date as the Amazon order date", () => {
     const result = normalizeShipStationItem({
-      shipment: { payment_date: "2026-08-05T14:23:00.000Z" },
+      shipment: {
+        payment_date: "2026-08-05T14:23:00.000Z",
+        created_at: "2026-08-05T14:30:00.000Z",
+      },
       item: { external_order_item_id: "item-1" },
     });
 
     expect(result.source.orderDate).toBe("2026-08-05T14:23:00.000Z");
+  });
+
+  it("falls back to the ShipStation shipment creation date when payment date is absent", () => {
+    const result = normalizeShipStationItem({
+      shipment: { created_at: "2026-09-10T12:35:00.000Z" },
+      item: { external_order_item_id: "item-1" },
+    });
+
+    expect(result.source.orderDate).toBe("2026-09-10T12:35:00.000Z");
   });
 
   it("summarizes v3 customization structure without retaining values", () => {

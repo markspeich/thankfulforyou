@@ -426,7 +426,9 @@ export function normalizeShipStationItem({ shipment = {}, item = {}, customizati
       ...(badgeReelType?.id ? { badgeReelTypeId: badgeReelType.id } : {}),
       badgeReelTypeCandidate: { present: Boolean(badgeReelType), id: badgeReelType?.id ?? null },
       shipByDate: sourceString(shipment.ship_by_date),
-      ...(sourceString(shipment.payment_date) ? { orderDate: sourceString(shipment.payment_date) } : {}),
+      ...(sourceString(shipment.payment_date ?? shipment.created_at)
+        ? { orderDate: sourceString(shipment.payment_date ?? shipment.created_at) }
+        : {}),
       ...(price ? { price } : {}),
       personalizationResponses: [...freeTextFields, ...configurationFields],
       ...(customerFontSelections.length ? { customerFontSelections } : {}),

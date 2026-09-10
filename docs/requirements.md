@@ -348,6 +348,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - The first import implementation should use a clipboard workflow driven by a User JavaScript and CSS helper on the live Etsy orders page.
 - The repository docs folder includes a sample clipboard payload at `docs/sample-clipboard.txt` for clipboard-import development and testing.
 - The `Orders` workspace should provide an operator-initiated `Import from Etsy` action backed directly by Etsy Open API v3; ShipStation should not be a required intermediary for Etsy imports.
+- Amazon imports should store ShipStation's marketplace `payment_date` as the order date when available and fall back to the shipment's required `created_at` timestamp when ShipStation omits the payment date; the application's later database import timestamp must not be substituted.
 - The first Etsy API import release should use on-demand synchronization rather than scheduled or webhook-driven background synchronization.
 - The Etsy API import should retrieve only paid, non-cancelled, unshipped receipts and should create one order item per Etsy transaction.
 - The Etsy API import should use Etsy `transaction_id` as the permanent order-item identity, skip transactions already stored in the workspace, and never overwrite an operator-edited or protected design.
