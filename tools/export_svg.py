@@ -1443,6 +1443,7 @@ def build_precomputed_order_paths(payload):
         "weld_exported_design": payload.get("weldExportedDesign", True) is not False,
         "quantity": quantity,
         "unsupported_characters": analysis.get("unsupportedCharacters", []),
+        "is_keychain": payload.get("isKeychain") is True,
     }
 
 
@@ -1475,6 +1476,7 @@ def build_single_order_paths(root, payload):
         "weld_exported_design": payload.get("weldExportedDesign", True) is not False,
         "quantity": quantity,
         "unsupported_characters": analysis.get("unsupportedCharacters", []),
+        "is_keychain": payload.get("isKeychain") is True,
     }
 
 
@@ -1505,6 +1507,8 @@ def build_color_label(order, instance_id, translate_y, x=None, y=None, center_ve
 
 def build_important_notes(order, instance_id, x, center_y):
     notes = []
+    if order.get("is_keychain", False):
+        notes.append("Keychain")
     if "white" in order.get("color_name", "").lower():
         notes.append("BLACK TEXT")
     if not order.get("weld_exported_design", True):

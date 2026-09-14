@@ -1693,6 +1693,7 @@ function buildExportPayload(layout, analysis = layout?.analysis || null, source 
 
   const colorName = typeof source?.colorName === "string" ? source.colorName.trim() : "";
   const quantity = source?.quantity == null ? "" : String(source.quantity).trim();
+  const isKeychain = typeof source?.listingTitle === "string" && /keychain/i.test(source.listingTitle);
 
   if (analysis?.exportFacePath && analysis?.backingPath) {
     return {
@@ -1705,6 +1706,7 @@ function buildExportPayload(layout, analysis = layout?.analysis || null, source 
       fixedSvgs: Array.isArray(layout.fixedSvgs) ? layout.fixedSvgs : [],
       colorName,
       quantity,
+      isKeychain,
       analysis: {
         exportFacePath: analysis.exportFacePath,
         backingPath: analysis.backingPath,
@@ -1718,6 +1720,7 @@ function buildExportPayload(layout, analysis = layout?.analysis || null, source 
     ...layout,
     colorName,
     quantity,
+    isKeychain,
   };
 }
 

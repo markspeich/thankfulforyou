@@ -1058,6 +1058,27 @@ else:
     expect(svg).toContain('dominant-baseline="middle"');
   });
 
+  test("adds only Keychain to each matching instance alongside existing notes", () => {
+    const layout = {
+      text: "Ada", widthMm: 40, heightMm: 20, isKeychain: true,
+      colorName: "White", weldExportedDesign: false, quantity: 2,
+      analysis: {
+        exportFacePath: "M0 0 L10 0 L10 10 Z",
+        backingPath: "M0 0 L12 0 L12 12 Z",
+        connectedComponentCount: 1,
+      },
+    };
+    for (const payload of [layout, { layouts: [layout, { ...layout, isKeychain: false, quantity: 1 }] }]) {
+      const svg = exportSvg(payload);
+      expect(svg.match(/>Keychain<\/text>/g)).toHaveLength(2);
+      expect(svg).toContain('>BLACK TEXT</text>');
+      expect(svg).toContain('>NOT WELDED</text>');
+    }
+    for (const isKeychain of [undefined, false, "true"]) {
+      expect(exportSvg({ ...layout, isKeychain })).not.toContain('>Keychain</text>');
+    }
+  });
+
   test("adds black-text and not-welded notes in the leading batch export column", () => {
     const svg = exportSvg({
       layouts: [

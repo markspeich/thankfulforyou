@@ -4230,7 +4230,7 @@ test("shows batch color counts from the queue tools menu", async ({ page }) => {
   await expect(dialog).not.toBeVisible();
 });
 
-test("includes imported color and quantity in the export payload", async ({ page }) => {
+test("includes imported color, quantity, and Keychain flag without the product title in the export payload", async ({ page }) => {
   const payload = JSON.stringify({
     items: [
       {
@@ -4241,6 +4241,7 @@ test("includes imported color and quantity in the export payload", async ({ page
         colorName: "White Glitter",
         quantity: "2",
         personalization: "Yohanna APN",
+        listingTitle: "Personalized KEYCHAIN gift",
       },
     ],
   });
@@ -4294,6 +4295,8 @@ test("includes imported color and quantity in the export payload", async ({ page
   await expect.poll(() => exportPayload, { timeout: 20000 }).not.toBeNull();
   expect(exportPayload.colorName).toBe("White Glitter");
   expect(exportPayload.quantity).toBe("2");
+  expect(exportPayload.isKeychain).toBe(true);
+  expect(JSON.stringify(exportPayload)).not.toContain("Personalized KEYCHAIN gift");
 
   await page.unrouteAll({ behavior: "ignoreErrors" });
 });
