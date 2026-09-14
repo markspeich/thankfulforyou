@@ -12,6 +12,7 @@ const PRODUCTION_BATCH_AMAZON_FONT_TEST_TITLE = "shows supplied Amazon fonts on 
 const PRODUCTION_BATCH_INHERITED_FONT_TEST_TITLE = "inherits an imported line 1 font when splitting text without a line 2 preset font";
 const PRODUCTION_BATCH_EMPTY_ALIAS_IMPORT_TEST_TITLE = "applies a loaded alias to the first clipboard import in an empty production batch";
 const FONT_ALIAS_DIALOG_TEST_TITLE = "shows marketplace font resolution and an accessible active-font mapping dialog";
+const PENDING_SAVE_RESELECT_TEST_TITLE = "preserves listing design edits when returning after Save and Next before analysis finishes";
 const SAMPLE_CLIPBOARD_URL = new URL("../../docs/sample-clipboard.txt", import.meta.url);
 const AMAZON_CUSTOMIZATION_FIXTURE_URL = new URL("../fixtures/amazon-customization-166136048232641.json", import.meta.url);
 const productionBatchSnapshots = new WeakMap();
@@ -676,6 +677,7 @@ test.beforeEach(async ({ page, request }, testInfo) => {
     || testInfo.title === PRODUCTION_BATCH_INHERITED_FONT_TEST_TITLE
     || testInfo.title === PRODUCTION_BATCH_EMPTY_ALIAS_IMPORT_TEST_TITLE
     || testInfo.title === FONT_ALIAS_DIALOG_TEST_TITLE
+    || testInfo.title === PENDING_SAVE_RESELECT_TEST_TITLE
   ) {
     return;
   }
@@ -2608,6 +2610,89 @@ test("warns when a pasted layout cannot include extra source lines", async ({ pa
   await expect(completeButton(page)).toBeEnabled();
   await expect(page.locator('.line-control-card[data-line-index="0"] [data-setting="horizontalScale"]')).toHaveValue("1");
   await expect(page.locator('.line-control-card[data-line-index="1"] [data-setting="fontSizeMm"]')).toHaveValue("23");
+});
+
+test(PENDING_SAVE_RESELECT_TEST_TITLE, async ({ page }) => {
+  await installSupabaseSession(page);
+  await installDefaultProductionBatchRoutes(page);
+  await page.route("**/api/preset-snapshot**", route => route.fulfill({
+    json: {
+      workspaceKey: "primary",
+      snapshot: {
+        version: 1,
+        defaultPresetId: "preset-pending-save",
+        presets: [{
+          schemaVersion: 1,
+          id: "preset-pending-save",
+          name: "Pending save regression",
+          globalDefaults: { backingMm: 3.1, weldExportedDesign: true },
+          lineDefaults: { fontId: "candlepin", bridgeMm: 0.5 },
+          lineRules: [],
+          listingAssignments: [{ listingId: "listing-pending-save", lineOverrides: [] }],
+        }],
+      },
+    },
+  }));
+  let snapshot = {
+    batch: { id: "batch-1", workspaceId: "workspace-1" },
+    activeOrderItemId: "pending-save-1",
+    orderItems: ["Avery", "Taylor"].map((text, index) => ({
+      id: `pending-save-${index + 1}`,
+      revision: 1,
+      text,
+      status: "in-progress",
+      source: { listingId: "listing-pending-save", orderNumber: `pending-${index + 1}` },
+      settings: { text, presetId: "preset-pending-save", backingMm: 3.1, lines: [{ fontId: "candlepin", bridgeMm: 0.5 }] },
+    })),
+  };
+  await page.route("**/api/production-batch**", async route => {
+    if (route.request().method() === "PUT") {
+      snapshot = route.request().postDataJSON().snapshot;
+    }
+    productionBatchSnapshots.set(page, snapshot);
+    await route.fulfill({ json: snapshot });
+  });
+  let releaseAnalysis;
+  const analysisGate = new Promise(resolve => { releaseAnalysis = resolve; });
+  await page.route("**/api/layout-analyze", async route => {
+    await analysisGate;
+    await route.fulfill({ json: buildMockAnalysisResponse() });
+  });
+
+  try {
+    await page.goto("/production-batch");
+    await waitForProductionBatchStartup(page);
+    await expect(page.locator("#textInput")).toHaveValue("Avery");
+    await page.locator("#textInput").fill("Avery\nRN");
+    await page.locator("#backingInput").fill("3.7");
+    await completeAndNextButton(page).click();
+    await expect(page.locator("#textInput")).toHaveValue("Taylor");
+
+    const row = page.locator("#orderList .order-row").filter({ hasText: "Avery" });
+    await expect(row.locator(".order-analysis-indicator.running")).toBeVisible();
+    await row.click();
+    await expect(page.locator("#textInput")).toHaveValue("Avery\nRN");
+    await expect(page.locator("#backingInput")).toHaveValue("3.7");
+    await expect(completeButton(page)).toBeDisabled();
+    await expect(row.locator(".order-analysis-indicator.running")).toBeVisible();
+
+    releaseAnalysis();
+    await expectSavedProductionBatchSnapshot(page, saved => saved?.orderItems?.some(order => (
+      order.id === "pending-save-1"
+      && order.text === "Avery\nRN"
+      && order.settings.backingMm === 3.7
+      && order.status === "captured"
+      && order.cachedBuild?.analysis?.connectedComponentCount === 1
+    )));
+    await page.reload();
+    await waitForProductionBatchStartup(page);
+    await expect(page.locator("#textInput")).toHaveValue("Avery\nRN");
+    await expect(page.locator("#backingInput")).toHaveValue("3.7");
+    await expect(exportDesignButton(page)).toBeEnabled();
+  } finally {
+    releaseAnalysis();
+    await page.unrouteAll({ behavior: "ignoreErrors" });
+  }
 });
 
 test("does not restore a stale completed analysis badge after geometry changes during analysis", async ({ page }) => {

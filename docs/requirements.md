@@ -767,6 +767,7 @@ For batch Etsy order sessions, the preferred workflow is:
 - Production Batch SVG export and copy should append `xN` to each nonblank color label when more than one exported order item has that color, counting order items case-insensitively rather than summing purchased quantities (for example, three Pink order items should each be labeled `Pink x3`).
 
 - Clicking `Save` should immediately mark the current design as finished for editing, even if connectedness analysis is still running in the background.
+- Returning to a design after `Save` or `Save & Next` while geometry analysis is pending must preserve its saved text and layout settings, keep its pending analysis eligible to finish saving, and must not reapply the listing preset.
 - Saving an existing design through a scoped production-batch save must update only that design's order and layout data; it must not rewrite `batch_items` membership or positions, including when active batch positions contain gaps after removals.
 - After clicking `Save`, both `Save` and `Save & Next` should stay disabled for that design until the operator changes the text or layout settings again.
 - The selected-order `Cancel` button should stay disabled until the active design has unsaved changes relative to its last saved shared design state.

@@ -5755,6 +5755,8 @@ function shouldSyncOrderPreset(order, presetId, options = {}) {
   if (!force && (
     order.source?.manualPresetOverride
     || typeof order.savedSettingsSignature === "string"
+    // Save marks editing complete before the geometry cache is ready.
+    || hasCompletedEditingState(order, order.settings)
   )) {
     return false;
   }
