@@ -1,4 +1,5 @@
 import { randomUUID as uuid } from "node:crypto";
+import { setTimeout as delay } from "node:timers/promises";
 export class EtsyImportError extends Error {
   constructor(code, message, statusCode = 500) { super(message); this.code = code; this.statusCode = statusCode; }
 }
@@ -8,6 +9,13 @@ export const DEFAULT_MAX_IMPORT_ITEMS = 5_000;
 const HEARTBEAT_INTERVAL = 300_000;
 const reauth = (error) => error?.category === "reauthorize" || error?.code === "reauthorize";
 const aborted = (error, signal) => Boolean(signal?.aborted || error?.name === "AbortError" || error?.code === "ABORT_ERR");
+const transientSaveFailure = (error) => {
+  const status = Number(error?.statusCode ?? error?.status);
+  if (status === 429 || (status >= 500 && status <= 599)) return true;
+  if (["ETIMEDOUT", "ECONNRESET", "ECONNREFUSED", "EAI_AGAIN", "08000", "08006", "57P01", "53300", "40001", "40P01"].includes(error?.code)) return true;
+  // PostgREST can return gateway/network failures with only a message.
+  return /gateway\s*time[ -]?out|bad gateway|service unavailable|fetch failed|failed to fetch|network error|connection reset|connection terminated|timed out/i.test(error?.message || "");
+};
 const eligible = (r) => { const s = String(r?.status || "").toLowerCase(); return r?.is_paid === true && r?.is_shipped === false && r?.was_canceled !== true && r?.was_cancelled !== true && !["canceled", "cancelled"].includes(s); };
 const identifier = (value) => value == null ? null : String(value);
 const serializable = (value) => {
@@ -29,7 +37,7 @@ const errorDetails = (error) => {
   }
   return details;
 };
-export function createEtsyImportService({ store, refreshAccess, createClient, normalizeTransaction, enrichItem = (item) => item, getPresetIdForListingId = () => null, clock = () => new Date(), randomUUID = uuid, maxImportItems = DEFAULT_MAX_IMPORT_ITEMS, logError = console.error }) {
+export function createEtsyImportService({ store, refreshAccess, createClient, normalizeTransaction, enrichItem = (item) => item, getPresetIdForListingId = () => null, clock = () => new Date(), randomUUID = uuid, maxImportItems = DEFAULT_MAX_IMPORT_ITEMS, logError = console.error, sleep = (ms, signal) => delay(ms, undefined, { signal }) }) {
   async function prepare({ workspaceId, userId, signal, onProgress = () => {} }) {
     const started = clock();
     let connection = await store.getEtsyConnectionCredentials({ workspaceId });
@@ -95,6 +103,7 @@ export function createEtsyImportService({ store, refreshAccess, createClient, no
           }
         } catch (error) { if (reauth(error)) await store.markEtsyConnectionReconnectRequired({ workspaceId }); throw error; }
         const work = []; let failed = 0, discoveryFailed = false, expectedItems = 0;
+        const failedOrderNumbers = new Set();
         for (let receiptIndex = 0; receiptIndex < eligibleReceipts.length; receiptIndex += 1) {
           const receipt = eligibleReceipts[receiptIndex]; await renewIfDue();
           try {
@@ -107,6 +116,7 @@ export function createEtsyImportService({ store, refreshAccess, createClient, no
             if (reauth(error)) { await store.markEtsyConnectionReconnectRequired({ workspaceId }); throw error; }
             if (error instanceof EtsyImportError) throw error;
             discoveryFailed = true;
+            if (receipt?.receipt_id != null) failedOrderNumbers.add(String(receipt.receipt_id));
             const soldCount = Number.isInteger(receipt?.transaction_sold_count) && receipt.transaction_sold_count >= 0 ? receipt.transaction_sold_count : 1;
             if (expectedItems + soldCount > maxImportItems) throw new EtsyImportError("import_too_large", "This Etsy import is too large. Please retry with a smaller window.", 413);
             expectedItems += soldCount;
@@ -148,7 +158,18 @@ export function createEtsyImportService({ store, refreshAccess, createClient, no
               item.etsyImportDiagnostics = { ...item.etsyImportDiagnostics, fontResolution: enrichmentSummary };
             }
             stage = "persisting";
-            const result = await store.importWorkspaceOrderItems({ workspaceId, userId, items: [item], target: "orders", batchId: null, includePersistenceAudit: true });
+            let result;
+            for (let attempt = 0; ; attempt += 1) {
+              if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+              await renewIfDue();
+              try {
+                result = await store.importWorkspaceOrderItems({ workspaceId, userId, items: [item], target: "orders", batchId: null, includePersistenceAudit: true });
+                break;
+              } catch (error) {
+                if (aborted(error, signal) || reauth(error) || !transientSaveFailure(error) || attempt >= 2) throw error;
+                await sleep(1000 * (2 ** attempt), signal);
+              }
+            }
             const count = Number(result?.importedCount ?? result?.importedOrderItemIds?.length ?? 0);
             imported += count; existing += Math.max(0, 1 - count);
             if (item?.source?.customizationNeeded) customizationNeeded += 1;
@@ -198,14 +219,18 @@ export function createEtsyImportService({ store, refreshAccess, createClient, no
             });
             if (aborted(error, signal)) throw error;
             if (reauth(error)) { await store.markEtsyConnectionReconnectRequired({ workspaceId }); throw error; }
+            if (error?.code === "import_lock_lost") throw error;
             failed += 1;
+            const orderNumber = identifier(item?.source?.orderNumber ?? normalizedItem?.source?.orderNumber ?? receipt?.receipt_id);
+            if (orderNumber) failedOrderNumbers.add(orderNumber);
           }
           processed += 1;
           await onProgress({ type: "progress", stage: "importing_items", processed, total: expectedItems });
         }
         if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
-        if (!discoveryFailed) await store.updateEtsySyncCursor({ workspaceId, lastSyncedAt: started.toISOString() });
-        const result = { type: "complete", imported, existing, customizationNeeded, failed };
+        // A failed item must remain in the next run's receipt window.
+        if (!discoveryFailed && failed === 0) await store.updateEtsySyncCursor({ workspaceId, lastSyncedAt: started.toISOString() });
+        const result = { type: "complete", imported, existing, customizationNeeded, failed, ...(failedOrderNumbers.size ? { failedOrderNumbers: [...failedOrderNumbers] } : {}) };
         await onProgress(result); return result;
       } finally { await release(); }
     };

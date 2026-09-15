@@ -43,17 +43,6 @@ function normalizeItemKind(kind) {
   return kind === "fixed_svg" || kind === "fixedSvg" ? "fixed_svg" : "text";
 }
 
-function isProtectedDesign(row) {
-  if (!row || typeof row !== "object") {
-    return false;
-  }
-
-  const protectedStatuses = new Set(["saved", "analysis_running", "export_ready", "exported"]);
-  return protectedStatuses.has(row.production_status)
-    || Boolean(normalizeString(row.saved_settings_signature))
-    || Boolean(normalizeString(row.completed_settings_signature));
-}
-
 function buildImportedOrderItemId(item) {
   const source = item?.source && typeof item.source === "object" ? item.source : {};
   const explicitId = normalizeString(item?.id);
@@ -1047,72 +1036,17 @@ export async function importWorkspaceOrderItems({
     }
   }
 
-  const { data: existingDesigns, error: existingDesignsError } = await supabase
-    .from("designs")
-    .select("id, order_item_id, production_status, saved_settings_signature, completed_settings_signature")
-    .eq("workspace_id", workspaceId)
-    .in("order_item_id", requestedOrderItemIds);
-
-  if (existingDesignsError) {
-    throw existingDesignsError;
-  }
-
-  const existingDesignByOrderItemId = new Map((existingDesigns || []).map((design) => [design.order_item_id, design]));
-  const mutableItems = importItems.filter((item) => {
-    const orderItemId = buildImportedOrderItemId(item);
-    return importedOrderItemIds.includes(orderItemId)
-      && !isProtectedDesign(existingDesignByOrderItemId.get(orderItemId));
+  // Initialize design + lines together. The database locks existing rows so retrying
+  // an incomplete import cannot race an operator save or replace their edits.
+  const { error: designsError } = await supabase.rpc("initialize_import_designs", {
+    p_workspace_id: workspaceId,
+    p_user_id: userId || null,
+    p_items: importItems.map((item) => ({
+      design: buildImportedDesignRow(item, { workspaceId, userId }),
+      lines: buildImportedDesignLineRows(item),
+    })),
   });
-  const designRows = mutableItems.map((item) => buildImportedDesignRow(item, { workspaceId, userId }));
-  let savedDesigns = [];
-
-  if (designRows.length) {
-    const { data, error: designsError } = await supabase
-      .from("designs")
-      .upsert(designRows, { onConflict: "order_item_id" })
-      .select("id, order_item_id");
-
-    if (designsError) {
-      throw designsError;
-    }
-
-    savedDesigns = data || [];
-  }
-
-  const designIdByOrderItemId = new Map([
-    ...(existingDesigns || []).map((design) => [design.order_item_id, design.id]),
-    ...savedDesigns.map((design) => [design.order_item_id, design.id]),
-  ]);
-  const mutableOrderItemIds = new Set(mutableItems.map((item) => buildImportedOrderItemId(item)));
-  const lineRows = mutableItems.flatMap((item) => {
-    const orderItemId = buildImportedOrderItemId(item);
-    const designId = designIdByOrderItemId.get(orderItemId);
-    return designId ? buildImportedDesignLineRows(item, designId) : [];
-  });
-  const savedDesignIds = [...designIdByOrderItemId]
-    .filter(([orderItemId]) => mutableOrderItemIds.has(orderItemId))
-    .map(([, designId]) => designId);
-
-  if (savedDesignIds.length) {
-    const { error: deleteLinesError } = await supabase
-      .from("design_lines")
-      .delete()
-      .in("design_id", savedDesignIds);
-
-    if (deleteLinesError) {
-      throw deleteLinesError;
-    }
-  }
-
-  if (lineRows.length) {
-    const { error: linesError } = await supabase
-      .from("design_lines")
-      .upsert(lineRows, { onConflict: "design_id,line_index" });
-
-    if (linesError) {
-      throw linesError;
-    }
-  }
+  if (designsError) throw designsError;
 
   let addedOrderItemIds = [];
   if (target === "productionBatch") {

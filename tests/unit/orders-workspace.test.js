@@ -492,6 +492,13 @@ describe("Etsy workspace descriptors", () => {
       .toBe("1 order imported, 2 existing orders, 1 item needing customization, 0 failures.");
   });
 
+  it("identifies failed Etsy orders and explains that another import retries them", () => {
+    const etsy = { imported: 0, failed: 1, failedOrderNumbers: ["4173350200"] };
+    expect(getEtsyImportSummary(etsy)).toContain("Failed Etsy orders: 4173350200. Run Import again to retry unresolved orders.");
+    expect(getMarketplaceImportPresentation({ etsy }).description).toContain("Failed Etsy orders: 4173350200. Run Import again to retry unresolved orders.");
+    expect(getEtsyImportSummary({ failed: 1, failedOrderNumbers: ["<script>"] })).not.toContain("<script>");
+  });
+
   it("uses marketplace-neutral customization guidance for Etsy and Amazon items", () => {
     expect(getOrderItemCustomizationWarning({
       source: { customizationNeeded: true },

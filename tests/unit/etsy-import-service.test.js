@@ -42,10 +42,62 @@ describe("Etsy import service", () => {
     await expect((await f.service.prepare({ workspaceId: "w" })).run()).rejects.toThrow("page");
     expect(f.store.releaseEtsyImportLock).toHaveBeenCalled(); expect(f.store.updateEtsySyncCursor).not.toHaveBeenCalled();
   });
-  it("continues enrichment and item failures, advances cursor, and propagates abort signal", async () => {
+  it("continues enrichment and item failures, preserves cursor, and propagates abort signal", async () => {
     const f = fixture(); const signal = new AbortController().signal; f.client.getListing.mockRejectedValue(new Error("listing")); f.store.importWorkspaceOrderItems.mockRejectedValue(new Error("item"));
     const result = await (await f.service.prepare({ workspaceId: "w", signal })).run();
-    expect(result.failed).toBe(1); expect(f.client.listReceipts.mock.calls[0][0].signal).toBe(signal); expect(f.store.updateEtsySyncCursor).toHaveBeenCalled();
+    expect(result.failed).toBe(1); expect(f.client.listReceipts.mock.calls[0][0].signal).toBe(signal); expect(f.store.updateEtsySyncCursor).not.toHaveBeenCalled();
+  });
+  it("recovers a gateway timeout with bounded backoff and counts the item once", async () => {
+    const delays = [];
+    const f = fixture({ sleep: async (ms) => delays.push(ms) });
+    f.store.importWorkspaceOrderItems.mockRejectedValueOnce(new Error("Gateway Timeout"));
+    const result = await (await f.service.prepare({ workspaceId: "w" })).run();
+    expect(result).toMatchObject({ imported: 1, failed: 0, existing: 0 });
+    expect(delays).toEqual([1000]);
+    expect(f.store.updateEtsySyncCursor).toHaveBeenCalled();
+  });
+  it("retains failures after retries are exhausted and revisits the same window next run", async () => {
+    const delays = [];
+    const f = fixture({ sleep: async (ms) => delays.push(ms) });
+    let cursor = "2026-07-10T00:00:00Z";
+    f.store.getEtsyConnectionCredentials.mockImplementation(async () => ({ status: "connected", etsyShopId: "shop", accessToken: "t", accessTokenExpiresAt: "2027-01-01", lastSyncedAt: cursor }));
+    f.store.updateEtsySyncCursor.mockImplementation(async ({ lastSyncedAt }) => { cursor = lastSyncedAt; });
+    f.store.importWorkspaceOrderItems.mockRejectedValue(Object.assign(new Error("Unavailable"), { status: 503 }));
+    const failed = await (await f.service.prepare({ workspaceId: "w" })).run();
+    expect(failed).toMatchObject({ imported: 0, failed: 1, failedOrderNumbers: ["1"] });
+    expect(delays).toEqual([1000, 2000]);
+    expect(cursor).toBe("2026-07-10T00:00:00Z");
+    f.store.importWorkspaceOrderItems.mockResolvedValue({ importedCount: 1 });
+    const recovered = await (await f.service.prepare({ workspaceId: "w" })).run();
+    expect(recovered).toMatchObject({ imported: 1, failed: 0 });
+    expect(f.client.listReceipts.mock.calls[1][0].min_last_modified).toBe(f.client.listReceipts.mock.calls[0][0].min_last_modified);
+  });
+  it("does not retry validation failures", async () => {
+    const sleep = vi.fn();
+    const f = fixture({ sleep });
+    f.store.importWorkspaceOrderItems.mockRejectedValue(Object.assign(new Error("invalid input"), { code: "23514" }));
+    const result = await (await f.service.prepare({ workspaceId: "w" })).run();
+    expect(result.failed).toBe(1);
+    expect(sleep).not.toHaveBeenCalled();
+    expect(f.store.importWorkspaceOrderItems).toHaveBeenCalledTimes(1);
+  });
+  it("cancels during retry backoff without another write or cursor advancement", async () => {
+    const controller = new AbortController();
+    const f = fixture({ sleep: async () => controller.abort() });
+    f.store.importWorkspaceOrderItems.mockRejectedValue(new Error("Gateway Timeout"));
+    await expect((await f.service.prepare({ workspaceId: "w", signal: controller.signal })).run()).rejects.toMatchObject({ name: "AbortError" });
+    expect(f.store.importWorkspaceOrderItems).toHaveBeenCalledTimes(1);
+    expect(f.store.updateEtsySyncCursor).not.toHaveBeenCalled();
+    expect(f.store.releaseEtsyImportLock).toHaveBeenCalled();
+  });
+  it("stops retrying when its import lease is lost during backoff", async () => {
+    let now = new Date("2026-07-16T12:00:00Z");
+    const f = fixture({ clock: () => now, sleep: async () => { now = new Date("2026-07-16T12:06:00Z"); } });
+    f.store.importWorkspaceOrderItems.mockRejectedValue(new Error("Gateway Timeout"));
+    f.store.renewEtsyImportLock.mockResolvedValue(false);
+    await expect((await f.service.prepare({ workspaceId: "w" })).run()).rejects.toMatchObject({ code: "import_lock_lost" });
+    expect(f.store.importWorkspaceOrderItems).toHaveBeenCalledTimes(1);
+    expect(f.store.updateEtsySyncCursor).not.toHaveBeenCalled();
   });
   it.each([
     ["listing", "getListing"],

@@ -41,6 +41,28 @@ function createSupabaseClientMock() {
     },
     async rpc(name, args) {
       supabaseMock.calls.push({ operation: "rpc", name, args: clone(args) });
+      if (name === "initialize_import_designs") {
+        const designs = [];
+        const lines = [];
+        for (const item of args.p_items) {
+          let design = supabaseMock.db.designs.find((row) => row.order_item_id === item.design.order_item_id);
+          if (!design) {
+            upsertRows("designs", [item.design], "order_item_id");
+            designs.push(item.design);
+            design = supabaseMock.db.designs.find((row) => row.order_item_id === item.design.order_item_id);
+          } else if (design.revision !== 1 || design.production_status !== "draft" || design.saved_settings_signature || design.completed_settings_signature || design.design_text !== item.design.design_text) {
+            continue;
+          }
+          if (supabaseMock.db.design_lines.some((row) => row.design_id === design.id)) continue;
+          lines.push(...item.lines.map((line) => ({ ...line, design_id: design.id })));
+        }
+        if (designs.length) supabaseMock.calls.push({ table: "designs", operation: "upsert", payload: clone(designs) });
+        if (lines.length) {
+          supabaseMock.calls.push({ table: "design_lines", operation: "upsert", payload: clone(lines) });
+          upsertRows("design_lines", lines, "design_id,line_index");
+        }
+        return { data: null, error: null };
+      }
       if (name === "list_workspace_order_summaries") {
         return { data: clone(supabaseMock.db.order_summary_rows), error: null };
       }
@@ -278,6 +300,33 @@ afterEach(() => {
   vi.resetModules();
 });
 describe("orders store", () => {
+  it.each([
+    { revision: 2, production_status: "draft", design_text: "Tami" },
+    { revision: 1, production_status: "draft", design_text: "Operator edit" },
+    { revision: 1, production_status: "saved", design_text: "Tami" },
+  ])("does not restore import lines over an edited or saved empty design: %j", async (fields) => {
+    resetDb({
+      order_items: [{ id: "transaction:edited-empty", workspace_id: "workspace-1", status: "open", source_json: {} }],
+      designs: [{ id: "edited-empty-design", order_item_id: "transaction:edited-empty", workspace_id: "workspace-1", ...fields }],
+    });
+    const before = clone(supabaseMock.db.designs);
+    const { importWorkspaceOrderItems } = await import("../../api/_lib/orders-store.js");
+    await importWorkspaceOrderItems({ workspaceId: "workspace-1", userId: "user-1", items: [{ text: "Tami", source: { transactionId: "edited-empty" } }] });
+    expect(supabaseMock.db.designs).toEqual(before);
+    expect(supabaseMock.db.design_lines).toEqual([]);
+  });
+
+  it.each([false, true])("recovers a previous import with a missing design or missing lines (design exists: %s)", async (hasDesign) => {
+    resetDb({
+      order_items: [{ id: "transaction:partial", workspace_id: "workspace-1", status: "open", order_number: "4173350200", source_json: {}, revision: 1 }],
+      designs: hasDesign ? [{ id: "partial-design", order_item_id: "transaction:partial", workspace_id: "workspace-1", design_text: "Tami\nRN", production_status: "draft", revision: 1 }] : [],
+    });
+    const { importWorkspaceOrderItems } = await import("../../api/_lib/orders-store.js");
+    await importWorkspaceOrderItems({ workspaceId: "workspace-1", userId: "user-1", items: [{ text: "Tami\nRN", source: { transactionId: "partial" } }] });
+    expect(supabaseMock.db.designs).toHaveLength(1);
+    expect(supabaseMock.db.design_lines.map((line) => line.text)).toEqual(["Tami", "RN"]);
+  });
+
   it("preserves a concurrently inserted order and draft design and reports only actual inserts", async () => {
     resetDb();
     const concurrent = { id: "transaction:concurrent", workspace_id: "workspace-1", status: "skipped",
@@ -859,7 +908,7 @@ describe("orders store", () => {
       status: "active",
       added_by: "user-1",
     });
-    expect(lineUpsert.options).toEqual({ onConflict: "design_id,line_index" });
+    expect(supabaseMock.calls.some((call) => call.name === "initialize_import_designs")).toBe(true);
     expect(lineUpsert.payload).toEqual(expect.arrayContaining([
       expect.objectContaining({
         design_id: "design-transaction:txn-new",

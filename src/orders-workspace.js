@@ -318,6 +318,14 @@ export function getEtsyImportProgressDescriptor(event) {
   return null;
 }
 
+function etsyFailureDescription(summary = {}) {
+  if (!normalizeEtsyCount(summary?.failed)) return "";
+  const numbers = Array.isArray(summary.failedOrderNumbers)
+    ? [...new Set(summary.failedOrderNumbers.filter((value) => typeof value === "string" && /^\d+$/.test(value)))]
+    : [];
+  return `${numbers.length ? `Failed Etsy orders: ${numbers.join(", ")}.` : "Some Etsy orders could not be imported."} Run Import again to retry unresolved orders.`;
+}
+
 export function getEtsyImportSummary(summary = {}) {
   const imported = normalizeEtsyCount(summary.imported);
   const existing = normalizeEtsyCount(summary.existing);
@@ -325,7 +333,7 @@ export function getEtsyImportSummary(summary = {}) {
   const failed = normalizeEtsyCount(summary.failed);
   const noun = (number, singular, plural = `${singular}s`) => `${number} ${number === 1 ? singular : plural}`;
   const importedLabel = imported === 1 ? "1 order imported" : `${imported} orders imported`;
-  return `${importedLabel}, ${noun(existing, "existing order")}, ${noun(customization, "item needing customization")}, ${noun(failed, "failure", "failures")}.`;
+  return [`${importedLabel}, ${noun(existing, "existing order")}, ${noun(customization, "item needing customization")}, ${noun(failed, "failure", "failures")}.`, etsyFailureDescription(summary)].filter(Boolean).join(" ");
 }
 
 function normalizeAmazonCount(value) {
@@ -467,7 +475,7 @@ export function getMarketplaceImportPresentation({ amazon = {}, etsy = {} } = {}
   }));
   return {
     title: rows.at(-1).total > 0 ? "Import Completed with Issues" : "Import Complete",
-    description: "Amazon and Etsy orders have been checked.",
+    description: ["Amazon and Etsy orders have been checked.", etsyFailureDescription(etsy)].filter(Boolean).join(" "),
     rows,
   };
 }

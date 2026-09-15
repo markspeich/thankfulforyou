@@ -1,5 +1,6 @@
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { randomUUID } from "node:crypto";
+import { spawn } from "node:child_process";
 import { createClient } from "@supabase/supabase-js";
 
 import { createSupabaseAdminClient } from "../../api/_lib/supabase-admin.js";
@@ -325,6 +326,80 @@ afterEach(async () => {
 });
 
 describe("orders store database integration", () => {
+  it("recovers partial imports and preserves edited empty designs", async () => {
+    const workspaceId = await createDisposableWorkspace("Import recovery");
+    const admin = createSupabaseAdminClient();
+    const item = { id: `recover-${randomUUID()}`, text: "Tami\nRN", settings: { backingMm: 3.123456, globalHorizontalScale: 1.123456 }, source: { orderNumber: "4173350200" } };
+    const args = { workspaceId, userId: null, items: [item] };
+    // Simulate the old importer failing after its order row was committed.
+    const { error } = await admin.from("order_items").insert({ id: item.id, workspace_id: workspaceId, status: "open", revision: 1 });
+    expect(error).toBeNull();
+    await importWorkspaceOrderItems(args);
+    let result = await admin.from("designs").select("*").eq("order_item_id", item.id).single();
+    expect(result.error).toBeNull();
+    const designId = result.data.id;
+    const getLines = () => admin.from("design_lines").select("text").eq("design_id", designId).order("line_index");
+    expect((await getLines()).data.map((line) => line.text)).toEqual(["Tami", "RN"]);
+    // Simulate the old importer failing after its design was committed.
+    expect((await admin.from("design_lines").delete().eq("design_id", designId)).error).toBeNull();
+    await importWorkspaceOrderItems(args);
+    expect((await getLines()).data.map((line) => line.text)).toEqual(["Tami", "RN"]);
+    expect((await admin.from("design_lines").delete().eq("design_id", designId)).error).toBeNull();
+    expect((await admin.from("designs").update({ revision: 2 }).eq("id", designId)).error).toBeNull();
+    await importWorkspaceOrderItems(args);
+    expect((await getLines()).data).toEqual([]);
+  });
+
+  it("waits for a concurrent operator edit before considering empty-design recovery", async () => {
+    const workspaceId = await createDisposableWorkspace("Concurrent import recovery");
+    const admin = createSupabaseAdminClient();
+    const item = { id: `concurrent-${randomUUID()}`, text: "Tami" };
+    const args = { workspaceId, userId: null, items: [item] };
+    await importWorkspaceOrderItems(args);
+    const { data: design } = await admin.from("designs").select("id").eq("order_item_id", item.id).single();
+    expect((await admin.from("design_lines").delete().eq("design_id", design.id)).error).toBeNull();
+    const containerId = await getLocalDatabaseContainerId();
+    const transaction = spawn("docker", ["exec", "-i", containerId, "psql", "-X", "-q", "-v", "ON_ERROR_STOP=1", "-U", "postgres", "-d", "postgres"], { windowsHide: true });
+    let stderr = "";
+    transaction.stderr.on("data", (chunk) => { stderr += chunk; });
+    const finished = new Promise((resolve, reject) => {
+      transaction.once("error", reject);
+      transaction.once("close", (code) => code === 0 ? resolve() : reject(new Error(stderr)));
+    });
+    const locked = new Promise((resolve, reject) => {
+      transaction.stdout.on("data", (chunk) => { if (String(chunk).includes("operator-locked")) resolve(); });
+      transaction.once("error", reject);
+      transaction.once("close", () => reject(new Error("Operator transaction closed before locking")));
+    });
+    transaction.stdin.write(`begin; update public.designs set revision = 2, design_text = 'Operator edit' where id = '${design.id}'; select 'operator-locked';\n`);
+    try {
+      await locked;
+      const retry = importWorkspaceOrderItems(args);
+      // Keep the operator transaction open while the importer reaches its lock.
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      waitForDatabaseLockWait(containerId);
+      transaction.stdin.end("commit;\n");
+      await Promise.all([retry, finished]);
+    } finally {
+      if (!transaction.stdin.writableEnded) transaction.stdin.end("rollback;\n");
+    }
+    expect((await admin.from("design_lines").select("id").eq("design_id", design.id)).data).toEqual([]);
+    expect((await admin.from("designs").select("design_text, revision").eq("id", design.id).single()).data).toMatchObject({ design_text: "Operator edit", revision: 2 });
+  });
+
+  it("rolls back design initialization when any line fails and permits a corrected retry", async () => {
+    const workspaceId = await createDisposableWorkspace("Atomic import recovery");
+    const admin = createSupabaseAdminClient();
+    const item = { id: `atomic-${randomUUID()}`, text: "Tami\nRN", settings: { lines: [{ fontSizeMm: 34 }, { fontSizeMm: -1 }] } };
+    await expect(importWorkspaceOrderItems({ workspaceId, userId: null, items: [item] })).rejects.toBeTruthy();
+    expect((await admin.from("designs").select("id").eq("order_item_id", item.id)).data).toEqual([]);
+    item.settings.lines[1].fontSizeMm = 34;
+    await importWorkspaceOrderItems({ workspaceId, userId: null, items: [item] });
+    const design = await admin.from("designs").select("id").eq("order_item_id", item.id).single();
+    expect(design.error).toBeNull();
+    expect((await admin.from("design_lines").select("id").eq("design_id", design.data.id)).data).toHaveLength(2);
+  });
+
   it("preserves listing image URLs in compact order summaries", async () => {
     // Break caught: the compact RPC projection drops thumbnails required by Orders rows.
     const suffix = randomUUID().slice(0, 8);
