@@ -158,6 +158,14 @@ describe("order signatures", () => {
     })).toBe(false);
   });
 
+  it("requires corrected font resolution before reusing uploaded-font geometry", () => {
+    const fontPath = "https://example.com/fonts/upload.ttf";
+    const settings = { lines: [{ fontId: "uploaded", fontAssetFingerprint: `uploaded|1|${fontPath}` }] };
+    const build = { layout: { letters: [{ fontId: "uploaded", fontPath }] }, analysis: {} };
+    expect(cachedBuildMatchesResolvedFontAssets(build, settings)).toBe(false);
+    expect(cachedBuildMatchesResolvedFontAssets({ ...build, analysis: { fontResolutionVersion: 1 } }, settings)).toBe(true);
+  });
+
   it("rejects analyzed legacy text geometry when its font asset cannot be verified from letters", () => {
     expect(cachedBuildMatchesResolvedFontAssets({
       layout: { letters: [] },

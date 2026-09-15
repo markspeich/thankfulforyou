@@ -81,6 +81,50 @@ function pathBounds(path) {
 }
 
 describe("export_svg face tracing", () => {
+  test("analyzes an uploaded font using its outlines instead of bundled Candlepin", { timeout: 15000 }, () => {
+    const result = JSON.parse(runPythonSnippet(`
+import functools, json, threading
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from tools.export_svg import build_analysis, build_single_order_paths
+
+class QuietHandler(SimpleHTTPRequestHandler):
+    def log_message(self, *args):
+        pass
+
+server = ThreadingHTTPServer(('127.0.0.1', 0), functools.partial(QuietHandler, directory=str(Path.cwd())))
+threading.Thread(target=server.serve_forever, daemon=True).start()
+try:
+    local = {'text': 'A', 'widthMm': 40, 'heightMm': 40, 'backingMm': 3.1,
+             'letters': [{'character': 'A', 'lineIndex': 0, 'fontId': 'uploaded',
+                          'fontPath': 'public/fonts/Somekind.ttf', 'fontSizeMm': 20,
+                          'x': 5, 'y': 25, 'horizontalScale': 1, 'verticalScale': 1}]}
+    remote = json.loads(json.dumps(local))
+    remote['letters'][0]['fontPath'] = f'http://127.0.0.1:{server.server_port}/public/fonts/Somekind.ttf'
+    local_analysis = json.loads(build_analysis(local))
+    remote_analysis = json.loads(build_analysis(remote))
+    remote['analysis'] = {'exportFacePath': 'M0 0 L1 0 L1 1 Z', 'backingPath': 'M0 0 L2 0 L2 2 Z'}
+    exported = build_single_order_paths(Path.cwd(), remote)
+    print(json.dumps({'localPath': local_analysis['facePath'], 'remotePath': remote_analysis['facePath'],
+                      'exportPath': exported['face_path'], 'expectedExportPath': local_analysis['exportFacePath'],
+                      'resolutionVersion': remote_analysis.get('fontResolutionVersion')}))
+finally:
+    server.shutdown()
+    server.server_close()
+`));
+    expect(result.remotePath).toBe(result.localPath);
+    expect(result.resolutionVersion).toBe(1);
+    expect(result.exportPath).toBe(result.expectedExportPath);
+  });
+
+  test("fails explicitly when a requested font is missing instead of using Candlepin", () => {
+    expect(() => runPythonSnippet(`
+from pathlib import Path
+from tools.export_svg import load_outline_font
+load_outline_font(Path.cwd(), 'public/fonts/nonexistent-upload.ttf', {})
+`)).toThrow(/Could not locate outline font/);
+  });
+
   test("reports accented characters that silently reuse an unaccented glyph", { timeout: 15000 }, () => {
     const analysis = analyzeLayout({
       text: "Nañez",

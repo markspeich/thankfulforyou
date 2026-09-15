@@ -711,10 +711,9 @@ def offset_mask_backing_path(mask, scale, backing_mm, tolerance_mm):
 
 def resolve_font_candidates(root, font_ref):
     fallback_ref = "public/fonts/Candlepin-Laser.otf"
-    refs = []
-    if font_ref:
-        refs.append(font_ref)
-    refs.append(fallback_ref)
+    # Only an unspecified font may use the default. A requested asset must
+    # never silently resolve to another font, including before URL loading.
+    refs = [font_ref or fallback_ref]
 
     candidates = []
     for ref in refs:
@@ -983,8 +982,7 @@ def load_font(root, font_ref, font_size, cache):
         cache[font_key] = ImageFont.truetype(str(font_path), font_size)
         return cache[font_key]
 
-    cache[font_key] = ImageFont.load_default()
-    return cache[font_key]
+    raise FileNotFoundError(f"Could not locate font for {font_ref or 'fallback font'}")
 
 
 def load_outline_font(root, font_ref, cache):
@@ -1391,6 +1389,7 @@ def analyze_single_layout(root, payload):
         "backingMm": backing,
         "text": payload.get("text", ""),
         "facePath": face_outline["path"],
+        "fontResolutionVersion": 1,
         "faceBoundsMm": face_outline["bounds"],
         "exportFacePath": welded_face_path if weld_exported_design else face_outline["path"],
         "backingPath": backing_path,
@@ -1405,6 +1404,13 @@ def analyze_single_layout(root, payload):
 def build_precomputed_order_paths(payload):
     analysis = payload.get("analysis")
     if not isinstance(analysis, dict):
+        return None
+    # Older clients can submit outlines traced with the wrong fallback font.
+    # Reanalyze these requests rather than exporting their stale geometry.
+    if analysis.get("fontResolutionVersion") != 1 and any(
+        str(letter.get("fontPath", "")).lower().startswith(("http://", "https://"))
+        for letter in payload.get("letters", [])
+    ):
         return None
 
     export_face_path = analysis.get("exportFacePath")

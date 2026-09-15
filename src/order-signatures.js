@@ -129,6 +129,10 @@ export function cachedBuildMatchesResolvedFontAssets(cachedBuild, settings = {})
     if (!fontId || !assetPath) {
       return false;
     }
+    // Older analysis could record the requested URL while tracing Candlepin.
+    if (/^https?:\/\//i.test(assetPath) && cachedBuild?.analysis?.fontResolutionVersion !== 1) {
+      return false;
+    }
     expectedPaths.set(fontId, assetPath);
   }
 

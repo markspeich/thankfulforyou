@@ -1,6 +1,6 @@
 ﻿import { readFileSync } from "node:fs";
 import { expect, test } from "playwright/test";
-import { installSeededFontRoute } from "./font-test-routes.js";
+import { installSeededFontRoute, SEEDED_FONT_RECORDS } from "./font-test-routes.js";
 
 test.describe.configure({ mode: "serial" });
 
@@ -3184,6 +3184,41 @@ test("shows reload guidance and blocks later saves when completed analysis canno
   await expect(dialog).not.toBeVisible();
 
   await page.unrouteAll({ behavior: "ignoreErrors" });
+});
+
+test("preserves uploaded-font settings and allows fresh Save for old font geometry", async ({ page }) => {
+  const fontUrl = new URL("/public/fonts/Somekind.ttf", page.url()).href;
+  await page.route("**/api/fonts**", route => route.fulfill({
+    json: { fonts: SEEDED_FONT_RECORDS.map(font => font.id === "somekind" ? { ...font, public_url: fontUrl } : font) },
+  }));
+  await page.reload();
+  await waitForProductionBatchStartup(page);
+  await page.route("**/api/layout-analyze", route => route.fulfill({ json: buildMockAnalysisResponse({ fontResolutionVersion: 1 }) }));
+  await clickBatchAction(page, "Add Design");
+  await page.locator("#textInput").fill("Example\nRN");
+  await page.locator('[data-line-index="1"] select[data-setting="fontId"]').selectOption("somekind");
+  await completeButton(page).click();
+  await expect(exportDesignButton(page)).toBeEnabled();
+  const snapshot = productionBatchSnapshots.get(page);
+  const saved = snapshot.orderItems.find(order => order.settings.text === "Example\nRN");
+  expect(saved).toBeTruthy();
+  delete saved.cachedBuild.analysis.fontResolutionVersion;
+  saved.source = { listingId: "uploaded-font-listing", manualPresetOverride: false };
+  await page.route("**/api/preset-snapshot**", route => route.fulfill({ json: { snapshot: {
+    version: 1,
+    defaultPresetId: saved.settings.presetId,
+    presets: [{ schemaVersion: 1, id: saved.settings.presetId, name: "Mapped preset", lineDefaults: { fontId: "candlepin" },
+      globalDefaults: { backingMm: 3.1 }, lineRules: [],
+      listingAssignments: [{ listingId: "uploaded-font-listing", lineOverrides: [] }] }],
+  } } }));
+  await page.reload();
+  await waitForProductionBatchStartup(page);
+  await expect(page.locator('[data-line-index="1"] select[data-setting="fontId"]')).toHaveValue("somekind");
+  await expect(completeButton(page)).toBeEnabled();
+  await expect(exportDesignButton(page)).toBeDisabled();
+  await completeButton(page).click();
+  await expect(exportDesignButton(page)).toBeEnabled();
+  await expect(completeButton(page)).toBeDisabled();
 });
 
 test("clears stale saved geometry signatures that have no completed build after refresh", async ({ page }) => {
