@@ -1654,7 +1654,7 @@ function getBuildForSignature(order, signature) {
     && signatureCandidates.includes(order.savedSettingsSignature)
     && order.capturedLayout.analysis
     && typeof order.capturedLayout.analysis === "object"
-    && cachedBuildMatchesResolvedFontAssets({ layout: order.capturedLayout }, order.settings)
+    && cachedBuildMatchesResolvedFontAssets({ layout: order.capturedLayout, analysis: order.capturedLayout.analysis }, order.settings)
   ) {
     const layout = structuredClone(order.capturedLayout);
     const analysis = structuredClone(order.capturedLayout.analysis);
@@ -3914,7 +3914,13 @@ function hydrateStoredOrder(order, index) {
       completedSettingsSignature = pendingCompletedBuild?.signature || null;
     }
   } else if (!savedCompletedBuild && savedSettingsSignature) {
-    savedSettingsSignature = null;
+    // Stale geometry does not make the operator's saved settings unsaved.
+    // Preserve that fact so listing presets cannot overwrite them on reload.
+    const hasStoredSavedBuild = [cachedBuild, previousCompletedBuild]
+      .some((build) => build?.signature === savedSettingsSignature);
+    if (!hasStoredSavedBuild) {
+      savedSettingsSignature = null;
+    }
     if (status === "captured" || status === "exported") {
       status = "in-progress";
       analysisBadge = null;

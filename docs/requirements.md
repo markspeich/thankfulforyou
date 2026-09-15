@@ -771,6 +771,7 @@ For batch Etsy order sessions, the preferred workflow is:
 - In the Production Batch selected-order editor, imported order metadata should identify the actual marketplace, including `Etsy` for Etsy orders and `Amazon` for Amazon orders, instead of always labeling imported order numbers as Etsy.
 - Production Batch SVG export and copy should append `xN` to each nonblank color label when more than one exported order item has that color, counting order items case-insensitively rather than summing purchased quantities (for example, three Pink order items should each be labeled `Pink x3`).
 
+- Save analysis and SVG export must resolve the selected font asset, including uploaded font URLs, without silently substituting Candlepin or another default when that asset is unavailable. Uploaded-font geometry cached before this correction must require fresh analysis before export; saved text and layout controls must be preserved.
 - Clicking `Save` should immediately mark the current design as finished for editing, even if connectedness analysis is still running in the background.
 - Returning to a design after `Save` or `Save & Next` while geometry analysis is pending must preserve its saved text and layout settings, keep its pending analysis eligible to finish saving, and must not reapply the listing preset.
 - Saving an existing design through a scoped production-batch save must update only that design's order and layout data; it must not rewrite `batch_items` membership or positions, including when active batch positions contain gaps after removals.
