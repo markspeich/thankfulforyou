@@ -799,7 +799,7 @@ export async function updateOrderGroupStatus({
     supabase,
     workspaceId,
     orderIds: [normalizedOrderId],
-    eligibleStatuses: normalizedStatus === "skipped" ? ["open"] : ["skipped"],
+    eligibleStatuses: normalizedStatus === "skipped" ? ["open"] : ["skipped", "complete"],
   });
 
   if (!orderItemIds.length) {
@@ -865,7 +865,7 @@ export async function updateOrderGroupsStatus({
     supabase,
     workspaceId,
     orderIds: [...requestedIds],
-    eligibleStatuses: normalizedStatus === "skipped" ? ["open"] : ["skipped"],
+    eligibleStatuses: normalizedStatus === "skipped" ? ["open"] : ["skipped", "complete"],
   });
 
   if (!orderItemIds.length) {

@@ -1766,4 +1766,29 @@ describe("orders store", () => {
       expect.objectContaining({ order_item_id: "item-c" }),
     ]);
   });
+  it.each(["item", "order", "checked"])("reopens completed %s without changing designs or batch membership", async (scope) => {
+    resetDb({
+      order_items: [
+        { id: "done", workspace_id: "workspace-1", status: "complete", order_number: "9001", source_json: {} },
+        { id: "other", workspace_id: "workspace-2", status: "complete", order_number: "9001", source_json: {} },
+      ],
+      batch_items: [{ workspace_id: "workspace-1", batch_id: "old-batch", order_item_id: "done", status: "completed", batch_position: 0 }],
+      production_batches: [{ id: "batch-1", workspace_id: "workspace-1", active_order_item_id: null }],
+      designs: [{ id: "design-1", order_item_id: "done", text: "Ada RN" }],
+    });
+    const before = clone(supabaseMock.db);
+    const store = await import("../../api/_lib/orders-store.js");
+    const args = { workspaceId: "workspace-1", userId: "user-1", status: "open" };
+    if (scope === "item") await store.updateOrderItemStatus({ ...args, orderItemId: "done" });
+    if (scope === "order") await store.updateOrderGroupStatus({ ...args, orderId: "order:9001" });
+    if (scope === "checked") await store.updateOrderGroupsStatus({ ...args, orderIds: ["order:9001"] });
+    expect(supabaseMock.db.order_items).toEqual([
+      expect.objectContaining({ id: "done", status: "open", updated_by: "user-1" }),
+      before.order_items[1],
+    ]);
+    expect(supabaseMock.db.batch_items).toEqual(before.batch_items);
+    expect(supabaseMock.db.production_batches).toEqual(before.production_batches);
+    expect(supabaseMock.db.designs).toEqual(before.designs);
+  });
+
 });

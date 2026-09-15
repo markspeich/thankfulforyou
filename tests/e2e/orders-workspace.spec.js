@@ -2263,3 +2263,44 @@ test("copying an incomplete order item design shows a completion-needed status",
 
   await expect(page.locator("#workflowAlertText")).toHaveText("Complete and save this design before copying.");
 });
+
+for (const scope of ["item", "order", "checked"]) {
+  test(`reopens completed ${scope} to Open without adding to production`, async ({ page }) => {
+    await installSupabaseSession(page);
+    await installProductionBatchRoutes(page);
+    const posts = [];
+    const order = buildOrdersPayload().orders[0];
+    const ordersPayload = { orders: [{ ...order, status: "complete", isInActiveBatch: false,
+      items: order.items.map((item) => ({ ...item, status: "complete", isInActiveBatch: false })),
+    }] };
+    const action = { item: "reopenOrderItem", order: "reopenOrder", checked: "reopenOrders" }[scope];
+    await installOrdersWorkspaceRoutes(page, { ordersPayload, posts, postBody: (post) => {
+      if (post.action !== action) throw new Error(`Unexpected mutation: ${post.action}`);
+      const target = ordersPayload.orders[0];
+      target.status = "open";
+      const ids = scope === "item" ? ["item-1"] : target.items.map((item) => item.id);
+      target.items.forEach((item) => { if (ids.includes(item.id)) item.status = "open"; });
+      return scope === "checked" ? { orderItemIds: ids, status: "open" } : ordersPayload;
+    } });
+    await page.goto("/");
+    await page.locator("#databaseOrdersStatusFilter").selectOption("complete");
+    const workspace = page.locator("#databaseOrdersWorkspace");
+    await expect(workspace.locator(".database-order-item-card")).toHaveCount(2);
+    if (scope === "item") {
+      const card = workspace.locator(".database-order-item-card").first();
+      await card.getByRole("button", { name: "Item actions" }).click();
+      await card.getByRole("button", { name: "Reopen Order", exact: true }).click();
+    } else if (scope === "order") {
+      await workspace.getByLabel("Order actions", { exact: true }).click();
+      await workspace.getByRole("menu", { name: "Selected order actions" }).getByRole("button", { name: "Reopen Order", exact: true }).click();
+    } else {
+      await workspace.getByLabel("Select order 1001").check();
+      await page.locator("#ordersToolsMenu summary").click();
+      await workspace.getByRole("button", { name: "Reopen Orders", exact: true }).click();
+    }
+    await expect(page.locator("#databaseOrdersStatusFilter")).toHaveValue("open");
+    await expect(workspace.locator(".database-order-row .database-order-status")).toHaveText("Open");
+    await expect(workspace.locator(".database-order-item-status").first()).toHaveText("Not in active batch");
+    expect(posts.map((post) => post.action)).toEqual([action]);
+  });
+}

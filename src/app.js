@@ -7253,9 +7253,8 @@ function getDatabaseOrderItems(order) {
   return Array.isArray(order?.items) ? order.items : [];
 }
 
-function isDatabaseOrderFullySkipped(order) {
-  const items = getDatabaseOrderItems(order);
-  return items.length > 0 && items.every(isDatabaseOrderItemSkipped);
+function canReopenDatabaseOrderItem(item) {
+  return isDatabaseOrderItemSkipped(item) || isDatabaseOrderItemComplete(item);
 }
 
 function canSkipDatabaseOrder(order) {
@@ -7263,7 +7262,7 @@ function canSkipDatabaseOrder(order) {
 }
 
 function canReopenDatabaseOrder(order) {
-  return isDatabaseOrderFullySkipped(order);
+  return getDatabaseOrderItems(order).some(canReopenDatabaseOrderItem);
 }
 
 function getDatabaseOrdersEmptyMessage() {
@@ -7689,7 +7688,7 @@ function renderSelectedDatabaseOrderItems() {
 
     const statusActionButton = document.createElement("button");
     statusActionButton.type = "button";
-    if (isDatabaseOrderItemSkipped(item)) {
+    if (canReopenDatabaseOrderItem(item)) {
       statusActionButton.textContent = "Reopen Order";
       statusActionButton.addEventListener("click", () => {
         void reopenDatabaseOrderItem(item, statusActionButton);
@@ -7972,7 +7971,7 @@ async function skipDatabaseOrderItem(item, button = null) {
 }
 
 async function reopenDatabaseOrderItem(item, button = null) {
-  if (!isDatabaseOrderItemSkipped(item)) {
+  if (!canReopenDatabaseOrderItem(item)) {
     return;
   }
 
@@ -8195,7 +8194,7 @@ async function skipCheckedDatabaseOrders() {
 async function reopenCheckedDatabaseOrders() {
   const selectedOrders = getVisibleCheckedDatabaseOrders().filter(canReopenDatabaseOrder);
   if (!selectedOrders.length) {
-    updateWorkflowAlert("Select one or more skipped orders before reopening them.", "error");
+    updateWorkflowAlert("Select one or more completed or skipped orders before reopening them.", "error");
     return;
   }
 
