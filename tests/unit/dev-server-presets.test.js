@@ -196,6 +196,13 @@ describe("dev server preset api wrapper", () => {
 });
 
 describe("dev server orders api wrapper", () => {
+  it("routes listing edits through JSON API handling instead of exposing source files", async () => {
+    const port = await reserveAvailableDevServerTestPort();
+    await startDevServer(port);
+    const response = await patchMalformedJson(port, "/api/listings");
+    expect(response.statusCode).toBe(400);
+    expect(response.contentType).toContain("application/json");
+  }, 15000);
   it("routes orders requests through the API handler instead of serving api/orders.js", async () => {
     const port = await reserveAvailableDevServerTestPort();
     await startDevServer(port);

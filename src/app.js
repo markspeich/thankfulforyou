@@ -178,6 +178,7 @@ import {
   buildAppPath as buildRoutePath,
   readAppRouteFromPathname,
 } from "./app-routes.js";
+import { createListingsWorkspace } from "./listings-workspace.js";
 
 const orderMetadataEditing = {
   colorName: false,
@@ -247,12 +248,14 @@ const presetsWorkspace = document.querySelector("#presetsWorkspace");
 const fontsWorkspace = document.querySelector("#fontsWorkspace");
 const fixedDesignsWorkspace = document.querySelector("#fixedDesignsWorkspace");
 const sizeGuideWorkspace = document.querySelector("#sizeGuideWorkspace");
+const listingsWorkspace = document.querySelector("#listingsWorkspace");
 const orderWorkspaceButton = document.querySelector("#orderWorkspaceButton");
 const databaseOrdersWorkspaceButton = document.querySelector("#databaseOrdersWorkspaceButton");
 const presetWorkspaceButton = document.querySelector("#presetWorkspaceButton");
 const fontWorkspaceButton = document.querySelector("#fontWorkspaceButton");
 const fixedDesignsWorkspaceButton = document.querySelector("#fixedDesignsWorkspaceButton");
 const sizeGuideWorkspaceButton = document.querySelector("#sizeGuideWorkspaceButton");
+const listingsWorkspaceButton = document.querySelector("#listingsWorkspaceButton");
 const productionBatchLogoutButton = document.querySelector("#productionBatchLogoutButton");
 const navCollapseButton = document.querySelector("#navCollapseButton");
 const fontLibraryList = document.querySelector("#fontLibraryList");
@@ -636,6 +639,13 @@ let productionBatchConflictState = null;
 let productionBatchAccessToken = null;
 let workflowAlertActionHandler = null;
 let appRouteWriteCount = 0;
+const listingsWorkspaceController = listingsWorkspace ? createListingsWorkspace({
+  root: listingsWorkspace,
+  getAccessToken: () => productionBatchAccessToken,
+  onAccessToken(token) { productionBatchAccessToken = token; },
+  onAuthenticationRequired(detail) { handleProductionBatchAuthenticationRequired(detail || "Production batch session expired. Sign in again to continue."); },
+  onSelect(id) { writeAppRoute({ workspace: "listings", itemId: id }); },
+}) : null;
 
 function readProductionBatchAccessTokenOverride() {
   return globalThis.__TFU_TEST_PRODUCTION_BATCH_ACCESS_TOKEN__ ?? null;
@@ -667,6 +677,9 @@ function getWorkspaceRouteItemId(workspace = activeWorkspace) {
   }
   if (workspace === "sizeGuides") {
     return selectedSizePresetId;
+  }
+  if (workspace === "listings") {
+    return listingsWorkspaceController?.selectedId || null;
   }
 
   return null;
@@ -782,6 +795,12 @@ function applyRouteSelection(route, options = {}) {
     }
     selectFirstSizePresetIfNeeded();
     writeAppRoute({ replace: replaceRoute, workspace, itemId: null });
+    return;
+  }
+
+  if (workspace === "listings") {
+    void listingsWorkspaceController?.open(itemId);
+    writeAppRoute({ replace: replaceRoute, workspace, itemId });
   }
 }
 
@@ -894,6 +913,7 @@ function handleProductionBatchAuthenticationRequired(detail = "Production batch 
   productionBatchAccessToken = null;
   resetEtsySessionRequest(null);
   resetAmazonSessionRequest(null);
+  listingsWorkspaceController?.reset();
   disableProductionBatchSync(detail);
   showProductionBatchSignIn(detail);
   renderProductionBatchToast();
@@ -975,6 +995,7 @@ async function handleProductionBatchSignOut() {
   productionBatchAccessToken = null;
   resetEtsySessionRequest(null);
   resetAmazonSessionRequest(null);
+  listingsWorkspaceController?.reset();
 
   try {
     await signOutBrowserSession();
@@ -11666,7 +11687,7 @@ async function deleteSelectedFixedDesign() {
 function setActiveWorkspace(workspace, options = {}) {
   const { updateRoute = true, replaceRoute = false } = options;
   const hasRouteItemId = Object.prototype.hasOwnProperty.call(options, "routeItemId");
-  activeWorkspace = ["orders", "databaseOrders", "presets", "fonts", "fixedDesigns", "sizeGuides", NOT_FOUND_WORKSPACE].includes(workspace) ? workspace : DEFAULT_WORKSPACE;
+  activeWorkspace = ["orders", "databaseOrders", "presets", "fonts", "fixedDesigns", "sizeGuides", "listings", NOT_FOUND_WORKSPACE].includes(workspace) ? workspace : DEFAULT_WORKSPACE;
   appShell.dataset.workspace = activeWorkspace;
   ordersWorkspace.hidden = activeWorkspace !== "orders";
   databaseOrdersWorkspace.hidden = activeWorkspace !== "databaseOrders";
@@ -11674,6 +11695,7 @@ function setActiveWorkspace(workspace, options = {}) {
   fontsWorkspace.hidden = activeWorkspace !== "fonts";
   fixedDesignsWorkspace.hidden = activeWorkspace !== "fixedDesigns";
   sizeGuideWorkspace.hidden = activeWorkspace !== "sizeGuides";
+  if (listingsWorkspace) listingsWorkspace.hidden = activeWorkspace !== "listings";
   if (notFoundWorkspace) {
     notFoundWorkspace.hidden = activeWorkspace !== NOT_FOUND_WORKSPACE;
   }
@@ -11683,12 +11705,14 @@ function setActiveWorkspace(workspace, options = {}) {
   fontWorkspaceButton.classList.toggle("is-active", activeWorkspace === "fonts");
   fixedDesignsWorkspaceButton.classList.toggle("is-active", activeWorkspace === "fixedDesigns");
   sizeGuideWorkspaceButton.classList.toggle("is-active", activeWorkspace === "sizeGuides");
+  listingsWorkspaceButton?.classList.toggle("is-active", activeWorkspace === "listings");
   orderWorkspaceButton.setAttribute("aria-pressed", String(activeWorkspace === "orders"));
   databaseOrdersWorkspaceButton.setAttribute("aria-pressed", String(activeWorkspace === "databaseOrders"));
   presetWorkspaceButton.setAttribute("aria-pressed", String(activeWorkspace === "presets"));
   fontWorkspaceButton.setAttribute("aria-pressed", String(activeWorkspace === "fonts"));
   fixedDesignsWorkspaceButton.setAttribute("aria-pressed", String(activeWorkspace === "fixedDesigns"));
   sizeGuideWorkspaceButton.setAttribute("aria-pressed", String(activeWorkspace === "sizeGuides"));
+  listingsWorkspaceButton?.setAttribute("aria-pressed", String(activeWorkspace === "listings"));
   if (activeWorkspace === "presets") {
     selectFirstPresetEditorRowIfNeeded();
   }
@@ -11714,6 +11738,9 @@ function setActiveWorkspace(workspace, options = {}) {
   }
   if (activeWorkspace === "sizeGuides") {
     selectFirstSizePresetIfNeeded({ updateRoute });
+  }
+  if (activeWorkspace === "listings" && productionBatchAccessToken) {
+    void listingsWorkspaceController?.open(options.routeItemId || null);
   }
   if (updateRoute) {
     writeAppRoute({
@@ -14371,6 +14398,9 @@ fixedDesignDropZone?.addEventListener("drop", (event) => {
 });
 sizeGuideWorkspaceButton.addEventListener("click", () => {
   setActiveWorkspace("sizeGuides", { routeItemId: null });
+});
+listingsWorkspaceButton?.addEventListener("click", () => {
+  setActiveWorkspace("listings", { routeItemId: null });
 });
 productionBatchLogoutButton?.addEventListener("click", () => {
   void handleProductionBatchSignOut();

@@ -5,6 +5,10 @@
   "outputDirectory": "dist",
   "rewrites": [
     {
+      "source": "/api/listings",
+      "destination": "/api/etsy-connection?resource=listings"
+    },
+    {
       "source": "/api/font-aliases",
       "destination": "/api/fonts?resource=aliases"
     },
@@ -17,11 +21,14 @@
       "destination": "/api/layout_analyze"
     },
     {
-      "source": "/(orders|production-batch|presets|fonts|fixed-designs|size-guides)(/.*)?",
+      "source": "/(orders|production-batch|presets|fonts|fixed-designs|size-guides|listings)(/.*)?",
       "destination": "/index.html"
     }
   ],
   "functions": {
+    "api/etsy-connection.js": {
+      "maxDuration": 180
+    },
     "api/amazon-import.js": {
       "supportsCancellation": true
     },

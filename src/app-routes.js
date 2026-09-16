@@ -8,6 +8,7 @@ export const WORKSPACE_ROUTE_SEGMENTS = Object.freeze({
   fonts: "fonts",
   fixedDesigns: "fixed-designs",
   sizeGuides: "size-guides",
+  listings: "listings",
 });
 
 export const WORKSPACE_BY_ROUTE_SEGMENT = Object.freeze(

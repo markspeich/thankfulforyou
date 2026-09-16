@@ -8,6 +8,16 @@ The app name should be `Thankful For  You` in browser chrome and operator-facing
 
 The business sells custom badge reels. Each face plate is made from two layers of 1/8 inch acrylic cut by laser and solvent-welded together. The completed face plate is then solvent-welded to a badge reel.
 
+## App-wide Operation Feedback
+
+These requirements apply to every new feature, across all workspaces, without a separate request for each implementation.
+
+- User-initiated API requests and other operations that keep the operator waiting must immediately show a working dialog naming the operation, with an activity indicator or real progress when available. Prevent duplicate submissions while work is pending; do not invent percentage progress.
+- On success, close the working dialog and make the completed result apparent. On failure, clear the working state and show a dismissible, keyboard-accessible error dialog with a clear, sanitized cause and actionable next step. Console-only errors are insufficient.
+- Error messages must use red text in dialogs and inline validation, with wording that identifies the error independently of color. Informational and working states must remain visually distinct from errors.
+- Failed operations must preserve unsaved user work. Retain relevant inline error context after the dialog is dismissed, and restore focus appropriately so the operator can recover.
+- Verify pending, success, and failure behavior when completing an affected feature, including duplicate-action prevention, dialog dismissal, focus handling, and cleanup of the busy state.
+
 ## Primary Problem
 
 The software must lay out customer-provided text in a selected font so the laser-cut acrylic uses as few separate pieces as possible.
@@ -512,6 +522,65 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 
 Future-facing product ideas and optional later-phase workflow enhancements are tracked in [future-features.md](/C:/Users/Mark/.codex/worktrees/42f4/thankfulforyou/docs/future-features.md:1).
 
+## Etsy-To-Amazon Listing Creation (Discovery)
+
+Requested on 2026-09-15. The preparation-workspace design and implementation are approved; live Amazon validation and submission remain dependent on seller credentials.
+
+Implemented preparation milestone (2026-09-15): saved workspace-scoped drafts, owned Etsy imports with private original images, editable copy and exactly five bullet fields, USD 19.99 starting price, main-photo suggestion, gallery selection/approval, replacement uploads, and optional OpenAI copy and image-edit adapters. Conflicting revisions are rejected; imports and provider operations have persisted claims. Amazon writes remain disabled. Local verification uses controlled marketplace/provider responses and does not establish live image quality or marketplace acceptance.
+
+- Connect the app to Amazon Seller Central through the Selling Partner API (SP-API).
+- Inspect a selected Etsy listing and download its listing images.
+- Prepare a white-background main product image for Amazon.
+- Write Amazon product copy, including five bullet points.
+- Create a draft Amazon listing and submit its images.
+
+Confirmed first-phase decisions:
+
+- Development should proceed while Amazon developer approval and credentials are pending. Preparation and saved review drafts must remain usable without Amazon access; real Amazon validation and submission remain unavailable until connected and verified.
+- This integration is exclusively for the business's own seller account on Amazon.com US.
+- The operator will obtain SP-API developer access and configure credentials in an appropriate secure location.
+- Sandbox access was configured and verified on 2026-09-15: Login with Amazon authentication and a read-only static-sandbox call succeeded. This does not enable production listing writes or establish seller/category eligibility.
+- Create the result in Amazon as an inactive listing so the operator can review and complete it in Seller Central. Automatic activation is outside the first-phase scope.
+- Each Etsy listing maps to one Amazon listing with no parent/child variations. Product choices are handled through Amazon Custom customizations.
+- The operator will apply existing customization templates manually in Seller Central for the first phase; automated customization setup can be discussed later.
+- The app must automatically choose a proposed main photo and remove its background. Before submission, show the proposed images for operator approval or rejection.
+- Amazon pricing is independent of Etsy pricing and uses one common topper-only base price across listings, initially USD 19.99. Each badge-reel type adds a surcharge through the manually applied Amazon customization template; the app must not create variants or infer those surcharges from Etsy. The operator may revise the base default later. Price configuration must not accidentally activate a listing intended to remain inactive.
+- The operator reports no brand and confirms using an existing product-ID (GTIN) exemption rather than UPC barcodes. The expected category is badge reels, subject to confirmation against the actual Amazon product type. Verify that the exemption applies to the selected category and accepted Amazon brand value; do not infer the brand value from the absence of a brand.
+- The operator supplied a matched reference pair: [Etsy listing 4357670739](https://www.etsy.com/listing/4357670739/custom-badge-reel-custom-badge-reel-for) and [Amazon ASIN B0H5TJYK3D](https://www.amazon.com/dp/B0H5TJYK3D). These are research references, not authorization to modify or duplicate the existing Amazon listing.
+
+Reference-pair observations (public pages inspected on 2026-09-15; observations are not universal product defaults):
+
+- Amazon displays brand `Generic`, material `Acrylic`, quantity one, and a browse path ending in `Identification Badges & Supplies > Badge Holders`. Confirm the actual SP-API product type separately; a browse category is not a product-type identifier. The `Custom` store byline is distinct from the displayed brand.
+- Etsy presents ten gallery thumbnails, seven reel/topper choices, and 38 color choices. Amazon summarizes 38 colors and three text inputs. These fit the operator's stated customization-based model rather than parent/child variations.
+- Etsy's main image shows the blue-and-white three-line sample on a wood background with plant decoration. Amazon's main image shows a corresponding sample on white, including the transparent strap and metal snap. Background removal must preserve product lettering and transparent hardware; visual comparison alone does not establish how the existing Amazon image was made.
+- Amazon's five bullets cover personalization, attachment choices, everyday uses, gifting, and wearing/scanning convenience. Its gallery also includes secondary product examples with their original scene backgrounds. This is a candidate copy/gallery structure, pending operator approval.
+- Etsy explicitly distinguishes topper-only purchases from complete reels. It also shows a three-inch structured length while the description gives dimensions of 2.5 by 2 inches. These may measure different things; flag the ambiguity rather than silently choosing a dimension for Amazon copy.
+- The inspected Amazon offer displays USD 14.99, but the operator-confirmed initial default for the new feature remains USD 19.99 for topper only, before the customization template's badge-reel surcharges.
+- The reference Amazon `Customize now` panel was inspected directly: topper only has no added charge; swivel alligator clip and belt clip each add USD 3.00; MRI Safe and lanyard each add USD 5.00; heavy-duty metal belt clip and heavy-duty carabiner each add USD 10.00. These are observed reference-template values, not automatically adopted defaults or API-managed pricing requirements.
+- That reference customization panel has 38 color choices, a font dropdown showing only Candlepin, and three text-line inputs displaying an eight-character limit each. Treat those limits and font choices as template-specific, not universal constraints for generated listings or the production geometry editor.
+
+Discovery findings and proposed assumptions, pending operator confirmation:
+
+- Reuse the existing Etsy connection and listing/image retrieval client; evaluate additional read scopes for inventory, variations, and non-public listings. Current authorization requests only `transactions_r shops_r`.
+- Amazon publishing needs a separate SP-API connection; the current ShipStation-backed Amazon order importer does not provide listing publication access.
+- Proposed initial workflow: one listing at a time with editable copy and image review before submission. Batch conversion and ongoing synchronization remain undecided.
+- Implement the confirmed inactive-listing outcome using verified account/category behavior. Amazon documents `LISTING_PRODUCT_ONLY` for creating inactive items without sales terms; `VALIDATION_PREVIEW` does not persist a listing. A Seller Central UI draft is a distinct state and is not required by the confirmed outcome.
+- Amazon Custom configuration is a separate feasibility constraint. Amazon's API team stated on 2026-04-20 that customization configuration is not supported through the API; plan for a Seller Central handoff unless supported capabilities change.
+- Proposed image treatment: preserve the photographed product, lettering, colors, hardware, and proportions while removing the background. Retain originals and reviewed derivatives. Generation provider, cost limits, and handling of unusable source photos remain undecided.
+- Proposed copy treatment: derive claims from listing data and operator-confirmed product facts; flag missing facts instead of inventing them.
+- Remaining decisions include actual seller authorization, accepted brand/product-type values and applicability of the confirmed product-ID exemption, SKU conventions, copy style and reusable product facts, fulfillment/handling/shipping defaults where needed, and expected volume. Determine whether the common price is retained in the app for manual completion or submitted through a verified inactive-offer workflow.
+- Determine Amazon's required attributes and image slots from the seller/marketplace/product-type schema. Host submitted images at URLs Amazon can retrieve and track asynchronous processing issues; request acceptance alone does not establish listing or image completion.
+
+Research sources checked on 2026-09-15:
+
+- [Amazon listing workflows, inactive product-only listings, and validation](https://developer-docs.amazon/sp-api/docs/building-listings-management-workflows-guide)
+- [Amazon image submission and supported image variants](https://developer-docs.amazon/sp-api/lang-en_EN/docs/submit-media)
+- [Amazon listing creation prerequisites](https://developer-docs.amazon/sp-api/docs/create-a-listing)
+- [Amazon API team response on Custom configuration](https://github.com/amzn/selling-partner-api-models/discussions/5181)
+- [Amazon Custom workflow](https://sell.amazon.com/programs/custom)
+- [Amazon product photography guidance](https://sell.amazon.com/blog/product-photos)
+- [Etsy API reference](https://developer.etsy.com/documentation/reference/)
+
 ## Current Assumptions And Pending Decisions
 
 - The first production export target is SVG for LightBurn-oriented laser workflows.
@@ -789,3 +858,63 @@ For batch Etsy order sessions, the preferred workflow is:
 - The two ports for a worktree must be adjacent and must not overlap with the paired ports assigned to another worktree slot.
 - Dev-server startup should fail clearly when the assigned role port is already occupied instead of silently moving to a different port. A one-off `PORT` override remains allowed when an explicit temporary port is needed.
 
+
+### Approved Amazon sandbox milestone
+
+- Sandbox listing requests use only the North America static sandbox, with stable `TFY-` plus draft UUID SKUs. Require saved approved copy and images and a successful latest preview for the same revision before submission.
+- Persist workspace-scoped attempt history, serialize requests, block duplicate accepted submissions, and block automatic retries after uncertain submissions. Static status checks cannot establish real persistence. Production submission remains disabled.
+- Provisional payloads use `PRODUCT`, `Generic`, the declared GTIN exemption, and `LISTING_PRODUCT_ONLY`; omit price, offers, quantity, and reference ASINs. Canned success does not validate seller-specific attributes or image acceptance. Content hashes exclude expiring image URL signatures, binding reviewed asset IDs and draft revisions.
+- Local sandbox and generation-provider credentials load through an explicit server-only allowlist from ignored `.local` files. Unconfigured generation actions remain unavailable; manual copy and image preparation remain supported.
+- Listing image preparation uses the OpenAI Images Edits API with `LISTING_OPENAI_API_KEY`; `LISTING_OPENAI_IMAGE_MODEL` is optional and defaults to `gpt-image-2`. Copy generation still requires both that key and the explicit `LISTING_OPENAI_MODEL`. Image preparation produces an unapproved derivative that can alter product details, so approval requires review of lettering and clear hardware.
+- The Listings sidebar button must use the same compact row height as the other workspace buttons; flexible remaining space belongs below the navigation items.
+- Local Etsy authorization may use a registered Tailscale Serve HTTPS callback. Load only named Etsy configuration keys from ignored .local/etsy.env; keep the local Supabase target and begin authorization on the callback hostname.
+- Failed Listings requests must show a dismissible, keyboard-accessible error dialog as well as an inline message, without losing draft edits. OpenAI credit/quota exhaustion, invalid credentials, model/access restrictions, rate limits, and timeouts must have actionable sanitized messages; provider authentication errors must not sign the operator out of the app.
+
+- Listings error messages must use red text in both pop-up dialogs and inline notices, including input validation errors. Informational status messages retain neutral styling.
+- Generated Amazon copy must use five distinct, concise, customer-focused bullets covering supported personalization, visual design, materials/construction, optional reel upgrades, and intended use. Use another verified detail when a topic lacks evidence; put missing facts in warnings. Avoid repetition, filler, keyword stuffing, and unsupported benefits. Describe the topper-only base option and additional-charge reel choices through Amazon customization accurately, without numeric prices or implying universal reel compatibility.
+
+- Pending Listings API requests must immediately show a working dialog with an indeterminate activity indicator, prevent duplicate actions, and close on completion or transition to the error dialog on failure. Copy generation and image preparation must identify the operation in progress.
+
+- Listings validation must preserve the operator's entered price and import URL across dialogs and rerenders. Blocked actions and upload validation failures must use the same error dialog as failed API requests. Copy generation must allow slow provider responses (up to 150 seconds) while preventing overlapping operations.
+
+- Listing copy replacement and image preparation confirmations must use accessible in-app dialogs matching the app dialog styling, with explicit action and Cancel buttons, Escape dismissal, and focus restoration. Do not use browser-level confirmation prompts for these actions.
+
+- Listings preparation uses a top, entirely read-only Etsy source card (title, description, original images, and source facts), then Generate copy, then an Amazon details card containing editable copy, gallery review, approvals, save, and sandbox controls. Hide the Amazon card for newly imported listings until Generate copy is pressed; already-generated saved copy remains accessible when reopening its draft.
+- The Amazon details card must present copy, gallery review, and sandbox controls as flat sections within the main card, without nested card borders, backgrounds, or inset padding. Use headings and spacing to distinguish sections.
+
+- Selecting a main listing image or changing gallery/copy approval checkboxes must preserve page and editor scroll position and keyboard focus.
+
+- Place Edit prompt next to Generate copy. Its in-app dialog loads the current workspace copy prompt and offers Save and Cancel. Save persists to the database and future generation reads the saved workspace prompt; Cancel discards edits. Default to the existing prompt until saved. Retain edited text on save failure, show actionable red errors and working status, and enforce nonempty prompts up to 20,000 characters. Prompt changes do not modify existing listing copy.
+
+- Copy generation supplies the saved editable prompt with the imported Etsy title, description, facts, reference URL, and up to ten original photos in source order. Send image bytes directly so private local storage is supported, exclude prepared/uploaded Amazon images, and do not depend on web browsing. Keep the exact default prompt: Generate Amazon production description and five bullet points for this Etsy listing. Bound photos to 10 MB each and 24 MB total; report failures without replacing saved copy. Keep working and red error dialogs.
+
+- Uploading a listing image must work with unsaved copy, price, approval, and image-selection edits. Merge the uploaded asset and latest saved revision into the local draft without saving or discarding those edits; retain raw invalid price input and show upload progress and actionable errors.
+
+- Listing image uploads use the label Upload image and support a drag-and-drop zone with the same file validation, progress, errors, and unsaved-edit preservation as the file picker. Copy approval must respond to checking and unchecking and persist when the draft is saved.
+
+- Place the Choose File button inside the listing image dropzone, using the shared app button styling with concise upload instructions.
+
+- Gallery review displays a live count of included images out of nine. Turn the count red and explain the limit when more than nine are included.
+
+- Excluded gallery images disable Main image and Approved controls. After a sandbox preview attempt, invalid copy fields, missing approvals, and invalid image selections receive red error borders and aria-invalid; highlights update as the operator corrects each issue.
+
+- Label original-image background preparation buttons Remove background.
+
+### Production Amazon listing integration
+
+- For Etsy source 4357670739, the operator confirmed packaged dimensions 3 × 2 × 1 inches, packaged weight 1.1 ounces, manufacturer Thankful For You, generated part number TFY-4357670739, special feature Personalized, and closure type Clip. These facts are scoped to this product and must not become assumptions for unrelated imports.
+
+- Production LWA credentials are stored separately in the Git-ignored `.local/amazon-sp-api.production.env`. Never substitute production credentials into sandbox configuration.
+- A production read-only lookup confirmed `BADGE_HOLDER` for the US marketplace. The generic enforced `LISTING_PRODUCT_ONLY` schema requires batteries_required, brand, bullet_point, country_of_origin, item_name, product_description, and supplier_declared_dg_hz_regulation. Seller-specific and conditional requirements still need verification using the merchant token.
+- Use product-only submissions without offer or inventory attributes for initial inactive creation, then retrieve processing issues and verify the listing is not BUYABLE. An accepted response alone is not proof of completed creation.
+- Production validation must precede creation and be bound to the saved draft revision and approved assets. Keep production attempt history separate from canned sandbox results; reconcile uncertain submissions before retrying and avoid overwriting an existing unrelated seller SKU.
+- Amazon must be able to retrieve the selected image URLs. Local Supabase and tailnet-only addresses cannot serve as production delivery URLs. Use the approved private cloud image-delivery bucket with signed HTTPS URLs.
+- Operator supplied the seller ID (merchant token), country of origin, battery and dangerous-goods declarations, and chose local app operation with private cloud image delivery. Validate seller-specific requirements before submission.
+
+- Operator confirmed production product declarations: country of origin USA (`US`), no batteries required, and not classified as dangerous goods (`not_applicable`). Cloud hosting approval is conditional on plan suitability: current plans are Vercel Hobby and Supabase Free. Vercel Hobby restricts commercial use, so deployment requires a suitable hosting plan or an alternate local-app/cloud-image arrangement; no paid upgrade is authorized.
+
+- Production development runs locally while Vercel remains on Hobby. Production credentials load into separate AMAZON_PRODUCTION_* environment names, without overwriting sandbox credentials. Use the operator-confirmed seller ID from private configuration.
+- Production UI offers Validate with Amazon, Create inactive Amazon listing, and Check Amazon status. Creation requires a saved, approved current revision, successful production preview, and explicit in-app confirmation. Show working, result, and error dialogs; distinguish request acceptance from confirmed inactive processing.
+- Each listing has its own operator-confirmed Amazon production facts: packaged length, width, height, weight, manufacturer, part number, special feature, and closure type. Operators must enter finite positive dimensions and weight plus nonempty text values of at most 200 characters, save the facts with the listing, then validate that saved revision. Editing any fact makes the draft dirty and invalidates prior production validation; an attempted validation with incomplete facts must keep edits, highlight the relevant fields with accessible inline errors, and explain the issue in the shared error dialog without contacting Amazon.
+- Production attempt history is seller-scoped and separate from sandbox history. Require a matching content hash and revision before creation; block repeat accepted or uncertain submissions and check existing SKU before creating.
+- Cloud image delivery uses a separate private amazon-listing-delivery bucket. Copy only selected approved immutable raster bytes from the authorized workspace and draft, address copies by content hash, and supply seven-day signed HTTPS URLs. Keep original local files and drafts unchanged. The operator approved the bucket migration on 2026-09-16; it was applied to live project oezjskcygvfyezvoulzw and recorded remotely as migration 20260916173933 (amazon_image_delivery_bucket), corresponding to checked-in 20260916173933_amazon_image_delivery_bucket.sql. Cloud storage credentials were configured and verified against the private bucket on 2026-09-16. The operator explicitly approved uploading the nine selected listing images; all nine private uploads and signed image downloads were verified on 2026-09-16 without changing the local draft or creating an Amazon listing; no Vercel upgrade is requested.
