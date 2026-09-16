@@ -1,4 +1,6 @@
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { runInNewContext } from "node:vm";
 import { describe, expect, test } from "vitest";
 
 const pythonCommand = process.env.PYTHON || (process.platform === "win32" ? "py" : "python3");
@@ -39,7 +41,7 @@ function exportSvg(payload) {
   return result.stdout;
 }
 
-function runPythonSnippet(source) {
+function runPythonSnippet(source, input) {
   const args = process.env.PYTHON
     ? ["-c", source]
     : process.platform === "win32"
@@ -48,6 +50,7 @@ function runPythonSnippet(source) {
   const result = spawnSync(pythonCommand, args, {
     cwd: process.cwd(),
     encoding: "utf8",
+    input,
   });
 
   if (result.status !== 0) {
@@ -81,6 +84,33 @@ function pathBounds(path) {
 }
 
 describe("export_svg face tracing", () => {
+  test("browser export preserves uploaded-font cache validity and skips reanalysis", () => {
+    const source = readFileSync("src/app.js", "utf8");
+    const start = source.indexOf("function buildExportPayload(");
+    const end = source.indexOf("async function fetchFixedSvgText", start);
+    const buildExportPayload = runInNewContext(`${source.slice(start, end)}; buildExportPayload`);
+    const layout = {
+      text: "A", widthMm: 40, heightMm: 40, backingMm: 3.1,
+      letters: [{ character: "A", fontPath: "https://example.invalid/uploaded.ttf" }],
+    };
+    const analysis = {
+      fontResolutionVersion: 1,
+      exportFacePath: "M0 0 L1 0 L1 1 Z",
+      backingPath: "M0 0 L2 0 L2 2 Z",
+      connectedComponentCount: 1,
+    };
+    const payload = buildExportPayload(layout, analysis);
+    const result = runPythonSnippet(`
+import json, sys
+from unittest.mock import patch
+from tools.export_svg import build_svg
+with patch('tools.export_svg.analyze_single_layout', side_effect=AssertionError('Export unnecessarily recalculated saved geometry')):
+    print(build_svg(json.load(sys.stdin)))
+`, JSON.stringify({ layouts: [payload] }));
+    expect(result).toContain(analysis.exportFacePath);
+    expect(buildExportPayload(layout, { ...analysis, fontResolutionVersion: undefined }).analysis.fontResolutionVersion).toBeUndefined();
+  });
+
   test("analyzes an uploaded font using its outlines instead of bundled Candlepin", { timeout: 15000 }, () => {
     const result = JSON.parse(runPythonSnippet(`
 import functools, json, threading

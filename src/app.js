@@ -1708,6 +1708,7 @@ function buildExportPayload(layout, analysis = layout?.analysis || null, source 
       quantity,
       isKeychain,
       analysis: {
+        fontResolutionVersion: analysis.fontResolutionVersion,
         exportFacePath: analysis.exportFacePath,
         backingPath: analysis.backingPath,
         connectedComponentCount: analysis.connectedComponentCount,
