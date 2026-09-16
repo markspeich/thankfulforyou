@@ -53,6 +53,14 @@ When the user provides new product, workflow, material, manufacturing, design, o
 - Avoid decorative UI that competes with design inspection.
 - Use visual previews that clearly distinguish acrylic layers.
 
+## Required Feedback For Every New Feature
+
+- Apply the app-wide operation feedback requirements in `docs/requirements.md` to every new feature without waiting for the user to request error handling or status indicators.
+- Show an immediate working dialog for user-initiated API requests and other operations that keep the operator waiting. Identify the operation, show an activity indicator (or real progress when available), and prevent duplicate submissions. Close it on completion and transition to an error dialog on failure; never leave a stuck busy state.
+- Show failed operations in a dismissible, keyboard-accessible error dialog with a clear, sanitized cause and actionable next step. Preserve unsaved work and keep relevant inline error context after dismissal. Console logging alone is insufficient.
+- Use red text for error messages in dialogs and inline validation; also identify errors in text so color is not the only cue. Keep informational and working states visually distinct from errors.
+- Verify pending, success, and failure behavior as part of completing each affected feature, including focus handling and recovery from errors. Reuse established UI patterns where practical.
+
 ## Collaboration Notes
 
 - Ask for clarification when manufacturing constraints affect geometry decisions.
@@ -175,6 +183,8 @@ When the user asks to start the app, start a server, or initialize the app, foll
 - After launch, verify the server with a quick HTTP request instead of trusting process startup alone.
 
 ### Testing And Port Isolation
+
+- `npm run test:db:local` resets the worktree database. Never run it against an operator workspace containing imported listings, OAuth connections, or other user work. For existing local environments, run database tests through `tools/run_with_supabase_env.mjs --env local -- node node_modules/vitest/vitest.mjs run --config vitest.db.config.js <test-file>` without resetting. Tests must create and clean up only their own disposable records. Read test runner scripts before invoking them; delegate this restriction explicitly.
 
 - Automated tests that start or target the web app must follow the same per-worktree port discipline as manual dev-server startup.
 - Use `npm run test:e2e` for local browser/e2e tests. That script runs `tools/run_playwright.mjs`, resolves this checkout's dev-server URL, and exports `PLAYWRIGHT_BASE_URL` and `PORT` for the test process.

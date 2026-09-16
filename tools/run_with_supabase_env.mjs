@@ -1,4 +1,5 @@
 import { spawnCommand, assertSupabaseEnv, parseSupabaseEnvMode, resolveSupabaseEnv } from "./supabase_env.mjs";
+import { loadListingServiceEnv } from "./listing_service_env.mjs";
 
 const separatorIndex = process.argv.indexOf("--");
 if (separatorIndex === -1 || separatorIndex === process.argv.length - 1) {
@@ -15,7 +16,7 @@ assertSupabaseEnv(supabaseEnv);
 const result = spawnCommand(command, args, {
   stdio: "inherit",
   env: {
-    ...process.env,
+    ...(mode === "local" ? loadListingServiceEnv() : process.env),
     ...supabaseEnv,
   },
 });

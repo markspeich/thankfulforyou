@@ -311,12 +311,13 @@ test("manages fixed SVG designs from the Fixed Designs workspace", async ({ page
     "Fonts",
     "Size Guides",
     "Fixed Designs",
+    "Listings",
   ]);
   await expect(
     page.locator(".workspace-nav .workspace-nav-item:not(.workspace-nav-item-logout)").evaluateAll((buttons) => (
       buttons.map((button) => Math.round(button.getBoundingClientRect().height))
     )),
-  ).resolves.toEqual([46, 46, 46, 46, 46, 46]);
+  ).resolves.toEqual([46, 46, 46, 46, 46, 46, 46]);
 
   await page.getByRole("button", { name: "Fixed Designs", exact: true }).click();
   await expect(page).toHaveURL(/\/fixed-designs$/);

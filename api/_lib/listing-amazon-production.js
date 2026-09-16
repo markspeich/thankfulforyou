@@ -28,25 +28,41 @@ export function buildProductionPayload(draft){
  const hash=createHash('sha256').update(JSON.stringify({attributes:contentAttributes,revision:draft.revision,images:images.map(i=>({id:i.id,main:i.main}))})).digest('hex');
  return {payload,hash,issues};
 }
+const publicImageIssue=issue=>issue.startsWith('Publish selected images');
+function usableProductDefinitions(definitions,payload){
+ if(!definitions||typeof definitions!=='object'||Array.isArray(definitions))return false;
+ if(definitions.productType!=='BADGE_HOLDER'||definitions.requirements!=='LISTING_PRODUCT_ONLY')return false;
+ const attributes=payload?.attributes;
+ return Boolean(attributes&&typeof attributes==='object'&&!Array.isArray(attributes)&&Array.isArray(definitions.attributeNames)
+  &&Object.entries(attributes).every(([name,value])=>Array.isArray(value)&&value.length&&definitions.attributeNames.includes(name)));
+}
 export function createListingAmazonProductionService({attempts=createProductionAttemptStore(),client=null,configured=()=>hasAmazonProductionConfig(process.env),sellerId=()=>process.env.AMAZON_PRODUCTION_SELLER_ID,imageDelivery=createAmazonImageDelivery()}={}){
- const localIssues=draft=>buildProductionPayload(draft).issues.filter(issue=>!imageDelivery.configured()||!issue.startsWith('Publish selected images'));
+ const localIssues=draft=>buildProductionPayload(draft).issues.filter(issue=>!imageDelivery.configured()||!publicImageIssue(issue));
  const api=()=>client||createAmazonProductionClient({env:process.env});
  async function describe({workspaceId,draft}){return {sku:stableListingSku(draft.id),notice:PRODUCTION_NOTICE,localIssues:localIssues(draft),attempts:await attempts.list({workspaceId,draftId:draft.id,sellerId:sellerId()})};}
  return {configured,describe,async run({workspaceId,draft,action,confirmed=false}){
   if(!configured())throw listingError(409,'Production Amazon credentials are not configured.');
   if(!['validate','submit','reconcile'].includes(action))throw listingError(400,'Unsupported production action.');
   if(action==='submit'&&confirmed!==true)throw listingError(400,'Confirm creation of a real Amazon product-only listing.');
-  let {payload,hash}=buildProductionPayload(draft);
-  const issues=localIssues(draft);
-  if(action!=='reconcile'&&issues.length)throw listingError(422,issues.join(' '));
+  let {payload,hash,issues}=buildProductionPayload(draft);
+  if(action!=='reconcile'){
+   if(!imageDelivery.configured())throw listingError(422,`${issues.join(' ')} Configure cloud image storage before production validation. Local image URLs cannot be fetched by Amazon.`.trim());
+   const nonDeliveryIssues=issues.filter(issue=>!publicImageIssue(issue));
+   if(nonDeliveryIssues.length)throw listingError(422,nonDeliveryIssues.join(' '));
+  }
   const claim=await attempts.claim({workspaceId,draftId:draft.id,revision:draft.revision,action,hash,sellerId:sellerId()});
   let status='failed',remoteIssues=[],result={},submitStarted=false;
   try{
    const amazon=api(),sku=stableListingSku(draft.id);let response;
-   if(action!=='reconcile'&&imageDelivery.configured()){
-    const staged=buildProductionPayload(await imageDelivery.prepare({workspaceId,draft}));
+   if(action!=='reconcile'){
+    let staged;
+    try{staged=buildProductionPayload(await imageDelivery.prepare({workspaceId,draft}));}catch{throw listingError(422,'Image delivery failed. Check the cloud delivery bucket configuration and selected approved images, then try again.');}
+    if(staged.hash!==hash)throw listingError(409,'Selected image identity changed during delivery staging. Reload the draft and try again.');
     if(staged.issues.length)throw listingError(422,staged.issues.join(' '));
     payload=staged.payload;
+    let definitions;
+    try{definitions=await amazon.definitions();}catch{throw listingError(503,'Unable to verify Amazon product requirements. Check production authorization and seller product-type access, then try again.');}
+    if(!usableProductDefinitions(definitions,payload))throw listingError(422,'Amazon product requirements could not be verified for BADGE_HOLDER. Check seller eligibility and product-only requirements, then try again.');
    }
    if(action==='submit'){
     if(await amazon.get({sku}))throw listingError(409,'This SKU already exists on Amazon. Creation stopped to avoid overwriting it.');

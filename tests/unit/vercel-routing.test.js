@@ -2,6 +2,18 @@ import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 
 describe("Vercel routing", () => {
+  it("routes listing preparation through an existing Node function", async () => {
+    const config = JSON.parse(await readFile("vercel.json", "utf8"));
+    expect(config.rewrites).toContainEqual({ source: "/api/listings", destination: "/api/etsy-connection?resource=listings" });
+  });
+  it("serves listing draft deep links through the shell without intercepting its API", async () => {
+    const config = JSON.parse(await readFile("vercel.json", "utf8"));
+    const routes = config.rewrites.filter((rewrite) => rewrite.destination === "/index.html");
+    const matches = (path) => routes.some((route) => new RegExp(`^${route.source}$`).test(path));
+    expect(matches("/listings")).toBe(true);
+    expect(matches("/listings/test-draft")).toBe(true);
+    expect(matches("/api/listings")).toBe(false);
+  });
   it("rewrites every bookmarkable workspace route to the app shell", async () => {
     const config = JSON.parse(await readFile("vercel.json", "utf8"));
     const appShellRewrite = config.rewrites.find((rewrite) => rewrite.destination === "/index.html");

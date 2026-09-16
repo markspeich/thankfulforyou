@@ -35,7 +35,7 @@ const contentTypes = {
   ".ttf": "font/ttf",
 };
 const presetSnapshots = new Map();
-const appRouteRoots = new Set(["orders", "production-batch", "presets", "fonts", "fixed-designs", "size-guides"]);
+const appRouteRoots = new Set(["orders", "production-batch", "presets", "fonts", "fixed-designs", "size-guides", "listings"]);
 
 function sendJson(response, statusCode, payload) {
   response.writeHead(statusCode, { "Content-Type": "application/json; charset=utf-8" });
@@ -167,6 +167,7 @@ const server = createServer(async (request, response) => {
     || requestUrl.pathname === "/api/fonts"
     || requestUrl.pathname === "/api/font-aliases"
     || requestUrl.pathname === "/api/fixed-designs"
+    || requestUrl.pathname === "/api/listings"
     || requestUrl.pathname === "/api/etsy-connection"
     || requestUrl.pathname === "/api/etsy-callback"
   ) {
@@ -196,6 +197,7 @@ const server = createServer(async (request, response) => {
         "/api/fonts": "../api/fonts.js",
         "/api/font-aliases": "../api/fonts.js",
         "/api/fixed-designs": "../api/fixed-designs.js",
+        "/api/listings": "../api/_lib/listing-handler.js",
         "/api/etsy-connection": "../api/etsy-connection.js",
         "/api/etsy-callback": "../api/etsy-callback.js",
       };
