@@ -88,6 +88,21 @@ describe("listing draft persistence", () => {
     expect((await store.getDraft({ workspaceId, id: draft.id })).revision).toBe(2);
   });
 
+  it("gives newly imported listings the standard Amazon production details", async () => {
+    // Break caught: a new listing starts with blank production fields and cannot be validated without repetitive data entry.
+    const draft = await createDraft();
+    expect(draft.amazonProductionDetails).toEqual({
+      packageLengthInches: 2,
+      packageWidthInches: 3,
+      packageHeightInches: 1,
+      packageWeightOunces: 1.1,
+      manufacturer: "Thankful For You",
+      partNumber: "TFY-010",
+      specialFeature: "Personalized",
+      closureType: "Clip",
+    });
+  });
+
   it("persists Amazon production details atomically without revoking copy approval", async () => {
     const draft = await createDraft();
     const details = { packageLengthInches: 3, packageWidthInches: 2, packageHeightInches: 1, packageWeightOunces: 1.1, manufacturer: "Thankful For You", partNumber: "TFY-123", specialFeature: "Personalized", closureType: "Clip" };

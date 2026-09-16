@@ -903,6 +903,7 @@ For batch Etsy order sessions, the preferred workflow is:
 ### Production Amazon listing integration
 
 - For Etsy source 4357670739, the operator confirmed packaged dimensions 3 × 2 × 1 inches, packaged weight 1.1 ounces, manufacturer Thankful For You, generated part number TFY-4357670739, special feature Personalized, and closure type Clip. These facts are scoped to this product and must not become assumptions for unrelated imports.
+- Newly created listing drafts default to packaged length 2 inches, width 3 inches, height 1 inch, weight 1.1 ounces, manufacturer Thankful For You, part number TFY-010, special feature Personalized, and closure type Clip. Apply these defaults only when creating a new listing; do not backfill existing listings or replace operator-saved production details.
 
 - Production LWA credentials are stored separately in the Git-ignored `.local/amazon-sp-api.production.env`. Never substitute production credentials into sandbox configuration.
 - A production read-only lookup confirmed `BADGE_HOLDER` for the US marketplace. The generic enforced `LISTING_PRODUCT_ONLY` schema requires batteries_required, brand, bullet_point, country_of_origin, item_name, product_description, and supplier_declared_dg_hz_regulation. Seller-specific and conditional requirements still need verification using the merchant token.
