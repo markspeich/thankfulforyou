@@ -13,7 +13,9 @@ export function buildBatchExportSources(designs) {
     const colorName = importedColorName(design);
     if (!colorName) return;
     const key = colorName.toLowerCase();
-    colorCounts.set(key, (colorCounts.get(key) || 0) + 1);
+    const quantity = Number.parseInt(String(design?.source?.quantity ?? "").trim(), 10);
+    const itemCount = Number.isFinite(quantity) && quantity > 0 ? quantity : 1;
+    colorCounts.set(key, (colorCounts.get(key) || 0) + itemCount);
   });
 
   return designs.map((design) => {

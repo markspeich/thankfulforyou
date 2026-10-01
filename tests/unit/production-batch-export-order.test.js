@@ -29,6 +29,31 @@ describe("production batch export ordering", () => {
 });
 
 describe("production batch export color labels", () => {
+  test("counts purchased items across same-color designs rather than design rows", () => {
+    const designs = [
+      { source: { colorName: "Pink", quantity: "2" } },
+      { source: { colorName: " pink ", quantity: "3" } },
+      { source: { colorName: "Blue", quantity: "4" } },
+    ];
+
+    expect(buildBatchExportSources(designs)).toEqual([
+      { colorName: "Pink x5", quantity: "2" },
+      { colorName: "pink x5", quantity: "3" },
+      { colorName: "Blue x4", quantity: "4" },
+    ]);
+    expect(designs[0].source.colorName).toBe("Pink");
+  });
+
+  test("defaults missing or invalid quantities to one item", () => {
+    const designs = [undefined, "", "invalid", "0", "-2", " 2 ", 3].map((quantity) => ({
+      source: { colorName: "Pink", quantity },
+    }));
+
+    expect(buildBatchExportSources(designs).map((source) => source.colorName)).toEqual(
+      Array(7).fill("Pink x10"),
+    );
+  });
+
   test("appends the order-item count to repeated colors while leaving single and blank colors unchanged", () => {
     const designs = [
       { source: { colorName: "Pink", buyerName: "One" } },
