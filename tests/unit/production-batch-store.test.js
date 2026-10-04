@@ -3,6 +3,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 const supabaseMock = vi.hoisted(() => ({
   calls: [],
   batchItems: null,
+  storedColor: "Hot Pink",
+  rpcError: null,
   fontAliases: [],
   presets: [],
   sizeGuides: [],
@@ -19,6 +21,10 @@ function createSupabaseClientMock() {
     },
     async rpc(name, args) {
       supabaseMock.calls.push({ operation: "rpc", name, args });
+      if (name === "save_production_order_items") {
+        supabaseMock.calls.push({ table: "order_items", operation: "upsert", payload: args.p_order_items });
+        return { error: supabaseMock.rpcError };
+      }
       return { data: [{ id: args.p_batch_id, workspace_id: args.p_workspace_id, name: "Primary Batch", status: "active", revision: 1, updated_at: "2026-07-21T00:00:00.000Z", updated_by: args.p_user_id, completed_count: 1 }], error: null };
     },
   };
@@ -172,7 +178,8 @@ function createSelectChain(table) {
             id: "order-1",
             workspace_id: "workspace-1",
             amazon_customization_json: { private: "raw Amazon document" },
-            source_json: {},
+            imported_color: supabaseMock.storedColor,
+            source_json: { colorName: supabaseMock.storedColor },
             quantity: 1,
             revision: 1,
           }],
@@ -201,6 +208,8 @@ function createSelectChain(table) {
 afterEach(() => {
   supabaseMock.calls = [];
   supabaseMock.batchItems = null;
+  supabaseMock.storedColor = "Hot Pink";
+  supabaseMock.rpcError = null;
   supabaseMock.fontAliases = [];
   supabaseMock.sizeGuides = [];
   vi.resetModules();
@@ -449,4 +458,58 @@ describe("production batch store", () => {
     expect(orderItemsDelete).toBeUndefined();
     expect(designsDelete).toBeUndefined();
   });
+});
+
+describe("explicit production color updates", () => {
+  const snapshot = (colorName) => ({
+    batch: { id: "batch-1", workspaceId: "workspace-1" },
+    orderItems: [{ id: "order-1", revision: 1, text: "TUTOR\nMENTOR", source: { colorName }, settings: { lines: [] } }],
+  });
+  it.each(["", "Stale Blue", undefined])("preserves stored color during design saves with snapshot color %s", async (colorName) => {
+    const { saveProductionBatch } = await import("../../api/_lib/production-batch-store.js");
+    await saveProductionBatch({ snapshot: snapshot(colorName), userId: "user-1" });
+    const row = supabaseMock.calls.find(c => c.table === "order_items" && c.operation === "upsert").payload[0];
+    expect(row.imported_color).toBe("Hot Pink");
+    expect(row.source_json.colorName).toBe("Hot Pink");
+  });
+  it.each([
+    [{ orderItemId: "order-1", action: "set", colorName: " Purple " }, "Purple"],
+    [{ orderItemId: "order-1", action: "clear" }, null],
+  ])("applies explicit color update %j", async (update, expected) => {
+    const { saveProductionBatch } = await import("../../api/_lib/production-batch-store.js");
+    await saveProductionBatch({ snapshot: snapshot("Stale Blue"), userId: "user-1", colorUpdates: [update] });
+    const row = supabaseMock.calls.find(c => c.table === "order_items" && c.operation === "upsert").payload[0];
+    expect(row.imported_color).toBe(expected);
+    expect(row.source_json.colorName).toBe(expected || "");
+  });
+  it("does not restore a cleared color on a later stale save", async () => {
+    supabaseMock.storedColor = null;
+    const { saveProductionBatch } = await import("../../api/_lib/production-batch-store.js");
+    await saveProductionBatch({ snapshot: snapshot("Hot Pink"), userId: "user-1" });
+    const row = supabaseMock.calls.find(c => c.table === "order_items" && c.operation === "upsert").payload[0];
+    expect(row.imported_color).toBeNull();
+    expect(row.source_json.colorName).toBe("");
+  });
+  it("rejects blank set requests instead of silently clearing color", async () => {
+    const { saveProductionBatch } = await import("../../api/_lib/production-batch-store.js");
+    await expect(saveProductionBatch({ snapshot: snapshot(""), colorUpdates: [{ orderItemId: "order-1", action: "set", colorName: " " }] })).rejects.toMatchObject({ statusCode: 400 });
+    expect(supabaseMock.calls.some(c => c.operation === "upsert")).toBe(false);
+  });
+});
+
+it.each([
+  [{ orderItemId: "other", action: "clear" }],
+  [{ orderItemId: "order-1", action: "clear", colorName: "Pink" }],
+  [{ orderItemId: "order-1", action: "clear" }, { orderItemId: "order-1", action: "clear" }],
+  [{ orderItemId: "order-1", action: "invalid" }],
+])("rejects invalid or unscoped color intent %j before persistence", async (...updates) => {
+  const { saveProductionBatch } = await import("../../api/_lib/production-batch-store.js");
+  await expect(saveProductionBatch({ snapshot: { batch: { workspaceId: "workspace-1" }, orderItems: [{ id: "order-1" }] }, colorUpdates: updates })).rejects.toMatchObject({ statusCode: 400 });
+  expect(supabaseMock.calls.some(c => c.operation === "rpc" || c.operation === "upsert")).toBe(false);
+});
+it("reports atomic revision conflicts without saving the rest of the batch", async () => {
+  supabaseMock.rpcError = { code: "40001" };
+  const { saveProductionBatch } = await import("../../api/_lib/production-batch-store.js");
+  await expect(saveProductionBatch({ snapshot: { batch: { workspaceId: "workspace-1" }, orderItems: [{ id: "order-1" }] } })).rejects.toMatchObject({ code: "REVISION_CONFLICT" });
+  expect(supabaseMock.calls.some(c => c.table === "production_batches" && c.operation === "upsert")).toBe(false);
 });

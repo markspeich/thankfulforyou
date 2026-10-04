@@ -1,3 +1,4 @@
+import { normalizeOrderColorUpdates } from "./order-color-updates.js";
 import { createSupabaseAdminClient } from "./supabase-admin.js";
 import {
   buildProductionBatchRowsFromSnapshot,
@@ -178,7 +179,7 @@ export async function getSessionContext(auth) {
   };
 }
 
-export async function saveProductionBatch({ snapshot, userId, changedOrderItemIds = null }) {
+export async function saveProductionBatch({ snapshot, userId, changedOrderItemIds = null, colorUpdates = [] }) {
   const supabase = createSupabaseAdminClient();
   const rows = buildProductionBatchRowsFromSnapshot(snapshot, {
     workspaceId: snapshot.batch.workspaceId,
@@ -189,12 +190,27 @@ export async function saveProductionBatch({ snapshot, userId, changedOrderItemId
     ? new Set(changedOrderItemIds.filter((value) => typeof value === "string" && value))
     : null;
   const shouldSaveOrderItem = (orderItemId) => !changedOrderItemIdSet || changedOrderItemIdSet.has(orderItemId);
+  const normalizedColorUpdates = normalizeOrderColorUpdates(colorUpdates, rows.orderItems.filter(row => shouldSaveOrderItem(row.id)).map(row => row.id));
   const savedAt = new Date().toISOString();
-  const nextOrderItems = rows.orderItems.filter((orderItem) => shouldSaveOrderItem(orderItem.id)).map((orderItem) => ({
+  let nextOrderItems = rows.orderItems.filter((orderItem) => shouldSaveOrderItem(orderItem.id)).map((orderItem) => ({
     ...orderItem,
     revision: Number.isInteger(orderItem.revision) ? orderItem.revision + 1 : 1,
     updated_at: savedAt,
   }));
+  if (nextOrderItems.length) {
+    const { data: storedItems, error } = await supabase.from("order_items")
+      .select("id, imported_color, source_json").eq("workspace_id", snapshot.batch.workspaceId).in("id", nextOrderItems.map(row => row.id));
+    if (error) throw error;
+    const storedById = new Map((storedItems || []).map(row => [row.id, row]));
+    const updatesById = new Map(normalizedColorUpdates.map(update => [update.orderItemId, update]));
+    nextOrderItems = nextOrderItems.map(row => {
+      const stored = storedById.get(row.id);
+      const update = updatesById.get(row.id);
+      const color = update ? (update.action === "clear" ? "" : update.colorName)
+        : stored ? stored.imported_color ?? stored.source_json?.colorName ?? "" : row.imported_color || "";
+      return { ...row, imported_color: color || null, source_json: { ...row.source_json, colorName: color } };
+    });
+  }
   let nextDesigns = rows.designs.filter((design) => shouldSaveOrderItem(design.order_item_id)).map((design) => ({
     ...design,
     revision: Number.isInteger(design.revision) ? design.revision + 1 : 1,
@@ -248,11 +264,14 @@ export async function saveProductionBatch({ snapshot, userId, changedOrderItemId
   }
 
   if (nextOrderItems.length) {
-    const { error: orderItemsError } = await supabase
-      .from("order_items")
-      .upsert(nextOrderItems, { onConflict: "id" });
+    const { error: orderItemsError } = await supabase.rpc("save_production_order_items", {
+      p_order_items: nextOrderItems,
+      p_color_updates: normalizedColorUpdates,
+    });
 
     if (orderItemsError) {
+      if (orderItemsError.code === "40001") throw Object.assign(new Error("Order item revision conflict."), { code: "REVISION_CONFLICT" });
+      if (orderItemsError.code === "22023") throw Object.assign(new Error("Invalid explicit color update."), { statusCode: 400, expose: true });
       throw orderItemsError;
     }
   }

@@ -561,3 +561,16 @@ describe("production batch api route", () => {
     });
   });
 });
+
+it("forwards explicit color intent to persistence on a revision-checked scoped save", async () => {
+  resolveProductionBatchAuthMock.mockResolvedValue({ userId: "user-1", workspaceId: "workspace-1" });
+  const snapshot = { batch: { id: "batch-1", workspaceId: "workspace-1" }, orderItems: [{ id: "order-1", revision: 1 }] };
+  loadProductionBatchMock.mockResolvedValue(snapshot);
+  saveProductionBatchMock.mockResolvedValue(snapshot);
+  const colorUpdates = [{ orderItemId: "order-1", action: "set", colorName: "Purple" }];
+  const { default: handler } = await import("../../api/production-batch.js");
+  const response = createResponseRecorder();
+  await handler({ method: "PUT", body: { snapshot, changedOrderItemIds: ["order-1"], colorUpdates } }, response);
+  expect(response.statusCode).toBe(200);
+  expect(saveProductionBatchMock).toHaveBeenCalledWith(expect.objectContaining({ colorUpdates, changedOrderItemIds: ["order-1"] }));
+});

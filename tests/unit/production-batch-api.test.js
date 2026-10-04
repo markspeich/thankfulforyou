@@ -370,3 +370,15 @@ describe("auth session helpers", () => {
     await expect(getAccessToken()).resolves.toBe("token-1");
   });
 });
+
+it("sends request-scoped explicit color intent separately from the snapshot", async () => {
+  const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({}) });
+  vi.stubGlobal("fetch", fetchMock);
+  const { saveProductionBatchSnapshot } = await import("../../src/production-batch-api.js");
+  const snapshot = { orderItems: [{ id: "item", source: { colorName: "Stale" } }] };
+  const colorUpdates = [{ orderItemId: "item", action: "clear" }];
+  await saveProductionBatchSnapshot(snapshot, { colorUpdates });
+  expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({ snapshot, colorUpdates });
+  await saveProductionBatchSnapshot(snapshot);
+  expect(JSON.parse(fetchMock.mock.calls[1][1].body)).not.toHaveProperty("colorUpdates");
+});

@@ -65,7 +65,7 @@ export async function fetchProductionBatchSnapshot(batchId, accessToken = null) 
 }
 
 export async function saveProductionBatchSnapshot(snapshot, options = {}) {
-  const { keepalive = false, accessToken = null, changedOrderItemIds = null } = options;
+  const { keepalive = false, accessToken = null, changedOrderItemIds = null, colorUpdates = [] } = options;
   const response = await fetch("/api/production-batch", {
     method: "PUT",
     headers: buildAuthHeaders(accessToken, {
@@ -75,6 +75,7 @@ export async function saveProductionBatchSnapshot(snapshot, options = {}) {
     keepalive,
     body: JSON.stringify({
       snapshot,
+      ...(colorUpdates.length ? { colorUpdates } : {}),
       ...(Array.isArray(changedOrderItemIds) ? { changedOrderItemIds } : {}),
     }),
   });

@@ -438,6 +438,7 @@ const editOrderQuantityButton = document.querySelector("#editOrderQuantityButton
 const saveOrderQuantityButton = document.querySelector("#saveOrderQuantityButton");
 const cancelOrderQuantityButton = document.querySelector("#cancelOrderQuantityButton");
 const importedColorField = document.querySelector("#importedColorField");
+const clearOrderColorButton = document.querySelector("#clearOrderColorButton");
 const importedColorValue = document.querySelector("#importedColorValue");
 const importedQuantityField = document.querySelector("#importedQuantityField");
 const importedQuantityValue = document.querySelector("#importedQuantityValue");
@@ -3729,7 +3730,7 @@ function renderOrderMetadataFieldEditState(field, order = getActiveOrder()) {
 
   if (buttons.save) {
     buttons.save.hidden = !editing;
-    buttons.save.disabled = !order || !hasOrderMetadataFieldChanges(field);
+    buttons.save.disabled = !order || !hasOrderMetadataFieldChanges(field) || (field === "colorName" && !orderColorInput.value.trim());
   }
 
   if (buttons.cancel) {
@@ -3741,6 +3742,7 @@ function renderOrderMetadataFieldEditState(field, order = getActiveOrder()) {
 function renderOrderMetadataEditState(order = getActiveOrder()) {
   renderOrderMetadataFieldEditState("colorName", order);
   renderOrderMetadataFieldEditState("quantity", order);
+  clearOrderColorButton.disabled = !order?.source?.colorName?.trim();
 }
 
 function syncOrderMetadataControls(order) {
@@ -3804,7 +3806,7 @@ function updateActiveOrderMetadataFromControls({ persist = true } = {}) {
   const previousSource = order.source ? { ...order.source } : null;
   const source = normalizeEditableOrderSource(order.source);
   const metadata = readOrderMetadataControls();
-  source.colorName = metadata.colorName;
+  // Color changes are committed only by the explicit color actions.
   source.quantity = metadata.quantity;
   order.source = sourceHasMeaningfulMetadata(source) ? source : null;
 
@@ -3821,21 +3823,43 @@ function updateActiveOrderMetadataFromControls({ persist = true } = {}) {
   }
 }
 
-async function saveOrderMetadataFieldEdit(field) {
+async function saveOrderMetadataFieldEdit(field, { clearColor = false } = {}) {
   const order = getActiveOrder();
-  if (!order || !hasOrderMetadataFieldChanges(field)) {
-    return;
+  if (!order || (!clearColor && !hasOrderMetadataFieldChanges(field))) return;
+  const colorName = clearColor ? "" : orderColorInput.value.trim();
+  if (field === "colorName" && !clearColor && !colorName) return;
+  const previousSource = order.source ? { ...order.source } : null;
+  const attemptedValue = getOrderMetadataInput(field).value;
+  if (field === "colorName") {
+    order.source = { ...normalizeEditableOrderSource(order.source), colorName };
+  } else {
+    updateActiveOrderMetadataFromControls({ persist: false });
   }
-
-  updateActiveOrderMetadataFromControls({ persist: false });
   orderMetadataEditing[field] = false;
   orderMetadataOriginalValues[field] = getOrderMetadataFieldValue(order, field);
   syncOrderMetadataControls(order);
-  await saveBatchSnapshotToRemote({
-    publishOrderIds: [order.id],
-    persistActiveDraft: false,
-    successMessage: false,
-  });
+  startOperationDialog({ title: clearColor ? "Clearing color" : `Saving ${field === "colorName" ? "color" : "quantity"}`, description: "Saving order metadata." });
+  try {
+    const saved = await saveBatchSnapshotToRemote({
+      publishOrderIds: [order.id], persistActiveDraft: false, successMessage: false,
+      recoverRevisionOnlyConflict: false,
+      ...(field === "colorName" ? { colorUpdates: [{ orderItemId: order.id, action: clearColor ? "clear" : "set", ...(clearColor ? {} : { colorName }) }] } : {}),
+    });
+    if (!saved) {
+      order.source = previousSource;
+      if (!clearColor) {
+        orderMetadataEditing[field] = true;
+        orderMetadataOriginalValues[field] = getOrderMetadataFieldValue(order, field);
+        getOrderMetadataInput(field).value = attemptedValue;
+      }
+      syncOrderMetadataControls(order);
+    }
+    renderOrderList();
+  } finally {
+    if (pasteSummaryDialog.open && pasteSummaryDialog.querySelector(".batch-summary-card").dataset.operationState === "progress") {
+      pasteSummaryDialog.close();
+    }
+  }
 }
 
 function normalizeStoredAuditActor(actor) {
@@ -5374,6 +5398,17 @@ function applySuccessfulProductionBatchSave({
   }
   mergeProductionBatchPublishedStateFromSnapshot(authoritativeSnapshot);
   mergeProductionBatchAuditFromSnapshot(savedSnapshot);
+  for (const remoteOrder of savedSnapshot?.orderItems || []) {
+    const localOrder = orders.find(order => order.id === remoteOrder.id);
+    if (localOrder && (!Array.isArray(changedOrderItemIds) || changedOrderItemIds.includes(localOrder.id))) {
+      const colorName = remoteOrder.source?.colorName?.trim() || "";
+      if ((localOrder.source?.colorName?.trim() || "") !== colorName) {
+        localOrder.source = { ...localOrder.source, colorName };
+      }
+    }
+  }
+  syncOrderMetadataControls(getActiveOrder());
+  renderImportedColor(getActiveOrder());
   invalidateDatabaseOrders();
   if (activeWorkspace === "databaseOrders") {
     void loadDatabaseOrders({ force: true });
@@ -5408,6 +5443,7 @@ async function saveBatchSnapshotToRemote(options = {}) {
     keepalive = false,
     degradeOnFailure = true,
     recoverRevisionOnlyConflict = true,
+    colorUpdates = [],
   } = options;
   let snapshot = null;
   let accessToken = null;
@@ -5431,7 +5467,7 @@ async function saveBatchSnapshotToRemote(options = {}) {
       return false;
     }
 
-    if (snapshotKey && snapshotKey === lastProductionBatchSaveKey) {
+    if (!colorUpdates.length && snapshotKey && snapshotKey === lastProductionBatchSaveKey) {
       return true;
     }
 
@@ -5444,7 +5480,7 @@ async function saveBatchSnapshotToRemote(options = {}) {
     let savedSnapshot = null;
     try {
       savedSnapshot = await runProductionBatchRequestWithSessionRefresh(
-        (requestToken) => saveProductionBatchSnapshot(snapshot, { keepalive, accessToken: requestToken, changedOrderItemIds }),
+        (requestToken) => saveProductionBatchSnapshot(snapshot, { keepalive, accessToken: requestToken, changedOrderItemIds, colorUpdates }),
         accessToken,
       );
     } catch (error) {
@@ -5462,7 +5498,7 @@ async function saveBatchSnapshotToRemote(options = {}) {
           return false;
         }
         savedSnapshot = await runProductionBatchRequestWithSessionRefresh(
-          (requestToken) => saveProductionBatchSnapshot(snapshot, { keepalive, accessToken: requestToken, changedOrderItemIds }),
+          (requestToken) => saveProductionBatchSnapshot(snapshot, { keepalive, accessToken: requestToken, changedOrderItemIds, colorUpdates }),
           productionBatchAccessToken || accessToken,
         );
       } else {
@@ -14135,6 +14171,7 @@ function applyGlobalVerticalScale(value, options = {}) {
 }
 
 textInput.addEventListener("input", handleTextInput);
+clearOrderColorButton?.addEventListener("click", () => void saveOrderMetadataFieldEdit("colorName", { clearColor: true }));
 editOrderColorButton?.addEventListener("click", () => beginOrderMetadataFieldEdit("colorName"));
 saveOrderColorButton?.addEventListener("click", () => void saveOrderMetadataFieldEdit("colorName"));
 cancelOrderColorButton?.addEventListener("click", () => cancelOrderMetadataFieldEdit("colorName"));

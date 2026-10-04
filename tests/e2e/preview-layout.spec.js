@@ -4861,3 +4861,76 @@ test("exports completed designs without re-running analysis", async ({ page }) =
 
   await page.unrouteAll({ behavior: "ignoreErrors" });
 });
+
+test("preserves color through stale inputs, item switches and repeated saves; clears only explicitly", async ({ page }) => {
+  await page.route("**/api/layout-analyze", route => route.fulfill({
+    status: 200, contentType: "application/json",
+    body: JSON.stringify(buildMockAnalysisResponse({ facePath: "M0 0 L10 0 L10 10 L0 10 Z", exportFacePath: "M0 0 L10 0 L10 10 L0 10 Z" })),
+  }));
+  const requests = [];
+  page.on("request", request => {
+    if (request.url().includes("/api/production-batch") && request.method() === "PUT") requests.push(request.postDataJSON());
+  });
+  await page.locator("#editOrderColorButton").click();
+  await page.locator("#orderColorInput").fill("Hot Pink");
+  await page.locator("#saveOrderColorButton").click();
+  await expect(page.locator("#pasteSummaryDialog")).not.toBeVisible();
+  await expect(page.locator("#importedColorValue")).toHaveText("Hot Pink");
+  expect(requests.some(r => r.colorUpdates?.[0]?.action === "set" && r.colorUpdates[0].colorName === "Hot Pink")).toBe(true);
+  requests.length = 0;
+  // An ordinary draft update must not consume hidden, stale editor metadata.
+  await page.locator("#orderColorInput").evaluate(input => { input.value = ""; });
+  await setDesignText(page, "TUTOR\nMENTOR");
+  await expect(page.locator("#importedColorValue")).toHaveText("Hot Pink");
+  await page.locator("#backingInput").fill("4.1");
+  await page.locator("#backingInput").dispatchEvent("input");
+  await page.locator("#captureButton").click();
+  await expectSavedProductionBatchSnapshot(page, snapshot => snapshot.orderItems.some(item => item.settings.backingMm === 4.1 && item.source?.colorName === "Hot Pink"));
+  await clickBatchAction(page, "Add Design");
+  await expect(page.locator("#importedColorValue")).toHaveText("Not set");
+  await clickOrderItemByText(page, "Design 1");
+  await expect(page.locator("#importedColorValue")).toHaveText("Hot Pink");
+  await setDesignText(page, "TUTOR\nMENTOR!");
+  await page.locator("#captureButton").click();
+  await expectSavedProductionBatchSnapshot(page, snapshot => snapshot.orderItems.some(item => item.text.includes("MENTOR!") && item.source.colorName === "Hot Pink"));
+  expect(requests.every(r => !r.colorUpdates)).toBe(true);
+  await page.locator("#editOrderColorButton").click();
+  await page.locator("#orderColorInput").fill("");
+  await expect(page.locator("#saveOrderColorButton")).toBeDisabled();
+  await page.locator("#cancelOrderColorButton").click();
+  await expect(page.locator("#importedColorValue")).toHaveText("Hot Pink");
+  await page.locator("#clearOrderColorButton").click();
+  await expect(page.locator("#pasteSummaryDialog")).not.toBeVisible();
+  await expect(page.locator("#importedColorValue")).toHaveText("Not set");
+  expect(requests.some(r => r.colorUpdates?.[0]?.action === "clear")).toBe(true);
+  requests.length = 0;
+  await page.locator("#orderColorInput").evaluate(input => { input.value = "Hot Pink"; });
+  await setDesignText(page, "TUTOR\nMENTOR");
+  await expect(page.locator("#importedColorValue")).toHaveText("Not set");
+  await page.locator("#captureButton").click();
+  await expectSavedProductionBatchSnapshot(page, snapshot => snapshot.orderItems.some(item => item.text === "TUTOR\nMENTOR" && (item.source?.colorName || "") === ""));
+  expect(requests.every(r => !r.colorUpdates)).toBe(true);
+  await page.reload();
+  await waitForProductionBatchStartup(page);
+  await clickOrderItemByText(page, "Design 1");
+  await expect(page.locator("#importedColorValue")).toHaveText("Not set");
+});
+
+test("failed explicit color save preserves the prior color and the attempted edit", async ({ page }) => {
+  await page.locator("#editOrderColorButton").click();
+  await page.locator("#orderColorInput").fill("Hot Pink");
+  await page.locator("#saveOrderColorButton").click();
+  await expect(page.locator("#pasteSummaryDialog")).not.toBeVisible();
+  await page.route("**/api/production-batch**", async route => {
+    if (route.request().method() !== "PUT" || !route.request().postDataJSON()?.colorUpdates?.length) return route.fallback();
+    await route.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify({ error: "Color save rejected. Try again." }) });
+  });
+  await page.locator("#editOrderColorButton").click();
+  await page.locator("#orderColorInput").fill("Purple");
+  await page.locator("#saveOrderColorButton").click();
+  await expect(page.locator("#pasteSummaryDialog")).not.toBeVisible();
+  await expect(page.locator("#importedColorValue")).toHaveText("Hot Pink");
+  await expect(page.locator("#orderColorInput")).toBeVisible();
+  await expect(page.locator("#orderColorInput")).toHaveValue("Purple");
+  await expect(page.getByText("Color save rejected. Try again.", { exact: false }).first()).toBeVisible();
+});
