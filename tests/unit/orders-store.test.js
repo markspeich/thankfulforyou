@@ -1683,6 +1683,15 @@ describe("orders store", () => {
     expect(supabaseMock.db.batch_items).toEqual([]);
   });
 
+  it.each(["order", "checked"])("skips only open items in a mixed %s group", async (scope) => {
+    resetDb({ order_items: ["open", "complete", "skipped"].map(status => ({ id: status, workspace_id: "workspace-1", order_number: "7001", status, source_json: {} })), batch_items: [], production_batches: [] });
+    const { updateOrderGroupStatus, updateOrderGroupsStatus } = await import("../../api/_lib/orders-store.js");
+    const args = { workspaceId: "workspace-1", userId: "user-1", status: "skipped" };
+    const result = scope === "order" ? await updateOrderGroupStatus({ ...args, orderId: "order:7001" }) : await updateOrderGroupsStatus({ ...args, orderIds: ["order:7001"] });
+    expect(result.orderItemIds).toEqual(["open"]);
+    expect(supabaseMock.db.order_items.map(item => item.status)).toEqual(["skipped", "complete", "skipped"]);
+  });
+
   it("marks every item in an order skipped and removes their batch memberships", async () => {
     resetDb({
       production_batches: [

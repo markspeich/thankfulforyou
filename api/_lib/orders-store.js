@@ -327,6 +327,8 @@ function appendOrderItemToGroups(groups, orderItem) {
     group.status = "complete";
   } else if (group.items.length > 0 && group.items.every((item) => item.status === "skipped")) {
     group.status = "skipped";
+  } else if (!group.items.some((item) => item.status === "open")) {
+    group.status = "archived";
   } else {
     group.status = "open";
   }

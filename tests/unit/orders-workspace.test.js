@@ -246,6 +246,19 @@ describe("orders workspace helpers", () => {
     });
   });
 
+  it("closes mixed terminal groups and keeps partially open groups actionable", () => {
+    const closed = { id: "closed", status: "open", items: [{ status: "complete" }, { status: "skipped" }] };
+    expect(getOrderLifecycleStatusDescriptor(closed)).toEqual({ status: "archived", label: "Closed", className: "is-archived" });
+    expect(filterGroupedOrders([closed], { statusFilter: "open" })).toEqual([]);
+    expect(filterGroupedOrders([closed], { statusFilter: "all" })).toEqual([closed]);
+    for (const terminal of ["complete", "skipped"]) {
+      const partial = { id: terminal, items: [{ status: "open" }, { status: terminal }] };
+      expect(getOrderLifecycleStatusDescriptor(partial).status).toBe("open");
+      expect(filterGroupedOrders([partial], { statusFilter: "open" })).toEqual([partial]);
+    }
+    expect(getOrderLifecycleStatusDescriptor({ status: "archived", items: [] }).label).toBe("Closed");
+  });
+
   it("describes order item status for detail cards", () => {
     expect(getOrderItemStatusDescriptor({ status: "complete", isInActiveBatch: false })).toEqual({
       status: "complete",

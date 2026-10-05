@@ -4517,3 +4517,9 @@ button:disabled {
 
 .listings-workspace .listing-invalid { border: 2px solid #b42318; outline: 1px solid #b42318; outline-offset: 2px; }
 .listings-image label:has(input:disabled) { opacity: .5; cursor: not-allowed; }
+
+/* Menu button layout must respect lifecycle action visibility. */
+#skipSelectedOrderButton[hidden],
+#reopenSelectedOrderButton[hidden] {
+  display: none;
+}

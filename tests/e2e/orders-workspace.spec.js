@@ -1545,7 +1545,7 @@ test("skips and reopens an entire selected order from the Orders screen", async 
   await ordersWorkspace.getByRole("menu", { name: "Selected order actions" }).getByRole("button", { name: "Skip Order" }).click();
   await expect(page.locator("#confirmationDialogTitle")).toHaveText("Skip Order?");
   await expect(page.locator("#confirmationDialogDescription")).toContainText("Some order items are in the active production batch.");
-  await expect(page.locator("#confirmationDialogDescription")).toContainText("Remove those order items from the batch and skip the entire order?");
+  await expect(page.locator("#confirmationDialogDescription")).toContainText("Remove the open order items from the batch and skip them?");
   await page.locator("#confirmationDialogConfirmButton").click();
 
   await expect.poll(() => posts.some((post) => post.action === "skipOrder" && post.orderId === "order:1001")).toBe(true);
@@ -2302,5 +2302,39 @@ for (const scope of ["item", "order", "checked"]) {
     await expect(workspace.locator(".database-order-row .database-order-status")).toHaveText("Open");
     await expect(workspace.locator(".database-order-item-status").first()).toHaveText("Not in active batch");
     expect(posts.map((post) => post.action)).toEqual([action]);
+  });
+}
+
+for (const terminal of ["complete", "skipped"]) {
+  test(`offers Skip and Reopen independently for open+${terminal} groups`, async ({ page }) => {
+    await installSupabaseSession(page);
+    await installProductionBatchRoutes(page);
+    const posts = [];
+    const order = buildOrdersPayload().orders[0];
+    const ordersPayload = { orders: [{ ...order, status: "open", items: order.items.map((item, index) => ({ ...item, status: index === 0 ? "open" : terminal })) }] };
+    await installOrdersWorkspaceRoutes(page, { ordersPayload, posts, postBody: () => {
+      ordersPayload.orders[0].items[0].status = "skipped";
+      ordersPayload.orders[0].status = terminal === "complete" ? "archived" : "skipped";
+      return ordersPayload;
+    } });
+    await page.goto("/");
+    const workspace = page.locator("#databaseOrdersWorkspace");
+    await expect(workspace.locator(".database-order-item-card")).toHaveCount(2);
+    await workspace.getByLabel("Order actions", { exact: true }).click();
+    const menu = workspace.getByRole("menu", { name: "Selected order actions" });
+    await expect(menu.getByRole("button", { name: "Skip Order", exact: true })).toBeEnabled();
+    await expect(menu.getByRole("button", { name: "Reopen Order", exact: true })).toBeEnabled();
+    await menu.getByRole("button", { name: "Skip Order", exact: true }).click();
+    await expect(page.locator("#confirmationDialogDescription")).toContainText("preserved");
+    await page.locator("#confirmationDialogConfirmButton").click();
+    await expect.poll(() => posts.some(post => post.action === "skipOrder")).toBe(true);
+    await expect(workspace.locator(".database-order-row")).toHaveCount(0);
+    expect(ordersPayload.orders[0].items[1].status).toBe(terminal);
+    await page.locator("#databaseOrdersStatusFilter").selectOption("all");
+    await expect(workspace.locator(".database-order-row")).toHaveCount(1);
+    await expect(workspace.locator(".database-order-item-status")).toHaveText(["Skipped", terminal === "complete" ? "Already in active batch" : "Skipped"]);
+    await workspace.getByLabel("Order actions", { exact: true }).click();
+    await expect(menu.getByRole("button", { name: "Skip Order", exact: true })).toHaveCount(0);
+    await expect(menu.getByRole("button", { name: "Reopen Order", exact: true })).toBeEnabled();
   });
 }

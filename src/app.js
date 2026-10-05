@@ -6653,7 +6653,7 @@ function applyOrderItemsStatusDelta(payload) {
     ));
     const orderStatus = items.length > 0 && items.every((item) => item.status === "complete")
       ? "complete"
-      : items.length > 0 && items.every((item) => item.status === "skipped") ? "skipped" : "open";
+      : items.length > 0 && items.every((item) => item.status === "skipped") ? "skipped" : items.length > 0 && !items.some((item) => item.status === "open") ? "archived" : "open";
     return {
       ...order,
       items,
@@ -7322,7 +7322,7 @@ function canReopenDatabaseOrderItem(item) {
 }
 
 function canSkipDatabaseOrder(order) {
-  return getDatabaseOrderItems(order).some((item) => !isDatabaseOrderItemSkipped(item) && !isDatabaseOrderItemComplete(item));
+  return getDatabaseOrderItems(order).some((item) => (item?.status ?? "open") === "open");
 }
 
 function canReopenDatabaseOrder(order) {
@@ -7652,7 +7652,7 @@ function renderSelectedDatabaseOrderItems() {
     addSelectedOrderToBatchButton.disabled = !selectedOrder || !isDatabaseOrderBatchEligible(selectedOrder) || ordersDatabaseMutationInFlight;
   }
   if (skipSelectedOrderButton) {
-    const showSkipOrder = Boolean(selectedOrder) && !canReopenDatabaseOrder(selectedOrder);
+    const showSkipOrder = Boolean(selectedOrder) && canSkipDatabaseOrder(selectedOrder);
     skipSelectedOrderButton.hidden = !showSkipOrder;
     skipSelectedOrderButton.disabled = !showSkipOrder || !canSkipDatabaseOrder(selectedOrder) || ordersDatabaseMutationInFlight;
   }
@@ -8120,8 +8120,8 @@ async function skipSelectedDatabaseOrder() {
   const confirmed = await showConfirmationDialog({
     title: "Skip Order?",
     description: hasDatabaseOrderItemsInActiveBatch(selectedOrder)
-      ? "Some order items are in the active production batch. Remove those order items from the batch and skip the entire order?"
-      : "Skip this order? All order items will be skipped and will not be added to a production batch.",
+      ? "Some order items are in the active production batch. Remove the open order items from the batch and skip them? Completed items will be preserved."
+      : "Skip the open items in this order? Completed and previously skipped items will be preserved.",
     confirmLabel: "Skip Order",
     cancelLabel: "Keep Open",
   });
@@ -8235,8 +8235,8 @@ async function skipCheckedDatabaseOrders() {
   const confirmed = await showConfirmationDialog({
     title: "Skip Orders?",
     description: selectedOrders.some(hasDatabaseOrderItemsInActiveBatch)
-      ? "Some selected order items are in the active production batch. Remove those order items from the batch and skip the selected orders?"
-      : "Skip the selected orders? Their order items will not be added to a production batch.",
+      ? "Some selected order items are in the active production batch. Remove the open order items from the batch and skip them? Completed items will be preserved."
+      : "Skip the open items in the selected orders? Completed and previously skipped items will be preserved.",
     confirmLabel: "Skip Orders",
     cancelLabel: "Keep Open",
   });

@@ -113,6 +113,9 @@ function getOrderSearchText(order) {
 }
 
 function getOrderLifecycleStatus(order) {
+  if (order?.status === "archived") {
+    return "archived";
+  }
   if (order?.status === "complete") {
     return "complete";
   }
@@ -126,10 +129,12 @@ function getOrderLifecycleStatus(order) {
   if (items.length > 0 && items.every((item) => item?.status === "skipped")) {
     return "skipped";
   }
+  if (items.length > 0 && !items.some((item) => (item?.status ?? "open") === "open")) return "archived";
   return "open";
 }
 
 const ORDER_STATUS_DESCRIPTOR_BY_STATUS = {
+  archived: { status: "archived", label: "Closed", className: "is-archived" },
   open: { status: "open", label: "Open", className: "is-open" },
   complete: { status: "complete", label: "Complete", className: "is-complete" },
   skipped: { status: "skipped", label: "Skipped", className: "is-skipped" },
