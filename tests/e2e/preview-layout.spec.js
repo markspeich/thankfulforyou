@@ -4871,7 +4871,9 @@ test("preserves color through stale inputs, item switches and repeated saves; cl
   page.on("request", request => {
     if (request.url().includes("/api/production-batch") && request.method() === "PUT") requests.push(request.postDataJSON());
   });
+  await expect(page.locator("#clearOrderColorButton")).toHaveCount(0);
   await page.locator("#editOrderColorButton").click();
+  await expect(page.locator("#saveOrderColorButton")).toBeDisabled();
   await page.locator("#orderColorInput").fill("Hot Pink");
   await page.locator("#saveOrderColorButton").click();
   await expect(page.locator("#pasteSummaryDialog")).not.toBeVisible();
@@ -4896,14 +4898,30 @@ test("preserves color through stale inputs, item switches and repeated saves; cl
   expect(requests.every(r => !r.colorUpdates)).toBe(true);
   await page.locator("#editOrderColorButton").click();
   await page.locator("#orderColorInput").fill("");
-  await expect(page.locator("#saveOrderColorButton")).toBeDisabled();
+  await expect(page.locator("#saveOrderColorButton")).toBeEnabled();
   await page.locator("#cancelOrderColorButton").click();
   await expect(page.locator("#importedColorValue")).toHaveText("Hot Pink");
-  await page.locator("#clearOrderColorButton").click();
+  await page.locator("#editOrderColorButton").click();
+  // A stale DOM value without an input edit cannot authorize clearing.
+  await page.locator("#orderColorInput").evaluate(input => { input.value = ""; });
+  await expect(page.locator("#saveOrderColorButton")).toBeDisabled();
+  await page.locator("#cancelOrderColorButton").click();
+  await page.locator("#editOrderColorButton").click();
+  await page.locator("#orderColorInput").fill("");
+  await clickOrderItemByText(page, "Design 2");
+  await clickOrderItemByText(page, "Design 1");
+  await expect(page.locator("#importedColorValue")).toHaveText("Hot Pink");
+  expect(requests.every(r => !r.colorUpdates)).toBe(true);
+  await page.locator("#editOrderColorButton").click();
+  await page.locator("#orderColorInput").fill("");
+  await page.locator("#saveOrderColorButton").click();
   await expect(page.locator("#pasteSummaryDialog")).not.toBeVisible();
   await expect(page.locator("#importedColorValue")).toHaveText("Not set");
   expect(requests.some(r => r.colorUpdates?.[0]?.action === "clear")).toBe(true);
   requests.length = 0;
+  await page.locator("#editOrderColorButton").click();
+  await expect(page.locator("#saveOrderColorButton")).toBeDisabled();
+  await page.locator("#cancelOrderColorButton").click();
   await page.locator("#orderColorInput").evaluate(input => { input.value = "Hot Pink"; });
   await setDesignText(page, "TUTOR\nMENTOR");
   await expect(page.locator("#importedColorValue")).toHaveText("Not set");
@@ -4932,5 +4950,24 @@ test("failed explicit color save preserves the prior color and the attempted edi
   await expect(page.locator("#importedColorValue")).toHaveText("Hot Pink");
   await expect(page.locator("#orderColorInput")).toBeVisible();
   await expect(page.locator("#orderColorInput")).toHaveValue("Purple");
+  await expect(page.getByText("Color save rejected. Try again.", { exact: false }).first()).toBeVisible();
+});
+
+test("failed deliberate color deletion preserves the stored color and empty retry", async ({ page }) => {
+  await page.locator("#editOrderColorButton").click();
+  await page.locator("#orderColorInput").fill("Hot Pink");
+  await page.locator("#saveOrderColorButton").click();
+  await expect(page.locator("#pasteSummaryDialog")).not.toBeVisible();
+  await page.route("**/api/production-batch**", async route => {
+    if (route.request().method() !== "PUT" || !route.request().postDataJSON()?.colorUpdates?.length) return route.fallback();
+    await route.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify({ error: "Color save rejected. Try again." }) });
+  });
+  await page.locator("#editOrderColorButton").click();
+  await page.locator("#orderColorInput").fill("");
+  await page.locator("#saveOrderColorButton").click();
+  await expect(page.locator("#pasteSummaryDialog")).not.toBeVisible();
+  await expect(page.locator("#importedColorValue")).toHaveText("Hot Pink");
+  await expect(page.locator("#orderColorInput")).toBeVisible();
+  await expect(page.locator("#orderColorInput")).toHaveValue("");
   await expect(page.getByText("Color save rejected. Try again.", { exact: false }).first()).toBeVisible();
 });

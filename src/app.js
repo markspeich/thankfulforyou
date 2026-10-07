@@ -180,6 +180,7 @@ import {
 } from "./app-routes.js";
 import { createListingsWorkspace } from "./listings-workspace.js";
 
+let orderColorEditIntentOrderId = null;
 const orderMetadataEditing = {
   colorName: false,
   quantity: false,
@@ -438,7 +439,6 @@ const editOrderQuantityButton = document.querySelector("#editOrderQuantityButton
 const saveOrderQuantityButton = document.querySelector("#saveOrderQuantityButton");
 const cancelOrderQuantityButton = document.querySelector("#cancelOrderQuantityButton");
 const importedColorField = document.querySelector("#importedColorField");
-const clearOrderColorButton = document.querySelector("#clearOrderColorButton");
 const importedColorValue = document.querySelector("#importedColorValue");
 const importedQuantityField = document.querySelector("#importedQuantityField");
 const importedQuantityValue = document.querySelector("#importedQuantityValue");
@@ -3730,7 +3730,7 @@ function renderOrderMetadataFieldEditState(field, order = getActiveOrder()) {
 
   if (buttons.save) {
     buttons.save.hidden = !editing;
-    buttons.save.disabled = !order || !hasOrderMetadataFieldChanges(field) || (field === "colorName" && !orderColorInput.value.trim());
+    buttons.save.disabled = !order || !hasOrderMetadataFieldChanges(field) || (field === "colorName" && orderColorEditIntentOrderId !== order?.id);
   }
 
   if (buttons.cancel) {
@@ -3742,7 +3742,6 @@ function renderOrderMetadataFieldEditState(field, order = getActiveOrder()) {
 function renderOrderMetadataEditState(order = getActiveOrder()) {
   renderOrderMetadataFieldEditState("colorName", order);
   renderOrderMetadataFieldEditState("quantity", order);
-  clearOrderColorButton.disabled = !order?.source?.colorName?.trim();
 }
 
 function syncOrderMetadataControls(order) {
@@ -3768,6 +3767,7 @@ function beginOrderMetadataFieldEdit(field) {
     return;
   }
 
+  if (field === "colorName") orderColorEditIntentOrderId = null;
   orderMetadataOriginalValues[field] = getOrderMetadataFieldValue(order, field);
   orderMetadataEditing[field] = true;
   input.value = orderMetadataOriginalValues[field];
@@ -3777,6 +3777,7 @@ function beginOrderMetadataFieldEdit(field) {
 }
 
 function cancelOrderMetadataFieldEdit(field) {
+  if (field === "colorName") orderColorEditIntentOrderId = null;
   const input = getOrderMetadataInput(field);
   if (input) {
     input.value = orderMetadataOriginalValues[field];
@@ -3791,6 +3792,7 @@ function isAnyOrderMetadataFieldEditing() {
 }
 
 function resetOrderMetadataEditState() {
+  orderColorEditIntentOrderId = null;
   orderMetadataEditing.colorName = false;
   orderMetadataEditing.quantity = false;
   orderMetadataOriginalValues.colorName = "";
@@ -3823,11 +3825,13 @@ function updateActiveOrderMetadataFromControls({ persist = true } = {}) {
   }
 }
 
-async function saveOrderMetadataFieldEdit(field, { clearColor = false } = {}) {
+async function saveOrderMetadataFieldEdit(field) {
   const order = getActiveOrder();
-  if (!order || (!clearColor && !hasOrderMetadataFieldChanges(field))) return;
-  const colorName = clearColor ? "" : orderColorInput.value.trim();
-  if (field === "colorName" && !clearColor && !colorName) return;
+  if (!order || !hasOrderMetadataFieldChanges(field)) return;
+  if (field === "colorName" && (!orderMetadataEditing.colorName || orderColorEditIntentOrderId !== order.id)) return;
+  const colorName = orderColorInput.value.trim();
+  const clearColor = field === "colorName" && !colorName;
+  if (field === "colorName") orderColorEditIntentOrderId = null;
   const previousSource = order.source ? { ...order.source } : null;
   const attemptedValue = getOrderMetadataInput(field).value;
   if (field === "colorName") {
@@ -3847,7 +3851,8 @@ async function saveOrderMetadataFieldEdit(field, { clearColor = false } = {}) {
     });
     if (!saved) {
       order.source = previousSource;
-      if (!clearColor) {
+      if (getActiveOrder()?.id === order.id) {
+        if (field === "colorName") orderColorEditIntentOrderId = order.id;
         orderMetadataEditing[field] = true;
         orderMetadataOriginalValues[field] = getOrderMetadataFieldValue(order, field);
         getOrderMetadataInput(field).value = attemptedValue;
@@ -14171,14 +14176,16 @@ function applyGlobalVerticalScale(value, options = {}) {
 }
 
 textInput.addEventListener("input", handleTextInput);
-clearOrderColorButton?.addEventListener("click", () => void saveOrderMetadataFieldEdit("colorName", { clearColor: true }));
 editOrderColorButton?.addEventListener("click", () => beginOrderMetadataFieldEdit("colorName"));
 saveOrderColorButton?.addEventListener("click", () => void saveOrderMetadataFieldEdit("colorName"));
 cancelOrderColorButton?.addEventListener("click", () => cancelOrderMetadataFieldEdit("colorName"));
 editOrderQuantityButton?.addEventListener("click", () => beginOrderMetadataFieldEdit("quantity"));
 saveOrderQuantityButton?.addEventListener("click", () => void saveOrderMetadataFieldEdit("quantity"));
 cancelOrderQuantityButton?.addEventListener("click", () => cancelOrderMetadataFieldEdit("quantity"));
-orderColorInput?.addEventListener("input", () => renderOrderMetadataFieldEditState("colorName"));
+orderColorInput?.addEventListener("input", () => {
+  if (orderMetadataEditing.colorName) orderColorEditIntentOrderId = getActiveOrder()?.id ?? null;
+  renderOrderMetadataFieldEditState("colorName");
+});
 orderQuantityInput?.addEventListener("input", () => {
   sanitizeOrderQuantityInput();
   renderOrderMetadataFieldEditState("quantity");
