@@ -13376,47 +13376,31 @@ function createWhiteFilledFixedSvgHref(svgText) {
     return "";
   }
 
-  const namespace = "http://www.w3.org/2000/svg";
-  const output = document.createElementNS(namespace, "svg");
-  output.setAttribute("xmlns", namespace);
-  for (const attribute of ["viewBox", "width", "height", "preserveAspectRatio"]) {
-    const value = sourceRoot.getAttribute(attribute);
-    if (value) {
-      output.setAttribute(attribute, value);
+  // Keep the geometry hierarchy: paths can rely on transforms and fill rules
+  // inherited from several enclosing groups, including the saved origin shift.
+  const output = sourceRoot.cloneNode(true);
+  const shapeNames = new Set(["path", "circle", "ellipse", "line", "polygon", "polyline", "rect"]);
+  for (const node of [output, ...output.querySelectorAll("*")]) {
+    if (!shapeNames.has(node.localName) && !["svg", "g", "title", "desc"].includes(node.localName)) {
+      node.remove();
+      continue;
+    }
+    const styledFillRule = node.style?.getPropertyValue("fill-rule");
+    if (styledFillRule) node.setAttribute("fill-rule", styledFillRule);
+    for (const attribute of [...node.attributes]) {
+      if (/^on/i.test(attribute.name) || attribute.localName === "href"
+        || attribute.name === "style" || /url\s*\(/i.test(attribute.value)) {
+        node.removeAttributeNode(attribute);
+      }
+    }
+    node.setAttribute("fill", "#f8fbfc");
+    node.setAttribute("stroke", "#f8fbfc");
+    if (shapeNames.has(node.localName)) {
+      node.setAttribute("stroke-width", "0.05mm");
     }
   }
 
-  const pathGroups = new Map();
-  for (const path of sourceRoot.querySelectorAll("path[d]")) {
-    const transform = path.getAttribute("transform") || "";
-    const paths = pathGroups.get(transform) || [];
-    paths.push(path.getAttribute("d"));
-    pathGroups.set(transform, paths);
-  }
-
-  for (const [transform, paths] of pathGroups) {
-    const compoundPath = document.createElementNS(namespace, "path");
-    compoundPath.setAttribute("d", paths.join(" "));
-    compoundPath.setAttribute("fill", "#f8fbfc");
-    compoundPath.setAttribute("fill-rule", "evenodd");
-    compoundPath.setAttribute("stroke", "#f8fbfc");
-    compoundPath.setAttribute("stroke-width", "0.05mm");
-    if (transform) {
-      compoundPath.setAttribute("transform", transform);
-    }
-    output.append(compoundPath);
-  }
-
-  const shapeSelector = "circle,ellipse,line,polygon,polyline,rect";
-  for (const sourceShape of sourceRoot.querySelectorAll(shapeSelector)) {
-    const shape = sourceShape.cloneNode(false);
-    shape.removeAttribute("style");
-    shape.setAttribute("fill", "#f8fbfc");
-    shape.setAttribute("stroke", "#f8fbfc");
-    output.append(shape);
-  }
-
-  if (!output.children.length) {
+  if (!output.querySelector("path,circle,ellipse,line,polygon,polyline,rect")) {
     return "";
   }
 

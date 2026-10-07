@@ -106,6 +106,41 @@ describe("export_svg face tracing", () => {
     expect(svg).not.toContain("important-notes");
   });
 
+  test("fixed-design outline presentation overrides nested artwork while preserving geometry", () => {
+    const svg = exportSvg({ outputMode: "fixed-design", text: "A", widthMm: 40, heightMm: 40,
+      analysis: { exportFacePath: "M2 3 H8 V9 H2 Z", backingPath: "M0 0 H40 V40 H0 Z" },
+      fixedSvgs: [{ id: "art", xMm: 10, yMm: 10, widthMm: 10, heightMm: 10,
+        svgText: '<svg viewBox="0 0 10 10" fill="green"><g style="fill:blue;stroke:red;stroke-width:2" transform="translate(1 1)"><path d="M0 0 H8 V8 H0 Z" fill="yellow" stroke="purple" fill-rule="evenodd"/></g></svg>' }],
+    });
+    expect(svg).not.toMatch(/fill="(?:green|blue|yellow|rgb\(255, 0, 0\))"/);
+    expect(svg).not.toMatch(/stroke="(?:red|purple|none)"/);
+    expect(svg).toContain('fill="none" stroke="black" stroke-width="0.05"');
+    expect(svg).toContain('fill-rule="evenodd"');
+    expect(svg).toContain('transform="translate(1 1)"');
+    expect(svg).toContain('d="M0 0 H8 V8 H0 Z"');
+  });
+
+  test("saved outline SVG can be inserted with a backing and saved again", () => {
+    const svg = exportSvg({ outputMode: "fixed-design", text: "Saved", widthMm: 50, heightMm: 40,
+      analysis: { exportFacePath: "M5 8 H25 V18 H5 Z M7 10 V16 H23 V10 Z", backingPath: "M0 0 H50 V40 H0 Z" },
+      fixedSvgs: [{ id: "art", xMm: 25, yMm: 18, widthMm: 10, heightMm: 10,
+        svgText: '<svg viewBox="0 0 10 10"><path d="M0 0 H10 V10 H0 Z"/></svg>' }],
+    });
+    const fixedSvg = { id: "saved", name: "Saved", svgText: svg, xMm: 0, yMm: 0,
+      widthMm: 48, heightMm: 32, backingBorder: true, backingMm: 3.1 };
+    const layout = { text: "", letters: [], widthMm: 56, heightMm: 38, backingMm: 3.1, fixedSvgs: [fixedSvg] };
+    const analysis = analyzeLayout(layout);
+    const backing = pathBounds(analysis.fixedSvgBackingPaths[0].path);
+    expect(backing.left).toBeLessThan(-2.5);
+    expect(backing.top).toBeLessThan(-2.5);
+    expect(backing.right).toBeGreaterThan(50.5);
+    expect(backing.bottom).toBeGreaterThan(34.5);
+    const savedAgain = exportSvg({ ...layout, outputMode: "fixed-design", analysis });
+    expect(savedAgain).toContain('d="M5 8 H25 V18 H5 Z M7 10 V16 H23 V10 Z"');
+    expect(savedAgain).toContain('d="M0 0 H10 V10 H0 Z"');
+    expect(savedAgain).not.toContain('backing-border');
+  });
+
   test("fixed-design bounds follow curved outlines rather than their control points", () => {
     const svg = exportSvg({
       outputMode: "fixed-design", text: "Curve", widthMm: 40, heightMm: 40,
@@ -134,8 +169,10 @@ describe("export_svg face tracing", () => {
         svgText: '<svg viewBox="0 0 12 12" fill="none"><g style="stroke:blue;stroke-width:2;stroke-linejoin:round"><circle cx="6" cy="6" r="5"/></g></svg>' }],
     });
     expect(svg).toContain('fill="none"');
-    expect(svg).toContain('stroke="blue"');
-    expect(svg).toContain('stroke-width="2"');
+    expect(svg).not.toContain('stroke="blue"');
+    expect(svg).toContain('stroke="black"');
+    expect(svg).not.toContain('stroke-width="2"');
+    expect(svg).toContain('stroke-width="0.05"');
     expect(svg).toContain('width="12.000mm" height="12.000mm"');
     expect(svg).toContain('transform="translate(-7.000 -9.000)"');
   });

@@ -743,7 +743,7 @@ test("inserts a fixed SVG design from the preset tools menu with SVG-only contro
   await expect.poll(async () => fixedBackingPreview.getAttribute("href")).toMatch(/^data:image\/png;base64,/);
   await expect(fixedBackingPreview).not.toHaveAttribute("filter", /fixed-svg-backing-filter/);
   await expect.poll(async () => fixedPreview.getAttribute("href")).toMatch(/^data:image\/svg\+xml/);
-  await expect.poll(async () => fixedPreview.getAttribute("href")).toContain("fill-rule%3D%22evenodd%22");
+  await expect.poll(async () => fixedPreview.getAttribute("href")).toContain("fill%3D%22%23f8fbfc%22");
   await expect(page.locator('#preview path[data-fixed-svg-backing-id="fixed-design-2"]')).toHaveCount(0);
   await backingBorderInput.uncheck();
   await expect(page.locator('#preview [data-fixed-svg-backing-id="fixed-design-2"]')).toHaveCount(0);
@@ -814,6 +814,59 @@ test("inserts a fixed SVG design from the preset tools menu with SVG-only contro
   await fixedCard.getByRole("button", { name: "Remove Fixed Design" }).click();
   await expect(page.locator(".line-control-card", { hasText: "Fixed Design: Paw Print" })).toHaveCount(0);
   await expect(page.locator('.line-control-card[data-line-kind="text"][data-line-index="0"]').getByText("Font").first()).toBeVisible();
+});
+
+test("backing preview preserves saved SVG group transforms, complete artwork, and counters", async ({ page }) => {
+  // The saved-design origin shift puts raw path coordinates outside the SVG viewport.
+  const savedSvg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 20"><g transform="translate(-50 -70)" fill="none" stroke="black" stroke-width="0.001"><path d="M50 70H90V90H50Z M55 75V85H65V75Z"/><g transform="translate(80 80) scale(0.5)"><rect x="0" y="0" width="10" height="10"/></g></g></svg>';
+  await page.route(`${STORAGE_ROOT}/paw-print.svg`, route => route.fulfill({
+    status: 200, contentType: "image/svg+xml", headers: { "Access-Control-Allow-Origin": "*" }, body: savedSvg,
+  }));
+  await page.goto("/production-batch");
+  await expect(page.locator("#initialBatchLoading")).toBeHidden();
+  await openPresetTools(page);
+  await page.getByRole("button", { name: "Insert Fixed Design", exact: true }).click();
+  await page.locator("#insertFixedDesignDialog").getByRole("button", { name: /Paw Print/ }).click();
+  await page.locator("#insertFixedDesignDialog").getByRole("button", { name: "Insert Fixed Design", exact: true }).click();
+  const card = page.locator(".line-control-card", { hasText: "Fixed Design: Paw Print" });
+  const image = page.locator('#preview [data-fixed-svg-id="fixed-design-2"]');
+  await card.getByLabel("Backing Border").check();
+  await expect.poll(() => image.getAttribute("href")).toMatch(/^data:image\/svg\+xml/);
+  const pixels = await image.evaluate(async element => {
+    const href = element.getAttribute("href");
+    const svg = new DOMParser().parseFromString(decodeURIComponent(href.split(",")[1]), "image/svg+xml");
+    const nestedTransform = [...svg.querySelectorAll("g[transform]")].map(node => node.getAttribute("transform"));
+    const source = new Image();
+    source.src = href;
+    await source.decode();
+    const canvas = document.createElement("canvas");
+    canvas.width = 400; canvas.height = 200;
+    const context = canvas.getContext("2d");
+    context.drawImage(source, 0, 0, 400, 200);
+    const sample = (x, y) => [...context.getImageData(x * 10, y * 10, 1, 1).data];
+    return { nestedTransform, topLeft: sample(2, 2), bottomRight: sample(38, 18), counter: sample(10, 10) };
+  });
+  expect(pixels.nestedTransform).toContain("translate(-50 -70)");
+  expect(pixels.nestedTransform).toContain("translate(80 80) scale(0.5)");
+  expect(pixels.topLeft).toEqual([248, 251, 252, 255]);
+  expect(pixels.bottomRight).toEqual([248, 251, 252, 255]);
+  expect(pixels.counter[3]).toBe(0);
+  const backing = page.locator('#preview image[data-fixed-svg-backing-id="fixed-design-2"]');
+  await expect.poll(() => backing.getAttribute("href")).toMatch(/^data:image\/png;base64,/);
+  const backingPixel = await backing.evaluate(async element => {
+    const source = new Image();
+    source.src = element.getAttribute("href");
+    await source.decode();
+    const canvas = document.createElement("canvas");
+    canvas.width = source.naturalWidth; canvas.height = source.naturalHeight;
+    const context = canvas.getContext("2d");
+    context.drawImage(source, 0, 0);
+    // The counter is preserved in the raised face but must be filled in the backing.
+    return [...context.getImageData(Math.round(canvas.width / 4), Math.round(canvas.height / 2), 1, 1).data];
+  });
+  expect(backingPixel).toEqual([255, 0, 0, 255]);
+  await card.getByLabel("Backing Border").uncheck();
+  await expect(image).toHaveAttribute("href", /paw-print\.svg/);
 });
 
 test("renders fixed SVG backing as analyzed vector geometry after Save", async ({ page }) => {

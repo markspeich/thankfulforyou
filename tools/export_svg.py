@@ -2372,7 +2372,7 @@ def build_fixed_design_svg(order):
     width, height = right - left, bottom - top
     if width <= 0 or height <= 0:
         raise ValueError("This design has no face geometry to save.")
-    return f'''<svg xmlns="http://www.w3.org/2000/svg" width="{width:.3f}mm" height="{height:.3f}mm" viewBox="0 0 {width:.3f} {height:.3f}">
+    svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="{width:.3f}mm" height="{height:.3f}mm" viewBox="0 0 {width:.3f} {height:.3f}">
   <title>Fixed design</title>
   <g transform="translate({-left:.3f} {-top:.3f})" fill="rgb(255, 0, 0)" stroke="none">
     <path d="{order['face_path']}"/>
@@ -2380,6 +2380,17 @@ def build_fixed_design_svg(order):
   </g>
 </svg>
 '''
+    # Fixed-library files are cutting outlines. Normalize every nested element,
+    # since source artwork may override a group's inherited presentation.
+    root = ET.fromstring(svg)
+    for element in root.iter():
+        if local_svg_name(element) in {"svg", "title"}:
+            continue
+        element.set("fill", "none")
+        element.set("stroke", "black")
+        element.set("stroke-width", "0.05")
+    return ET.tostring(root, encoding="unicode") + "\n"
+
 
 
 def build_svg(payload):
