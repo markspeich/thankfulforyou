@@ -816,9 +816,14 @@ test("inserts a fixed SVG design from the preset tools menu with SVG-only contro
   await expect(page.locator('.line-control-card[data-line-kind="text"][data-line-index="0"]').getByText("Font").first()).toBeVisible();
 });
 
-test("backing preview preserves saved SVG group transforms, complete artwork, and counters", async ({ page }) => {
+for (const [contourKind, fill, contours] of [
+  ["separate outlines", "none", '<path d="M50 70H90V90H50Z"/><path d="M55 75H65V85H55Z"/>'],
+  ["same-direction compound outline", "none", '<path d="M50 70H90V90H50Z M55 75H65V85H55Z"/>'],
+  ["filled nonzero artwork", "black", '<path d="M50 70H90V90H50Z M55 75V85H65V75Z"/><path d="M75 75H85V85H75Z"/>'],
+]) {
+test(`backing preview preserves saved SVG group transforms, complete artwork, and counters: ${contourKind}`, async ({ page }) => {
   // The saved-design origin shift puts raw path coordinates outside the SVG viewport.
-  const savedSvg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 20"><g transform="translate(-50 -70)" fill="none" stroke="black" stroke-width="0.001"><path d="M50 70H90V90H50Z M55 75V85H65V75Z"/><g transform="translate(80 80) scale(0.5)"><rect x="0" y="0" width="10" height="10"/></g></g></svg>';
+  const savedSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 20"><g transform="translate(-50 -70)" fill="${fill}" stroke="black" stroke-width="0.001">${contours}<g transform="translate(80 80) scale(0.5)"><rect x="0" y="0" width="10" height="10"/></g></g></svg>`;
   await page.route(`${STORAGE_ROOT}/paw-print.svg`, route => route.fulfill({
     status: 200, contentType: "image/svg+xml", headers: { "Access-Control-Allow-Origin": "*" }, body: savedSvg,
   }));
@@ -844,13 +849,14 @@ test("backing preview preserves saved SVG group transforms, complete artwork, an
     const context = canvas.getContext("2d");
     context.drawImage(source, 0, 0, 400, 200);
     const sample = (x, y) => [...context.getImageData(x * 10, y * 10, 1, 1).data];
-    return { nestedTransform, topLeft: sample(2, 2), bottomRight: sample(38, 18), counter: sample(10, 10) };
+    return { nestedTransform, topLeft: sample(2, 2), bottomRight: sample(38, 18), counter: sample(10, 10), overlap: sample(28, 8) };
   });
   expect(pixels.nestedTransform).toContain("translate(-50 -70)");
   expect(pixels.nestedTransform).toContain("translate(80 80) scale(0.5)");
   expect(pixels.topLeft).toEqual([248, 251, 252, 255]);
   expect(pixels.bottomRight).toEqual([248, 251, 252, 255]);
   expect(pixels.counter[3]).toBe(0);
+  expect(pixels.overlap).toEqual([248, 251, 252, 255]);
   const backing = page.locator('#preview image[data-fixed-svg-backing-id="fixed-design-2"]');
   await expect.poll(() => backing.getAttribute("href")).toMatch(/^data:image\/png;base64,/);
   const backingPixel = await backing.evaluate(async element => {
@@ -868,6 +874,7 @@ test("backing preview preserves saved SVG group transforms, complete artwork, an
   await card.getByLabel("Backing Border").uncheck();
   await expect(image).toHaveAttribute("href", /paw-print\.svg/);
 });
+}
 
 test("renders fixed SVG backing as analyzed vector geometry after Save", async ({ page }) => {
   await page.route("**/api/layout-analyze", async (route) => {

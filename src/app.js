@@ -13380,6 +13380,33 @@ function createWhiteFilledFixedSvgHref(svgText) {
   // inherited from several enclosing groups, including the saved origin shift.
   const output = sourceRoot.cloneNode(true);
   const shapeNames = new Set(["path", "circle", "ellipse", "line", "polygon", "polyline", "rect"]);
+  // Laser-cut outline SVGs can put each counter in a separate path, with no
+  // winding convention. Fill those contours together using even-odd parity.
+  // Keep already-filled artwork separate so its overlaps and fill rules survive.
+  const outlineGroups = new Map();
+  for (const path of output.querySelectorAll("path[d]")) {
+    let fill;
+    const transforms = [];
+    for (let node = path; node; node = node.parentElement) {
+      fill ??= node.style?.getPropertyValue("fill") || node.getAttribute("fill") || undefined;
+      if (node !== output && node.hasAttribute("transform")) {
+        transforms.unshift(node.getAttribute("transform"));
+      }
+    }
+    if (fill?.trim().toLowerCase() !== "none") continue;
+    const transform = transforms.join(" ");
+    const paths = outlineGroups.get(transform) || [];
+    paths.push(path);
+    outlineGroups.set(transform, paths);
+  }
+  for (const [transform, paths] of outlineGroups) {
+    const compound = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    compound.setAttribute("d", paths.map(path => `M0 0 ${path.getAttribute("d")}`).join(" "));
+    compound.setAttribute("fill-rule", "evenodd");
+    if (transform) compound.setAttribute("transform", transform);
+    for (const path of paths) path.remove();
+    output.append(compound);
+  }
   for (const node of [output, ...output.querySelectorAll("*")]) {
     if (!shapeNames.has(node.localName) && !["svg", "g", "title", "desc"].includes(node.localName)) {
       node.remove();
