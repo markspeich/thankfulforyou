@@ -149,6 +149,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - The `Fixed Designs` workspace should follow the shared two-pane production workspace layout style used by `Presets`, `Fonts`, and `Size Guides`: saved fixed design rows in a left navigation panel, with the selected fixed design preview and editor in a right editor panel on desktop-width screens.
 - The `Fixed Designs` workspace should allow uploading new SVG files from the operator's computer.
 - The Production Batch selected-design editor should offer `Save as Fixed Design` in the ellipsis menu that contains copy/paste settings, once the design has been saved.
+- The `Save as Fixed Design` menu action should include the same compact save icon used by other save actions.
 - `Save as Fixed Design` should open an in-app naming dialog. Its editable default name should come from the saved design text without carriage returns or line breaks.
 - The resulting fixed design should preserve the saved design geometry while excluding the backing border, and should be stored in the shared fixed-design library.
 - Replace line breaks with spaces and trim the default name. Require a saved design with no unsaved layout/text changes and completed, saved geometry analysis; explain unavailable actions with `Save this design first and wait for geometry analysis to finish.`
