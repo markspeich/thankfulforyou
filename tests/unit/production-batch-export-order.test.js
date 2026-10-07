@@ -5,6 +5,29 @@ import {
 } from "../../src/production-batch-export-order.js";
 
 describe("production batch export ordering", () => {
+  test("groups solids before glitter before mirror before missing colors without changing the queue", () => {
+    const designs = [
+      { id: "mirrorZ", source: { colorName: " Z MIRROR " } },
+      { id: "blank", source: { colorName: "  " } },
+      { id: "glitterZ", source: { colorName: "Z gLiTtEr" } },
+      { id: "solidZ", source: { colorName: "Zebra" } },
+      { id: "mirrorA", source: { colorName: "A mirror" } },
+      { id: "missing" },
+      { id: "glitterA", source: { colorName: " A GLITTER " } },
+      { id: "solidA", source: { colorName: "Amber" } },
+      { id: "glitterTie", source: { colorName: "a glitter" } },
+      { id: "null", source: { colorName: null } },
+      { id: "empty", source: { colorName: "" } },
+    ];
+    const original = structuredClone(designs);
+
+    expect(sortDesignsByImportedColor(designs).map(({ id }) => id)).toEqual([
+      "solidA", "solidZ", "glitterA", "glitterTie", "glitterZ",
+      "mirrorA", "mirrorZ", "blank", "missing", "null", "empty",
+    ]);
+    expect(designs).toEqual(original);
+  });
+
   test("sorts design instances by trimmed case-insensitive color while keeping blanks last and ties stable", () => {
     const designs = [
       { id: "first", source: { colorName: "  blue  " } },

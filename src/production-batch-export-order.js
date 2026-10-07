@@ -32,13 +32,19 @@ export function buildBatchExportSources(designs) {
   });
 }
 
+function importedColorGroup(colorName) {
+  if (!colorName) return 3;
+  if (/glitter/i.test(colorName)) return 1;
+  if (/mirror/i.test(colorName)) return 2;
+  return 0;
+}
+
 export function sortDesignsByImportedColor(designs) {
   return designs
     .map((design, index) => ({ design, index, colorName: importedColorName(design) }))
     .sort((left, right) => {
-      if (!left.colorName && !right.colorName) return left.index - right.index;
-      if (!left.colorName) return 1;
-      if (!right.colorName) return -1;
+      const groupDifference = importedColorGroup(left.colorName) - importedColorGroup(right.colorName);
+      if (groupDifference) return groupDifference;
       return importedColorCollator.compare(left.colorName, right.colorName) || left.index - right.index;
     })
     .map(({ design }) => design);
