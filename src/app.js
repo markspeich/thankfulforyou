@@ -464,6 +464,16 @@ const downloadButton = document.querySelector("#downloadButton");
 const copyButton = document.querySelector("#copyButton");
 const copyLayoutControlsButton = document.querySelector("#copyLayoutPlacementButton");
 const pasteLayoutControlsButton = document.querySelector("#pasteLayoutPlacementButton");
+const saveAsFixedDesignButton = document.querySelector("#saveAsFixedDesignButton");
+const saveFixedDesignDialog = document.querySelector("#saveFixedDesignDialog");
+const saveFixedDesignName = document.querySelector("#saveFixedDesignName");
+const saveFixedDesignProgress = document.querySelector("#saveFixedDesignProgress");
+const saveFixedDesignError = document.querySelector("#saveFixedDesignError");
+const saveFixedDesignPreview = document.querySelector("#saveFixedDesignPreview");
+let fixedDesignCapture = null;
+let fixedDesignCaptureBusy = false;
+let fixedDesignCapturePreviewUrl = null;
+let fixedDesignCaptureFocus = null;
 const insertFixedDesignButton = document.querySelector("#insertFixedDesignButton");
 const saveAsNewPresetButton = document.querySelector("#saveAsNewPresetButton");
 const overwritePresetButton = document.querySelector("#overwritePresetButton");
@@ -10765,6 +10775,10 @@ function renderOrderList() {
   copyButton.disabled = !activeOrder || !isOrderReadyForExport(activeOrder) || !canCopySvgToClipboard();
   copyLayoutControlsButton.disabled = !canCopyLayoutControls(activeOrder);
   pasteLayoutControlsButton.disabled = !canPasteLayoutControls(activeOrder);
+  saveAsFixedDesignButton.disabled = fixedDesignCaptureBusy || !canSaveActiveAsFixedDesign(activeOrder);
+  saveAsFixedDesignButton.title = canSaveActiveAsFixedDesign(activeOrder)
+    ? "Save the saved face geometry to Fixed Designs"
+    : "Save this design first and wait for geometry analysis to finish.";
   insertFixedDesignButton.disabled = !activeOrder;
   saveAsNewPresetButton.disabled = !activeOrder;
   overwritePresetButton.disabled = !activeOrder || !getPresetDefinitionForEditor(presetInput.value);
@@ -13790,11 +13804,133 @@ async function copyCurrentSvg() {
   }
 }
 
-async function requestSvgSource({ layout = null, layouts = null }) {
+function canSaveActiveAsFixedDesign(order) {
+  return Boolean(order?.publishedSnapshot && !hasUnsavedPublishedSnapshotChanges(order)
+    && !isOrderAwaitingPublishedSave(order) && isOrderReadyForExport(order));
+}
+
+function setFixedDesignCaptureBusy(busy, label = "") {
+  fixedDesignCaptureBusy = busy;
+  saveFixedDesignProgress.hidden = !busy;
+  saveFixedDesignProgress.querySelector("p").textContent = label;
+  saveFixedDesignDialog.setAttribute("aria-busy", String(busy));
+  saveFixedDesignDialog.querySelectorAll("button, input").forEach(node => { node.disabled = busy; });
+}
+
+function showFixedDesignCaptureError(message) {
+  saveFixedDesignError.textContent = `Error: ${message}`;
+  saveFixedDesignError.hidden = false;
+  updateWorkflowAlert(`Error: ${message}`, "error", { autoHideMs: 0 });
+}
+
+function closeFixedDesignCaptureDialog() {
+  if (fixedDesignCaptureBusy) return;
+  saveFixedDesignDialog.close();
+}
+
+async function prepareFixedDesignCapture() {
+  setFixedDesignCaptureBusy(true, "Preparing fixed design geometry…");
+  saveFixedDesignError.hidden = true;
+  try {
+    const svg = await requestSvgSource({ layout: fixedDesignCapture.payload, outputMode: "fixed-design" });
+    fixedDesignCapture.svg = svg;
+    fixedDesignCapturePreviewUrl = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
+    saveFixedDesignPreview.querySelector("img").src = fixedDesignCapturePreviewUrl;
+    saveFixedDesignPreview.hidden = false;
+    return true;
+  } catch (error) {
+    showFixedDesignCaptureError(error?.fixedDesignPreparationMessage
+      || "Unable to prepare the geometry. Check your connection, then press Save Fixed Design to retry.");
+    return false;
+  } finally {
+    setFixedDesignCaptureBusy(false);
+    saveFixedDesignName.focus();
+    renderOrderList();
+  }
+}
+
+async function openFixedDesignCaptureDialog() {
+  const order = getActiveOrder();
+  if (!canSaveActiveAsFixedDesign(order) || fixedDesignCaptureBusy) return;
+  fixedDesignCaptureFocus = presetToolsMenu?.querySelector("summary") || saveAsFixedDesignButton;
+  presetToolsMenu?.removeAttribute("open");
+  const build = structuredClone(getSavedCachedBuild(order));
+  fixedDesignCapture = { payload: buildExportPayload(build.layout, build.analysis), svg: null };
+  saveFixedDesignName.value = String(order.text || "").replace(/[\r\n]+/g, " ").trim();
+  saveFixedDesignName.removeAttribute("aria-invalid");
+  saveFixedDesignPreview.hidden = true;
+  saveFixedDesignError.hidden = true;
+  saveFixedDesignDialog.showModal();
+  await prepareFixedDesignCapture();
+  saveFixedDesignName.select();
+}
+
+async function saveCapturedFixedDesign(event) {
+  event.preventDefault();
+  if (fixedDesignCaptureBusy || !fixedDesignCapture) return;
+  const displayName = saveFixedDesignName.value.trim();
+  if (!displayName || /[\r\n]/.test(displayName)) {
+    saveFixedDesignName.setAttribute("aria-invalid", "true");
+    showFixedDesignCaptureError("Enter a fixed design name on one line.");
+    saveFixedDesignName.focus();
+    return;
+  }
+  saveFixedDesignName.removeAttribute("aria-invalid");
+  if (!fixedDesignCapture.svg && !await prepareFixedDesignCapture()) return;
+  setFixedDesignCaptureBusy(true, "Saving fixed design…");
+  saveFixedDesignError.hidden = true;
+  try {
+    const svg = fixedDesignCapture.svg;
+    const record = await createWorkspaceFixedDesign({ displayName, file: {
+      name: "fixed-design.svg", type: "image/svg+xml", size: new Blob([svg]).size, text: svg,
+    } }, { accessToken: productionBatchAccessToken, signal: AbortSignal.timeout(120000) });
+    const libraryWasLoaded = fixedDesignsLoaded;
+    const normalized = upsertFixedDesignRecord(record);
+    // A single new record does not represent a complete library snapshot.
+    fixedDesignsLoaded = libraryWasLoaded;
+    if (normalized) selectedFixedDesignId = normalized.id;
+    renderFixedDesignWorkspace();
+    setFixedDesignCaptureBusy(false);
+    closeFixedDesignCaptureDialog();
+    updateWorkflowAlert(`Fixed design “${displayName}” saved.`, "success", {
+      actionLabel: "View Fixed Design",
+      onAction: () => setActiveWorkspace("fixedDesigns"),
+    });
+  } catch (error) {
+    const message = /already exists/i.test(error?.message || "")
+      ? error.message
+      : isProductionBatchAuthenticationError(error)
+        ? "Your session expired. Sign in again, then retry. Your name and geometry are preserved."
+        : "Unable to save the fixed design. Check your connection and try again. If the request timed out, check Fixed Designs before retrying.";
+    showFixedDesignCaptureError(message);
+  } finally {
+    setFixedDesignCaptureBusy(false);
+    if (saveFixedDesignDialog.open) saveFixedDesignName.focus();
+    renderOrderList();
+  }
+}
+
+async function requestSvgSource({ layout = null, layouts = null, outputMode = null }) {
   const payload = layouts ? { layouts } : layout;
-  const exportPayload = await enrichExportPayloadWithFixedSvgText(payload);
+  // Bound preparation as well as the export request so missing artwork cannot leave the dialog busy.
+  const signal = outputMode ? AbortSignal.timeout(120000) : undefined;
+  let exportPayload;
+  if (outputMode && Array.isArray(payload.fixedSvgs)) {
+    exportPayload = { ...payload, fixedSvgs: await Promise.all(payload.fixedSvgs.map(async fixedSvg => {
+      if (fixedSvg.svgText || !fixedSvg.publicUrl) return fixedSvg;
+      const response = await fetch(fixedSvg.publicUrl, { signal });
+      if (!response.ok) throw new Error("Fixed artwork is unavailable.");
+      const svgText = await response.text();
+      if (!svgText.trim()) throw new Error("Fixed artwork is empty.");
+      return { ...fixedSvg, svgText };
+    })) };
+  } else {
+    exportPayload = await enrichExportPayloadWithFixedSvgText(payload);
+  }
+  if (outputMode) exportPayload.outputMode = outputMode;
   const response = await fetch("/api/export-svg", {
     method: "POST",
+    signal,
     headers: {
       "Content-Type": "application/json",
     },
@@ -13802,6 +13938,15 @@ async function requestSvgSource({ layout = null, layouts = null }) {
   });
 
   if (!response.ok) {
+    if (outputMode === "fixed-design") {
+      const detail = await response.text();
+      const message = /unsupported artwork/i.test(detail)
+        ? "The inserted artwork contains SVG features that cannot be captured safely. Convert that artwork to SVG outlines and load a new version, then save this batch design and retry."
+        : /no face geometry/i.test(detail)
+          ? "This design has no face geometry to save. Add text or fixed artwork, save the design, and retry."
+          : null;
+      if (message) throw Object.assign(new Error("Fixed design preparation failed"), { fixedDesignPreparationMessage: message });
+    }
     throw new Error("Vector SVG export failed");
   }
 
@@ -14824,6 +14969,21 @@ completeNextButton.addEventListener("click", () => {
 downloadButton.addEventListener("click", downloadSvg);
 copyButton.addEventListener("click", copyCurrentSvg);
 copyLayoutControlsButton.addEventListener("click", copyActiveLayoutControls);
+saveAsFixedDesignButton.addEventListener("click", openFixedDesignCaptureDialog);
+document.querySelector("#saveFixedDesignForm").addEventListener("submit", saveCapturedFixedDesign);
+["#closeSaveFixedDesignButton", "#cancelSaveFixedDesignButton"].forEach(selector => {
+  document.querySelector(selector).addEventListener("click", closeFixedDesignCaptureDialog);
+});
+saveFixedDesignDialog.addEventListener("cancel", event => {
+  if (fixedDesignCaptureBusy) event.preventDefault();
+});
+saveFixedDesignDialog.addEventListener("close", () => {
+  if (fixedDesignCapturePreviewUrl) URL.revokeObjectURL(fixedDesignCapturePreviewUrl);
+  fixedDesignCapturePreviewUrl = null;
+  saveFixedDesignPreview.querySelector("img").removeAttribute("src");
+  fixedDesignCapture = null;
+  fixedDesignCaptureFocus?.focus();
+});
 pasteLayoutControlsButton.addEventListener("click", pasteLayoutControlsIntoActiveOrder);
 workflowAlertActionButton?.addEventListener("click", () => {
   if (typeof workflowAlertActionHandler === "function") {

@@ -474,6 +474,9 @@
                               </span>
                               <span class="batch-tool-label">Paste Layout</span>
                             </button>
+                            <button id="saveAsFixedDesignButton" class="batch-tool-button" type="button" disabled>
+                              <span class="batch-tool-label">Save as Fixed Design</span>
+                            </button>
                             <button id="insertFixedDesignButton" class="batch-tool-button" type="button" disabled>
                               <span class="batch-tool-icon" aria-hidden="true">
                                 <svg viewBox="0 0 24 24" focusable="false">
@@ -1355,6 +1358,33 @@
             <button id="savePresetAsConfirmButton" class="confirmation-dialog-button confirmation-dialog-confirm" type="submit">
               Save Preset
             </button>
+          </div>
+        </form>
+      </div>
+    </dialog>
+
+    <dialog id="saveFixedDesignDialog" class="batch-summary-dialog save-preset-as-dialog" aria-labelledby="saveFixedDesignTitle" aria-describedby="saveFixedDesignDescription">
+      <div class="confirmation-dialog-card save-preset-as-card">
+        <header class="confirmation-dialog-header">
+          <h2 id="saveFixedDesignTitle">Save as Fixed Design</h2>
+          <button id="closeSaveFixedDesignButton" class="confirmation-dialog-close" type="button" aria-label="Close save fixed design dialog">×</button>
+        </header>
+        <p id="saveFixedDesignDescription" class="confirmation-dialog-description">Save the face geometry as reusable artwork. All backing borders are excluded.</p>
+        <form id="saveFixedDesignForm" class="save-preset-as-form" novalidate>
+          <label class="field" for="saveFixedDesignName">Name
+            <input id="saveFixedDesignName" type="text" autocomplete="off" aria-describedby="saveFixedDesignError" />
+          </label>
+          <div id="saveFixedDesignPreview" class="fixed-design-version-preview" hidden>
+            <img class="fixed-design-version-preview-image" alt="Fixed design geometry without backing borders" />
+          </div>
+          <div id="saveFixedDesignProgress" class="operation-progress" role="status" hidden>
+            <span class="operation-progress-spinner" aria-hidden="true"></span>
+            <p class="operation-progress-label"></p>
+          </div>
+          <p id="saveFixedDesignError" class="note" data-state="error" role="alert" hidden></p>
+          <div class="confirmation-dialog-actions">
+            <button id="cancelSaveFixedDesignButton" class="confirmation-dialog-button confirmation-dialog-cancel" type="button">Cancel</button>
+            <button id="confirmSaveFixedDesignButton" class="confirmation-dialog-button confirmation-dialog-confirm" type="submit">Save Fixed Design</button>
           </div>
         </form>
       </div>

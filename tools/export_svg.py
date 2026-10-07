@@ -17,6 +17,7 @@ from fontTools.pens.boundsPen import BoundsPen
 from fontTools.pens.svgPathPen import SVGPathPen
 from fontTools.pens.transformPen import TransformPen
 from fontTools.ttLib import TTFont
+from fontTools.svgLib.path import parse_path as draw_svg_path
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 import pyclipper
 from shapely import BufferJoinStyle
@@ -143,14 +144,39 @@ def is_unsafe_svg_attr(name, value):
     return False
 
 
-def sanitize_fixed_svg_element(element):
+FIXED_DESIGN_PRESENTATION_ATTRS = {"fill", "stroke", "stroke-width", "stroke-linejoin", "stroke-linecap", "stroke-miterlimit", "fill-rule"}
+
+
+def sanitize_fixed_svg_element(element, preserve_presentation=False):
+    if preserve_presentation:
+        if local_svg_name(element) not in {"g", "path", "polygon", "polyline", "rect", "circle", "ellipse", "line", "title", "desc"}:
+            raise ValueError("Fixed design contains unsupported artwork. Convert it to SVG outlines first.")
+        if element.attrib.get("vector-effect") or element.attrib.get("clip-path") or element.attrib.get("mask") or element.attrib.get("filter"):
+            raise ValueError("Fixed design contains unsupported artwork effects. Convert it to SVG outlines first.")
+        if element.attrib.get("transform"):
+            transforms = re.findall(r"([A-Za-z]+)\s*\(([^)]*)\)", element.attrib["transform"])
+            if not transforms or any(kind not in {"matrix", "translate", "scale"} for kind, _ in transforms):
+                raise ValueError("Fixed design contains unsupported artwork transforms. Convert it to SVG outlines first.")
+        for declaration in element.attrib.get("style", "").split(";"):
+            key, separator, value = declaration.partition(":")
+            if separator and key.strip().lower() in FIXED_DESIGN_PRESENTATION_ATTRS:
+                element.set(key.strip().lower(), value.strip())
+            elif separator:
+                raise ValueError("Fixed design contains unsupported artwork styles. Convert it to SVG outlines first.")
     for child in list(element):
         if local_svg_name(child) in BLOCKED_FIXED_SVG_TAGS:
+            if preserve_presentation:
+                raise ValueError("Fixed design contains unsupported artwork. Convert it to SVG outlines first.")
             element.remove(child)
             continue
-        sanitize_fixed_svg_element(child)
+        sanitize_fixed_svg_element(child, preserve_presentation)
 
     for attr_name in list(element.attrib):
+        value = str(element.attrib[attr_name]).lower()
+        if preserve_presentation and local_attr_name(attr_name) in FIXED_DESIGN_PRESENTATION_ATTRS:
+            if any(token in value for token in ("url(", "javascript:", "data:", "var(", "currentcolor")):
+                raise ValueError("Fixed design contains unsupported artwork styles. Convert it to SVG outlines first.")
+            continue
         if is_unsafe_svg_attr(attr_name, element.attrib[attr_name]):
             del element.attrib[attr_name]
 
@@ -851,7 +877,7 @@ def read_remote_svg(svg_url):
     return svg_text
 
 
-def parse_svg_markup(svg_text):
+def parse_svg_markup(svg_text, preserve_presentation=False):
     if not isinstance(svg_text, str) or not svg_text.strip():
         return None
 
@@ -882,12 +908,20 @@ def parse_svg_markup(svg_text):
         source_width = parse_svg_dimension(root.attrib.get("width")) or 1.0
         source_height = parse_svg_dimension(root.attrib.get("height")) or source_width
 
+    if preserve_presentation:
+        if any(root.attrib.get(key) for key in ("vector-effect", "clip-path", "mask", "filter")):
+            raise ValueError("Fixed design contains unsupported artwork effects. Convert it to SVG outlines first.")
+        wrapper = ET.Element("g", {key: value for key, value in root.attrib.items()
+                                   if key in FIXED_DESIGN_PRESENTATION_ATTRS or key in {"style", "transform"}})
+        wrapper.extend(list(root))
+        root[:] = [wrapper]
+
     children = []
     child_elements = []
     for child in list(root):
         if local_svg_name(child) in BLOCKED_FIXED_SVG_TAGS:
             continue
-        sanitized_child = sanitize_fixed_svg_element(child)
+        sanitized_child = sanitize_fixed_svg_element(child, preserve_presentation)
         child_elements.append(sanitized_child)
         children.append(ET.tostring(sanitized_child, encoding="unicode"))
 
@@ -904,16 +938,17 @@ def parse_svg_markup(svg_text):
     }
 
 
-def resolve_fixed_svg_markup(fixed_svg):
+def resolve_fixed_svg_markup(fixed_svg, preserve_presentation=False):
     svg_text = fixed_svg.get("svgText")
     if not svg_text and fixed_svg.get("publicUrl"):
         svg_text = read_remote_svg(fixed_svg.get("publicUrl"))
 
-    return parse_svg_markup(svg_text)
+    return parse_svg_markup(svg_text, preserve_presentation)
 
 
 def normalize_fixed_svgs(payload):
     fixed_svgs = []
+    preserve_presentation = payload.get("outputMode") == "fixed-design"
     for index, fixed_svg in enumerate(payload.get("fixedSvgs") or []):
         if not isinstance(fixed_svg, dict):
             continue
@@ -924,16 +959,26 @@ def normalize_fixed_svgs(payload):
             x = float(fixed_svg.get("xMm"))
             y = float(fixed_svg.get("yMm"))
         except (TypeError, ValueError):
+            if preserve_presentation:
+                raise ValueError("Fixed design artwork has invalid placement or dimensions.")
             continue
 
+        if preserve_presentation and not all(math.isfinite(value) for value in (width, height, x, y)):
+            raise ValueError("Fixed design artwork has invalid placement or dimensions.")
         if width <= 0 or height <= 0:
+            if preserve_presentation:
+                raise ValueError("Fixed design artwork has invalid dimensions.")
             continue
 
         try:
-            parsed_svg = resolve_fixed_svg_markup(fixed_svg)
+            parsed_svg = resolve_fixed_svg_markup(fixed_svg, preserve_presentation)
         except Exception:
+            if preserve_presentation:
+                raise
             parsed_svg = None
         if not parsed_svg:
+            if preserve_presentation:
+                raise ValueError("Fixed design artwork could not be loaded. Try again or replace the artwork.")
             continue
 
         backing_mm = 0.0
@@ -2244,8 +2289,104 @@ def build_svg_document(title, desc, instances, fixed_columns=False):
     parts.append("</svg>\n")
     return "\n".join(parts)
 
+def fixed_design_geometry_bounds(order):
+    """Measure actual face outlines in millimeters, excluding every backing."""
+    pen = BoundsPen(None)
+    if order["face_path"]:
+        draw_svg_path(order["face_path"], pen)
+
+    def measure_element(element, transform, presentation=None):
+        transform = matrix_multiply(transform, parse_transform(element.attrib.get("transform")))
+        presentation = {**(presentation or {}), **{key: value for key, value in element.attrib.items() if key in FIXED_DESIGN_PRESENTATION_ATTRS}}
+        element_pen = BoundsPen(None)
+        transformed_pen = TransformPen(element_pen, transform)
+        name = local_svg_name(element)
+        if name == "path":
+            draw_svg_path(element.attrib.get("d", ""), transformed_pen)
+        elif name in {"circle", "ellipse"}:
+            cx, cy = svg_number(element.attrib.get("cx")), svg_number(element.attrib.get("cy"))
+            rx = svg_number(element.attrib.get("r" if name == "circle" else "rx"))
+            ry = rx if name == "circle" else svg_number(element.attrib.get("ry"))
+            if rx > 0 and ry > 0:
+                x, y = apply_matrix(transform, cx, cy)
+                a, b, c, d, _, _ = transform
+                extent_x = math.hypot(a * rx, c * ry)
+                extent_y = math.hypot(b * rx, d * ry)
+                for point in [(x - extent_x, y - extent_y), (x + extent_x, y + extent_y)]:
+                    element_pen.moveTo(point)
+                    element_pen.endPath()
+        elif name == "line":
+            transformed_pen.moveTo((svg_number(element.attrib.get("x1")), svg_number(element.attrib.get("y1"))))
+            transformed_pen.lineTo((svg_number(element.attrib.get("x2")), svg_number(element.attrib.get("y2"))))
+            transformed_pen.endPath()
+        else:
+            for subpath in element_subpaths(element):
+                if subpath:
+                    transformed_pen.moveTo(subpath[0])
+                    for point in subpath[1:]:
+                        transformed_pen.lineTo(point)
+                    transformed_pen.closePath()
+        if element_pen.bounds:
+            left, top, right, bottom = element_pen.bounds
+            stroke = presentation.get("stroke", "none")
+            if stroke != "none":
+                width_value = presentation.get("stroke-width", "1")
+                if not re.fullmatch(r"[+]?(?:\d+(?:\.\d*)?|\.\d+)(?:px)?", width_value):
+                    raise ValueError("Fixed design contains unsupported artwork stroke units. Convert it to SVG outlines first.")
+                radius = float(width_value.removesuffix("px")) / 2
+                if name not in {"circle", "ellipse"}:
+                    join = presentation.get("stroke-linejoin", "miter")
+                    if join == "miter":
+                        try:
+                            radius *= max(1, float(presentation.get("stroke-miterlimit", "4")))
+                        except ValueError:
+                            raise ValueError("Fixed design contains unsupported artwork stroke settings.")
+                    # Square caps can extend diagonally beyond half the stroke.
+                    if presentation.get("stroke-linecap") == "square":
+                        radius *= math.sqrt(2)
+                a, b, c, d, _, _ = transform
+                dx, dy = math.hypot(a, c) * radius, math.hypot(b, d) * radius
+                left, top, right, bottom = left - dx, top - dy, right + dx, bottom + dy
+            for point in [(left, top), (right, bottom)]:
+                pen.moveTo(point)
+                pen.endPath()
+        for child in list(element):
+            if local_svg_name(child) not in BLOCKED_FIXED_SVG_TAGS:
+                measure_element(child, transform, presentation)
+
+    for fixed_svg in order.get("fixed_svgs", []):
+        scale = min(fixed_svg["width"] / fixed_svg["source_width"], fixed_svg["height"] / fixed_svg["source_height"])
+        transform = (scale, 0, 0, scale,
+                     fixed_svg["x"] - fixed_svg["source_x"] * scale,
+                     fixed_svg["y"] - fixed_svg["source_y"] * scale)
+        for element in fixed_svg.get("source_elements", []):
+            measure_element(element, transform)
+    return pen.bounds
+
+
+def build_fixed_design_svg(order):
+    bounds = fixed_design_geometry_bounds(order)
+    if not bounds:
+        raise ValueError("This design has no face geometry to save.")
+    left, top, right, bottom = bounds
+    width, height = right - left, bottom - top
+    if width <= 0 or height <= 0:
+        raise ValueError("This design has no face geometry to save.")
+    return f'''<svg xmlns="http://www.w3.org/2000/svg" width="{width:.3f}mm" height="{height:.3f}mm" viewBox="0 0 {width:.3f} {height:.3f}">
+  <title>Fixed design</title>
+  <g transform="translate({-left:.3f} {-top:.3f})" fill="rgb(255, 0, 0)" stroke="none">
+    <path d="{order['face_path']}"/>
+{build_fixed_svg_layers(order, 'fixed-design', 0.0, 0.0)}
+  </g>
+</svg>
+'''
+
+
 def build_svg(payload):
     root = Path(__file__).resolve().parents[1]
+
+    if isinstance(payload, dict) and payload.get("outputMode") == "fixed-design":
+        return build_fixed_design_svg(build_single_order_paths(root, payload))
 
     if isinstance(payload, dict) and isinstance(payload.get("layouts"), list):
         return build_batch_svg(root, payload["layouts"])

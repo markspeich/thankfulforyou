@@ -84,6 +84,70 @@ function pathBounds(path) {
 }
 
 describe("export_svg face tracing", () => {
+  test("fixed-design export preserves one face and artwork with holes, without production backing or copies", () => {
+    const face = "M5 8 H15 V18 H5 Z M7 10 V16 H13 V10 Z";
+    const svg = exportSvg({
+      outputMode: "fixed-design", text: "Saved", widthMm: 50, heightMm: 40,
+      quantity: 4, colorName: "Red", isKeychain: true,
+      analysis: { exportFacePath: face, backingPath: "M0 0 H50 V40 H0 Z", connectedComponentCount: 1 },
+      fixedSvgs: [{ id: "art", name: "Artwork", xMm: 25, yMm: 10, widthMm: 10, heightMm: 5,
+        backingBorder: true, backingMm: 3,
+        svgText: '<svg viewBox="0 0 20 10"><g transform="translate(2 1)"><path d="M0 0 H16 V8 H0 Z M4 2 V6 H12 V2 Z" fill-rule="evenodd"/></g></svg>' }],
+    });
+    expect(svg).toContain('width="29.000mm" height="10.000mm" viewBox="0 0 29.000 10.000"');
+    expect(svg).toContain('transform="translate(-5.000 -8.000)"');
+    expect(svg.split(`d="${face}"`)).toHaveLength(2);
+    expect(svg).toContain('transform="translate(25.000 10.000) scale(0.500000 0.500000)"');
+    expect(svg).toContain('fill-rule="evenodd"');
+    expect(svg).not.toContain("backing-border");
+    expect(svg).not.toContain("M0 0 H50 V40 H0 Z");
+    expect(svg).not.toContain("scale(-1");
+    expect(svg).not.toContain("color-label");
+    expect(svg).not.toContain("important-notes");
+  });
+
+  test("fixed-design bounds follow curved outlines rather than their control points", () => {
+    const svg = exportSvg({
+      outputMode: "fixed-design", text: "Curve", widthMm: 40, heightMm: 40,
+      analysis: { exportFacePath: "M2 5 Q12 -15 22 5 L22 15 H2 Z", backingPath: "M0 0 H40 V40 H0 Z" },
+    });
+    expect(svg).toContain('width="20.000mm" height="20.000mm" viewBox="0 0 20.000 20.000"');
+    expect(svg).toContain('transform="translate(-2.000 5.000)"');
+    expect(svg).toContain('d="M2 5 Q12 -15 22 5 L22 15 H2 Z"');
+  });
+
+  test("fixed-design export also supports artwork-only designs", () => {
+    const svg = exportSvg({
+      outputMode: "fixed-design", text: "", widthMm: 40, heightMm: 40, backingMm: 3, letters: [],
+      fixedSvgs: [{ id: "ring", xMm: 7, yMm: 9, widthMm: 12, heightMm: 12,
+        svgText: '<svg viewBox="0 0 12 12"><circle cx="6" cy="6" r="5"/></svg>' }],
+    });
+    expect(svg).toContain('width="10.000mm" height="10.000mm" viewBox="0 0 10.000 10.000"');
+    expect(svg).toContain('transform="translate(-8.000 -10.000)"');
+    expect(svg).toContain('<circle cx="6" cy="6" r="5"');
+    expect(svg).not.toContain("backing-border");
+  });
+
+  test("fixed-design export retains inherited stroked artwork without clipping", () => {
+    const svg = exportSvg({ outputMode: "fixed-design", text: "", widthMm: 40, heightMm: 40, backingMm: 3, letters: [],
+      fixedSvgs: [{ id: "ring", xMm: 7, yMm: 9, widthMm: 12, heightMm: 12,
+        svgText: '<svg viewBox="0 0 12 12" fill="none"><g style="stroke:blue;stroke-width:2;stroke-linejoin:round"><circle cx="6" cy="6" r="5"/></g></svg>' }],
+    });
+    expect(svg).toContain('fill="none"');
+    expect(svg).toContain('stroke="blue"');
+    expect(svg).toContain('stroke-width="2"');
+    expect(svg).toContain('width="12.000mm" height="12.000mm"');
+    expect(svg).toContain('transform="translate(-7.000 -9.000)"');
+  });
+
+  test("fixed-design export rejects unsupported artwork instead of silently dropping it", () => {
+    expect(() => exportSvg({ outputMode: "fixed-design", text: "A", widthMm: 40, heightMm: 40,
+      analysis: { exportFacePath: "M0 0 H5 V5 H0 Z", backingPath: "M0 0 H10 V10 H0 Z" },
+      fixedSvgs: [{ id: "unsupported", xMm: 10, yMm: 10, widthMm: 10, heightMm: 10,
+        svgText: '<svg viewBox="0 0 10 10"><text x="0" y="8">Artwork</text></svg>' }],
+    })).toThrow("unsupported artwork");
+  });
+
   test("browser export preserves uploaded-font cache validity and skips reanalysis", () => {
     const source = readFileSync("src/app.js", "utf8");
     const start = source.indexOf("function buildExportPayload(");

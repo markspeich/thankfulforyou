@@ -30,9 +30,10 @@ export async function fetchWorkspaceFixedDesigns({ accessToken = null, includeDe
   return Array.isArray(payload.fixedDesigns) ? payload.fixedDesigns : [];
 }
 
-export async function createWorkspaceFixedDesign(uploadPayload, { accessToken = null } = {}) {
+export async function createWorkspaceFixedDesign(uploadPayload, { accessToken = null, signal } = {}) {
   const response = await fetch("/api/fixed-designs", {
     method: "POST",
+    signal,
     headers: buildAuthHeaders(accessToken, {
       "Content-Type": "application/json",
       Accept: "application/json",

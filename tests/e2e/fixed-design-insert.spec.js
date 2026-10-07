@@ -345,6 +345,143 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
+test("saves a saved batch design as fixed artwork with naming, progress, and failure recovery", async ({ page }) => {
+  await page.route("**/api/layout-analyze", route => route.fulfill({
+    status: 200, contentType: "application/json", body: JSON.stringify({
+      facePath: "M0 0H20V10H0Z", exportFacePath: "M0 0H20V10H0Z",
+      backingPath: "M-3 -3H23V13H-3Z", widthMm: 20, heightMm: 10,
+      faceBoundsMm: { left: 0, top: 0, width: 20, height: 10 },
+      connectedComponentCount: 1, isConnected: true,
+    }),
+  }));
+  let exportPayload;
+  await page.route("**/api/export-svg", async route => {
+    exportPayload = route.request().postDataJSON();
+    await route.fulfill({ status: 200, contentType: "image/svg+xml", body: FIRST_SVG });
+  });
+  let attempts = 0;
+  let upload;
+  let release;
+  const held = new Promise(resolve => { release = resolve; });
+  await page.route("**/api/fixed-designs", async route => {
+    if (route.request().method() !== "POST") {
+      await route.fallback();
+      return;
+    }
+    upload = route.request().postDataJSON();
+    attempts += 1;
+    if (attempts === 1) {
+      await held;
+      await route.fulfill({ status: 409, json: { error: 'A fixed design named "Jane Smith RN" already exists. Choose another name.' } });
+    } else {
+      await route.fulfill({ status: 201, json: { fixedDesign: {
+        id: "new-fixed", display_name: upload.displayName, file_name: "fixed-design.svg",
+        public_url: fixedDesignPublicUrl("fixed-design.svg"), version: 1,
+      } } });
+    }
+  });
+  await page.goto("/production-batch");
+  await expect(page.locator("#initialBatchLoading")).toBeHidden();
+  await openPresetTools(page);
+  await expect(page.getByRole("button", { name: "Save as Fixed Design", exact: true })).toBeDisabled();
+  await page.locator(".preset-tools-toggle").click();
+  await page.locator("#textInput").fill("Jane Smith\nRN");
+  await openPresetTools(page);
+  await page.getByRole("button", { name: "Insert Fixed Design", exact: true }).click();
+  await page.locator("#insertFixedDesignDialog").getByRole("button", { name: "Paw Print v1 - paw-print.svg" }).click();
+  await page.locator("#insertFixedDesignDialog").getByRole("button", { name: "Insert Fixed Design", exact: true }).click();
+  await page.locator("#captureButton").click();
+  await expect(page.locator("#downloadButton")).toBeEnabled();
+  await openPresetTools(page);
+  await page.getByRole("button", { name: "Save as Fixed Design", exact: true }).click();
+  const dialog = page.locator("#saveFixedDesignDialog");
+  const name = dialog.getByLabel("Name", { exact: true });
+  await expect(name).toHaveValue("Jane Smith RN");
+  await expect(name).toBeFocused();
+  await expect(dialog.locator("img")).toBeVisible();
+  expect(exportPayload.outputMode).toBe("fixed-design");
+  expect(exportPayload.fixedSvgs).toEqual([expect.objectContaining({ id: "fixed-design-2", svgText: SECOND_SVG })]);
+  await dialog.getByRole("button", { name: "Save Fixed Design", exact: true }).click();
+  await expect(dialog.getByRole("status")).toContainText("Saving fixed design");
+  await expect(dialog.getByRole("button", { name: "Save Fixed Design", exact: true })).toBeDisabled();
+  release();
+  await expect(dialog.getByRole("alert")).toContainText("already exists");
+  await expect(name).toHaveValue("Jane Smith RN");
+  await name.fill("Jane Smith RN 2");
+  await dialog.getByRole("button", { name: "Save Fixed Design", exact: true }).click();
+  await expect(dialog).toBeHidden();
+  expect(upload.displayName).toBe("Jane Smith RN 2");
+  expect(upload.file.text).toBe(FIRST_SVG);
+  expect(attempts).toBe(2);
+  await expect(page.locator("#textInput")).toHaveValue("Jane Smith\nRN");
+  await expect(page.locator(".preset-tools-toggle")).toBeFocused();
+  await page.locator("#textInput").fill("Unsaved change");
+  await openPresetTools(page);
+  await expect(page.locator("#saveAsFixedDesignButton")).toBeDisabled();
+});
+
+test("fixed design naming preserves work after preparation failure and supports validation and cancellation", async ({ page }) => {
+  await page.route("**/api/layout-analyze", route => route.fulfill({ json: {
+    facePath: "M0 0H20V10H0Z", exportFacePath: "M0 0H20V10H0Z", backingPath: "M-3 -3H23V13H-3Z",
+    faceBoundsMm: { left: 0, top: 0, width: 20, height: 10 }, connectedComponentCount: 1, isConnected: true,
+  } }));
+  let exports = 0;
+  let uploads = 0;
+  await page.route("**/api/export-svg", async route => {
+    exports += 1;
+    await route.fulfill(exports === 1 ? { status: 500, body: "Private server traceback" }
+      : { status: 200, contentType: "image/svg+xml", body: FIRST_SVG });
+  });
+  await page.route("**/api/fixed-designs", async route => {
+    if (route.request().method() === "POST") {
+      uploads += 1;
+      await route.fulfill({ status: 201, json: { fixedDesign: {
+        id: "new-fixed", display_name: "Ava", file_name: "fixed-design.svg",
+        public_url: fixedDesignPublicUrl("fixed-design.svg"), version: 1,
+      } } });
+      return;
+    }
+    await route.fallback();
+  });
+  await page.goto("/production-batch");
+  await expect(page.locator("#initialBatchLoading")).toBeHidden();
+  await page.locator("#captureButton").click();
+  await expect(page.locator("#downloadButton")).toBeEnabled();
+  await openPresetTools(page);
+  await page.locator("#saveAsFixedDesignButton").click();
+  const dialog = page.locator("#saveFixedDesignDialog");
+  const name = dialog.getByLabel("Name", { exact: true });
+  await expect(dialog.getByRole("alert")).toContainText("Unable to prepare");
+  await expect(dialog).not.toContainText("traceback");
+  await expect(name).toHaveValue("Ava");
+  await name.fill(" ");
+  await dialog.getByRole("button", { name: "Save Fixed Design", exact: true }).click();
+  await expect(name).toHaveAttribute("aria-invalid", "true");
+  await expect(dialog.getByRole("alert")).toHaveCSS("color", "rgb(138, 47, 47)");
+  await name.fill("Keep my name");
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  await expect(page.locator(".preset-tools-toggle")).toBeFocused();
+  await expect(page.locator("#workflowAlertText")).toContainText("Enter a fixed design name");
+  await openPresetTools(page);
+  await page.locator("#saveAsFixedDesignButton").click();
+  await expect(dialog.locator("img")).toBeVisible();
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(dialog).toBeHidden();
+  expect(uploads).toBe(0);
+  expect(exports).toBe(2);
+  await expect(page.locator("#textInput")).toHaveValue("Ava");
+  await openPresetTools(page);
+  await page.locator("#saveAsFixedDesignButton").click();
+  await expect(dialog.locator("img")).toBeVisible();
+  await dialog.getByRole("button", { name: "Save Fixed Design", exact: true }).click();
+  await expect(dialog).toBeHidden();
+  expect(uploads).toBe(1);
+  await openPresetTools(page);
+  await page.getByRole("button", { name: "Insert Fixed Design", exact: true }).click();
+  await expect(page.locator("#insertFixedDesignDialog").getByRole("button", { name: "Paw Print v1 - paw-print.svg" })).toBeVisible();
+});
+
 test("renders inserted fixed SVG artwork even when the order text is blank", async ({ page }) => {
   const analyzedLayouts = [];
   await page.route("**/api/layout-analyze", async (route) => {
