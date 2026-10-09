@@ -87,7 +87,7 @@ analyze public.order_group_batch_visibility;
 \pset format unaligned
 begin;
 select coalesce(
-  jsonb_agg(to_jsonb(result) order by result.sort_key desc, result.group_id desc),
+  jsonb_agg(to_jsonb(result) order by result.sort_key asc, result.group_id asc),
   '[]'::jsonb
 )
 from public.list_workspace_order_summaries(
@@ -96,6 +96,8 @@ from public.list_workspace_order_summaries(
   p_status_filter => ${quoteSqlLiteral(statusFilter)},
   p_batch_filter => ${quoteSqlLiteral(batchFilter)},
   p_search_term => '',
+  p_sort_by => 'shipByDate',
+  p_sort_direction => 'asc',
   p_requested_limit => ${limit},
   p_cursor_sort_key => ${quoteNullableSqlLiteral(cursorSortKey)},
   p_cursor_group_id => ${quoteNullableSqlLiteral(cursorGroupId)}
@@ -114,10 +116,10 @@ from pg_catalog.pg_class indexes
 join pg_catalog.pg_namespace schemas on schemas.oid = indexes.relnamespace
 where schemas.nspname = 'public'
   and indexes.relname in (
-    'order_group_summaries_page_idx',
-    'order_group_summaries_status_page_idx',
-    'order_group_batch_visibility_page_idx',
-    'order_group_batch_visibility_status_page_idx',
+    'order_group_summaries_ship_by_page_idx',
+    'order_group_summaries_ship_by_status_page_idx',
+    'order_group_batch_visibility_ship_by_page_idx',
+    'order_group_batch_visibility_ship_by_status_page_idx',
     'order_items_workspace_newest_group_idx',
     'order_items_workspace_group_members_idx'
   );
@@ -1054,6 +1056,9 @@ drop function if exists public.${holdFunctionName}();
     const testWorkspaceId = await createDisposableWorkspace(`Bounded Empty Search ${suffix}`);
     const supabase = createSupabaseAdminClient();
     const groupCount = 2400;
+    // Earlier ship-by dates sort first; distinct days keep the deep cursor deterministic.
+    const shipByDateForSequence = (sequence) => new Date(Date.UTC(2035, 0, 1 - sequence))
+      .toISOString().slice(0, 10);
     const rows = Array.from({ length: groupCount }, (_, offset) => {
       const sequence = offset + 1;
       return {
@@ -1066,6 +1071,7 @@ drop function if exists public.${holdFunctionName}();
             : "open",
         order_number: String(9_000_000_000 + sequence),
         buyer_name: `Bounded Buyer ${sequence}`,
+        ship_by_date: shipByDateForSequence(sequence),
         listing_id: `bounded-listing-${sequence}`,
         transaction_id: `bounded-transaction-${sequence}`,
         quantity: 1,
@@ -1130,9 +1136,7 @@ drop function if exists public.${holdFunctionName}();
 
     const cursorSequence = 600;
     const cursorOrderNumber = String(9_000_000_000 + cursorSequence);
-    const cursorSortKey = "20250101001000000000"
-      + ":3:"
-      + cursorOrderNumber.padStart(64, "0");
+    const cursorSortKey = `0:${shipByDateForSequence(cursorSequence).replaceAll("-", "")}`;
     const cursorGroupId = `order:${cursorOrderNumber}`;
     const page = await listWorkspaceOrderSummaries({
       workspaceId: testWorkspaceId,
@@ -1216,18 +1220,18 @@ drop function if exists public.${holdFunctionName}();
     expect(notInBatchPage.orders[0].id).toBe("order:9000000598");
 
     const lifecycleBatchCases = [
-      { statusFilter: "all", batchFilter: "all", expectedIndex: "order_group_summaries_page_idx", expectedIds: ["9000000599", "9000000598"] },
-      { statusFilter: "open", batchFilter: "all", expectedIndex: "order_group_summaries_status_page_idx", expectedIds: ["9000000598", "9000000596"] },
-      { statusFilter: "complete", batchFilter: "all", expectedIndex: "order_group_summaries_status_page_idx", expectedIds: ["9000000599", "9000000590"] },
-      { statusFilter: "skipped", batchFilter: "all", expectedIndex: "order_group_summaries_status_page_idx", expectedIds: ["9000000597", "9000000589"] },
-      { statusFilter: "all", batchFilter: "inBatch", expectedIndex: "order_group_batch_visibility_page_idx", expectedIds: ["9000000599", "9000000589"] },
-      { statusFilter: "open", batchFilter: "inBatch", expectedIndex: "order_group_batch_visibility_status_page_idx", expectedIds: ["9000000588"] },
-      { statusFilter: "complete", batchFilter: "inBatch", expectedIndex: "order_group_batch_visibility_status_page_idx", expectedIds: ["9000000599"] },
-      { statusFilter: "skipped", batchFilter: "inBatch", expectedIndex: "order_group_batch_visibility_status_page_idx", expectedIds: ["9000000589"] },
-      { statusFilter: "all", batchFilter: "notInBatch", expectedIndex: "order_group_batch_visibility_page_idx", expectedIds: ["9000000598", "9000000597"] },
-      { statusFilter: "open", batchFilter: "notInBatch", expectedIndex: "order_group_batch_visibility_status_page_idx", expectedIds: ["9000000598", "9000000596"] },
-      { statusFilter: "complete", batchFilter: "notInBatch", expectedIndex: "order_group_batch_visibility_status_page_idx", expectedIds: ["9000000590"] },
-      { statusFilter: "skipped", batchFilter: "notInBatch", expectedIndex: "order_group_batch_visibility_status_page_idx", expectedIds: ["9000000597"] },
+      { statusFilter: "all", batchFilter: "all", expectedIndex: "order_group_summaries_ship_by_page_idx", expectedIds: ["9000000599", "9000000598"] },
+      { statusFilter: "open", batchFilter: "all", expectedIndex: "order_group_summaries_ship_by_status_page_idx", expectedIds: ["9000000598", "9000000596"] },
+      { statusFilter: "complete", batchFilter: "all", expectedIndex: "order_group_summaries_ship_by_status_page_idx", expectedIds: ["9000000599", "9000000590"] },
+      { statusFilter: "skipped", batchFilter: "all", expectedIndex: "order_group_summaries_ship_by_status_page_idx", expectedIds: ["9000000597", "9000000589"] },
+      { statusFilter: "all", batchFilter: "inBatch", expectedIndex: "order_group_batch_visibility_ship_by_page_idx", expectedIds: ["9000000599", "9000000589"] },
+      { statusFilter: "open", batchFilter: "inBatch", expectedIndex: "order_group_batch_visibility_ship_by_status_page_idx", expectedIds: ["9000000588"] },
+      { statusFilter: "complete", batchFilter: "inBatch", expectedIndex: "order_group_batch_visibility_ship_by_status_page_idx", expectedIds: ["9000000599"] },
+      { statusFilter: "skipped", batchFilter: "inBatch", expectedIndex: "order_group_batch_visibility_ship_by_status_page_idx", expectedIds: ["9000000589"] },
+      { statusFilter: "all", batchFilter: "notInBatch", expectedIndex: "order_group_batch_visibility_ship_by_page_idx", expectedIds: ["9000000598", "9000000597"] },
+      { statusFilter: "open", batchFilter: "notInBatch", expectedIndex: "order_group_batch_visibility_ship_by_status_page_idx", expectedIds: ["9000000598", "9000000596"] },
+      { statusFilter: "complete", batchFilter: "notInBatch", expectedIndex: "order_group_batch_visibility_ship_by_status_page_idx", expectedIds: ["9000000590"] },
+      { statusFilter: "skipped", batchFilter: "notInBatch", expectedIndex: "order_group_batch_visibility_ship_by_status_page_idx", expectedIds: ["9000000597"] },
     ];
 
     for (const testCase of lifecycleBatchCases) {
@@ -1260,6 +1264,69 @@ drop function if exists public.${holdFunctionName}();
       });
     }
   }, 60_000);
+
+  it("continues default ship-by pages through null dates and refreshes edited dates", async () => {
+    // Break caught: null ship-by groups disappear at the cursor boundary, ties repeat,
+    // or date filters/edits disagree with the indexed summary projection.
+    const suffix = randomUUID().slice(0, 8);
+    const workspaceId = await createDisposableWorkspace(`Ship By Continuation ${suffix}`);
+    const supabase = createSupabaseAdminClient();
+    const orderId = (label) => `order:SHIP-${suffix}-${label}`;
+    const rows = [
+      { label: "A", shipByDate: "2030-01-01" },
+      { label: "B", shipByDate: "2030-01-01" },
+      { label: "C", shipByDate: "2030-01-02" },
+      { label: "D", shipByDate: null },
+      { label: "E", shipByDate: null },
+      { label: "F", shipByDate: null },
+    ].map(({ label, shipByDate }) => ({
+      id: `ship-continuation-${suffix}-${label}`,
+      workspace_id: workspaceId,
+      status: "open",
+      order_number: `SHIP-${suffix}-${label}`,
+      buyer_name: "Ship By Continuation",
+      quantity: 1,
+      source_json: {},
+      ship_by_date: shipByDate,
+    }));
+    const { error: insertError } = await supabase.from("order_items").insert(rows);
+    expect(insertError).toBeNull();
+
+    const traversedIds = [];
+    let cursor = null;
+    for (let pageIndex = 0; pageIndex < 3; pageIndex += 1) {
+      const page = await listWorkspaceOrderSummaries({ workspaceId, limit: 2, cursor });
+      expect(page.orders.map((order) => order.id)).toEqual(
+        ["A", "B", "C", "D", "E", "F"].slice(pageIndex * 2, pageIndex * 2 + 2).map(orderId),
+      );
+      traversedIds.push(...page.orders.map((order) => order.id));
+      expect(page.hasMore).toBe(pageIndex < 2);
+      if (pageIndex < 2) {
+        expect(page.nextCursorValues).not.toBeNull();
+        cursor = { version: 1, ...page.nextCursorValues };
+      }
+    }
+    expect(new Set(traversedIds).size).toBe(6);
+
+    for (const [filters, labels] of [
+      [{ shipByFrom: "2030-01-02" }, ["C"]],
+      [{ shipByTo: "2030-01-01" }, ["A", "B"]],
+      [{ shipByFrom: "2030-01-01", shipByTo: "2030-01-02" }, ["A", "B", "C"]],
+    ]) {
+      const page = await listWorkspaceOrderSummaries({ workspaceId, ...filters });
+      expect(page.orders.map((order) => order.id)).toEqual(labels.map(orderId));
+    }
+
+    const { error: updateError } = await supabase.from("order_items")
+      .update({ ship_by_date: "2029-12-31" })
+      .eq("workspace_id", workspaceId)
+      .eq("id", `ship-continuation-${suffix}-E`);
+    expect(updateError).toBeNull();
+    const editedPage = await listWorkspaceOrderSummaries({ workspaceId });
+    expect(editedPage.orders.map((order) => order.id)).toEqual(["E", "A", "B", "C", "D", "F"].map(orderId));
+    const editedFilter = await listWorkspaceOrderSummaries({ workspaceId, shipByTo: "2029-12-31" });
+    expect(editedFilter.orders.map((order) => order.id)).toEqual([orderId("E")]);
+  });
 
   it("searches and paginates more than one thousand complete order groups without splitting a group", async () => {
     // Break caught: compact Orders search reads only a browser-sized subset or paginates item rows.
@@ -1348,19 +1415,19 @@ drop function if exists public.${holdFunctionName}();
         id: `scale-${suffix}-order-numeric`, workspace_id: testWorkspaceId, status: "open",
         order_number: `77${String(Date.now()).slice(-8)}`, buyer_name: `Ordering-${suffix}`,
         listing_id: "plain", transaction_id: `ordering-numeric-${suffix}`, imported_color: "Plain",
-        quantity: 1, source_json: {}, created_at: "2026-01-01T00:00:00.000Z",
+        quantity: 1, source_json: {}, order_date: "2026-01-01T00:00:00.000Z", created_at: "2026-01-01T00:00:00.000Z",
       },
       {
         id: `scale-${suffix}-order-nonnumeric`, workspace_id: testWorkspaceId, status: "open",
         order_number: `CUSTOM-${suffix}`, buyer_name: `Ordering-${suffix}`,
         listing_id: "plain", transaction_id: `ordering-nonnumeric-${suffix}`, imported_color: "Plain",
-        quantity: 1, source_json: {}, created_at: "2026-02-01T00:00:00.000Z",
+        quantity: 1, source_json: {}, order_date: "2026-02-01T00:00:00.000Z", created_at: "2026-02-01T00:00:00.000Z",
       },
       {
         id: `scale-${suffix}-order-null`, workspace_id: testWorkspaceId, status: "open",
         order_number: null, buyer_name: `Ordering-${suffix}`,
         listing_id: "plain", transaction_id: `ordering-null-${suffix}`, imported_color: "Plain",
-        quantity: 1, source_json: {}, created_at: "2026-03-01T00:00:00.000Z",
+        quantity: 1, source_json: {}, order_date: "2026-03-01T00:00:00.000Z", created_at: "2026-03-01T00:00:00.000Z",
       },
       {
         id: `scale-${suffix}-mixed-complete`, workspace_id: testWorkspaceId, status: "complete",
@@ -1444,6 +1511,8 @@ drop function if exists public.${holdFunctionName}();
       workspaceId: testWorkspaceId,
       statusFilter: "open",
       searchTerm: "Boundary Buyer",
+      sortField: "orderNumber",
+      sortDirection: "desc",
       limit: 1,
     });
     expect(boundaryPage.orders).toHaveLength(1);
@@ -1453,6 +1522,8 @@ drop function if exists public.${holdFunctionName}();
       workspaceId: testWorkspaceId,
       statusFilter: "open",
       searchTerm: "Boundary Buyer",
+      sortField: "orderNumber",
+      sortDirection: "desc",
       limit: 1,
       cursor: { version: 1, ...boundaryPage.nextCursorValues },
     });
@@ -1486,6 +1557,9 @@ drop function if exists public.${holdFunctionName}();
       workspaceId: testWorkspaceId,
       statusFilter: "open",
       searchTerm: `Ordering-${suffix}`,
+      // This assertion exercises order-date ordering, independent of the ship-by default.
+      sortField: "orderDate",
+      sortDirection: "desc",
       limit: 50,
     });
     expect(orderedKinds.orders.map((order) => order.id)).toEqual([
