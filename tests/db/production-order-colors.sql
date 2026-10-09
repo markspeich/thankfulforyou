@@ -48,7 +48,7 @@ begin
   begin
     perform public.save_production_order_items(jsonb_build_array(row_json), '[{"orderItemId":"color-safeguard-regression","action":"set","colorName":"Wrong"}]');
     raise exception 'Stale explicit edit overwrote a newer revision';
-  exception when serialization_failure then null;
+  exception when sqlstate 'PT409' then null;
   end;
   assert (select revision = 8 and imported_color is null from public.order_items where id = row_json ->> 'id'), 'Rejected request wrote data';
   assert not has_function_privilege('anon', 'public.save_production_order_items(jsonb,jsonb)', 'execute'), 'Anonymous RPC access';

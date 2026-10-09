@@ -507,9 +507,11 @@ it.each([
   await expect(saveProductionBatch({ snapshot: { batch: { workspaceId: "workspace-1" }, orderItems: [{ id: "order-1" }] }, colorUpdates: updates })).rejects.toMatchObject({ statusCode: 400 });
   expect(supabaseMock.calls.some(c => c.operation === "rpc" || c.operation === "upsert")).toBe(false);
 });
-it("reports atomic revision conflicts without saving the rest of the batch", async () => {
-  supabaseMock.rpcError = { code: "40001" };
+it.each(["PT409", "40001"])("reports %s revision conflicts without saving the rest of the batch", async (code) => {
+  supabaseMock.rpcError = { code };
   const { saveProductionBatch } = await import("../../api/_lib/production-batch-store.js");
   await expect(saveProductionBatch({ snapshot: { batch: { workspaceId: "workspace-1" }, orderItems: [{ id: "order-1" }] } })).rejects.toMatchObject({ code: "REVISION_CONFLICT" });
   expect(supabaseMock.calls.some(c => c.table === "production_batches" && c.operation === "upsert")).toBe(false);
+  expect(supabaseMock.calls.filter(c => c.operation === "rpc")).toHaveLength(1);
+  expect(supabaseMock.calls.some(c => c.table === "designs" && c.operation === "upsert")).toBe(false);
 });

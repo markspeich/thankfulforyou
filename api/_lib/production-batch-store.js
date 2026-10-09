@@ -270,7 +270,7 @@ export async function saveProductionBatch({ snapshot, userId, changedOrderItemId
     });
 
     if (orderItemsError) {
-      if (orderItemsError.code === "40001") throw Object.assign(new Error("Order item revision conflict."), { code: "REVISION_CONFLICT" });
+      if (["PT409", "40001"].includes(orderItemsError.code)) throw Object.assign(new Error("Order item revision conflict."), { code: "REVISION_CONFLICT" });
       if (orderItemsError.code === "22023") throw Object.assign(new Error("Invalid explicit color update."), { statusCode: 400, expose: true });
       throw orderItemsError;
     }
