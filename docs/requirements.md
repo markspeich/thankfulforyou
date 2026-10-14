@@ -939,6 +939,7 @@ For batch Etsy order sessions, the preferred workflow is:
 
 - Each Production Batch queue row must include a checkbox for selecting that individual batch item.
 - The queue column's ellipsis menu must include a section named `Selected Items`, with `Mark as Complete`, `Skip`, and `Remove from Batch` actions that affect only checked items.
+- Place `Selected Items` directly above `Danger Zone` in the Production Batch menu and omit the menu's `Import` section. Label the header checkbox `Select All`; its selection scope remains the currently displayed rows.
 - `Mark as Complete` must apply the same item-level production completion behavior as `Complete Production Batch`, scoped to the checked items, preserving unchecked items in the active batch.
 - Saving a design must display its saved readiness status as `Ready` instead of `Complete`. Durable order-item production completion remains a separate lifecycle state.
 - Approved selection behavior: the header checkbox selects all currently displayed batch rows and shows an indeterminate state for partial selection; checkbox changes do not open a different editor item; selected actions are disabled with no selection; selection survives ordinary queue rerenders but clears on batch change and successful action.

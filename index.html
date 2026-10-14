@@ -198,12 +198,6 @@
               <summary class="batch-tools-toggle" aria-label="Batch tools"></summary>
               <div class="batch-tools-popover">
                 <div class="batch-tools-actions" role="menu" aria-label="Batch actions">
-                  <div class="batch-tools-group" aria-label="Selected Items">
-                    <p class="batch-tools-heading">Selected Items</p>
-                    <button id="completeSelectedBatchItems" class="batch-tool-button" type="button" disabled><span class="batch-tool-label">Mark as Complete</span></button>
-                    <button id="skipSelectedBatchItems" class="batch-tool-button" type="button" disabled><span class="batch-tool-label">Skip</span></button>
-                    <button id="removeSelectedBatchItems" class="batch-tool-button" type="button" disabled><span class="batch-tool-label">Remove from Batch</span></button>
-                  </div>
                   <div class="batch-tools-group" aria-label="Design batch actions">
                     <p class="batch-tools-heading">Batch</p>
                     <button id="addOrderButton" class="batch-tool-button" type="button">
@@ -214,11 +208,6 @@
                       </span>
                       <span class="batch-tool-label">Add Design</span>
                     </button>
-                  </div>
-
-                  <div class="batch-tools-group" aria-label="Import batch items">
-                    <p class="batch-tools-heading">Import</p>
-                    <p class="batch-tools-note">Use the header button to paste Etsy clipboard data.</p>
                   </div>
 
                   <div class="batch-tools-group" aria-label="Batch output actions">
@@ -252,6 +241,13 @@
                       </span>
                       <span class="batch-tool-label">Export All Designs</span>
                     </button>
+                  </div>
+
+                  <div class="batch-tools-group" aria-label="Selected Items">
+                    <p class="batch-tools-heading">Selected Items</p>
+                    <button id="completeSelectedBatchItems" class="batch-tool-button" type="button" disabled><span class="batch-tool-label">Mark as Complete</span></button>
+                    <button id="skipSelectedBatchItems" class="batch-tool-button" type="button" disabled><span class="batch-tool-label">Skip</span></button>
+                    <button id="removeSelectedBatchItems" class="batch-tool-button" type="button" disabled><span class="batch-tool-label">Remove from Batch</span></button>
                   </div>
 
                   <div class="batch-tools-group batch-tools-group-danger" aria-label="Danger zone">
@@ -296,7 +292,7 @@
               <input id="orderSearchInput" type="search" autocomplete="off" placeholder="Search designs...">
             </label>
             <div class="batch-selection-bar">
-              <label><input id="selectVisibleBatchItems" type="checkbox"> Select displayed</label>
+              <label><input id="selectVisibleBatchItems" type="checkbox"> Select All</label>
               <output id="batchSelectedCount" aria-live="polite">0 selected</output>
             </div>
             <div id="orderList" class="order-list" role="list"></div>
