@@ -1,4 +1,4 @@
-﻿import { readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { expect, test } from "playwright/test";
 import { installSeededFontRoute, SEEDED_FONT_RECORDS } from "./font-test-routes.js";
 
@@ -241,7 +241,7 @@ async function completeDesign(page, queueLabel) {
   const row = page.locator("#orderList .order-row").filter({ hasText: queueLabel });
 
   await clickButtonBySelector(page, "#captureButton");
-  await expect(row).toContainText("Complete");
+  await expect(row).toContainText("Ready");
   await expect.poll(async () => {
     return row.locator(".order-analysis-indicator.ok, .order-analysis-indicator.warning").count();
   }, { timeout: 20000 }).toBe(1);
@@ -2131,7 +2131,7 @@ test("restores the current batch after refresh and completes it when requested",
 
   await clickBatchAction(page, "Complete Production Batch");
   await expect(page.locator("#confirmationDialogDescription")).toContainText(
-    /Mark every order in this production batch complete|not complete or export-ready/,
+    /Mark every order in this production batch complete|not Ready\/Exported or export-ready/,
   );
   await confirmBatchDialog(page, /Complete Production Batch/);
 
@@ -2424,7 +2424,7 @@ test("copies layout controls onto another design without copying text", async ({
 
   await completeDesign(page, "Design 2");
   const targetRow = page.locator("#orderList .order-row").filter({ hasText: "Design 2" });
-  await expect(targetRow).toContainText("Complete");
+  await expect(targetRow).toContainText("Ready");
   await expect(exportDesignButton(page)).toBeEnabled();
 
   await page.locator("#orderList .order-row").filter({ hasText: "Design 1" }).locator(".order-item").click();
@@ -2498,7 +2498,7 @@ test("preserves completed export-ready state when a pasted layout is unchanged",
 
   await completeDesign(page, "Design 2");
   const targetRow = page.locator("#orderList .order-row").filter({ hasText: "Design 2" });
-  await expect(targetRow).toContainText("Complete");
+  await expect(targetRow).toContainText("Ready");
   await expect(exportDesignButton(page)).toBeEnabled();
 
   await page.locator("#orderList .order-row").filter({ hasText: "Design 1" }).locator(".order-item").click();
@@ -2510,7 +2510,7 @@ test("preserves completed export-ready state when a pasted layout is unchanged",
   await clickPresetAction(page, "Paste Layout");
 
   await expectWorkflowAlertSuccess(page, "Layout controls already match on Design 2.");
-  await expect(targetRow).toContainText("Complete");
+  await expect(targetRow).toContainText("Ready");
   await expect(targetRow.locator(".order-analysis-indicator.ok, .order-analysis-indicator.warning")).toHaveCount(1);
   await expect(completeButton(page)).toBeDisabled();
   await expect(exportDesignButton(page)).toBeEnabled();
@@ -2552,7 +2552,7 @@ test("restores complete and export state when pasted controls return to a previo
 
   await completeDesign(page, "Design 2");
   const targetRow = page.locator("#orderList .order-row").filter({ hasText: "Design 2" });
-  await expect(targetRow).toContainText("Complete");
+  await expect(targetRow).toContainText("Ready");
   await expect(exportDesignButton(page)).toBeEnabled();
 
   await page.locator('.line-control-card[data-line-index="0"] [data-setting="horizontalScale"]').fill("1.11");
@@ -2570,7 +2570,7 @@ test("restores complete and export state when pasted controls return to a previo
 
   await expectWorkflowAlertSuccess(page, "Pasted layout controls from Design 1 onto Design 2.");
   await expect(page.locator('.line-control-card[data-line-index="0"] [data-setting="horizontalScale"]')).toHaveValue("1.27");
-  await expect(targetRow).toContainText("Complete");
+  await expect(targetRow).toContainText("Ready");
   await expect(targetRow.locator(".order-analysis-indicator.ok, .order-analysis-indicator.warning")).toHaveCount(1);
   await expect(completeButton(page)).toBeDisabled();
   await expect(exportDesignButton(page)).toBeEnabled();
@@ -2777,7 +2777,7 @@ test("does not publish first-time in-flight analysis as a completed remote desig
   });
 
   const row = page.locator("#orderList .order-row").filter({ hasText: "Design 1" });
-  await expect(row).toContainText("Complete", { timeout: 20000 });
+  await expect(row).toContainText("Ready", { timeout: 20000 });
   await expectSavedProductionBatchSnapshot(page, (snapshot) => {
     const [order] = snapshot?.orderItems || [];
     return order
@@ -2789,7 +2789,7 @@ test("does not publish first-time in-flight analysis as a completed remote desig
 
   await page.reload();
   await expect(page.locator("#importStatus")).toBeHidden();
-  await expect(row).toContainText("Complete");
+  await expect(row).toContainText("Ready");
   await expect(exportDesignButton(page)).toBeEnabled();
 
   await page.unrouteAll({ behavior: "ignoreErrors" });
@@ -2855,7 +2855,7 @@ test("keeps completed save newer than a delayed draft autosave", async ({ page }
   await completeButton(page).click();
 
   const row = page.locator("#orderList .order-row").filter({ hasText: "Design 1" });
-  await expect(row).toContainText("Complete", { timeout: 20000 });
+  await expect(row).toContainText("Ready", { timeout: 20000 });
   await expect.poll(() => productionBatchSavePayloads.length).toBe(2);
   await expectSavedProductionBatchSnapshot(page, (snapshot) => {
     const [order] = snapshot?.orderItems || [];
@@ -2868,7 +2868,7 @@ test("keeps completed save newer than a delayed draft autosave", async ({ page }
 
   await page.reload();
   await expect(page.locator("#importStatus")).toBeHidden();
-  await expect(row).toContainText("Complete");
+  await expect(row).toContainText("Ready");
   await expect(exportDesignButton(page)).toBeEnabled();
 
   await page.unrouteAll({ behavior: "ignoreErrors" });
@@ -2936,7 +2936,7 @@ test("restores modified exported designs as complete rather than exported after 
   await page.locator("#backingInput").fill("3.7");
   await expect(row).toContainText("In progress");
   await completeButton(page).click();
-  await expect(row).toContainText("Complete", { timeout: 20000 });
+  await expect(row).toContainText("Ready", { timeout: 20000 });
   await expect(row).not.toContainText("Exported");
   await expectSavedProductionBatchSnapshot(page, (snapshot) => {
     const [order] = snapshot?.orderItems || [];
@@ -2948,7 +2948,7 @@ test("restores modified exported designs as complete rather than exported after 
 
   await page.reload();
   await expect(page.locator("#importStatus")).toBeHidden();
-  await expect(row).toContainText("Complete");
+  await expect(row).toContainText("Ready");
   await expect(row).not.toContainText("Exported");
   await expect(exportDesignButton(page)).toBeEnabled();
 
@@ -3277,7 +3277,7 @@ test("keeps the newest analysis request authoritative when Complete is clicked t
   await page.waitForTimeout(900);
   await expect(row.locator(".order-analysis-indicator.running")).toBeVisible();
 
-  await expect(row).toContainText("Complete", { timeout: 20000 });
+  await expect(row).toContainText("Ready", { timeout: 20000 });
   await expect(exportDesignButton(page)).toBeEnabled();
 
   await page.unrouteAll({ behavior: "ignoreErrors" });
@@ -3318,7 +3318,7 @@ test("keeps the newest same-geometry analysis retry authoritative", async ({ pag
   await expect(row.locator(".order-analysis-indicator.running")).toBeVisible();
   await expect(page.locator("#connectionStatusLabel")).not.toContainText("Analysis failed", { timeout: 2000 });
 
-  await expect(row).toContainText("Complete", { timeout: 20000 });
+  await expect(row).toContainText("Ready", { timeout: 20000 });
   await expect(exportDesignButton(page)).toBeEnabled();
 
   await page.unrouteAll({ behavior: "ignoreErrors" });
@@ -3345,7 +3345,7 @@ test("restores the completed state when geometry is reverted before analysis fin
 
   await firstLineLock.uncheck();
 
-  await expect(row).toContainText("Complete");
+  await expect(row).toContainText("Ready");
   await expect(exportDesignButton(page)).toBeEnabled({ timeout: 20000 });
   await expect(completeButton(page)).toBeDisabled();
 
@@ -3385,7 +3385,7 @@ test("ignores an abandoned analysis failure after reverting to a completed geome
   await expect(row.locator(".order-analysis-indicator.running")).toBeVisible();
 
   await firstLineLock.uncheck();
-  await expect(row).toContainText("Complete");
+  await expect(row).toContainText("Ready");
   await expect(exportDesignButton(page)).toBeEnabled();
   await expect(page.locator("#connectionStatusLabel")).not.toContainText("Analysis failed", { timeout: 20000 });
 
@@ -3424,12 +3424,12 @@ test("restores the previous completed geometry after refresh during a newer in-f
   const row = page.locator("#orderList .order-row").filter({ hasText: "Design 1" });
   const restoredFirstLineLock = page.locator('.line-control-card[data-line-index="0"] [data-setting="lockTextHeight"]');
   await expect(page.locator("#importStatus")).toBeHidden();
-  await expect(row).toContainText("Complete");
+  await expect(row).toContainText("Ready");
   await expect(completeButton(page)).toBeDisabled();
   await expect(exportDesignButton(page)).toBeEnabled();
 
   await restoredFirstLineLock.uncheck();
-  await expect(row).toContainText("Complete");
+  await expect(row).toContainText("Ready");
   await expect(completeButton(page)).toBeDisabled();
   await expect(exportDesignButton(page)).toBeEnabled();
 
@@ -3471,12 +3471,12 @@ test("preserves the newest completed geometry across refresh after the operator 
 
   const row = page.locator("#orderList .order-row").filter({ hasText: "Design 1" });
   await expect(page.locator("#importStatus")).toBeHidden();
-  await expect(row).toContainText("Complete");
+  await expect(row).toContainText("Ready");
   await expect(completeButton(page)).toBeDisabled();
   await expect(exportDesignButton(page)).toBeEnabled();
 
   await secondLineHeight.fill("34");
-  await expect(row).toContainText("Complete", { timeout: 20000 });
+  await expect(row).toContainText("Ready", { timeout: 20000 });
   await expect(completeButton(page)).toBeDisabled();
   await expect(exportDesignButton(page)).toBeEnabled();
 
@@ -3506,7 +3506,7 @@ test("restores the previous completed geometry when a newer in-flight analysis i
   await expect(row.locator(".order-analysis-indicator.running")).toBeVisible();
 
   await firstLineLock.uncheck();
-  await expect(row).toContainText("Complete", { timeout: 20000 });
+  await expect(row).toContainText("Ready", { timeout: 20000 });
   await expect(completeButton(page)).toBeDisabled();
   await expect(exportDesignButton(page)).toBeEnabled();
   await expect(page.locator("#connectionStatusLabel")).toContainText("Single connected face piece");
@@ -4534,7 +4534,7 @@ test("keeps Complete button state independent from background analysis", async (
   await completeAndNextButton(page).click();
 
   const completedRow = page.locator("#orderList .order-row").filter({ hasText: "Design 1" });
-  await expect(completedRow).toContainText("Complete");
+  await expect(completedRow).toContainText("Ready");
   await expect(completedRow.locator(".order-analysis-indicator.running")).toBeVisible();
   await expect(page.locator("#activeOrderName")).toHaveText("Design 2");
   await expect(completeButton(page)).toBeEnabled();
@@ -4562,7 +4562,7 @@ test("Complete marks the active design finished without advancing to the next de
   await completeButton(page).click();
 
   const firstRow = page.locator("#orderList .order-row").filter({ hasText: "Design 1" });
-  await expect(firstRow).toContainText("Complete");
+  await expect(firstRow).toContainText("Ready");
   await expect(firstRow.locator(".order-analysis-indicator.running")).toBeVisible();
   await expect(page.locator("#activeOrderName")).toHaveText("Design 1");
   await expect(completeButton(page)).toBeDisabled();
@@ -4590,7 +4590,7 @@ test("Complete & Next marks the current design finished and advances to the next
   await completeAndNextButton(page).click();
 
   const firstRow = page.locator("#orderList .order-row").filter({ hasText: "Design 1" });
-  await expect(firstRow).toContainText("Complete");
+  await expect(firstRow).toContainText("Ready");
   await expect(firstRow.locator(".order-analysis-indicator.running")).toBeVisible();
   await expect(page.locator("#activeOrderName")).toHaveText("Design 2");
   await expect(completeButton(page)).toBeEnabled();

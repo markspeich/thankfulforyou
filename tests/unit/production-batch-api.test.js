@@ -10,6 +10,18 @@ afterEach(() => {
 });
 
 describe("production batch api client", () => {
+  it("sends only the selected item ids and operation and preserves conflict status", async () => {
+    let sent;
+    vi.stubGlobal("fetch", async (url, options) => {
+      sent = { url, ...options };
+      return { ok: false, status: 409, json: async () => ({ error: "Selection changed." }) };
+    });
+    const { mutateSelectedProductionBatchItems } = await import("../../src/production-batch-api.js");
+    await expect(mutateSelectedProductionBatchItems("batch-1", "complete", ["item-2"], { accessToken: "token" }))
+      .rejects.toMatchObject({ message: "Selection changed.", status: 409 });
+    expect(JSON.parse(sent.body)).toEqual({ action: "selected-items", batchId: "batch-1", operation: "complete", orderItemIds: ["item-2"] });
+    expect(sent.headers.Authorization).toBe("Bearer token");
+  });
   it("preserves unauthorized response status for session recovery", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
       ok: false,

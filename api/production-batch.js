@@ -2,6 +2,7 @@ import { createServerTiming } from "./_lib/server-timing.js";
 import { resolveProductionBatchAuth } from "./_lib/production-batch-auth.js";
 import {
   completeProductionBatch,
+  mutateSelectedProductionBatchItems,
   loadProductionBatch,
   removeProductionBatchItem,
   saveProductionBatch,
@@ -227,12 +228,14 @@ export default async function handler(req, res) {
         activeOrderItemId: rawActiveOrderItemId,
         batchId: rawBatchId,
         orderItemId: rawOrderItemId,
+        operation,
+        orderItemIds,
       } = readJsonBody(req);
       const batchId = typeof rawBatchId === "string" ? rawBatchId.trim() : "";
       const orderItemId = typeof rawOrderItemId === "string" ? rawOrderItemId.trim() : "";
       const activeOrderItemId = typeof rawActiveOrderItemId === "string" ? rawActiveOrderItemId.trim() : null;
 
-      if (action !== "complete" && action !== "remove-item") {
+      if (action !== "complete" && action !== "remove-item" && action !== "selected-items") {
         res.status(400).json({ error: "Unsupported production batch action." });
         return;
       }
@@ -244,6 +247,26 @@ export default async function handler(req, res) {
 
       if (action === "remove-item" && !orderItemId) {
         res.status(400).json({ error: "orderItemId is required." });
+        return;
+      }
+
+      if (action === "selected-items") {
+        if (!["complete", "skip", "remove"].includes(operation)
+          || !Array.isArray(orderItemIds) || !orderItemIds.length
+          || orderItemIds.some(id => typeof id !== "string" || !id.trim())
+          || new Set(orderItemIds.map(id => id.trim())).size !== orderItemIds.length) {
+          res.status(400).json({ error: "A supported operation and nonempty, unique orderItemIds are required." });
+          return;
+        }
+        const selectedSnapshot = await mutateSelectedProductionBatchItems({
+          batchId, operation, orderItemIds: orderItemIds.map(id => id.trim()),
+          workspaceId: req.auth.workspaceId, userId: req.auth.userId,
+        });
+        if (!selectedSnapshot) {
+          res.status(404).json({ error: "Production batch not found." });
+          return;
+        }
+        res.status(200).json(normalizeSnapshot(selectedSnapshot));
         return;
       }
 

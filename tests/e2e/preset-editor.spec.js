@@ -284,7 +284,7 @@ async function completeDesign(page, queueLabel) {
 
   await expect(page.locator("#captureButton")).toBeEnabled();
   await page.locator("#captureButton").click();
-  await expect(row).toContainText("Complete");
+  await expect(row).toContainText("Ready");
   await expect.poll(async () => {
     return row.locator(".order-analysis-indicator.ok, .order-analysis-indicator.warning").count();
   }, { timeout: 20000 }).toBe(1);
@@ -1993,7 +1993,7 @@ test("can create a new preset from order settings and update an existing preset"
   await page.locator("#orderList .order-row").filter({ hasText: "Design 1" }).click();
   await expect(page.locator("#presetInput")).toHaveValue(createdPresetId);
   await expect(page.locator("#downloadButton")).toBeEnabled();
-  await expect(page.locator("#orderList .order-row").filter({ hasText: "Design 1" })).toContainText("Complete");
+  await expect(page.locator("#orderList .order-row").filter({ hasText: "Design 1" })).toContainText("Ready");
 
   await page.locator("#orderList .order-row").filter({ hasText: "Design 2" }).click();
   await expect(page.locator("#presetInput")).toHaveValue(createdPresetId);
@@ -2125,7 +2125,7 @@ test("renaming a preset while analysis is running still restores export readines
   await page.getByRole("button", { name: "Production Batch" }).click();
   await expect(page.locator("#presetInput")).toHaveValue(createdPresetId);
   await expect.poll(async () => page.locator("#downloadButton").isEnabled(), { timeout: 20000 }).toBe(true);
-  await expect(page.locator("#orderList .order-row").filter({ hasText: "Design 1" })).toContainText("Complete");
+  await expect(page.locator("#orderList .order-row").filter({ hasText: "Design 1" })).toContainText("Ready");
 });
 
 test("shows assigned listings for a preset and lets operators unassign them", async ({ page }) => {

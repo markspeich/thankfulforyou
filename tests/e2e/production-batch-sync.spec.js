@@ -3,6 +3,137 @@ import { installSeededFontRoute, SEEDED_FONT_RECORDS } from "./font-test-routes.
 
 test.describe.configure({ mode: "serial" });
 
+async function installSelectedItemsBatch(page, { fail = false, waitForRelease = null, concurrentItem = null, onMutation = null } = {}) {
+  await installSupabaseSession(page);
+  const snapshot = {
+    batch: { id: "batch-1", workspaceId: "workspace-1" },
+    activeOrderItemId: "selected-a",
+    orderItems: [
+      buildCompletedRemoteOrder({ id: "selected-a", text: "Alpha", settings: { ...buildCompletedRemoteOrder().settings, text: "Alpha" } }),
+      buildCompletedRemoteOrder({ id: "selected-b", text: "Beta", settings: { ...buildCompletedRemoteOrder().settings, text: "Beta" } }),
+    ],
+  };
+  const requests = [];
+  await page.route("**/api/batch-session", route => route.fulfill({ json: {
+    operator: { id: "user-1", email: "mark@example.com" }, workspace: { id: "workspace-1" }, batch: snapshot.batch,
+  } }));
+  await page.route("**/api/production-batch?*", route => route.fulfill({ json: snapshot }));
+  await page.route("**/api/production-batch", async route => {
+    const body = route.request().postDataJSON();
+    if (route.request().method() === "PUT") {
+      await route.fulfill({ json: body.snapshot });
+      return;
+    }
+    requests.push(body);
+    if (waitForRelease) await waitForRelease;
+    if (fail) {
+      await route.fulfill({ status: 409, json: { error: "Selection changed. Refresh the batch and try again." } });
+      return;
+    }
+    snapshot.orderItems = snapshot.orderItems.filter(item => !body.orderItemIds.includes(item.id));
+    if (concurrentItem) snapshot.orderItems.push(concurrentItem);
+    onMutation?.(snapshot);
+    snapshot.activeOrderItemId = snapshot.orderItems[0]?.id || null;
+    await route.fulfill({ json: snapshot });
+  });
+  await page.goto("/production-batch");
+  await expect(page.locator("#orderList .order-row")).toHaveCount(2);
+  return requests;
+}
+
+test("batch checkboxes select independently and survive search", async ({ page }) => {
+  await installSelectedItemsBatch(page);
+  await page.locator(".batch-tools-toggle").first().click();
+  await expect(page.getByRole("button", { name: "Mark as Complete", exact: true })).toBeDisabled();
+  await page.locator(".batch-tools-toggle").first().click();
+  const before = await page.locator("#textInput").inputValue();
+  await page.locator("#orderList input[type=checkbox]").nth(1).check();
+  await expect(page.locator("#textInput")).toHaveValue(before);
+  await expect(page.locator("#batchSelectedCount")).toHaveText("1 selected");
+  await expect(page.locator("#selectVisibleBatchItems")).toHaveJSProperty("indeterminate", true);
+  await page.locator("#orderSearchInput").fill("Alpha");
+  await page.locator("#selectVisibleBatchItems").check();
+  await expect(page.locator("#batchSelectedCount")).toHaveText("2 selected");
+  await page.locator("#orderSearchInput").fill("");
+  await expect(page.locator("#orderList input:checked")).toHaveCount(2);
+});
+
+for (const [operation, label] of [["complete", "Mark as Complete"], ["skip", "Skip"], ["remove", "Remove from Batch"]]) {
+  test(`selected batch ${operation} preserves unchecked items and refresh state`, async ({ page }) => {
+    const requests = await installSelectedItemsBatch(page);
+    await page.locator("#orderList input[type=checkbox]").first().check();
+    await page.locator(".batch-tools-toggle").first().click();
+    await page.getByRole("button", { name: label, exact: true }).click();
+    await expect(page.locator("#confirmationDialogDescription")).toContainText("1 selected");
+    await page.locator("#confirmationDialogConfirmButton").click();
+    await expect(page.locator("#orderList .order-row")).toHaveCount(1);
+    expect(requests).toEqual([{ action: "selected-items", batchId: "batch-1", operation, orderItemIds: ["selected-a"] }]);
+    await expect(page.locator("#batchSelectedCount")).toHaveText("0 selected");
+    await expect(page.locator("#textInput")).toHaveValue("Beta");
+    await page.reload();
+    await expect(page.locator("#orderList .order-row")).toHaveCount(1);
+  });
+}
+
+test("selected batch operation shows working state and preserves checks and edits on failure", async ({ page }) => {
+  let release;
+  const waitForRelease = new Promise(resolve => { release = resolve; });
+  const requests = await installSelectedItemsBatch(page, { fail: true, waitForRelease });
+  await page.locator("#textInput").fill("Unsaved Alpha");
+  await page.locator("#orderList input[type=checkbox]").first().check();
+  await page.locator(".batch-tools-toggle").first().click();
+  await page.getByRole("button", { name: "Remove from Batch", exact: true }).click();
+  await page.locator("#confirmationDialogConfirmButton").click();
+  await expect.poll(() => requests.length).toBe(1);
+  await expect(page.locator("#pasteSummaryDialog")).toBeVisible();
+  release();
+  await expect(page.locator("#pasteSummaryDialog")).toContainText("Selection changed");
+  await expect(page.locator("#orderList .order-row")).toHaveCount(2);
+  await expect(page.locator("#orderList input:checked")).toHaveCount(1);
+  await expect(page.locator("#textInput")).toHaveValue("Unsaved Alpha");
+  await expect(page.locator("#pasteSummaryDialog .batch-summary-card")).toHaveAttribute("data-operation-state", "error");
+  await page.locator("#pasteSummaryDoneButton").click();
+  await expect(page.locator(".batch-tools-toggle").first()).toBeFocused();
+});
+
+test("selected batch success adopts concurrent additions and keeps unchecked editor edits", async ({ page }) => {
+  const added = buildCompletedRemoteOrder({ id: "concurrent-c", text: "Gamma", settings: { ...buildCompletedRemoteOrder().settings, text: "Gamma" } });
+  await installSelectedItemsBatch(page, { concurrentItem: added });
+  await page.locator("#orderList .order-item").nth(1).click();
+  await page.locator("#textInput").fill("Draft Beta");
+  await page.locator("#orderList input[type=checkbox]").first().check();
+  await page.locator(".batch-tools-toggle").first().click();
+  await page.getByRole("button", { name: "Remove from Batch", exact: true }).click();
+  await page.locator("#confirmationDialogConfirmButton").click();
+  await expect(page.locator("#orderList .order-row")).toHaveCount(2);
+  await expect(page.locator("#orderList")).toContainText("Gamma");
+  await expect(page.locator("#textInput")).toHaveValue("Draft Beta");
+});
+
+test("concurrently removed unchecked drafts recover when their items rejoin the batch", async ({ page }) => {
+  let mutationCount = 0;
+  const beta = buildCompletedRemoteOrder({ id: "selected-b", text: "Beta", settings: { ...buildCompletedRemoteOrder().settings, text: "Beta" } });
+  const gamma = buildCompletedRemoteOrder({ id: "concurrent-c", text: "Gamma", settings: { ...buildCompletedRemoteOrder().settings, text: "Gamma" } });
+  await installSelectedItemsBatch(page, { onMutation: snapshot => {
+    snapshot.orderItems = [++mutationCount === 1 ? gamma : beta];
+  } });
+  await page.locator("#orderList .order-item").nth(1).click();
+  await page.locator("#textInput").fill("Retained Beta Draft");
+  await page.locator("#orderList input[type=checkbox]").first().check();
+  await page.locator(".batch-tools-toggle").first().click();
+  await page.getByRole("button", { name: "Remove from Batch", exact: true }).click();
+  await page.locator("#confirmationDialogConfirmButton").click();
+  await expect(page.locator("#pasteSummaryDialog")).toContainText("unsaved edits are retained");
+  await expect(page.locator("#orderList .order-row")).toHaveCount(1);
+  await page.locator("#pasteSummaryDoneButton").click();
+  await page.locator("#orderList input[type=checkbox]").check();
+  await page.locator(".batch-tools-toggle").first().click();
+  await page.getByRole("button", { name: "Remove from Batch", exact: true }).click();
+  await page.locator("#confirmationDialogConfirmButton").click();
+  await expect(page.locator("#textInput")).toHaveValue("Retained Beta Draft");
+  await expect(page.locator("#orderList .order-status")).toHaveText("In progress");
+});
+
 test.beforeEach(async ({ page }) => {
   await installSeededFontRoute(page);
 });
@@ -313,7 +444,7 @@ test("keeps a saved shared design complete when its linked listing preset differ
   await page.goto("/production-batch");
 
   const row = page.locator("#orderList .order-row").filter({ hasText: "Saved Linked" });
-  await expect(row).toContainText("Complete");
+  await expect(row).toContainText("Ready");
   await expect(row.locator(".order-analysis-indicator.ok")).toBeVisible();
   await expect(page.locator("#presetInput")).toHaveValue("preset-a1f4c8e2b601");
   await expect(page.locator("#captureButton")).toBeDisabled();

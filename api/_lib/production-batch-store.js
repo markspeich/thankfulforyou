@@ -391,6 +391,23 @@ export async function completeProductionBatch({ batchId, workspaceId, userId }) 
   });
 }
 
+export async function mutateSelectedProductionBatchItems({ batchId, workspaceId, userId, operation, orderItemIds }) {
+  const supabase = createSupabaseAdminClient();
+  const { data, error } = await supabase.rpc("mutate_selected_production_batch_items", {
+    p_workspace_id: workspaceId, p_user_id: userId || null, p_batch_id: batchId,
+    p_operation: operation, p_order_item_ids: orderItemIds,
+  });
+  if (error?.code === "40001") {
+    throw Object.assign(new Error("Selected items changed or left the batch. Refresh the batch and select the items again."), { statusCode: 409, expose: true });
+  }
+  if (error?.code === "22023") {
+    throw Object.assign(new Error("Invalid selected item operation. Select items and try again."), { statusCode: 400, expose: true });
+  }
+  if (error) throw error;
+  if (!data) return null;
+  return loadProductionBatch({ batchId, workspaceId });
+}
+
 export async function removeProductionBatchItem({
   batchId,
   orderItemId,

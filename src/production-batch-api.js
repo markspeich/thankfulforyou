@@ -117,6 +117,19 @@ export async function completeProductionBatch(batchId, options = {}) {
   return payload;
 }
 
+export async function mutateSelectedProductionBatchItems(batchId, operation, orderItemIds, { accessToken = null } = {}) {
+  const response = await fetch("/api/production-batch", {
+    method: "POST",
+    headers: buildAuthHeaders(accessToken, { "Content-Type": "application/json", Accept: "application/json" }),
+    body: JSON.stringify({ action: "selected-items", batchId, operation, orderItemIds }),
+  });
+  const payload = await readJsonOrFallback(response, {});
+  if (!response.ok) {
+    throw Object.assign(new Error(payload.error || "Unable to update selected batch items. Refresh the batch and try again."), { status: response.status });
+  }
+  return payload;
+}
+
 export async function removeProductionBatchItem(batchId, orderItemId, options = {}) {
   const { accessToken = null, activeOrderItemId = null } = options;
   const response = await fetch("/api/production-batch", {

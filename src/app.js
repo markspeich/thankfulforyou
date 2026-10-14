@@ -76,6 +76,7 @@ import { buildReloadedPresetSettings } from "./preset-selection.js";
 import { buildBatchExportSources, sortDesignsByImportedColor } from "./production-batch-export-order.js";
 import {
   completeProductionBatch,
+  mutateSelectedProductionBatchItems,
   fetchProductionBatchSnapshot,
   fetchBatchSession,
   ProductionBatchConflictError,
@@ -328,6 +329,14 @@ const exportCompletedButton = document.querySelector("#exportCompletedButton");
 const showColorCountsButton = document.querySelector("#showColorCountsButton");
 const copyCompletedButton = document.querySelector("#copyCompletedButton");
 const batchToolsMenu = document.querySelector(".batch-tools-menu");
+const selectVisibleBatchItems = document.querySelector("#selectVisibleBatchItems");
+const batchSelectedCount = document.querySelector("#batchSelectedCount");
+const selectedBatchActionButtons = ["complete", "skip", "remove"].map((operation) => ({
+  operation, button: document.querySelector(`#${operation}SelectedBatchItems`),
+}));
+const checkedBatchItemIds = new Set();
+const removedBatchDrafts = new Map();
+let selectedBatchActionBusy = false;
 const ordersToolsMenu = document.querySelector("#ordersToolsMenu");
 const pasteOrdersButton = document.querySelector("#pasteOrdersButton");
 const databaseOrdersSearchInput = document.querySelector("#databaseOrdersSearchInput");
@@ -1032,7 +1041,7 @@ async function handleProductionBatchSignOut() {
 const statusLabels = {
   "not-started": "Not started",
   "in-progress": "In progress",
-  captured: "Complete",
+  captured: "Ready",
   exported: "Exported",
 };
 const DEFAULT_FONT_PREVIEW_TEXT = "ABCDEFGHIJKLMNOPQRSTUVWXYZ\nabcdefghijklmnopqrstuvwxyz";
@@ -3914,6 +3923,22 @@ function hydrateStoredOrder(order, index) {
   if (!order || typeof order !== "object") {
     return null;
   }
+  const recoveryKey = `${productionBatchContext?.workspaceId || ""}:${order.id}`;
+  const recoveredDraft = removedBatchDrafts.get(recoveryKey);
+  if (recoveredDraft) {
+    removedBatchDrafts.delete(recoveryKey);
+    // Use ordinary hydration to abandon requests whose callbacks belonged to
+    // the removed object, while keeping the operator's draft settings.
+    order = {
+      ...buildSerializedBatchOrder(recoveredDraft),
+      revision: order.revision,
+      designId: order.designId,
+      designRevision: order.designRevision,
+      updatedAt: order.updatedAt,
+      updatedBy: order.updatedBy,
+      publishedSnapshot: normalizeStoredPublishedSnapshot(order),
+    };
+  }
 
   const text = typeof order.text === "string"
     ? order.text
@@ -4084,6 +4109,7 @@ function normalizeProductionBatchContext(batch) {
 }
 
 function setProductionBatchContext(batch) {
+  if (batch?.id !== productionBatchContext?.id) checkedBatchItemIds.clear();
   productionBatchContext = normalizeProductionBatchContext(batch);
 }
 
@@ -6475,6 +6501,7 @@ function showActionOperationError(error, fallbackMessage) {
       ? error.message
       : fallbackMessage,
   });
+  pasteSummaryDialog.querySelector(".batch-summary-card").dataset.operationState = "error";
 }
 async function importManualPasteFallback() {
   const target = pasteFallbackTarget;
@@ -10647,6 +10674,27 @@ function renderCustomerFontSelections(order) {
   customerFontSelections.hidden = rows.length === 0;
 }
 
+function getVisibleBatchOrders() {
+  const searchTerm = orderSearchInput.value.trim().toLowerCase();
+  return orders.filter((order) => !searchTerm || `${buildBatchOrderNumber(order)} ${order.text} ${order.source?.orderNumber || ""} ${order.source?.listingId || ""} ${order.source?.buyerName || ""}`.toLowerCase().includes(searchTerm));
+}
+
+function renderBatchSelection() {
+  const availableIds = new Set(orders.map((order) => order.id));
+  for (const id of checkedBatchItemIds) if (!availableIds.has(id)) checkedBatchItemIds.delete(id);
+  const visibleOrders = getVisibleBatchOrders();
+  const checkedVisibleCount = visibleOrders.filter((order) => checkedBatchItemIds.has(order.id)).length;
+  batchSelectedCount.textContent = `${checkedBatchItemIds.size} selected`;
+  selectVisibleBatchItems.checked = visibleOrders.length > 0 && checkedVisibleCount === visibleOrders.length;
+  selectVisibleBatchItems.indeterminate = checkedVisibleCount > 0 && checkedVisibleCount < visibleOrders.length;
+  selectVisibleBatchItems.disabled = selectedBatchActionBusy || !visibleOrders.length;
+  for (const { button } of selectedBatchActionButtons) button.disabled = selectedBatchActionBusy || !checkedBatchItemIds.size;
+  orderList.querySelectorAll(".batch-item-checkbox").forEach((checkbox) => {
+    checkbox.checked = checkedBatchItemIds.has(checkbox.dataset.orderItemId);
+    checkbox.disabled = selectedBatchActionBusy;
+  });
+}
+
 function renderOrderList() {
   const searchTerm = orderSearchInput.value.trim().toLowerCase();
   const visibleOrders = orders.filter((order) => {
@@ -10698,6 +10746,16 @@ function renderOrderList() {
   visibleOrders.forEach((order) => {
     const row = document.createElement("div");
     row.className = `order-row${order.id === activeOrderItemId ? " active" : ""}`;
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.className = "batch-item-checkbox";
+    checkbox.dataset.orderItemId = order.id;
+    checkbox.setAttribute("aria-label", `Select ${buildBatchOrderNumber(order)}: ${order.text || "Blank design"}`);
+    checkbox.addEventListener("change", () => {
+      if (checkbox.checked) checkedBatchItemIds.add(order.id);
+      else checkedBatchItemIds.delete(order.id);
+      renderBatchSelection();
+    });
 
     const item = document.createElement("button");
     item.type = "button";
@@ -10756,10 +10814,11 @@ function renderOrderList() {
       void deleteOrder(order.id);
     });
 
-    row.append(item, deleteButton);
+    row.append(checkbox, item, deleteButton);
     orderList.append(row);
   });
 
+  renderBatchSelection();
   const activeOrder = getActiveOrder();
   editorPanel.classList.toggle("is-hidden", !activeOrder);
   syncOrderMetadataControls(activeOrder);
@@ -12103,11 +12162,100 @@ async function deleteOrder(orderId) {
   }
 }
 
-function getIncompleteProductionBatchOrders() {
-  return orders.filter((order) => (
+function getIncompleteProductionBatchOrders(items = orders) {
+  return items.filter((order) => (
     order.status !== "captured"
     && order.status !== "exported"
   ) || !isOrderReadyForExport(order));
+}
+
+async function actOnSelectedBatchItems(operation) {
+  if (selectedBatchActionBusy || !checkedBatchItemIds.size) return;
+  const selectedOrders = orders.filter((order) => checkedBatchItemIds.has(order.id));
+  if (!selectedOrders.length) return;
+  selectedBatchActionBusy = true;
+  renderBatchSelection();
+  batchToolsMenu?.removeAttribute("open");
+  const label = { complete: "Mark as Complete", skip: "Skip", remove: "Remove from Batch" }[operation];
+  const count = selectedOrders.length;
+  const itemLabel = `${count} selected item${count === 1 ? "" : "s"}`;
+  const previousAutosaveSuppressed = suppressProductionBatchAutosave;
+  saveActiveOrderDraft();
+  const incompleteCount = operation === "complete" ? getIncompleteProductionBatchOrders(selectedOrders).length : 0;
+  const description = operation === "complete"
+    ? `Mark ${itemLabel} complete and remove them from the active batch?${incompleteCount ? ` ${incompleteCount} selected design${incompleteCount === 1 ? " is" : "s are"} not Ready/Exported or lack export-ready geometry. Complete anyway?` : ""}`
+    : operation === "skip"
+      ? `Skip ${itemLabel} and remove them from the active batch? Already-completed order items remain complete. Saved designs are preserved.`
+      : `Remove ${itemLabel} from the active batch? Order items, saved designs, and their lifecycle statuses are preserved.`;
+  try {
+    const confirmed = await showConfirmationDialog({
+      title: incompleteCount ? "Complete Selected Items With Unready Designs?" : `${label}?`,
+      description, confirmLabel: label, cancelLabel: "Keep Items", isDanger: operation !== "complete" || incompleteCount > 0,
+    });
+    if (!confirmed) {
+      batchToolsMenu?.querySelector("summary")?.focus();
+      return;
+    }
+    suppressProductionBatchAutosave = true;
+    startOperationDialog({ title: `${label}: Selected Items`, description: `Updating ${itemLabel}.`, progressLabel: "Saving pending edits and updating the batch..." });
+    pasteSummaryDialog.addEventListener("close", () => batchToolsMenu?.querySelector("summary")?.focus(), { once: true });
+    const batchId = requireActiveProductionBatchId();
+    if (!batchId) throw new Error("No active production batch. Reload the batch and try again.");
+    clearProductionBatchAutosaveTimeout();
+    await waitForProductionBatchAutosaveIdle();
+    if (resolveProductionBatchSaveOrderIds() === null) {
+      throw Object.assign(new Error("Save newly added designs before updating selected items, then try again."), { safeMessage: "Save newly added designs before updating selected items, then try again. Your edits and selection have been kept." });
+    }
+    await persistPendingProductionBatchEdits();
+    const accessToken = productionBatchAccessToken || readProductionBatchAccessTokenOverride() || await getAccessToken();
+    const selectedIds = selectedOrders.map((order) => order.id);
+    const snapshot = await runProductionBatchRequestWithSessionRefresh(
+      (requestToken) => mutateSelectedProductionBatchItems(batchId, operation, selectedIds, { accessToken: requestToken }), accessToken,
+    );
+    const removedIds = new Set(selectedIds);
+    const oldIndex = orders.findIndex((order) => order.id === activeOrderItemId);
+    const previousById = new Map(orders.map((order) => [order.id, order]));
+    const remainingIds = new Set(snapshot.orderItems.map((order) => order.id));
+    let recoveredDraftCount = 0;
+    for (const order of orders) {
+      if (!removedIds.has(order.id) && !remainingIds.has(order.id) && hasUnsavedPublishedSnapshotChanges(order)) {
+        removedBatchDrafts.set(`${productionBatchContext.workspaceId}:${order.id}`, structuredClone(order));
+        recoveredDraftCount += 1;
+      }
+    }
+    const remainingOrders = snapshot.orderItems.map((order, index) => previousById.get(order.id) || hydrateStoredOrder(order, index)).filter(Boolean);
+    orders.splice(0, orders.length, ...remainingOrders);
+    if (!remainingIds.has(activeOrderItemId)) {
+      activeOrderItemId = orders[Math.min(Math.max(oldIndex, 0), orders.length - 1)]?.id || null;
+      if (activeOrderItemId) applySettings(getActiveOrder().settings);
+      else resetEditorToEmptyState();
+    }
+    if (snapshot?.batch) enableProductionBatchSync(snapshot.batch);
+    mergeProductionBatchPublishedStateFromSnapshot(snapshot);
+    mergeProductionBatchAuditFromSnapshot(snapshot);
+    checkedBatchItemIds.clear();
+    lastProductionBatchSaveKey = buildProductionBatchSaveKey(snapshot);
+    persistBatchState({ skipRemoteSave: true });
+    invalidateDatabaseOrders();
+    renderOrderList();
+    render();
+    updateWorkflowAlert(`${label}: ${count} item${count === 1 ? "" : "s"} updated.`, "success");
+    completeOperationDialog({ title: "Selected Items Updated", description: `${label} finished successfully.${recoveredDraftCount ? ` Another operator removed ${recoveredDraftCount} unchecked item(s). Their unsaved edits are retained for this browser session. Add those items back from Orders to recover the edits before closing or reloading this page.` : ""}`, metrics: [{ label: "Items updated", value: count }, { label: "Remaining in batch", value: orders.length }] });
+  } catch (error) {
+    const message = error.safeMessage || (error?.status === 409
+      ? "Selection changed. Reload the batch and try again. Your edits and selection have been kept."
+      : isProductionBatchAuthenticationError(error)
+        ? "Your session expired. Sign in again to update selected items. Your edits and selection have been kept."
+        : `Unable to ${label.toLowerCase()}. Your edits and selection have been kept. Try again; if the problem continues, reload the batch.`);
+    console.error("Selected production batch operation failed", error);
+    updateWorkflowAlert(message, "error");
+    showActionOperationError(new Error(message), message);
+  } finally {
+    suppressProductionBatchAutosave = previousAutosaveSuppressed;
+    selectedBatchActionBusy = false;
+    renderBatchSelection();
+    if (productionBatchAutosavePending && !suppressProductionBatchAutosave) triggerProductionBatchAutosave();
+  }
 }
 
 async function completeCurrentProductionBatch() {
@@ -12120,7 +12268,7 @@ async function completeCurrentProductionBatch() {
   const confirmed = await showConfirmationDialog({
     title: incompleteOrders.length ? "Complete Production Batch With Incomplete Items?" : "Complete Production Batch?",
     description: incompleteOrders.length
-      ? `${incompleteOrders.length} of ${orders.length} batch item${orders.length === 1 ? "" : "s"} ${incompleteOrders.length === 1 ? "is" : "are"} not complete or export-ready. Complete this production batch anyway?`
+      ? `${incompleteOrders.length} of ${orders.length} batch item${orders.length === 1 ? "" : "s"} ${incompleteOrders.length === 1 ? "is" : "are"} not Ready/Exported or export-ready. Complete this production batch anyway?`
       : "Mark every order in this production batch complete and remove the batch from the active view?",
     confirmLabel: "Complete Batch",
     cancelLabel: "Keep Batch",
@@ -14970,6 +15118,16 @@ document.addEventListener("pointerdown", (event) => {
   editorToolsMenu?.removeAttribute("open");
 });
 orderSearchInput.addEventListener("input", renderOrderList);
+selectVisibleBatchItems.addEventListener("change", () => {
+  for (const order of getVisibleBatchOrders()) {
+    if (selectVisibleBatchItems.checked) checkedBatchItemIds.add(order.id);
+    else checkedBatchItemIds.delete(order.id);
+  }
+  renderBatchSelection();
+});
+for (const { operation, button } of selectedBatchActionButtons) {
+  button.addEventListener("click", () => { void actOnSelectedBatchItems(operation); });
+}
 captureButton.addEventListener("click", () => {
   captureActiveOrder();
 });

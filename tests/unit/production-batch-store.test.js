@@ -21,6 +21,7 @@ function createSupabaseClientMock() {
     },
     async rpc(name, args) {
       supabaseMock.calls.push({ operation: "rpc", name, args });
+      if (name === "mutate_selected_production_batch_items") return { data: true, error: supabaseMock.rpcError };
       if (name === "save_production_order_items") {
         supabaseMock.calls.push({ table: "order_items", operation: "upsert", payload: args.p_order_items });
         return { error: supabaseMock.rpcError };
@@ -216,6 +217,20 @@ afterEach(() => {
 });
 
 describe("production batch store", () => {
+  it.each(["complete", "skip", "remove"])("uses atomic selected %s RPC and reloads remaining snapshot", async (operation) => {
+    const { mutateSelectedProductionBatchItems } = await import("../../api/_lib/production-batch-store.js");
+    const result = await mutateSelectedProductionBatchItems({ batchId: "batch-1", workspaceId: "workspace-1", userId: "user-1", operation, orderItemIds: ["order-2"] });
+    expect(supabaseMock.calls).toContainEqual({ operation: "rpc", name: "mutate_selected_production_batch_items", args: { p_batch_id: "batch-1", p_workspace_id: "workspace-1", p_user_id: "user-1", p_operation: operation, p_order_item_ids: ["order-2"] } });
+    expect(result.orderItems.map(item => item.id)).toEqual(["order-1"]);
+    expect(supabaseMock.calls.some(call => ["delete", "update", "upsert"].includes(call.operation))).toBe(false);
+  });
+
+  it("maps stale selected membership to sanitized conflict without reloading", async () => {
+    supabaseMock.rpcError = { code: "40001", message: "private database detail" };
+    const { mutateSelectedProductionBatchItems } = await import("../../api/_lib/production-batch-store.js");
+    await expect(mutateSelectedProductionBatchItems({ batchId: "batch-1", workspaceId: "workspace-1", operation: "skip", orderItemIds: ["stale"] })).rejects.toMatchObject({ statusCode: 409, expose: true });
+    expect(supabaseMock.calls).toHaveLength(1);
+  });
   it("omits raw Amazon customization JSON from the production batch client snapshot", async () => {
     // Break caught: a broad order-item select exposes the stored diagnostic document to the browser.
     const { loadProductionBatch } = await import("../../api/_lib/production-batch-store.js");

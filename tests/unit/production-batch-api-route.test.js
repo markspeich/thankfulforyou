@@ -3,11 +3,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const loadProductionBatchMock = vi.fn();
 const saveProductionBatchMock = vi.fn();
 const completeProductionBatchMock = vi.fn();
+const mutateSelectedProductionBatchItemsMock = vi.fn();
 const removeProductionBatchItemMock = vi.fn();
 const resolveProductionBatchAuthMock = vi.fn();
 
 vi.mock("../../api/_lib/production-batch-store.js", () => ({
   completeProductionBatch: completeProductionBatchMock,
+  mutateSelectedProductionBatchItems: mutateSelectedProductionBatchItemsMock,
   loadProductionBatch: loadProductionBatchMock,
   removeProductionBatchItem: removeProductionBatchItemMock,
   saveProductionBatch: saveProductionBatchMock,
@@ -44,6 +46,7 @@ beforeEach(() => {
   loadProductionBatchMock.mockReset();
   saveProductionBatchMock.mockReset();
   completeProductionBatchMock.mockReset();
+  mutateSelectedProductionBatchItemsMock.mockReset();
   removeProductionBatchItemMock.mockReset();
   resolveProductionBatchAuthMock.mockReset();
 });
@@ -53,6 +56,24 @@ afterEach(() => {
 });
 
 describe("production batch api route", () => {
+  it.each(["complete", "skip", "remove"])("dispatches selected %s with authenticated workspace", async (operation) => {
+    resolveProductionBatchAuthMock.mockResolvedValue({ userId: "user-1", workspaceId: "workspace-1" });
+    mutateSelectedProductionBatchItemsMock.mockResolvedValue({ batch: { id: "batch-1" }, orderItems: [] });
+    const { default: handler } = await import("../../api/production-batch.js");
+    const response = createResponseRecorder();
+    await handler({ method: "POST", body: { action: "selected-items", operation, batchId: "batch-1", orderItemIds: ["order-1"] } }, response);
+    expect(response.statusCode).toBe(200);
+    expect(mutateSelectedProductionBatchItemsMock).toHaveBeenCalledWith({ operation, batchId: "batch-1", orderItemIds: ["order-1"], workspaceId: "workspace-1", userId: "user-1" });
+  });
+
+  it.each([[], [""], ["order-1", "order-1"], [null], "order-1"])("rejects invalid selected IDs %j", async (orderItemIds) => {
+    resolveProductionBatchAuthMock.mockResolvedValue({ userId: "user-1", workspaceId: "workspace-1" });
+    const { default: handler } = await import("../../api/production-batch.js");
+    const response = createResponseRecorder();
+    await handler({ method: "POST", body: { action: "selected-items", operation: "skip", batchId: "batch-1", orderItemIds } }, response);
+    expect(response.statusCode).toBe(400);
+    expect(mutateSelectedProductionBatchItemsMock).not.toHaveBeenCalled();
+  });
   it("returns a production batch snapshot for a valid GET request", async () => {
     resolveProductionBatchAuthMock.mockResolvedValue({
       userId: "user-1",
