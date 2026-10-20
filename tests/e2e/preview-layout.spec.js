@@ -833,6 +833,52 @@ test("saves design notes beside text and includes corresponding notes in every p
   await exportPreview.close();
 });
 
+for (const textFallback of [false, true]) {
+  test(`clipboard color labels render at 9 mm in ${textFallback ? "plain text fallback" : "SVG and text"}`, async ({ page }) => {
+    await page.route("**/api/layout-analyze", route => route.fulfill({ json: buildMockAnalysisResponse() }));
+    await page.evaluate(({ textFallback }) => {
+      window.__copiedFormats = null;
+      window.ClipboardItem = class { constructor(data) { this.data = data; } };
+      const clipboard = textFallback ? {
+        writeText: async text => { window.__copiedFormats = { "text/plain": text }; },
+      } : {
+        write: async ([item]) => {
+          const formats = {};
+          for (const [type, blob] of Object.entries(item.data)) formats[type] = await (await blob).text();
+          window.__copiedFormats = formats;
+        },
+      };
+      Object.defineProperty(navigator, "clipboard", { configurable: true, value: clipboard });
+    }, { textFallback });
+    await setDesignText(page, "Mark");
+    await page.locator("#customNotesInput").fill("Check clasp");
+    await page.locator("#editOrderColorButton").click();
+    await page.locator("#orderColorInput").fill("White");
+    await page.locator("#saveOrderColorButton").click();
+    await completeDesign(page, "Design 1");
+    await clickEditorToolButton(page, "#copyButton");
+    await expect.poll(() => page.evaluate(() => Boolean(window.__copiedFormats))).toBe(true);
+    const formats = await page.evaluate(() => window.__copiedFormats);
+    if (!textFallback) expect(formats["image/svg+xml"]).toBe(formats["text/plain"]);
+    const svg = formats["text/plain"];
+    expect(svg).toContain("BLACK TEXT");
+    expect(svg).toContain("Check clasp");
+    const rendered = await page.context().newPage();
+    await rendered.setContent(svg);
+    const metrics = await rendered.locator('[id$="-color-label"]').first().evaluate(node => {
+      const root = node.ownerSVGElement;
+      const cssPxPerUserUnit = root.width.baseVal.value / root.viewBox.baseVal.width;
+      return {
+        fontSizeMm: parseFloat(getComputedStyle(node).fontSize) * cssPxPerUserUnit / (96 / 25.4),
+        notesFontSize: getComputedStyle(root.querySelector('[id$="-important-note-1"]')).fontSize,
+      };
+    });
+    expect(metrics.fontSizeMm).toBeCloseTo(9, 2);
+    expect(metrics.notesFontSize).toBe("7px");
+    await rendered.close();
+  });
+}
+
 test("edits slider values through compact stepped number fields", async ({ page }) => {
   await page.locator("#textInput").fill("Ada");
 

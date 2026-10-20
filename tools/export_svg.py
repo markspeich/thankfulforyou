@@ -1553,7 +1553,8 @@ def build_color_label(order, instance_id, translate_y, x=None, y=None, center_ve
     baseline = ' dominant-baseline="middle"' if center_vertical else ""
     return (
         f'  <text id="{instance_id}-color-label" x="{x:.3f}" y="{y:.3f}" '
-        f'font-family="Arial" font-size="{COLOR_LABEL_FONT_SIZE_MM:.3f}mm" '
+        # Coordinates already map one SVG user unit to one millimetre.
+        f'font-family="Arial" font-size="{COLOR_LABEL_FONT_SIZE_MM:.3f}" '
         f'fill="rgb(255, 0, 0)" text-anchor="middle"{baseline}>{color_name}</text>'
     )
 

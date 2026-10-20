@@ -23,7 +23,7 @@ These requirements apply to every new feature, across all workspaces, without a 
 - The selected-design top entry row must include an editable multiline `Notes` field immediately to the right of `Design Text`, adding no vertical space at the intended desktop layout.
 - Custom notes belong to the corresponding design and follow its normal draft, Save, Cancel, switching, and reload lifecycle. Existing designs default to blank notes.
 - Every design SVG export and copy path, including Orders workspace copy and batch actions, must append nonblank custom note lines after all generated notes (such as `BLACK TEXT`) in the existing first notes column. Preserve generated notes, item selection, export order, quantities, and multiline rendering; blank notes add no lines.
-- Render note font size in the SVG's millimetre-based viewBox units so adjacent note lines remain separate. Restore only the backing-color label size to its historical `9.000mm` SVG attribute (before commit `20de181` doubled it to `18.000mm`); keep color-label placement, content, and quantity counts unchanged.
+- Render note font size in the SVG's millimetre-based viewBox units so adjacent note lines remain separate. Backing-color labels must render at 9 mm in both clipboard formats and downloaded SVGs: use `font-size="9.000"` in the millimetre-based viewBox, since a physical `mm` suffix multiplies the rendered size again. Keep color-label placement, content, quantity counts, other label types, and geometry unchanged.
 
 The software must lay out customer-provided text in a selected font so the laser-cut acrylic uses as few separate pieces as possible.
 
