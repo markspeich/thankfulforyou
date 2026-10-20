@@ -1,4 +1,15 @@
 debug.log
+.local/
+.env
+.env.*
+.venv*/
+.agents/
+.codex/
+.superpowers/
+.vercel/
+supabase/.temp/
+__pycache__/
+*.pyc
 docs/
 tests/
 test-results/
