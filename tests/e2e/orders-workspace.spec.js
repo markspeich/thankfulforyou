@@ -2264,6 +2264,40 @@ test("copying an incomplete order item design shows a completion-needed status",
   await expect(page.locator("#workflowAlertText")).toHaveText("Complete and save this design before copying.");
 });
 
+test("Orders copy uses the chosen item's saved custom notes", async ({ page }) => {
+  await installSupabaseSession(page);
+  await installProductionBatchRoutes(page);
+  const payload = buildOrdersPayload();
+  const [first, second] = payload.orders[0].items;
+  first.design.customNotes = "Other item's notes";
+  second.design.customNotes = "Orders copy\nCheck clasp";
+  second.design.cachedBuild = structuredClone(first.design.cachedBuild);
+  second.design.cachedBuild.layout.text = "PICU";
+  second.design.cachedBuild.analysis.exportFacePath = "M12 11H44V21H12Z";
+  await installOrdersWorkspaceRoutes(page, { ordersPayload: payload });
+  await page.addInitScript(() => {
+    window.__copiedSvg = "";
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: {
+      writeText: async (svg) => { window.__copiedSvg = svg; },
+    } });
+  });
+  const exportRequests = [];
+  page.on("request", request => {
+    if (request.url().endsWith("/api/export-svg")) exportRequests.push(request.postDataJSON());
+  });
+  await gotoAfterBatchLoads(page);
+  await page.getByRole("button", { name: "Orders", exact: true }).click();
+  const card = page.locator(".database-order-item-card").filter({ hasText: "Badge buddy" });
+  await card.getByRole("button", { name: "Item actions" }).click();
+  await card.getByRole("button", { name: "Copy Design" }).click();
+  await expect.poll(() => page.evaluate(() => window.__copiedSvg)).toContain("Orders copy");
+  expect(exportRequests).toHaveLength(1);
+  expect(exportRequests[0].customNotes).toBe("Orders copy\nCheck clasp");
+  const svg = await page.evaluate(() => window.__copiedSvg);
+  expect(svg).toContain("Check clasp");
+  expect(svg).not.toContain("Other item's notes");
+});
+
 for (const scope of ["item", "order", "checked"]) {
   test(`reopens completed ${scope} to Open without adding to production`, async ({ page }) => {
     await installSupabaseSession(page);

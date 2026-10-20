@@ -1228,7 +1228,7 @@ else:
     expect(svg).toContain('id="order-2-copy-1-mirror-backing-border" d="M20 0 L30 0 L30 10 Z" transform="translate(195.467 67.343) scale(-1 1)"');
     expect(svg).toContain('id="order-1-copy-1-color-label" x="232.029" y="25.781"');
     expect(svg).toContain('id="order-2-copy-1-color-label" x="232.029" y="77.343"');
-    expect(svg).toContain('font-size="18.000mm"');
+    expect(svg).toContain('font-size="9.000mm"');
     expect(svg).toContain('text-anchor="middle"');
     expect(svg).toContain('dominant-baseline="middle"');
   });
@@ -1252,6 +1252,62 @@ else:
     for (const isKeychain of [undefined, false, "true"]) {
       expect(exportSvg({ ...layout, isKeychain })).not.toContain('>Keychain</text>');
     }
+  });
+
+  test("appends escaped multiline custom notes after generated notes for each exported instance", () => {
+    const layout = {
+      text: "Ada", widthMm: 40, heightMm: 20, quantity: 2,
+      colorName: "White", isKeychain: true, weldExportedDesign: false,
+      customNotes: ' Handle <carefully> & check\r\nSecond line ',
+      analysis: {
+        exportFacePath: "M0 0 L10 0 L10 10 Z",
+        backingPath: "M0 0 L12 0 L12 12 Z",
+        connectedComponentCount: 1,
+        unsupportedCharacters: [{ character: "?", fontName: "Candlepin", lineNumber: 1 }],
+      },
+    };
+    for (const payload of [layout, { layouts: [layout, { ...layout, quantity: 1, customNotes: "Other design" }] }]) {
+      const svg = exportSvg(payload);
+      for (const copy of [1, 2]) {
+        const group = svg.match(new RegExp(`<g id="order-1-copy-${copy}-important-notes">([\\s\\S]*?)</g>`))[1];
+        const lines = Array.from(group.matchAll(/<text[^>]*x="([^"]+)" y="([^"]+)"[^>]*>([^<]*)<\/text>/g));
+        expect(lines.map((line) => line[3])).toEqual([
+          "Keychain", "BLACK TEXT", "NOT WELDED", "CHECK FONT: Candlepin missing ? (Line 1)",
+          "Handle &lt;carefully&gt; &amp; check", "Second line",
+        ]);
+        expect(new Set(lines.map((line) => line[1]))).toEqual(new Set(["25.781"]));
+        for (let index = 1; index < lines.length; index += 1) {
+          expect(Number(lines[index][2]) - Number(lines[index - 1][2])).toBeCloseTo(8.4);
+        }
+      }
+      expect(svg).not.toContain("<tspan");
+      if (payload.layouts) expect(svg).toContain(">Other design</text>");
+    }
+  });
+
+  test("ignores blank custom notes and renders custom-only notes without generated notes", () => {
+    const layout = { text: "Ada", widthMm: 40, heightMm: 20,
+      analysis: { exportFacePath: "M0 0 H10 V10 Z", backingPath: "M0 0 H12 V12 Z" } };
+    const unchanged = exportSvg(layout);
+    for (const customNotes of [undefined, null, "", " \r\n\t ", 123]) {
+      expect(exportSvg({ ...layout, customNotes })).toBe(unchanged);
+    }
+    const svg = exportSvg({ ...layout, customNotes: "Pack separately\nInspect edge" });
+    expect(svg).toContain('important-note-1" x="25.781" y="21.581"');
+    expect(svg).toContain(">Pack separately</text>");
+    expect(svg).toContain('important-note-2" x="25.781" y="29.981"');
+    expect(svg).toContain(">Inspect edge</text>");
+  });
+
+  test("retains custom notes when export calculates geometry instead of using cached paths", () => {
+    const svg = exportSvg({
+      text: "A", widthMm: 40, heightMm: 40, backingMm: 3.1,
+      customNotes: "Inspect fresh geometry",
+      letters: [{ character: "A", lineIndex: 0, fontId: "somekind",
+        fontPath: "public/fonts/Somekind.ttf", fontSizeMm: 20,
+        x: 5, y: 25, horizontalScale: 1, verticalScale: 1 }],
+    });
+    expect(svg).toContain(">Inspect fresh geometry</text>");
   });
 
   test("adds black-text and not-welded notes in the leading batch export column", () => {

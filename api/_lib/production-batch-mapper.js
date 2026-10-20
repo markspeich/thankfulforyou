@@ -97,6 +97,7 @@ function buildDesignRow(orderItem, { workspaceId, updatedBy }) {
     workspace_id: workspaceId,
     order_item_id: orderItem.id,
     design_text: orderItem.text ?? settings.text ?? "",
+    custom_notes: typeof settings.customNotes === "string" ? settings.customNotes : "",
     preset_id: settings.presetId || null,
     size_guide_id: settings.boundingSizePresetId || null,
     backing_border_mm: toNumber(settings.backingMm, 3.1),
@@ -213,6 +214,7 @@ function buildOrderItemFromRows({ orderItem, design, designLines }) {
     source: buildSource(orderItem),
     settings: {
       text: design?.design_text ?? "",
+      customNotes: typeof design?.custom_notes === "string" ? design.custom_notes : "",
       presetId: design?.preset_id ?? null,
       boundingSizePresetId: design?.size_guide_id ?? null,
       backingMm: toNumber(design?.backing_border_mm, 3.1),

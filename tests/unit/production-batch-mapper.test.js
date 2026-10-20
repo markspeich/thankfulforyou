@@ -6,6 +6,21 @@ import {
 } from "../../api/_lib/production-batch-mapper.js";
 
 describe("production batch relational snapshot mapping", () => {
+  it("round trips custom notes with the corresponding design, including multiline and blank notes", () => {
+    const snapshot = {
+      batch: { id: "batch", workspaceId: "workspace" },
+      activeOrderItemId: "first",
+      orderItems: ["Pack separately\nCheck clasp", ""].map((customNotes, index) => ({
+        id: index ? "second" : "first", text: "Ada", settings: { customNotes, lines: [] },
+      })),
+    };
+    const rows = buildProductionBatchRowsFromSnapshot(snapshot);
+    expect(rows.designs.map((design) => design.custom_notes)).toEqual(["Pack separately\nCheck clasp", ""]);
+    const restored = buildSnapshotFromProductionBatchRows({
+      ...rows, designs: rows.designs.map((design, index) => ({ ...design, id: `design-${index}` })),
+    });
+    expect(restored.orderItems.map((item) => item.settings.customNotes)).toEqual(["Pack separately\nCheck clasp", ""]);
+  });
   it("splits a saved batch snapshot into order item, design, and design line rows", () => {
     const snapshot = {
       batch: { id: "11111111-1111-4111-8111-111111111111", workspaceId: "22222222-2222-4222-8222-222222222222" },
@@ -47,6 +62,7 @@ describe("production batch relational snapshot mapping", () => {
           },
           settings: {
             text: "Morgan\nRN",
+            customNotes: "",
             presetId: "preset-c3e8a1d7f520",
             boundingSizePresetId: "size-2-2x1-5",
             backingMm: 3.1,
@@ -283,6 +299,7 @@ describe("production batch relational snapshot mapping", () => {
           },
           settings: {
             text: "Morgan\nRN",
+            customNotes: "",
             presetId: "preset-c3e8a1d7f520",
             boundingSizePresetId: "size-2-2x1-5",
             backingMm: 3.1,

@@ -34,7 +34,7 @@ FIXED_SVG_BACKING_TRACE_SCALE = 24
 FIXED_SVG_BACKING_TOLERANCE_MM = 0.065
 FIXED_SVG_BACKING_TRACE_PADDING_MM = 4.0
 FIXED_SVG_VECTOR_OFFSET_SCALE = 1000
-COLOR_LABEL_FONT_SIZE_MM = 18.0
+COLOR_LABEL_FONT_SIZE_MM = 9.0
 COLOR_LABEL_LINE_HEIGHT_MM = 4.8
 IMPORTANT_NOTES_FONT_SIZE_MM = 7.0
 IMPORTANT_NOTES_LINE_HEIGHT_MM = 8.4
@@ -1495,6 +1495,7 @@ def build_precomputed_order_paths(payload):
         "quantity": quantity,
         "unsupported_characters": analysis.get("unsupportedCharacters", []),
         "is_keychain": payload.get("isKeychain") is True,
+        "custom_notes": payload.get("customNotes", ""),
     }
 
 
@@ -1528,6 +1529,7 @@ def build_single_order_paths(root, payload):
         "quantity": quantity,
         "unsupported_characters": analysis.get("unsupportedCharacters", []),
         "is_keychain": payload.get("isKeychain") is True,
+        "custom_notes": payload.get("customNotes", ""),
     }
 
 
@@ -1571,6 +1573,9 @@ def build_important_notes(order, instance_id, x, center_y):
         line_number = item.get("lineNumber")
         line_label = f" (Line {int(line_number)})" if isinstance(line_number, (int, float)) else ""
         notes.append(f"CHECK FONT: {font_name} missing {item['character']}{line_label}")
+    custom_notes = order.get("custom_notes", "")
+    if isinstance(custom_notes, str):
+        notes.extend(line.strip() for line in custom_notes.splitlines() if line.strip())
     if not notes:
         return ""
 
@@ -1578,7 +1583,8 @@ def build_important_notes(order, instance_id, x, center_y):
     note_lines = "\n".join(
         f'    <text id="{instance_id}-important-note-{index + 1}" x="{x:.3f}" '
         f'y="{first_y + IMPORTANT_NOTES_LINE_HEIGHT_MM * index:.3f}" '
-        f'font-family="Arial" font-size="{IMPORTANT_NOTES_FONT_SIZE_MM:.3f}mm" '
+        # The viewBox already uses millimetres; a physical mm suffix scales text a second time.
+        f'font-family="Arial" font-size="{IMPORTANT_NOTES_FONT_SIZE_MM:.3f}" '
         f'fill="rgb(255, 0, 0)" text-anchor="middle" dominant-baseline="middle">'
         f'{svg_escape(note).encode("ascii", "xmlcharrefreplace").decode("ascii")}</text>'
         for index, note in enumerate(notes)

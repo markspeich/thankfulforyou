@@ -750,6 +750,89 @@ test("shows the production defaults", async ({ page }) => {
   await expect(page.locator('.line-control-card[data-line-index="0"] [data-setting="fontSizeMm"]')).toHaveAttribute("min", "5");
 });
 
+test("saves design notes beside text and includes corresponding notes in every production export and copy", async ({ page }, testInfo) => {
+  await page.route("**/api/layout-analyze", route => route.fulfill({ json: buildMockAnalysisResponse() }));
+  await page.addInitScript(() => {
+    window.__copiedSvgPayloads = [];
+    window.ClipboardItem = class { constructor(data) { this.data = data; } };
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: {
+      write: async ([item]) => window.__copiedSvgPayloads.push(await (await item.data["image/svg+xml"]).text()),
+    } });
+  });
+  const exportPayloads = [];
+  page.on("request", request => {
+    if (request.url().endsWith("/api/export-svg")) exportPayloads.push(request.postDataJSON());
+  });
+  await setDesignText(page, "Alpha");
+  const notes = page.getByRole("textbox", { name: "Notes", exact: true });
+  await notes.fill("Pack separately\nCheck clasp & clip");
+  const textBounds = await page.locator("#textInput").boundingBox();
+  const notesBounds = await notes.boundingBox();
+  expect(notesBounds.x).toBeGreaterThan(textBounds.x + textBounds.width);
+  expect(notesBounds.y).toBe(textBounds.y);
+  expect(notesBounds.height).toBe(textBounds.height);
+  const topBounds = await page.locator(".editor-top-grid").boundingBox();
+  expect(notesBounds.x + notesBounds.width).toBeLessThanOrEqual(topBounds.x + topBounds.width);
+  const railBounds = await page.locator(".line-controls-rail").boundingBox();
+  expect(notesBounds.x + notesBounds.width).toBeLessThanOrEqual(railBounds.x);
+  await page.locator("#editOrderColorButton").click();
+  await page.locator("#orderColorInput").fill("White");
+  await page.locator("#saveOrderColorButton").click();
+  await completeDesign(page, "Design 1");
+  await expectSavedProductionBatchSnapshot(page, snapshot => snapshot.orderItems.some(item => item.settings.customNotes === "Pack separately\nCheck clasp & clip"));
+  await expect(completeButton(page)).toBeDisabled();
+  await notes.fill("Discard this edit");
+  await expect(completeButton(page)).toBeEnabled();
+  await expect(cancelButton(page)).toBeEnabled();
+  await cancelButton(page).click();
+  await expect(notes).toHaveValue("Pack separately\nCheck clasp & clip");
+  await clickBatchAction(page, "Add Design");
+  await expect(notes).toHaveValue("");
+  await setDesignText(page, "Beta");
+  await completeDesign(page, "Design 2");
+  await clickOrderItemByText(page, "Design 1");
+  await expect(notes).toHaveValue("Pack separately\nCheck clasp & clip");
+  await page.reload();
+  await waitForProductionBatchStartup(page);
+  await expect(notes).toHaveValue("Pack separately\nCheck clasp & clip");
+  if (await page.locator("#pasteSummaryDialog").isVisible()) await page.locator("#pasteSummaryDoneButton").click();
+  await page.screenshot({ path: testInfo.outputPath("design-notes-desktop.png"), fullPage: true });
+  await clickEditorToolButton(page, "#copyButton");
+  await expect.poll(() => page.evaluate(() => window.__copiedSvgPayloads.length)).toBe(1);
+  const download = page.waitForEvent("download");
+  await clickEditorToolButton(page, "#downloadButton");
+  await (await download).saveAs(testInfo.outputPath("design-notes-export.svg"));
+  await clickBatchAction(page, "Copy All Designs");
+  await expect.poll(() => page.evaluate(() => window.__copiedSvgPayloads.length)).toBe(2);
+  const batchDownload = page.waitForEvent("download");
+  await clickBatchAction(page, "Export All Designs");
+  await (await batchDownload).saveAs(testInfo.outputPath("design-notes-batch-export.svg"));
+  expect(exportPayloads).toHaveLength(4);
+  expect(exportPayloads.slice(0, 2).map(payload => payload.customNotes))
+    .toEqual(["Pack separately\nCheck clasp & clip", "Pack separately\nCheck clasp & clip"]);
+  for (const payload of exportPayloads.slice(2)) {
+    expect(payload.layouts.map(layout => [layout.text, layout.customNotes])).toEqual([
+      ["Alpha", "Pack separately\nCheck clasp & clip"], ["Beta", ""],
+    ]);
+  }
+  const copied = await page.evaluate(() => window.__copiedSvgPayloads);
+  for (const svg of copied) {
+    expect(svg.indexOf("BLACK TEXT")).toBeLessThan(svg.indexOf("Pack separately"));
+    expect(svg).toContain("Check clasp &amp; clip");
+  }
+  const exportPreview = await page.context().newPage();
+  await exportPreview.setContent(copied[1]);
+  const noteBoxes = await exportPreview.locator('[id="order-1-copy-1-important-notes"] text').evaluateAll(nodes => nodes.map(node => {
+    const box = node.getBoundingClientRect();
+    return { top: box.top, bottom: box.bottom };
+  }));
+  expect(noteBoxes).toHaveLength(3);
+  expect(noteBoxes[1].top).toBeGreaterThanOrEqual(noteBoxes[0].bottom);
+  expect(noteBoxes[2].top).toBeGreaterThanOrEqual(noteBoxes[1].bottom);
+  await exportPreview.screenshot({ path: testInfo.outputPath("export-rendered.png"), fullPage: true });
+  await exportPreview.close();
+});
+
 test("edits slider values through compact stepped number fields", async ({ page }) => {
   await page.locator("#textInput").fill("Ada");
 

@@ -1390,6 +1390,7 @@ test("three-way rebases simultaneous local and remote line insertions", async ({
 
   await page.goto("/production-batch");
   await page.locator("#textInput").fill("Avery\nLOCAL\nRN");
+  await page.locator("#customNotesInput").fill("Keep these local notes");
   await page.locator('.line-control-card[data-line-index="1"] [data-setting="bridgeMm"]').fill("0.4");
   await page.locator('.line-control-card[data-line-index="1"] [data-setting="horizontalScale"]').fill("0.85");
   await page.locator('.line-control-card[data-line-index="2"] [data-setting="bridgeMm"]').fill("0.9");
@@ -1399,6 +1400,7 @@ test("three-way rebases simultaneous local and remote line insertions", async ({
 
   await expect(page.locator("#fontAliasStatus")).toContainText("This mapping changed while you were editing it");
   await expect(page.locator("#textInput")).toHaveValue("Avery\nREMOTE\nLOCAL\nRN");
+  await expect(page.locator("#customNotesInput")).toHaveValue("Keep these local notes");
   await expect(page.locator('.line-control-card[data-line-index="1"] [data-setting="bridgeMm"]')).toHaveValue("0.2");
   await expect(page.locator('.line-control-card[data-line-index="1"] [data-setting="horizontalScale"]')).toHaveValue("0.8");
   await expect(page.locator('.line-control-card[data-line-index="2"] [data-setting="bridgeMm"]')).toHaveValue("0.4");

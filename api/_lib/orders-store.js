@@ -209,6 +209,7 @@ function normalizeDesign(row, lines) {
     id: row.id,
     orderItemId: row.order_item_id,
     text: row.design_text ?? "",
+    customNotes: typeof row.custom_notes === "string" ? row.custom_notes : "",
     presetId: row.preset_id ?? null,
     sizeGuideId: row.size_guide_id ?? null,
     backingBorderMm: toNumber(row.backing_border_mm, 3.1),
@@ -430,7 +431,7 @@ export async function listWorkspaceOrders({ workspaceId, activeBatchId = null, s
   ] = await Promise.all([
     supabase
       .from("designs")
-      .select("id, workspace_id, order_item_id, design_text, preset_id, size_guide_id, backing_border_mm, weld_exported_design, global_horizontal_scale, global_vertical_scale, production_status, cached_build_json, previous_completed_build_json, saved_settings_signature, completed_settings_signature, analysis_badge_json, revision, updated_at, updated_by")
+      .select("id, workspace_id, order_item_id, design_text, custom_notes, preset_id, size_guide_id, backing_border_mm, weld_exported_design, global_horizontal_scale, global_vertical_scale, production_status, cached_build_json, previous_completed_build_json, saved_settings_signature, completed_settings_signature, analysis_badge_json, revision, updated_at, updated_by")
       .eq("workspace_id", workspaceId)
       .in("order_item_id", orderItemIds),
     queryBatchItems({ supabase, workspaceId, batchId: activeBatchId }),
@@ -552,7 +553,7 @@ export async function getWorkspaceOrderDetail({ workspaceId, orderId, activeBatc
   const [{ data: designs, error: designsError }, batchItems] = await Promise.all([
     supabase
       .from("designs")
-      .select("id, workspace_id, order_item_id, design_text, preset_id, size_guide_id, backing_border_mm, weld_exported_design, global_horizontal_scale, global_vertical_scale, production_status, cached_build_json, previous_completed_build_json, saved_settings_signature, completed_settings_signature, analysis_badge_json, revision, updated_at, updated_by")
+      .select("id, workspace_id, order_item_id, design_text, custom_notes, preset_id, size_guide_id, backing_border_mm, weld_exported_design, global_horizontal_scale, global_vertical_scale, production_status, cached_build_json, previous_completed_build_json, saved_settings_signature, completed_settings_signature, analysis_badge_json, revision, updated_at, updated_by")
       .eq("workspace_id", workspaceId)
       .in("order_item_id", orderItemIds),
     queryBatchItems({ supabase, workspaceId, batchId: activeBatchId }),

@@ -429,6 +429,7 @@ const listingReferenceCard = document.querySelector("#listingReferenceCard");
 const listingReferenceTitle = document.querySelector("#listingReferenceTitle");
 const listingReferenceImage = document.querySelector("#listingReferenceImage");
 const textInput = document.querySelector("#textInput");
+const customNotesInput = document.querySelector("#customNotesInput");
 const customerFontSelections = document.querySelector("#customerFontSelections");
 const fontAliasDialog = document.querySelector("#fontAliasDialog");
 const closeFontAliasDialogButton = document.querySelector("#closeFontAliasDialogButton");
@@ -1514,6 +1515,7 @@ function normalizeSettings(settings = {}) {
   return {
     text,
     presetId,
+    customNotes: typeof settings.customNotes === "string" ? settings.customNotes : "",
     boundingSizePresetId: isValidBoundingSizePresetId(settings.boundingSizePresetId)
       ? settings.boundingSizePresetId
       : presetBaseSettings.boundingSizePresetId,
@@ -1727,7 +1729,7 @@ function storeCachedBuild(order, signature, layout, analysis) {
   };
 }
 
-function buildExportPayload(layout, analysis = layout?.analysis || null, source = null) {
+function buildExportPayload(layout, analysis = layout?.analysis || null, source = null, settings = null) {
   if (!layout) {
     return null;
   }
@@ -1739,6 +1741,7 @@ function buildExportPayload(layout, analysis = layout?.analysis || null, source 
   if (analysis?.exportFacePath && analysis?.backingPath) {
     return {
       text: layout.text,
+      customNotes: typeof settings?.customNotes === "string" ? settings.customNotes : "",
       widthMm: layout.widthMm,
       heightMm: layout.heightMm,
       backingMm: layout.backingMm,
@@ -1760,6 +1763,7 @@ function buildExportPayload(layout, analysis = layout?.analysis || null, source 
 
   return {
     ...layout,
+    customNotes: typeof settings?.customNotes === "string" ? settings.customNotes : "",
     colorName,
     quantity,
     isKeychain,
@@ -8444,7 +8448,7 @@ async function copyDatabaseOrderItemDesign(item, button = null) {
 
   try {
     const svgSourcePromise = requestSvgSource({
-      layout: buildExportPayload(savedBuild.layout, savedBuild.analysis, item?.source),
+      layout: buildExportPayload(savedBuild.layout, savedBuild.analysis, item?.source, item?.design),
     });
     await copySvgSourceToClipboard(svgSourcePromise);
     copied = true;
@@ -9484,6 +9488,7 @@ function getCurrentSettings() {
 
   return normalizeSettings({
     text: textInput.value,
+    customNotes: customNotesInput.value,
     presetId,
     boundingSizePresetId: boundingSizePresetInput?.value || DEFAULT_BOUNDING_SIZE_PRESET_ID,
     backingMm: Number(backingInput.value),
@@ -9495,6 +9500,7 @@ function getCurrentSettings() {
 function applySettings(settings) {
   const normalized = normalizeSettings(settings);
   textInput.value = normalized.text;
+  customNotesInput.value = normalized.customNotes;
   presetInput.value = normalized.presetId;
   if (boundingSizePresetInput) {
     boundingSizePresetInput.value = normalized.boundingSizePresetId;
@@ -10378,7 +10384,7 @@ function rebaseFontAliasDraftSettings({ draftSettings, previousPublishedSettings
     }
   }
   const rebased = { ...latest };
-  for (const key of ["presetId", "boundingSizePresetId", "backingMm", "weldExportedDesign"]) {
+  for (const key of ["presetId", "boundingSizePresetId", "backingMm", "weldExportedDesign", "customNotes"]) {
     if (settingsValueChanged(draft[key], previous[key])) rebased[key] = draft[key];
   }
 
@@ -13898,7 +13904,7 @@ async function downloadSvg() {
     }
 
     await requestSvgExport({
-      layout: buildExportPayload(cachedBuild.layout, cachedBuild.analysis, order.source),
+      layout: buildExportPayload(cachedBuild.layout, cachedBuild.analysis, order.source, order.settings),
       filename: "badge-reel-layout.svg",
     });
     order.status = "exported";
@@ -13945,7 +13951,7 @@ async function copyCurrentSvg() {
     }
 
     const svgSourcePromise = requestSvgSource({
-      layout: buildExportPayload(cachedBuild.layout, cachedBuild.analysis, order.source),
+      layout: buildExportPayload(cachedBuild.layout, cachedBuild.analysis, order.source, order.settings),
     });
     await copySvgSourceToClipboard(svgSourcePromise);
     copied = true;
@@ -14191,7 +14197,7 @@ async function exportAllOrders() {
     });
 
     await requestSvgExport({
-      layouts: builtLayouts.map(({ layout, analysis }, index) => buildExportPayload(layout, analysis, exportSources[index])),
+      layouts: builtLayouts.map(({ order, layout, analysis }, index) => buildExportPayload(layout, analysis, exportSources[index], order.settings)),
       filename: "badge-reel-layout-batch.svg",
     });
 
@@ -14248,7 +14254,7 @@ async function copyAllOrders() {
     });
 
     const svgSourcePromise = requestSvgSource({
-      layouts: builtLayouts.map(({ layout, analysis }, index) => buildExportPayload(layout, analysis, exportSources[index])),
+      layouts: builtLayouts.map(({ order, layout, analysis }, index) => buildExportPayload(layout, analysis, exportSources[index], order.settings)),
     });
     await copySvgSourceToClipboard(svgSourcePromise);
     copied = true;
@@ -14480,6 +14486,10 @@ function applyGlobalVerticalScale(value, options = {}) {
 }
 
 textInput.addEventListener("input", handleTextInput);
+customNotesInput.addEventListener("input", () => {
+  updateActiveOrderFromControls();
+  renderOrderList();
+});
 editOrderColorButton?.addEventListener("click", () => beginOrderMetadataFieldEdit("colorName"));
 saveOrderColorButton?.addEventListener("click", () => void saveOrderMetadataFieldEdit("colorName"));
 cancelOrderColorButton?.addEventListener("click", () => cancelOrderMetadataFieldEdit("colorName"));

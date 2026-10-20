@@ -8,6 +8,15 @@ import {
 } from "../../src/order-signatures.js";
 
 describe("order signatures", () => {
+  it("tracks custom notes as saved design edits without invalidating legacy blank-note signatures", () => {
+    const settings = { text: "Ada", lines: [] };
+    expect(buildSettingsSignature({ ...settings, customNotes: "" })).toBe(buildSettingsSignature(settings));
+    expect(buildSettingsSignature({ ...settings, customNotes: "Pack separately\nCheck clasp" }))
+      .not.toBe(buildSettingsSignature(settings));
+    const oldSignatures = getSettingsSignatureCandidates(settings);
+    expect(getSettingsSignatureCandidates({ ...settings, customNotes: "Pack separately" })
+      .some((signature) => oldSignatures.includes(signature))).toBe(false);
+  });
   it("includes lockTextHeight, horizontalScale, and font bridging policy in the current signature format", () => {
     const signature = buildSettingsSignature({
       text: "Mark\nRN",

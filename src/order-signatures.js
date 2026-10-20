@@ -16,6 +16,9 @@ function buildSignaturePayload(settings = {}, options = {}) {
     version = null,
   } = options;
   const payload = {
+    ...(typeof settings.customNotes === "string" && settings.customNotes
+      ? { customNotes: settings.customNotes }
+      : {}),
     ...(version == null ? {} : { version }),
     text: typeof settings.text === "string" ? settings.text : "",
     presetId: typeof settings.presetId === "string" ? settings.presetId : "",

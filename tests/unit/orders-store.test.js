@@ -484,6 +484,7 @@ describe("orders store", () => {
       order_items: [{ id: "item-1", workspace_id: "workspace-1", status: "open", order_number: "1001", quantity: 1, source_json: {} }],
       designs: [{
         id: "design-1", workspace_id: "workspace-1", order_item_id: "item-1", design_text: "Ada",
+        custom_notes: "Pack separately\nCheck clasp",
         cached_build_json: { geometry: "saved" }, previous_completed_build_json: { geometry: "previous" },
       }],
       design_lines: [{ design_id: "design-1", line_index: 0, text: "Ada", font_id: "skywalk" }],
@@ -495,6 +496,7 @@ describe("orders store", () => {
     expect(result.order.items[0].design).toMatchObject({
       text: "Ada",
       cachedBuild: { geometry: "saved" },
+      customNotes: "Pack separately\nCheck clasp",
       previousCompletedBuild: { geometry: "previous" },
       lines: [{ text: "Ada", fontId: "skywalk" }],
     });
