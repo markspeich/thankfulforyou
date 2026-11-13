@@ -961,15 +961,18 @@ test("previews welded face geometry when welded export is enabled", async ({ pag
   await expect(page.locator("#preview path.face-layer")).toHaveAttribute("d", "M0 0 L12 0 L12 10 L0 10 Z");
 });
 
-test("shows the total order item count in the design status summary", async ({ page }) => {
+test("shows piece totals and explicit ready design counts in the design status summary", async ({ page }) => {
   const statusSummary = page.getByLabel("Design status summary");
-  const orderItemsCard = statusSummary.locator("div").filter({ hasText: "Order Items" });
+  const orderItemsCard = statusSummary.locator("div").filter({ hasText: "Pieces to produce" });
 
+  const readyCard = statusSummary.locator("div").filter({ hasText: "Designs ready" });
   await expect(orderItemsCard.locator("strong")).toHaveText("1");
+  await expect(readyCard.locator("strong")).toHaveText("0 of 1");
 
   await clickBatchAction(page, "Add Design");
 
   await expect(orderItemsCard.locator("strong")).toHaveText("2");
+  await expect(readyCard.locator("strong")).toHaveText("0 of 2");
 });
 
 test("All Candlepin keeps the What / do you / mean layout to at most two outline pieces", async ({ page }) => {

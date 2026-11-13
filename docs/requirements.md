@@ -940,6 +940,12 @@ For batch Etsy order sessions, the preferred workflow is:
 
 - Orders with no open items are closed: all complete remain Complete, all skipped remain Skipped, and mixed terminal items are Closed/archived. Closed groups must not appear in the Open view. Skip is available whenever open items remain, independently of Reopen, and preserves completed and previously skipped items.
 
+### Production Batch metric units (2026-11-12)
+
+- Label the quantity sum `Pieces to produce`, with the tooltip `Total quantity across all designs`.
+- Show readiness as `Designs ready` with a ready-design count out of the total design count (for example, `22 of 22`). Ready includes saved and exported designs. Quantities do not multiply design status counts.
+- Label the remaining status metric `Designs in progress` so all status counts have explicit units.
+
 ### Production Batch selected-item actions (2026-10-14)
 
 - Each Production Batch queue row must include a checkbox for selecting that individual batch item.

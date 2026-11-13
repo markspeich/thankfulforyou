@@ -10722,7 +10722,7 @@ function renderOrderList() {
 
   orderCountOutput.textContent = String(orders.length);
   orderItemCountOutput.textContent = String(orderItemCount);
-  completeCountOutput.textContent = String(completeCount);
+  completeCountOutput.textContent = `${completeCount} of ${orders.length}`;
   progressCountOutput.textContent = String(progressCount);
   if (notStartedCountOutput) {
     notStartedCountOutput.textContent = String(notStartedCount);
