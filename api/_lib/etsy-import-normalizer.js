@@ -95,25 +95,34 @@ export function normalizeEtsyTransaction({ receipt = {}, transaction = {}, listi
     .flatMap((response) => response.value.split(/\r?\n/).map(text).filter(Boolean));
   const fontSelections = personalizationResponses
     .filter((response) => response.isFontSelection)
-    .map((response, selectionIndex) => {
+    .flatMap((response, selectionIndex) => {
       const labelLineNumber = fontLineNumber(response.name);
-      const mappedLineIndex = labelLineNumber === null ? selectionIndex : labelLineNumber - 1;
-      const hasDesignLine = Boolean(designLines[mappedLineIndex]);
-      const lineIndex = labelLineNumber === null && !hasDesignLine ? null : mappedLineIndex;
-      return {
+      const lineIndexes = labelLineNumber === null
+        ? designLines.map((_, lineIndex) => lineIndex)
+        : [labelLineNumber - 1];
+      if (!lineIndexes.length) {
+        return [{ selectionIndex, name: response.value, lineIndex: null,
+          outcome: "unmatched_design_line", mappingSource: "general" }];
+      }
+      return lineIndexes.map((lineIndex) => ({
         selectionIndex,
         name: response.value,
         lineIndex,
-        outcome: lineIndex === null ? "unmatched_design_line" : hasDesignLine ? "paired" : "stored_without_design_line",
-        mappingSource: labelLineNumber === null ? "ordinal" : "label_line_number",
+        outcome: designLines[lineIndex] ? "paired" : "stored_without_design_line",
+        mappingSource: labelLineNumber === null ? "general" : "label_line_number",
         ...(labelLineNumber === null ? {} : { labelLineNumber }),
-      };
+      }));
     });
-  const customerFontSelections = fontSelections
-    .flatMap((selection) => selection.lineIndex === null ? [] : [{
-      lineIndex: selection.lineIndex,
-      name: selection.name,
-    }])
+  // Apply general choices first so numbered choices always win, regardless of source order.
+  const fontByLine = new Map();
+  for (const mappingSource of ["general", "label_line_number"]) {
+    for (const selection of fontSelections) {
+      if (selection.lineIndex !== null && selection.mappingSource === mappingSource) {
+        fontByLine.set(selection.lineIndex, { lineIndex: selection.lineIndex, name: selection.name });
+      }
+    }
+  }
+  const customerFontSelections = [...fontByLine.values()]
     .sort((left, right) => left.lineIndex - right.lineIndex);
   const listingId = id(transaction.listing_id ?? listing.listing_id);
   const transactionId = id(transaction.transaction_id);

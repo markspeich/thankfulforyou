@@ -57,6 +57,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Etsy imports must distinguish customer font-selection dropdowns from design text even when Etsy reports both as personalization variations with `property_id: 54`.
 - An Etsy personalization variation should be treated as a customer font selection only when it is a non-file dropdown response with a non-null `value_id` and its formatted question name contains the standalone word `font`, case-insensitively.
 - Recognized Etsy customer font selections must be excluded from design text, preserved in imported source metadata using the same per-line `customerFontSelections` shape as Amazon imports, and applied to the corresponding persisted design line using the active workspace font registry.
+- A general Etsy customer font choice applies to every nonblank imported text line. Explicitly numbered font choices apply only to their specified lines and override a general choice regardless of dropdown order. Preserve numbered selections for lines not yet present.
 - Unknown Etsy customer font names must remain visible in imported source metadata for operator review without overriding the preset font.
 - Marketplace font aliases must be manageable as workspace-wide, marketplace-neutral mappings from an imported customer font name to a stable existing workspace font id.
 - Each imported customer-font row on the selected-order design screen must show the marketplace name followed by its current resolution in parentheses, such as `Lemonade (Crushed Lemonade)` or `Lemonade (Unmapped)`.

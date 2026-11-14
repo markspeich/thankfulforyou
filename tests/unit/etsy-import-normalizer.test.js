@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 
 import { describe, expect, it } from "vitest";
+import { createAmazonItemEnricher } from "../../api/_lib/amazon-import-enrichment.js";
 import { normalizeEtsyTransaction } from "../../api/_lib/etsy-import-normalizer.js";
 
 const capturedFontChoiceTransaction = JSON.parse(readFileSync(
@@ -200,6 +201,45 @@ describe("Etsy transaction normalizer", () => {
     expect(result.etsyImportDiagnostics.fontSelections).toEqual([
       { selectionIndex: 0, name: "Quincy", lineIndex: 0, outcome: "paired", mappingSource: "label_line_number", labelLineNumber: 1 },
       { selectionIndex: 1, name: "Super Boy", lineIndex: 1, outcome: "stored_without_design_line", mappingSource: "label_line_number", labelLineNumber: 2 },
+    ]);
+  });
+
+  it("applies a general Etsy font to every nonblank text line", () => {
+    const result = normalizeEtsyTransaction({ transaction: { variations: [
+      { property_id: 54, formatted_name: "Personalization", formatted_value: "Jamie\n\nRN\nBSN" },
+      { property_id: 54, value_id: 123, formatted_name: "Font Choice", formatted_value: "Skywalk" },
+    ] } });
+    expect(result.text).toBe("Jamie\nRN\nBSN");
+    const enrich = createAmazonItemEnricher({
+      presetSnapshot: { presets: [{ id: "preset", lineDefaults: { fontId: "candlepin", bridgeMm: 0.5 } }] },
+      fontOptions: [{ id: "skywalk", displayName: "Skywalk" }],
+    });
+    expect(enrich(result).settings.lines).toEqual([
+      { fontId: "skywalk", bridgeMm: 0.5 },
+      { fontId: "skywalk", bridgeMm: 0.5 },
+      { fontId: "skywalk", bridgeMm: 0.5 },
+    ]);
+
+    expect(result.source.customerFontSelections).toEqual([
+      { lineIndex: 0, name: "Skywalk" },
+      { lineIndex: 1, name: "Skywalk" },
+      { lineIndex: 2, name: "Skywalk" },
+    ]);
+  });
+
+  it.each([false, true])("gives numbered fonts precedence over a general choice (reverse: %s)", (reverse) => {
+    const fonts = [
+      { property_id: 54, value_id: 123, formatted_name: "Font Choice", formatted_value: "Skywalk" },
+      { property_id: 54, value_id: 456, formatted_name: "Font Choice Line 2", formatted_value: "Somekind" },
+    ];
+    const result = normalizeEtsyTransaction({ transaction: { variations: [
+      { property_id: 54, formatted_name: "Personalization", formatted_value: "Jamie\nRN\nBSN" },
+      ...(reverse ? fonts.reverse() : fonts),
+    ] } });
+    expect(result.source.customerFontSelections).toEqual([
+      { lineIndex: 0, name: "Skywalk" },
+      { lineIndex: 1, name: "Somekind" },
+      { lineIndex: 2, name: "Skywalk" },
     ]);
   });
 });
