@@ -130,6 +130,19 @@ export async function mutateSelectedProductionBatchItems(batchId, operation, ord
   return payload;
 }
 
+export async function tagProductionBatchInShipStation(batchId, { accessToken = null } = {}) {
+  const response = await fetch("/api/production-batch", {
+    method: "POST",
+    headers: buildAuthHeaders(accessToken, { "Content-Type": "application/json", Accept: "application/json" }),
+    body: JSON.stringify({ action: "tag-shipstation", batchId }),
+  });
+  const payload = await readJsonOrFallback(response, {});
+  if (!response.ok) {
+    throw Object.assign(new Error(payload.error || "Unable to tag the batch in ShipStation. Try again before printing packing slips."), { status: response.status });
+  }
+  return payload;
+}
+
 export async function removeProductionBatchItem(batchId, orderItemId, options = {}) {
   const { accessToken = null, activeOrderItemId = null } = options;
   const response = await fetch("/api/production-batch", {

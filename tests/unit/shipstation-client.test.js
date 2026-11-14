@@ -18,6 +18,24 @@ const response = (payload, status = 200, headers = new Headers()) => ({
 });
 
 describe("ShipStation V2 client", () => {
+  it("accepts an empty zero-page shipment result without requesting another page", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(response({ shipments: [], page: 1, pages: 0 }));
+    const client = createShipStationClient({ apiKey: "secret", fetchImpl });
+    const received = [];
+    for await (const current of client.iterateShipments({ tag: "Current Production Batch" })) received.push(current);
+    expect(received).toEqual([]);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("enumerates shipments across stores and tagged shipments across statuses", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(response({ shipments: [shipment()], page: 1, pages: 1 }));
+    const client = createShipStationClient({ apiKey: "secret", fetchImpl });
+    for await (const ignored of client.iterateShipments({ shipmentStatus: "pending" })) void ignored;
+    for await (const ignored of client.iterateShipments({ tag: "Current Production Batch" })) void ignored;
+    expect(Object.fromEntries(new URL(fetchImpl.mock.calls[0][0]).searchParams)).toEqual({ shipment_status: "pending", page_size: "100", page: "1" });
+    expect(Object.fromEntries(new URL(fetchImpl.mock.calls[1][0]).searchParams)).toEqual({ tag: "Current Production Batch", page_size: "100", page: "1" });
+  });
+
   it("rejects a missing API key or Amazon store ID without disclosing configured values", () => {
     for (const env of [
       { SHIPSTATION_AMAZON_STORE_ID: "se-secret-store" },

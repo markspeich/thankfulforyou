@@ -10,6 +10,22 @@ afterEach(() => {
 });
 
 describe("production batch api client", () => {
+  it("tags the whole saved batch with authentication and preserves partial results", async () => {
+    const payload = { tagName: "Current Production Batch", taggedOrders: 2, removedTags: 1, unmatchedOrders: ["missing"], failures: [] };
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => payload });
+    vi.stubGlobal("fetch", fetchMock);
+    const { tagProductionBatchInShipStation } = await import("../../src/production-batch-api.js");
+    await expect(tagProductionBatchInShipStation("batch-1", { accessToken: "token" })).resolves.toEqual(payload);
+    expect(fetchMock).toHaveBeenCalledWith("/api/production-batch", expect.objectContaining({
+      method: "POST", body: JSON.stringify({ action: "tag-shipstation", batchId: "batch-1" }),
+      headers: expect.objectContaining({ Authorization: "Bearer token" }),
+    }));
+  });
+  it("preserves tag action authentication failures for session refresh", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 401, json: async () => ({ error: "Authentication required." }) }));
+    const { tagProductionBatchInShipStation } = await import("../../src/production-batch-api.js");
+    await expect(tagProductionBatchInShipStation("batch-1")).rejects.toMatchObject({ status: 401 });
+  });
   it("sends only the selected item ids and operation and preserves conflict status", async () => {
     let sent;
     vi.stubGlobal("fetch", async (url, options) => {

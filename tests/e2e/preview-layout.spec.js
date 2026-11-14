@@ -4196,7 +4196,7 @@ test("shows imported Etsy color and quantity below design text and highlights wh
 
   await clickButtonBySelector(page, "#importClipboardButton");
 
-  await expect(page.getByLabel("Design status summary").locator("div").filter({ hasText: "Order Items" }).locator("strong")).toHaveText("4");
+  await expect(page.getByLabel("Design status summary").locator("div").filter({ hasText: "Pieces to produce" }).locator("strong")).toHaveText("4");
   await expect(page.locator("#importedColorField")).toBeVisible();
   await expect(page.locator("#importedColorValue")).toHaveText("White Glitter");
   await expect(page.locator("#importedColorValue")).toHaveClass(/highlight-light-color/);

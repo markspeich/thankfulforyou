@@ -69,6 +69,7 @@ function assertShipment(value) {
 
 function assertShipmentPage(value) {
   const page = assertObject(value);
+  if (page.page === 1 && page.pages === 0 && Array.isArray(page.shipments) && page.shipments.length === 0) return page;
   if (!Array.isArray(page.shipments)
     || !Number.isInteger(page.page) || page.page < 1
     || !Number.isInteger(page.pages) || page.pages < 1 || page.page > page.pages) {
@@ -272,15 +273,24 @@ export function createShipStationClient({
     throw new ShipStationError("temporary", { retryable: true });
   }
 
-  async function* iteratePendingShipments({ storeId, signal } = {}) {
-    if (typeof storeId !== "string" || !storeId.trim()) throw new ShipStationError("configuration");
+  async function* iterateShipments({ storeId, shipmentStatus, tag, signal } = {}) {
     for (let pageNumber = 1; ; pageNumber += 1) {
-      const query = new URLSearchParams({ shipment_status: "pending", store_id: storeId, page_size: "100", page: String(pageNumber) });
+      const query = new URLSearchParams({
+        ...(shipmentStatus ? { shipment_status: shipmentStatus } : {}),
+        ...(storeId ? { store_id: storeId } : {}),
+        ...(tag ? { tag } : {}),
+        page_size: "100", page: String(pageNumber),
+      });
       const page = await request({ path: `/shipments?${query}`, signal, validate: assertShipmentPage });
       if (page.page !== pageNumber) throw new ShipStationError("invalid_response");
       for (const current of page.shipments) yield current;
-      if (pageNumber === page.pages) return;
+      if (pageNumber >= page.pages) return;
     }
+  }
+
+  function iteratePendingShipments({ storeId, signal } = {}) {
+    if (typeof storeId !== "string" || !storeId.trim()) throw new ShipStationError("configuration");
+    return iterateShipments({ storeId, shipmentStatus: "pending", signal });
   }
 
   function updateNotesToBuyer({
@@ -350,5 +360,5 @@ export function createShipStationClient({
     });
   }
 
-  return Object.freeze({ iteratePendingShipments, updateNotesToBuyer, addShipmentTag, removeShipmentTag });
+  return Object.freeze({ iteratePendingShipments, iterateShipments, updateNotesToBuyer, addShipmentTag, removeShipmentTag });
 }

@@ -959,3 +959,13 @@ For batch Etsy order sessions, the preferred workflow is:
 - Approved operation behavior: confirm the selected count and consequences, warn about selected designs that are not Ready/Exported or lack export-ready geometry before completion, execute each bulk mutation transactionally, preserve edits and selection on failure, and use the app-wide working/result/error dialogs with keyboard focus recovery.
 - Selected-action success must reconcile remaining membership from the server while keeping local drafts for surviving items. If another operator removed an unchecked item with unsaved edits, retain its draft for the current browser session, explain how to recover it by adding the item back from Orders, and normalize abandoned analysis requests on recovery.
 - Pause background batch autosave during selected-item mutations. If newly added designs have not yet been persisted, ask the operator to save them before retrying rather than replacing shared membership from a stale full snapshot.
+
+## ShipStation packing slip batch identification — November 14, 2026
+
+- Provide `Tag Batch in ShipStation` in the Production Batch ellipsis menu under Batch Output.
+- On explicit request, reconcile the app-owned `Current Production Batch` ShipStation tag against the saved entire current batch, regardless of item selection or design readiness; remove stale memberships while preserving unrelated tags.
+- Tag each matching whole order once. The user accepts printing whole-order packing slips when only some items are in production.
+- Use stored ShipStation shipment identities where available and exact order-number matching otherwise. Report missing or ambiguous matches instead of guessing.
+- Load membership server-side under the authenticated workspace. Keep credentials and upstream customer data server-side.
+- Show immediate working feedback, prevent duplicate submissions, preserve pending edits, restore menu focus, and report counts, unmatched order numbers, and sanitized partial failures before printing.
+- On success, instruct the operator to filter by `Current Production Batch` in ShipStation, select the matching orders, and print packing slips. Tagging must not purchase labels or change shipping/lifecycle status.

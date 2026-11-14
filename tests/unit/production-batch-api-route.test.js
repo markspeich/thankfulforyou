@@ -6,6 +6,11 @@ const completeProductionBatchMock = vi.fn();
 const mutateSelectedProductionBatchItemsMock = vi.fn();
 const removeProductionBatchItemMock = vi.fn();
 const resolveProductionBatchAuthMock = vi.fn();
+const tagProductionBatchInShipStationMock = vi.fn();
+
+vi.mock("../../api/_lib/production-batch-shipstation.js", () => ({
+  tagProductionBatchInShipStation: tagProductionBatchInShipStationMock,
+}));
 
 vi.mock("../../api/_lib/production-batch-store.js", () => ({
   completeProductionBatch: completeProductionBatchMock,
@@ -49,6 +54,7 @@ beforeEach(() => {
   mutateSelectedProductionBatchItemsMock.mockReset();
   removeProductionBatchItemMock.mockReset();
   resolveProductionBatchAuthMock.mockReset();
+  tagProductionBatchInShipStationMock.mockReset();
 });
 
 afterEach(() => {
@@ -56,6 +62,30 @@ afterEach(() => {
 });
 
 describe("production batch api route", () => {
+  it("tags only the saved batch loaded through the authenticated workspace", async () => {
+    resolveProductionBatchAuthMock.mockResolvedValue({ userId: "user-1", workspaceId: "workspace-1" });
+    const snapshot = { batch: { id: "batch-1" }, orderItems: [{ source: { orderNumber: "100" } }] };
+    loadProductionBatchMock.mockResolvedValue(snapshot);
+    tagProductionBatchInShipStationMock.mockResolvedValue({ tagName: "Current Production Batch", taggedOrders: 1, removedTags: 0, unmatchedOrders: [], failures: [] });
+    const { default: handler } = await import("../../api/production-batch.js");
+    const response = createResponseRecorder();
+    await handler({ method: "POST", body: { action: "tag-shipstation", batchId: "batch-1", orderItems: [{ source: { orderNumber: "forged" } }] } }, response);
+    expect(loadProductionBatchMock).toHaveBeenCalledWith({ batchId: "batch-1", workspaceId: "workspace-1" });
+    expect(tagProductionBatchInShipStationMock).toHaveBeenCalledExactlyOnceWith({ snapshot });
+    expect(response.statusCode).toBe(200);
+    expect(response.body.taggedOrders).toBe(1);
+  });
+
+  it("does not tag another workspace's missing batch", async () => {
+    resolveProductionBatchAuthMock.mockResolvedValue({ userId: "user-1", workspaceId: "workspace-1" });
+    loadProductionBatchMock.mockResolvedValue(null);
+    const { default: handler } = await import("../../api/production-batch.js");
+    const response = createResponseRecorder();
+    await handler({ method: "POST", body: { action: "tag-shipstation", batchId: "other-batch" } }, response);
+    expect(response.statusCode).toBe(404);
+    expect(tagProductionBatchInShipStationMock).not.toHaveBeenCalled();
+  });
+
   it.each(["complete", "skip", "remove"])("dispatches selected %s with authenticated workspace", async (operation) => {
     resolveProductionBatchAuthMock.mockResolvedValue({ userId: "user-1", workspaceId: "workspace-1" });
     mutateSelectedProductionBatchItemsMock.mockResolvedValue({ batch: { id: "batch-1" }, orderItems: [] });

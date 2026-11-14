@@ -76,6 +76,7 @@ import { buildReloadedPresetSettings } from "./preset-selection.js";
 import { buildBatchExportSources, sortDesignsByImportedColor } from "./production-batch-export-order.js";
 import {
   completeProductionBatch,
+  tagProductionBatchInShipStation,
   mutateSelectedProductionBatchItems,
   fetchProductionBatchSnapshot,
   fetchBatchSession,
@@ -309,6 +310,8 @@ const loadFixedDesignVersionConfirmButton = document.querySelector("#loadFixedDe
 const addOrderButton = document.querySelector("#addOrderButton");
 const importClipboardButton = document.querySelector("#importClipboardButton");
 const clearBatchButton = document.querySelector("#clearBatchButton");
+const tagBatchInShipStationButton = document.querySelector("#tagBatchInShipStationButton");
+let tagBatchInShipStationBusy = false;
 const workflowAlert = document.querySelector("#importStatus");
 const workflowAlertText = document.querySelector("#workflowAlertText");
 const ordersImportActions = document.querySelector("#ordersImportActions");
@@ -10728,6 +10731,7 @@ function renderOrderList() {
     notStartedCountOutput.textContent = String(notStartedCount);
   }
   clearBatchButton.disabled = orders.length === 0;
+  tagBatchInShipStationButton.disabled = !orders.length || tagBatchInShipStationBusy;
   if (showColorCountsButton) {
     showColorCountsButton.disabled = orders.length === 0;
   }
@@ -12260,6 +12264,55 @@ async function actOnSelectedBatchItems(operation) {
     suppressProductionBatchAutosave = previousAutosaveSuppressed;
     selectedBatchActionBusy = false;
     renderBatchSelection();
+    if (productionBatchAutosavePending && !suppressProductionBatchAutosave) triggerProductionBatchAutosave();
+  }
+}
+
+async function tagCurrentProductionBatchInShipStation() {
+  if (tagBatchInShipStationBusy || !orders.length) return;
+  tagBatchInShipStationBusy = true;
+  tagBatchInShipStationButton.disabled = true;
+  batchToolsMenu?.removeAttribute("open");
+  const previousAutosaveSuppressed = suppressProductionBatchAutosave;
+  suppressProductionBatchAutosave = true;
+  startOperationDialog({ title: "Tagging Batch in ShipStation", description: "Updating the Current Production Batch tag for packing slip printing.", progressLabel: "Saving pending edits and matching batch orders..." });
+  pasteSummaryDialog.addEventListener("close", () => batchToolsMenu?.querySelector("summary")?.focus(), { once: true });
+  try {
+    saveActiveOrderDraft();
+    const batchId = requireActiveProductionBatchId();
+    if (!batchId) throw new Error("No active production batch. Reload the batch and try again.");
+    clearProductionBatchAutosaveTimeout();
+    await waitForProductionBatchAutosaveIdle();
+    if (resolveProductionBatchSaveOrderIds() === null) {
+      throw new Error("Save newly added designs before tagging the batch, then try again. Your edits have been kept.");
+    }
+    await persistPendingProductionBatchEdits();
+    const accessToken = productionBatchAccessToken || readProductionBatchAccessTokenOverride() || await getAccessToken();
+    const result = await runProductionBatchRequestWithSessionRefresh(
+      requestToken => tagProductionBatchInShipStation(batchId, { accessToken: requestToken }), accessToken,
+    );
+    const unmatched = Array.isArray(result.unmatchedOrders) ? result.unmatchedOrders : [];
+    const failures = Array.isArray(result.failures) ? result.failures : [];
+    const partial = unmatched.length > 0 || failures.length > 0;
+    const description = partial
+      ? `The tag update is incomplete. Resolve these issues and run Tag Batch in ShipStation again before printing packing slips.${unmatched.length ? ` Unmatched orders: ${unmatched.join(", ")}.` : ""}${failures.length ? ` Failed updates: ${failures.map(failure => `${failure.orderNumber}: ${failure.message}`).join("; ")}.` : ""}`
+      : `In ShipStation, filter orders by the Current Production Batch tag, select all matching orders, and print packing slips. Whole-order packing slips are included. Run this action again if you change the batch.`;
+    completeOperationDialog({ title: partial ? "ShipStation Tagging Needs Attention" : "Batch Tagged in ShipStation", description, metrics: [
+      { label: "Orders tagged", value: result.taggedOrders }, { label: "Old tags removed", value: result.removedTags },
+      { label: "Unmatched orders", value: unmatched.length }, { label: "Failed updates", value: failures.length },
+    ] });
+    if (partial) pasteSummaryDialog.querySelector(".batch-summary-card").dataset.operationState = "error";
+    updateWorkflowAlert(partial ? "ShipStation tagging is incomplete. Resolve the reported issues before printing packing slips." : "Batch tagged in ShipStation. Filter Current Production Batch to print packing slips.", partial ? "error" : "success");
+  } catch (error) {
+    const message = isProductionBatchAuthenticationError(error)
+      ? "Your session expired. Sign in again and retry tagging the batch before printing packing slips. Your edits have been kept."
+      : (error.message || "Unable to tag the batch in ShipStation. Try again before printing packing slips.");
+    updateWorkflowAlert(message, "error");
+    showActionOperationError(new Error(message), message);
+  } finally {
+    suppressProductionBatchAutosave = previousAutosaveSuppressed;
+    tagBatchInShipStationBusy = false;
+    tagBatchInShipStationButton.disabled = !orders.length;
     if (productionBatchAutosavePending && !suppressProductionBatchAutosave) triggerProductionBatchAutosave();
   }
 }
@@ -14856,6 +14909,7 @@ navCollapseButton.addEventListener("click", () => {
 addOrderButton.addEventListener("click", addOrder);
 importClipboardButton.addEventListener("click", importFromClipboard);
 clearBatchButton.addEventListener("click", completeCurrentProductionBatch);
+tagBatchInShipStationButton.addEventListener("click", tagCurrentProductionBatchInShipStation);
 databaseOrdersSearchInput?.addEventListener("input", () => {
   databaseOrdersSearchTerm = databaseOrdersSearchInput.value;
   resetDatabaseOrdersQuery({ debounce: true });

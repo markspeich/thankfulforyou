@@ -1,5 +1,6 @@
 import { createServerTiming } from "./_lib/server-timing.js";
 import { resolveProductionBatchAuth } from "./_lib/production-batch-auth.js";
+import { tagProductionBatchInShipStation } from "./_lib/production-batch-shipstation.js";
 import {
   completeProductionBatch,
   mutateSelectedProductionBatchItems,
@@ -235,13 +236,23 @@ export default async function handler(req, res) {
       const orderItemId = typeof rawOrderItemId === "string" ? rawOrderItemId.trim() : "";
       const activeOrderItemId = typeof rawActiveOrderItemId === "string" ? rawActiveOrderItemId.trim() : null;
 
-      if (action !== "complete" && action !== "remove-item" && action !== "selected-items") {
+      if (action !== "complete" && action !== "remove-item" && action !== "selected-items" && action !== "tag-shipstation") {
         res.status(400).json({ error: "Unsupported production batch action." });
         return;
       }
 
       if (!batchId) {
         res.status(400).json({ error: "batchId is required." });
+        return;
+      }
+
+      if (action === "tag-shipstation") {
+        const snapshot = await loadProductionBatch({ batchId, workspaceId: req.auth.workspaceId });
+        if (!snapshot) {
+          res.status(404).json({ error: "Production batch not found." });
+          return;
+        }
+        res.status(200).json(await tagProductionBatchInShipStation({ snapshot }));
         return;
       }
 

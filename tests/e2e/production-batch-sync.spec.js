@@ -3,7 +3,64 @@ import { installSeededFontRoute, SEEDED_FONT_RECORDS } from "./font-test-routes.
 
 test.describe.configure({ mode: "serial" });
 
-async function installSelectedItemsBatch(page, { fail = false, waitForRelease = null, concurrentItem = null, onMutation = null } = {}) {
+test("ShipStation batch tagging is unavailable for an empty production batch", async ({ page }) => {
+  await installSelectedItemsBatch(page, { empty: true });
+  await page.locator(".batch-tools-toggle").first().click();
+  await expect(page.getByRole("button", { name: "Tag Batch in ShipStation", exact: true })).toBeDisabled();
+});
+
+test("ShipStation batch tag action shows progress and printing instructions without changing batch selection", async ({ page }) => {
+  await installSelectedItemsBatch(page);
+  let release;
+  const held = new Promise(resolve => { release = resolve; });
+  const requests = [];
+  await page.route("**/api/production-batch", async route => {
+    if (route.request().method() !== "POST") return route.fallback();
+    requests.push(route.request().postDataJSON());
+    await held;
+    await route.fulfill({ json: { tagName: "Current Production Batch", taggedOrders: 2, removedTags: 1, unmatchedOrders: [], failures: [] } });
+  });
+  await page.locator("#orderList input[type=checkbox]").first().check();
+  await page.locator(".batch-tools-toggle").first().click();
+  await page.getByRole("button", { name: "Tag Batch in ShipStation", exact: true }).click();
+  await expect.poll(() => requests.length).toBe(1);
+  await expect(page.locator("#pasteSummaryDialog .batch-summary-card")).toHaveAttribute("data-operation-state", "progress");
+  await expect(page.locator("#tagBatchInShipStationButton")).toBeDisabled();
+  release();
+  await expect(page.locator("#pasteSummaryDialog")).toContainText("print packing slips");
+  await expect(page.locator("#pasteSummaryDialog")).toContainText("Current Production Batch");
+  await expect(page.locator("#pasteSummaryDialog .batch-summary-card")).toHaveAttribute("data-operation-state", "complete");
+  expect(requests).toEqual([{ action: "tag-shipstation", batchId: "batch-1" }]);
+  await expect(page.locator("#orderList .order-row")).toHaveCount(2);
+  await expect(page.locator("#batchSelectedCount")).toHaveText("1 selected");
+  await page.locator("#pasteSummaryDoneButton").click();
+  await expect(page.locator(".batch-tools-toggle").first()).toBeFocused();
+});
+
+for (const failedRequest of [false, true]) {
+  test(`ShipStation tagging reports ${failedRequest ? "request failure" : "unmatched orders and partial failures"} and keeps edits`, async ({ page }) => {
+    await installSelectedItemsBatch(page);
+    await page.route("**/api/production-batch", async route => {
+      if (route.request().method() !== "POST") return route.fallback();
+      await route.fulfill({ status: failedRequest ? 503 : 200, json: failedRequest
+        ? { error: "ShipStation is temporarily unavailable. Try again." }
+        : { tagName: "Current Production Batch", taggedOrders: 1, removedTags: 0, unmatchedOrders: ["12345"], failures: [{ orderNumber: "67890", message: "Tag update failed." }] } });
+    });
+    await page.locator("#textInput").fill("Keep this draft");
+    await page.locator(".batch-tools-toggle").first().click();
+    await page.getByRole("button", { name: "Tag Batch in ShipStation", exact: true }).click();
+    await expect(page.locator("#pasteSummaryDialog .batch-summary-card")).toHaveAttribute("data-operation-state", "error");
+    await expect(page.locator("#pasteSummaryDialog")).toContainText(failedRequest ? "temporarily unavailable" : "12345");
+    if (!failedRequest) {
+      await expect(page.locator("#pasteSummaryDialog")).toContainText("67890");
+      await expect(page.locator("#pasteSummaryDialog")).toContainText("before printing");
+    }
+    await expect(page.locator("#textInput")).toHaveValue("Keep this draft");
+    await expect(page.locator("#orderList .order-row")).toHaveCount(2);
+  });
+}
+
+async function installSelectedItemsBatch(page, { fail = false, waitForRelease = null, concurrentItem = null, onMutation = null, empty = false } = {}) {
   await installSupabaseSession(page);
   const snapshot = {
     batch: { id: "batch-1", workspaceId: "workspace-1" },
@@ -13,6 +70,10 @@ async function installSelectedItemsBatch(page, { fail = false, waitForRelease = 
       buildCompletedRemoteOrder({ id: "selected-b", text: "Beta", settings: { ...buildCompletedRemoteOrder().settings, text: "Beta" } }),
     ],
   };
+  if (empty) {
+    snapshot.orderItems = [];
+    snapshot.activeOrderItemId = null;
+  }
   const requests = [];
   await page.route("**/api/batch-session", route => route.fulfill({ json: {
     operator: { id: "user-1", email: "mark@example.com" }, workspace: { id: "workspace-1" }, batch: snapshot.batch,
@@ -37,7 +98,7 @@ async function installSelectedItemsBatch(page, { fail = false, waitForRelease = 
     await route.fulfill({ json: snapshot });
   });
   await page.goto("/production-batch");
-  await expect(page.locator("#orderList .order-row")).toHaveCount(2);
+  await expect(page.locator("#orderList .order-row")).toHaveCount(empty ? 0 : 2);
   return requests;
 }
 
