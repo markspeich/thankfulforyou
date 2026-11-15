@@ -13,6 +13,33 @@ function hasBatchTag(shipment) {
   return shipment.tags?.some(tag => (typeof tag === "string" ? tag : tag?.name) === TAG_NAME);
 }
 
+/** Clear the app-owned tag before completion; collect every page before writes. */
+export async function removeProductionBatchShipStationTags({ client, env = process.env } = {}) {
+  if (!client) {
+    const apiKey = text(env.SHIPSTATION_API_KEY);
+    if (!apiKey) throw publicError(503, "ShipStation is not configured. The batch is still open. Configure the ShipStation API key and retry completion.");
+    client = createShipStationClient({ apiKey });
+  }
+  const shipments = new Set();
+  try {
+    for await (const shipment of client.iterateShipments({ tag: TAG_NAME })) {
+      if (hasBatchTag(shipment)) shipments.add(shipment.shipment_id);
+    }
+  } catch {
+    throw publicError(502, "Unable to read ShipStation batch tags. The batch is still open and no tags were changed. Check the connection and retry completion.");
+  }
+  let removedTags = 0;
+  for (const shipmentId of shipments) {
+    try {
+      await client.removeShipmentTag({ shipmentId, tagName: TAG_NAME });
+      removedTags += 1;
+    } catch {
+      throw publicError(502, "Unable to remove all ShipStation batch tags. The batch is still open; some tags may already be removed. Check the connection and retry completion.");
+    }
+  }
+  return { removedTags };
+}
+
 /** Reconcile only the app-owned tag; discovery completes before any writes. */
 export async function tagProductionBatchInShipStation({ snapshot, client, env = process.env } = {}) {
   if (!Array.isArray(snapshot?.orderItems) || !snapshot.orderItems.length) {

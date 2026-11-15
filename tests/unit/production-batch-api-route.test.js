@@ -7,9 +7,11 @@ const mutateSelectedProductionBatchItemsMock = vi.fn();
 const removeProductionBatchItemMock = vi.fn();
 const resolveProductionBatchAuthMock = vi.fn();
 const tagProductionBatchInShipStationMock = vi.fn();
+const removeProductionBatchShipStationTagsMock = vi.fn();
 
 vi.mock("../../api/_lib/production-batch-shipstation.js", () => ({
   tagProductionBatchInShipStation: tagProductionBatchInShipStationMock,
+  removeProductionBatchShipStationTags: removeProductionBatchShipStationTagsMock,
 }));
 
 vi.mock("../../api/_lib/production-batch-store.js", () => ({
@@ -55,6 +57,7 @@ beforeEach(() => {
   removeProductionBatchItemMock.mockReset();
   resolveProductionBatchAuthMock.mockReset();
   tagProductionBatchInShipStationMock.mockReset();
+  removeProductionBatchShipStationTagsMock.mockReset();
 });
 
 afterEach(() => {
@@ -62,6 +65,57 @@ afterEach(() => {
 });
 
 describe("production batch api route", () => {
+  it("checks batch ownership before cleanup and returns cleanup counts after completing", async () => {
+    resolveProductionBatchAuthMock.mockResolvedValue({ userId: "user-1", workspaceId: "workspace-1" });
+    loadProductionBatchMock.mockResolvedValue({ batch: { id: "batch-1" }, orderItems: [{ id: "item-1" }] });
+    removeProductionBatchShipStationTagsMock.mockImplementation(async () => {
+      expect(loadProductionBatchMock).toHaveBeenCalledWith({ batchId: "batch-1", workspaceId: "workspace-1" });
+      expect(completeProductionBatchMock).not.toHaveBeenCalled();
+      return { removedTags: 3 };
+    });
+    completeProductionBatchMock.mockResolvedValue({ batch: { id: "batch-1" }, orderItems: [] });
+    const { default: handler } = await import("../../api/production-batch.js");
+    const response = createResponseRecorder();
+    await handler({ method: "POST", body: { action: "complete", batchId: "batch-1" } }, response);
+    expect(response.statusCode).toBe(200);
+    expect(response.body.shipStationCleanup).toEqual({ removedTags: 3 });
+    expect(completeProductionBatchMock).toHaveBeenCalledOnce();
+  });
+
+  it("does not clean tags or complete when the authenticated batch is missing", async () => {
+    resolveProductionBatchAuthMock.mockResolvedValue({ userId: "user-1", workspaceId: "workspace-1" });
+    loadProductionBatchMock.mockResolvedValue(null);
+    const { default: handler } = await import("../../api/production-batch.js");
+    const response = createResponseRecorder();
+    await handler({ method: "POST", body: { action: "complete", batchId: "other-batch" } }, response);
+    expect(response.statusCode).toBe(404);
+    expect(removeProductionBatchShipStationTagsMock).not.toHaveBeenCalled();
+    expect(completeProductionBatchMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps the database batch open when tag cleanup fails", async () => {
+    resolveProductionBatchAuthMock.mockResolvedValue({ userId: "user-1", workspaceId: "workspace-1" });
+    loadProductionBatchMock.mockResolvedValue({ batch: { id: "batch-1" } });
+    removeProductionBatchShipStationTagsMock.mockRejectedValue(Object.assign(new Error("Batch is still open. Retry completion."), { expose: true, statusCode: 502 }));
+    const { default: handler } = await import("../../api/production-batch.js");
+    const response = createResponseRecorder();
+    await handler({ method: "POST", body: { action: "complete", batchId: "batch-1" } }, response);
+    expect(response.statusCode).toBe(502);
+    expect(completeProductionBatchMock).not.toHaveBeenCalled();
+  });
+
+  it("explains that cleanup already ran when database completion fails", async () => {
+    resolveProductionBatchAuthMock.mockResolvedValue({ userId: "user-1", workspaceId: "workspace-1" });
+    loadProductionBatchMock.mockResolvedValue({ batch: { id: "batch-1" } });
+    removeProductionBatchShipStationTagsMock.mockResolvedValue({ removedTags: 3 });
+    completeProductionBatchMock.mockRejectedValue(new Error("private database details"));
+    const { default: handler } = await import("../../api/production-batch.js");
+    const response = createResponseRecorder();
+    await handler({ method: "POST", body: { action: "complete", batchId: "batch-1" } }, response);
+    expect(response.statusCode).toBe(500);
+    expect(response.body.error).toBe("ShipStation batch tags were removed, but completion could not be confirmed. Refresh the batch to check its status before retrying.");
+    expect(response.body.error).not.toContain("private database details");
+  });
   it("tags only the saved batch loaded through the authenticated workspace", async () => {
     resolveProductionBatchAuthMock.mockResolvedValue({ userId: "user-1", workspaceId: "workspace-1" });
     const snapshot = { batch: { id: "batch-1" }, orderItems: [{ source: { orderNumber: "100" } }] };
@@ -450,6 +504,8 @@ describe("production batch api route", () => {
   });
 
   it("completes the current production batch for a valid POST request", async () => {
+    loadProductionBatchMock.mockResolvedValue({ batch: { id: "batch-1" }, orderItems: [{ id: "item-1" }] });
+    removeProductionBatchShipStationTagsMock.mockResolvedValue({ removedTags: 2 });
     resolveProductionBatchAuthMock.mockResolvedValue({
       userId: "user-1",
       workspaceId: "workspace-1",
@@ -482,6 +538,7 @@ describe("production batch api route", () => {
       batch: { id: "batch-1", workspaceId: "workspace-1" },
       activeOrderItemId: null,
       orderItems: [],
+      shipStationCleanup: { removedTags: 2 },
     });
   });
 
@@ -555,7 +612,7 @@ describe("production batch api route", () => {
       userId: "user-1",
       workspaceId: "workspace-1",
     });
-    completeProductionBatchMock.mockRejectedValue({
+    removeProductionBatchItemMock.mockRejectedValue({
       message: 'new row for relation "batch_items" violates check constraint "batch_items_status_check"',
       code: "23514",
       details: "Failing row contains archived status.",
@@ -569,8 +626,9 @@ describe("production batch api route", () => {
       method: "POST",
       headers: { authorization: "Bearer token-1" },
       body: {
-        action: "complete",
+        action: "remove-item",
         batchId: "batch-1",
+        orderItemId: "order-1",
       },
     }, response);
 

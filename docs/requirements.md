@@ -969,3 +969,10 @@ For batch Etsy order sessions, the preferred workflow is:
 - Load membership server-side under the authenticated workspace. Keep credentials and upstream customer data server-side.
 - Show immediate working feedback, prevent duplicate submissions, preserve pending edits, restore menu focus, and report counts, unmatched order numbers, and sanitized partial failures before printing.
 - On success, instruct the operator to filter by `Current Production Batch` in ShipStation, select the matching orders, and print packing slips. Tagging must not purchase labels or change shipping/lifecycle status.
+
+### ShipStation tag cleanup on production completion — November 14, 2026
+
+- Completing the whole production batch must first remove Current Production Batch from tagged ShipStation shipments, including processing and shipped/label-purchased shipments, while preserving other tags and the reusable tag definition.
+- Verify authenticated saved-batch ownership before cleanup, finish tag discovery before deletions, and do not complete the database batch when cleanup fails. Keep the active batch and saved designs available for retry; clearly explain that partial tag removal may have occurred.
+- If database completion cannot be confirmed after cleanup, explain that tags were removed and direct the operator to refresh and check completion status before retrying.
+- Completion confirmation, working feedback, and success result must mention cleanup and show the number of tags removed. Selected-item completion retains its existing behavior.

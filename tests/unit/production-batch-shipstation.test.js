@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { tagProductionBatchInShipStation } from "../../api/_lib/production-batch-shipstation.js";
+import { tagProductionBatchInShipStation, removeProductionBatchShipStationTags } from "../../api/_lib/production-batch-shipstation.js";
 
 const tagName = "Current Production Batch";
 const shipment = (id, order, tags = []) => ({ shipment_id: id, shipment_number: order, tags: tags.map(name => ({ name })) });
@@ -11,6 +11,46 @@ function client(pending = [], tagged = []) {
   };
 }
 const snapshot = (...sources) => ({ orderItems: sources.map((source, i) => ({ id: `item-${i}`, source })) });
+
+describe("remove production batch ShipStation tags", () => {
+  it("removes only the batch tag across statuses and deduplicates shipments", async () => {
+    const tagged = shipment("se-1", "100", [tagName, "Other"]);
+    const api = client([], [tagged, tagged, { ...shipment("se-2", "200", [tagName]), shipment_status: "label_purchased" }, shipment("se-other", "300", ["Other"])]);
+    expect(await removeProductionBatchShipStationTags({ client: api })).toEqual({ removedTags: 2 });
+    expect(api.removeShipmentTag.mock.calls.map(([args]) => args)).toEqual([{ shipmentId: "se-1", tagName }, { shipmentId: "se-2", tagName }]);
+    expect(api.addShipmentTag).not.toHaveBeenCalled();
+  });
+
+  it("succeeds without writes for an already clean tag set", async () => {
+    const api = client();
+    expect(await removeProductionBatchShipStationTags({ client: api })).toEqual({ removedTags: 0 });
+    expect(api.removeShipmentTag).not.toHaveBeenCalled();
+  });
+
+  it("finishes discovery before removal and exposes a safe retry error", async () => {
+    const api = client();
+    api.iterateShipments = async function* () { yield shipment("se-1", "100", [tagName]); throw new Error("private provider body"); };
+    await expect(removeProductionBatchShipStationTags({ client: api })).rejects.toMatchObject({ expose: true, statusCode: 502, message: expect.stringMatching(/batch is still open.*retry/i) });
+    expect(api.removeShipmentTag).not.toHaveBeenCalled();
+  });
+
+  it("reports partial cleanup failure safely and supports an idempotent retry", async () => {
+    let records = [shipment("se-1", "100", [tagName]), shipment("se-2", "200", [tagName])];
+    const api = client();
+    api.iterateShipments = async function* () { yield* records; };
+    api.removeShipmentTag.mockImplementation(async ({ shipmentId }) => {
+      if (shipmentId === "se-2") throw new Error("secret");
+      records = records.filter(record => record.shipment_id !== shipmentId);
+    });
+    await expect(removeProductionBatchShipStationTags({ client: api })).rejects.toMatchObject({ expose: true, statusCode: 502, message: expect.stringMatching(/some tags may already.*retry/i) });
+    api.removeShipmentTag.mockImplementation(async ({ shipmentId }) => { records = records.filter(record => record.shipment_id !== shipmentId); });
+    expect(await removeProductionBatchShipStationTags({ client: api })).toEqual({ removedTags: 1 });
+  });
+
+  it("requires credentials before pretending cleanup succeeded", async () => {
+    await expect(removeProductionBatchShipStationTags({ env: {} })).rejects.toMatchObject({ expose: true, statusCode: 503, message: expect.stringMatching(/not configured.*batch is still open/i) });
+  });
+});
 
 describe("tag production batch in ShipStation", () => {
   it("never guesses between identical order numbers in different shipment statuses", async () => {

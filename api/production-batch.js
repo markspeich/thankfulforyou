@@ -1,6 +1,6 @@
 import { createServerTiming } from "./_lib/server-timing.js";
 import { resolveProductionBatchAuth } from "./_lib/production-batch-auth.js";
-import { tagProductionBatchInShipStation } from "./_lib/production-batch-shipstation.js";
+import { tagProductionBatchInShipStation, removeProductionBatchShipStationTags } from "./_lib/production-batch-shipstation.js";
 import {
   completeProductionBatch,
   mutateSelectedProductionBatchItems,
@@ -256,6 +256,25 @@ export default async function handler(req, res) {
         return;
       }
 
+      if (action === "complete") {
+        const snapshot = await loadProductionBatch({ batchId, workspaceId: req.auth.workspaceId });
+        if (!snapshot) {
+          res.status(404).json({ error: "Production batch not found." });
+          return;
+        }
+        const shipStationCleanup = await removeProductionBatchShipStationTags();
+        let completedSnapshot;
+        try {
+          completedSnapshot = await completeProductionBatch({ batchId, workspaceId: req.auth.workspaceId, userId: req.auth.userId });
+          if (!completedSnapshot) throw new Error("Production batch not found after tag cleanup.");
+        } catch {
+          res.status(500).json({ error: "ShipStation batch tags were removed, but completion could not be confirmed. Refresh the batch to check its status before retrying." });
+          return;
+        }
+        res.status(200).json({ ...normalizeSnapshot(completedSnapshot), shipStationCleanup });
+        return;
+      }
+
       if (action === "remove-item" && !orderItemId) {
         res.status(400).json({ error: "orderItemId is required." });
         return;
@@ -281,16 +300,10 @@ export default async function handler(req, res) {
         return;
       }
 
-      const savedSnapshot = action === "remove-item"
-        ? await removeProductionBatchItem({
+      const savedSnapshot = await removeProductionBatchItem({
           batchId,
           orderItemId,
           ...(typeof activeOrderItemId === "string" ? { activeOrderItemId } : {}),
-          workspaceId: req.auth.workspaceId,
-          userId: req.auth.userId,
-        })
-        : await completeProductionBatch({
-          batchId,
           workspaceId: req.auth.workspaceId,
           userId: req.auth.userId,
         });

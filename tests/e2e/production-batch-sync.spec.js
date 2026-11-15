@@ -3,6 +3,42 @@ import { installSeededFontRoute, SEEDED_FONT_RECORDS } from "./font-test-routes.
 
 test.describe.configure({ mode: "serial" });
 
+for (const cleanupFails of [false, true]) {
+  test(`whole batch completion ${cleanupFails ? "keeps the batch open when tag cleanup fails" : "reports ShipStation tag cleanup"}`, async ({ page }) => {
+    await installSelectedItemsBatch(page);
+    let release;
+    const pending = new Promise(resolve => { release = resolve; });
+    const requests = [];
+    await page.route("**/api/production-batch", async route => {
+      if (route.request().method() !== "POST") return route.fallback();
+      requests.push(route.request().postDataJSON());
+      await pending;
+      await route.fulfill({ status: cleanupFails ? 502 : 200, json: cleanupFails
+        ? { error: "Unable to remove all Current Production Batch tags. The batch is still open. Some tags may already be removed. Retry completing the batch." }
+        : { batch: { id: "batch-1", workspaceId: "workspace-1" }, orderItems: [], shipStationCleanup: { removedTags: 2 } } });
+    });
+    await page.locator(".batch-tools-toggle").first().click();
+    await page.getByRole("button", { name: "Complete Production Batch", exact: true }).click();
+    await expect(page.locator("#confirmationDialogDescription")).toContainText("Current Production Batch");
+    await page.locator("#confirmationDialogConfirmButton").click();
+    await expect.poll(() => requests.length).toBe(1);
+    await expect(page.locator("#pasteSummaryDialog")).toContainText("ShipStation");
+    await expect(page.locator("#pasteSummaryDialog .batch-summary-card")).toHaveAttribute("data-operation-state", "progress");
+    release();
+    if (cleanupFails) {
+      await expect(page.locator("#pasteSummaryDialog .batch-summary-card")).toHaveAttribute("data-operation-state", "error");
+      await expect(page.locator("#pasteSummaryDialog")).toContainText("batch is still open");
+      await expect(page.locator("#orderList .order-row")).toHaveCount(2);
+      await expect(page.locator("#textInput")).toHaveValue("Alpha");
+    } else {
+      await expect(page.locator("#pasteSummaryDialog .batch-summary-card")).toHaveAttribute("data-operation-state", "complete");
+      await expect(page.locator("#pasteSummaryDialog")).toContainText("ShipStation tags removed");
+      await expect(page.locator("#orderList .order-row")).toHaveCount(0);
+    }
+    expect(requests).toEqual([{ action: "complete", batchId: "batch-1" }]);
+  });
+}
+
 test("ShipStation batch tagging is unavailable for an empty production batch", async ({ page }) => {
   await installSelectedItemsBatch(page, { empty: true });
   await page.locator(".batch-tools-toggle").first().click();

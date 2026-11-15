@@ -12324,11 +12324,14 @@ async function completeCurrentProductionBatch() {
   }
 
   const incompleteOrders = getIncompleteProductionBatchOrders();
+  const tagCleanupDescription = isProductionBatchSyncEnabled()
+    ? " This also removes the Current Production Batch tag in ShipStation, leaving other tags unchanged. If tag cleanup fails, the batch will stay open so you can retry."
+    : "";
   const confirmed = await showConfirmationDialog({
     title: incompleteOrders.length ? "Complete Production Batch With Incomplete Items?" : "Complete Production Batch?",
-    description: incompleteOrders.length
+    description: (incompleteOrders.length
       ? `${incompleteOrders.length} of ${orders.length} batch item${orders.length === 1 ? "" : "s"} ${incompleteOrders.length === 1 ? "is" : "are"} not Ready/Exported or export-ready. Complete this production batch anyway?`
-      : "Mark every order in this production batch complete and remove the batch from the active view?",
+      : "Mark every order in this production batch complete and remove the batch from the active view?") + tagCleanupDescription,
     confirmLabel: "Complete Batch",
     cancelLabel: "Keep Batch",
     isDanger: incompleteOrders.length > 0,
@@ -12338,7 +12341,8 @@ async function completeCurrentProductionBatch() {
   }
 
   const completedOrderCount = orders.length;
-  startOperationDialog({ title: "Completing Production Batch", description: `Completing ${completedOrderCount} design${completedOrderCount === 1 ? "" : "s"}.`, progressLabel: "Updating orders and closing the batch..." });
+  startOperationDialog({ title: "Completing Production Batch", description: `Completing ${completedOrderCount} design${completedOrderCount === 1 ? "" : "s"}.${tagCleanupDescription ? " Removing the Current Production Batch tag in ShipStation first." : ""}`, progressLabel: tagCleanupDescription ? "Removing ShipStation tags and closing the batch..." : "Updating orders and closing the batch..." });
+  pasteSummaryDialog.addEventListener("close", () => batchToolsMenu?.querySelector("summary")?.focus(), { once: true });
 
   const previousOrders = orders.map((order) => structuredClone(order));
   const previousActiveOrderItemId = activeOrderItemId;
@@ -12398,7 +12402,8 @@ async function completeCurrentProductionBatch() {
     "pending",
   );
   renderOrderList();
-  completeOperationDialog({ title: "Production Batch Complete", description: "The production batch was completed successfully.", metrics: [{ label: "Designs completed", value: completedOrderCount }, { label: "Incomplete overrides", value: incompleteOrders.length }, { label: "Remaining", value: 0 }] });
+  const cleanup = completedRemoteSnapshot?.shipStationCleanup;
+  completeOperationDialog({ title: "Production Batch Complete", description: cleanup ? "The production batch was completed and its Current Production Batch tags were removed from ShipStation. Other tags were preserved." : "The production batch was completed successfully.", metrics: [{ label: "Designs completed", value: completedOrderCount }, { label: "Incomplete overrides", value: incompleteOrders.length }, { label: "Remaining", value: 0 }, ...(cleanup ? [{ label: "ShipStation tags removed", value: cleanup.removedTags }] : [])] });
 }
 
 async function importFromClipboard({ clipboardText: providedClipboardText = null } = {}) {
