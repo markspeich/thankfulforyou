@@ -10,6 +10,11 @@ const updateOrderGroupStatusMock = vi.fn();
 const updateOrderGroupsStatusMock = vi.fn();
 const updateOrderItemStatusMock = vi.fn();
 const resolveProductionBatchAuthMock = vi.fn();
+const autoTagProductionBatchAdditionsMock = vi.fn();
+
+vi.mock("../../api/_lib/production-batch-auto-tag.js", () => ({
+  autoTagProductionBatchAdditions: autoTagProductionBatchAdditionsMock,
+}));
 
 vi.mock("../../api/_lib/orders-store.js", () => ({
   addOrderGroupsToProductionBatch: addOrderGroupsToProductionBatchMock,
@@ -62,6 +67,7 @@ beforeEach(() => {
   updateOrderGroupsStatusMock.mockReset();
   updateOrderItemStatusMock.mockReset();
   resolveProductionBatchAuthMock.mockReset();
+  autoTagProductionBatchAdditionsMock.mockReset();
 });
 
 afterEach(() => {
@@ -69,6 +75,31 @@ afterEach(() => {
 });
 
 describe("orders api route", () => {
+  it.each(["addOrderItemToProductionBatch", "addOrdersToProductionBatch", "importClipboardItems"])("automatically tags saved additions from %s", async action => {
+    resolveProductionBatchAuthMock.mockResolvedValue({ userId: "user-1", workspaceId: "workspace-1" });
+    addOrderItemsToProductionBatchMock.mockResolvedValue({ addedOrderItemIds: ["item-1"] });
+    addOrderGroupsToProductionBatchMock.mockResolvedValue({ addedOrderItemIds: ["item-1"] });
+    importWorkspaceOrderItemsMock.mockResolvedValue({ addedToBatchCount: 1, importedCount: 1, orders: [] });
+    const tagging = { status: "warning", tagName: "Current Production Batch", taggedOrders: 0, unmatchedOrders: ["100"], failures: [] };
+    autoTagProductionBatchAdditionsMock.mockResolvedValue(tagging);
+    const { default: handler } = await import("../../api/orders.js");
+    const response = createResponseRecorder();
+    await handler({ method: "POST", body: { action, batchId: "batch-1", orderItemId: "item-1", orderIds: ["order:100"], target: "productionBatch", items: [{ id: "item-1", text: "Ada", source: { orderNumber: "100" } }] } }, response);
+    expect(autoTagProductionBatchAdditionsMock).toHaveBeenCalledExactlyOnceWith({ batchId: "batch-1", workspaceId: "workspace-1" });
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toMatchObject({ addedOrderItemCount: 1, shipStationTagging: tagging });
+  });
+  it.each(["orders-import", "no-op", "failed-add"])("does not auto-tag %s", async kind => {
+    resolveProductionBatchAuthMock.mockResolvedValue({ userId: "user-1", workspaceId: "workspace-1" });
+    importWorkspaceOrderItemsMock.mockResolvedValue({ importedCount: 1, orders: [], addedToBatchCount: 1 });
+    addOrderItemsToProductionBatchMock.mockResolvedValue({ addedOrderItemIds: [] });
+    if (kind === "failed-add") addOrderItemsToProductionBatchMock.mockRejectedValue(Object.assign(new Error("Failed"), { expose: true, statusCode: 409 }));
+    const { default: handler } = await import("../../api/orders.js");
+    const response = createResponseRecorder();
+    await handler({ method: "POST", body: { action: kind === "orders-import" ? "importClipboardItems" : "addOrderItemToProductionBatch", target: "orders", batchId: "batch-1", orderItemId: "item-1", items: [] } }, response);
+    expect(autoTagProductionBatchAdditionsMock).not.toHaveBeenCalled();
+    expect(response.statusCode).toBe(kind === "failed-add" ? 409 : 200);
+  });
   it("passes validated compact pagination parameters to the summaries store", async () => {
     resolveProductionBatchAuthMock.mockResolvedValue({ userId: "user-1", workspaceId: "workspace-1" });
     listWorkspaceOrderSummariesMock.mockResolvedValue({

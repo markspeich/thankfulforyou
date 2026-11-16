@@ -976,3 +976,10 @@ For batch Etsy order sessions, the preferred workflow is:
 - Verify authenticated saved-batch ownership before cleanup, finish tag discovery before deletions, and do not complete the database batch when cleanup fails. Keep the active batch and saved designs available for retry; clearly explain that partial tag removal may have occurred.
 - If database completion cannot be confirmed after cleanup, explain that tags were removed and direct the operator to refresh and check completion status before retrying.
 - Completion confirmation, working feedback, and success result must mention cleanup and show the number of tags removed. Selected-item completion retains its existing behavior.
+
+### Automatic ShipStation tagging for batch additions — November 15, 2026
+
+- After successful saved membership additions, automatically reconcile the Current Production Batch tag in ShipStation. Cover single order items, selected/checked whole orders, and clipboard imports into Production Batch. Importing into Orders alone must not tag shipments.
+- Reuse server-side authenticated saved membership and existing matching/deduplication behavior. Skip no-op additions and do not tag after failed database mutations.
+- Keep successfully added items in the batch if ShipStation tagging fails or has unmatched/ambiguous orders. Return and display a clear partial-success warning with order identifiers and instructions to run Tag Batch in ShipStation; never imply the additions failed or silently claim all tagging succeeded.
+- Include tagging in working feedback and show tagging counts/status in add/import completion. Preserve drafts, selection behavior, and membership refresh independently of external tagging success. Retain manual tagging for recovery and completion-time tag removal.

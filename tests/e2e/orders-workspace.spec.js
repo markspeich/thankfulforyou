@@ -1,6 +1,81 @@
 import { expect, test } from "playwright/test";
 import { installSeededFontRoute } from "./font-test-routes.js";
 
+for (const mode of ["item", "selected", "checked", "paste"]) {
+  for (const warning of [false, true]) {
+    test(`automatic ShipStation tagging ${mode} addition ${warning ? "keeps additions and reports incomplete tagging" : "reports successful tagging"}`, async ({ page }) => {
+      const addedItems = [];
+      const posts = [];
+      const taggingRequests = [];
+      let release;
+      const held = new Promise(resolve => { release = resolve; });
+      await installSupabaseSession(page);
+      await installClipboardText(page, buildClipboardPayload());
+      await installProductionBatchRoutes(page, { onGet(snapshot) { snapshot.orderItems = addedItems; } });
+      await installOrdersWorkspaceRoutes(page);
+      await page.route("**/api/orders**", async route => {
+        if (route.request().method() !== "POST") return route.fallback();
+        posts.push(route.request().postDataJSON());
+        await held;
+        addedItems.push(buildAdaProductionBatchOrderItem());
+        await route.fulfill({ json: {
+          importedOrderItemCount: mode === "paste" ? 1 : 0,
+          addedOrderItemCount: 1, addedOrderItemIds: ["item-1"], skippedOrderItemCount: 0,
+          shipStationTagging: {
+            status: warning ? "warning" : "success", tagName: "Current Production Batch",
+            taggedOrders: warning ? 0 : 1, removedTags: 0,
+            unmatchedOrders: warning ? ["1001"] : [],
+            failures: warning ? [{ orderNumber: "1002", message: "Unable to apply the batch tag." }] : [],
+          },
+        } });
+      });
+      await page.route("**/api/production-batch", async route => {
+        if (route.request().method() !== "POST") return route.fallback();
+        taggingRequests.push(route.request().postDataJSON());
+        await route.fulfill({ status: 500, json: { error: "Unexpected second request" } });
+      });
+      await gotoAfterBatchLoads(page);
+      if (mode === "paste") {
+        await page.getByRole("button", { name: "Production Batch", exact: true }).click();
+        await page.getByLabel("Batch tools").click();
+        await page.getByRole("button", { name: "Paste", exact: true }).click();
+      } else {
+        await page.getByRole("button", { name: "Orders", exact: true }).click();
+        const workspace = page.getByRole("region", { name: "Orders workspace" });
+        await expect(workspace.getByText("Ada RN")).toBeVisible();
+        if (mode === "item") {
+          const item = workspace.locator(".database-order-item-card").filter({ hasText: "Ada RN" });
+          await item.getByRole("button", { name: "Item actions" }).click();
+          await item.getByRole("button", { name: "Add to Production Batch" }).click();
+        } else if (mode === "selected") {
+          await workspace.getByLabel("Order actions", { exact: true }).click();
+          await workspace.getByRole("menu", { name: "Selected order actions" }).getByRole("button", { name: "Add to Production Batch" }).click();
+        } else {
+          await workspace.getByLabel("Select order 1001").check();
+          await workspace.getByLabel("Orders tools").click();
+          await workspace.getByRole("button", { name: "Add Checked to Production Batch" }).click();
+        }
+      }
+      await expect.poll(() => posts.length).toBe(1);
+      await expect(page.locator("#pasteSummaryDialog")).toContainText("ShipStation");
+      await expect(page.locator("#pasteSummaryDialog .batch-summary-card")).toHaveAttribute("data-operation-state", "progress");
+      release();
+      await expect(page.locator("#pasteSummaryDialog .batch-summary-card")).toHaveAttribute("data-operation-state", warning ? "error" : "complete");
+      await expect(page.locator("#pasteSummaryDialog")).toContainText(warning ? "Tag Batch in ShipStation" : "Orders tagged");
+      if (warning) {
+        await expect(page.locator("#pasteSummaryDialog")).toContainText("1001");
+        await expect(page.locator("#pasteSummaryDialog")).toContainText("1002");
+        await expect(page.locator("#pasteSummaryDialog")).toContainText("saved");
+      }
+      await page.locator("#pasteSummaryDoneButton").click();
+      await page.getByRole("button", { name: "Production Batch", exact: true }).click();
+      await expect(page.locator("#orderList .order-row")).toHaveCount(1);
+      expect(posts).toHaveLength(1);
+      expect(taggingRequests).toHaveLength(0);
+    });
+  }
+}
+
 function installSupabaseSession(page) {
   return page.addInitScript(() => {
     window.__APP_CONFIG__ = {

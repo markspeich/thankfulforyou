@@ -1,5 +1,6 @@
 import { createServerTiming } from "./_lib/server-timing.js";
 import { resolveProductionBatchAuth } from "./_lib/production-batch-auth.js";
+import { autoTagProductionBatchAdditions } from "./_lib/production-batch-auto-tag.js";
 import {
   addOrderGroupsToProductionBatch,
   addOrderItemsToProductionBatch,
@@ -288,12 +289,16 @@ async function handleImportClipboardItems({ res, auth, body }) {
     countIds(mutationResult?.addedOrderItemIds),
   );
   const skippedOrderItemCount = Math.max(0, items.length - importedOrderItemCount);
+  const shipStationTagging = target === "productionBatch" && addedOrderItemCount > 0
+    ? await autoTagProductionBatchAdditions({ batchId, workspaceId: auth.workspaceId })
+    : null;
 
   res.status(200).json({
     importedOrderItemCount,
     addedOrderItemCount: target === "productionBatch" ? addedOrderItemCount : 0,
     skippedOrderItemCount,
     ...ordersPayload,
+    ...(shipStationTagging ? { shipStationTagging } : {}),
   });
 }
 
@@ -318,10 +323,15 @@ async function handleAddOrderItemToProductionBatch({ res, auth, body }) {
     batchId,
     orderItemIds: [orderItemId],
   });
+  const addedOrderItemCount = countIds(mutationResult?.addedOrderItemIds);
+  const shipStationTagging = addedOrderItemCount > 0
+    ? await autoTagProductionBatchAdditions({ batchId, workspaceId: auth.workspaceId })
+    : null;
   res.status(200).json({
     importedOrderItemCount: 0,
-    addedOrderItemCount: countIds(mutationResult?.addedOrderItemIds),
+    addedOrderItemCount,
     addedOrderItemIds: mutationResult?.addedOrderItemIds || [],
+    ...(shipStationTagging ? { shipStationTagging } : {}),
   });
 }
 
@@ -346,10 +356,15 @@ async function handleAddOrdersToProductionBatch({ res, auth, body }) {
     batchId,
     orderIds,
   });
+  const addedOrderItemCount = countIds(mutationResult?.addedOrderItemIds);
+  const shipStationTagging = addedOrderItemCount > 0
+    ? await autoTagProductionBatchAdditions({ batchId, workspaceId: auth.workspaceId })
+    : null;
   res.status(200).json({
     importedOrderItemCount: 0,
-    addedOrderItemCount: countIds(mutationResult?.addedOrderItemIds),
+    addedOrderItemCount,
     addedOrderItemIds: mutationResult?.addedOrderItemIds || [],
+    ...(shipStationTagging ? { shipStationTagging } : {}),
   });
 }
 

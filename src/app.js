@@ -6516,10 +6516,32 @@ async function importManualPasteFallback() {
   if (target === "orders") await importOrdersFromClipboard({ clipboardText });
   if (target === "productionBatch") await importFromClipboard({ clipboardText });
 }
-function showPasteSummaryDialog({ targetLabel = "Orders", importedCount = 0, skippedDuplicateCount = 0, addedToBatchCount = 0 } = {}) {
-  completeOperationDialog({ title: "Paste Summary", description: `Clipboard import results for ${targetLabel}.`, metrics: [{ label: "Imported", value: importedCount }, { label: "Skipped duplicates", value: skippedDuplicateCount }, { label: "Added to batch", value: addedToBatchCount }] });
+function completeBatchAdditionOperation({ title, description, metrics, shipStationTagging = null }) {
+  const unmatched = Array.isArray(shipStationTagging?.unmatchedOrders) ? shipStationTagging.unmatchedOrders : [];
+  const failures = Array.isArray(shipStationTagging?.failures) ? shipStationTagging.failures : [];
+  const warning = Boolean(shipStationTagging && (shipStationTagging.status !== "success" || unmatched.length || failures.length));
+  const taggingDescription = !shipStationTagging ? "" : warning
+    ? ` Additions were saved, but ShipStation tagging is incomplete.${shipStationTagging.message ? ` ${shipStationTagging.message}` : ""}${unmatched.length ? ` Unmatched orders: ${unmatched.join(", ")}.` : ""}${failures.length ? ` Failed updates: ${failures.map(failure => `${failure.orderNumber}: ${failure.message}`).join("; ")}.` : ""} Use Tag Batch in ShipStation in the Production Batch tools menu to retry before printing packing slips.`
+    : " ShipStation orders are tagged with Current Production Batch. If a newly created tag is not visible in ShipStation, refresh the entire browser tab.";
+  completeOperationDialog({ title: warning ? `${title}: Tagging Needs Attention` : title, description: description + taggingDescription, metrics: [
+    ...metrics,
+    ...(shipStationTagging ? [
+      { label: "Orders tagged", value: shipStationTagging.taggedOrders },
+      { label: "Old tags removed", value: shipStationTagging.removedTags },
+      { label: "Unmatched orders", value: unmatched.length },
+      { label: "Failed updates", value: failures.length },
+    ] : []),
+  ] });
+  if (warning) pasteSummaryDialog.querySelector(".batch-summary-card").dataset.operationState = "error";
+  if (shipStationTagging) updateWorkflowAlert(description + taggingDescription, warning ? "error" : "success");
+  return taggingDescription;
+}
+
+function showPasteSummaryDialog({ targetLabel = "Orders", importedCount = 0, skippedDuplicateCount = 0, addedToBatchCount = 0, shipStationTagging = null } = {}) {
+  const taggingDescription = completeBatchAdditionOperation({ title: "Paste Summary", description: `Clipboard import results for ${targetLabel}.`, metrics: [{ label: "Imported", value: importedCount }, { label: "Skipped duplicates", value: skippedDuplicateCount }, { label: "Added to batch", value: addedToBatchCount }], shipStationTagging });
   pasteSummaryDescription.innerHTML = `Clipboard import results for <span id="pasteSummaryTarget"></span>.`;
   pasteSummaryDescription.querySelector("#pasteSummaryTarget").textContent = targetLabel;
+  pasteSummaryDescription.append(document.createTextNode(taggingDescription));
 }
 function closePasteSummaryDialog() {
   if (pasteSummaryDialog?.querySelector(".batch-summary-card")?.dataset.operationState === "progress") return;
@@ -7956,7 +7978,7 @@ async function addDatabaseOrderItemToBatch(item, button = null) {
     return;
   }
 
-  startOperationDialog({ title: "Adding Order Item", description: "Adding the selected order item to the production batch.", progressLabel: "Saving production batch item..." });
+  startOperationDialog({ title: "Adding Order Item", description: "Adding the selected order item to the production batch and tagging orders in ShipStation.", progressLabel: "Saving production batch item and updating ShipStation tags..." });
 
   if (button) {
     button.disabled = true;
@@ -7978,7 +8000,7 @@ async function addDatabaseOrderItemToBatch(item, button = null) {
     await refreshProductionBatchSnapshot(accessToken);
     applyAddedOrderItemsDelta(payload);
     updateWorkflowAlert(buildAddedToBatchMessage(payload), "success");
-    completeOperationDialog({ title: "Order Item Added", description: buildAddedToBatchMessage(payload), metrics: [{ label: "Selected", value: 1 }, { label: "Added", value: countFromPayload(payload, "addedOrderItemCount") }, { label: "Already in batch", value: Math.max(0, 1 - countFromPayload(payload, "addedOrderItemCount")) }] });
+    completeBatchAdditionOperation({ title: "Order Item Added", description: buildAddedToBatchMessage(payload), metrics: [{ label: "Selected", value: 1 }, { label: "Added", value: countFromPayload(payload, "addedOrderItemCount") }, { label: "Already in batch", value: Math.max(0, 1 - countFromPayload(payload, "addedOrderItemCount")) }], shipStationTagging: payload.shipStationTagging });
   } catch (error) {
     handleOrdersMutationError(
       error,
@@ -8342,7 +8364,7 @@ async function addCheckedDatabaseOrdersToBatch() {
     return;
   }
 
-  startOperationDialog({ title: "Adding Orders", description: `Adding ${orderIds.length} selected order${orderIds.length === 1 ? "" : "s"} to the production batch.`, progressLabel: "Saving production batch items..." });
+  startOperationDialog({ title: "Adding Orders", description: `Adding ${orderIds.length} selected order${orderIds.length === 1 ? "" : "s"} to the production batch and tagging orders in ShipStation.`, progressLabel: "Saving production batch items and updating ShipStation tags..." });
   addCheckedOrdersToBatchButton.disabled = true;
   setBatchActionLabel(addCheckedOrdersToBatchButton, "Adding...");
   ordersDatabaseMutationInFlight = true;
@@ -8366,7 +8388,7 @@ async function addCheckedDatabaseOrdersToBatch() {
     checkedDatabaseOrderIds = nextCheckedOrderIds;
     renderDatabaseOrdersWorkspace();
     updateWorkflowAlert(buildAddedToBatchMessage(payload), "success");
-    completeOperationDialog({ title: "Orders Added", description: buildAddedToBatchMessage(payload), metrics: [{ label: "Selected", value: orderIds.length }, { label: "Added", value: countFromPayload(payload, "addedOrderItemCount") }, { label: "Already in batch", value: Math.max(0, orderIds.length - countFromPayload(payload, "addedOrderItemCount")) }] });
+    completeBatchAdditionOperation({ title: "Orders Added", description: buildAddedToBatchMessage(payload), metrics: [{ label: "Selected", value: orderIds.length }, { label: "Added", value: countFromPayload(payload, "addedOrderItemCount") }, { label: "Already in batch", value: Math.max(0, orderIds.length - countFromPayload(payload, "addedOrderItemCount")) }], shipStationTagging: payload.shipStationTagging });
   } catch (error) {
     handleOrdersMutationError(
       error,
@@ -8390,7 +8412,7 @@ async function addSelectedDatabaseOrderToBatch() {
     return;
   }
 
-  startOperationDialog({ title: "Adding Order", description: "Adding the selected order to the production batch.", progressLabel: "Saving production batch items..." });
+  startOperationDialog({ title: "Adding Order", description: "Adding the selected order to the production batch and tagging orders in ShipStation.", progressLabel: "Saving production batch items and updating ShipStation tags..." });
 
   if (addSelectedOrderToBatchButton) {
     addSelectedOrderToBatchButton.disabled = true;
@@ -8413,7 +8435,7 @@ async function addSelectedDatabaseOrderToBatch() {
     applyAddedOrderItemsDelta(payload);
     selectedOrderActionsMenu?.removeAttribute("open");
     updateWorkflowAlert(buildAddedToBatchMessage(payload), "success");
-    completeOperationDialog({ title: "Order Added", description: buildAddedToBatchMessage(payload), metrics: [{ label: "Selected", value: 1 }, { label: "Added", value: countFromPayload(payload, "addedOrderItemCount") }, { label: "Already in batch", value: Math.max(0, 1 - countFromPayload(payload, "addedOrderItemCount")) }] });
+    completeBatchAdditionOperation({ title: "Order Added", description: buildAddedToBatchMessage(payload), metrics: [{ label: "Selected", value: 1 }, { label: "Added", value: countFromPayload(payload, "addedOrderItemCount") }, { label: "Already in batch", value: Math.max(0, 1 - countFromPayload(payload, "addedOrderItemCount")) }], shipStationTagging: payload.shipStationTagging });
   } catch (error) {
     handleOrdersMutationError(
       error,
@@ -12417,7 +12439,7 @@ async function importFromClipboard({ clipboardText: providedClipboardText = null
     return;
   }
 
-  startOperationDialog({ title: "Pasting Orders", description: "Adding clipboard orders to the production batch.", progressLabel: "Reading and saving orders..." });
+  startOperationDialog({ title: "Pasting Orders", description: "Adding clipboard orders to the production batch and tagging orders in ShipStation.", progressLabel: "Reading, saving orders and updating ShipStation tags..." });
   importClipboardButton.disabled = true;
   setBatchActionLabel(importClipboardButton, "Pasting...");
   ordersDatabaseMutationInFlight = true;
@@ -12464,6 +12486,7 @@ async function importFromClipboard({ clipboardText: providedClipboardText = null
       importedCount: countFromPayload(payload, "importedOrderItemCount"),
       skippedDuplicateCount: skippedCount + countFromPayload(payload, "skippedOrderItemCount"),
       addedToBatchCount: countFromPayload(payload, "addedOrderItemCount"),
+      shipStationTagging: payload.shipStationTagging,
     });
   } catch (error) {
     handleOrdersMutationError(
