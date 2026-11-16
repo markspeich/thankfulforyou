@@ -39,10 +39,20 @@ for (const cleanupFails of [false, true]) {
   });
 }
 
-test("ShipStation batch tagging is unavailable for an empty production batch", async ({ page }) => {
+test("ShipStation empty batch recovery clears tags without saving an empty snapshot", async ({ page }) => {
   await installSelectedItemsBatch(page, { empty: true });
+  const requests = [];
+  await page.route("**/api/production-batch", async route => {
+    if (route.request().method() !== "POST") return route.fallback();
+    requests.push(route.request().postDataJSON());
+    await route.fulfill({ json: { taggedOrders: 0, removedTags: 2, unmatchedOrders: [], failures: [] } });
+  });
   await page.locator(".batch-tools-toggle").first().click();
-  await expect(page.getByRole("button", { name: "Tag Batch in ShipStation", exact: true })).toBeDisabled();
+  await page.getByRole("button", { name: "Tag Batch in ShipStation", exact: true }).click();
+  await expect(page.locator("#pasteSummaryDialog")).toContainText("no packing slips");
+  expect(requests).toEqual([{ action: "tag-shipstation", batchId: "batch-1" }]);
+  await page.locator("#pasteSummaryDoneButton").click();
+  await expect(page.locator("#workflowAlertText")).toContainText("There are no packing slips to print.");
 });
 
 test("ShipStation batch tag action shows progress and printing instructions without changing batch selection", async ({ page }) => {
@@ -96,7 +106,7 @@ for (const failedRequest of [false, true]) {
   });
 }
 
-async function installSelectedItemsBatch(page, { fail = false, waitForRelease = null, concurrentItem = null, onMutation = null, empty = false } = {}) {
+async function installSelectedItemsBatch(page, { fail = false, waitForRelease = null, concurrentItem = null, onMutation = null, empty = false, shipStationTagging = null } = {}) {
   await installSupabaseSession(page);
   const snapshot = {
     batch: { id: "batch-1", workspaceId: "workspace-1" },
@@ -127,15 +137,50 @@ async function installSelectedItemsBatch(page, { fail = false, waitForRelease = 
       await route.fulfill({ status: 409, json: { error: "Selection changed. Refresh the batch and try again." } });
       return;
     }
-    snapshot.orderItems = snapshot.orderItems.filter(item => !body.orderItemIds.includes(item.id));
+    snapshot.orderItems = snapshot.orderItems.filter(item => !(body.orderItemIds || [body.orderItemId]).includes(item.id));
     if (concurrentItem) snapshot.orderItems.push(concurrentItem);
     onMutation?.(snapshot);
     snapshot.activeOrderItemId = snapshot.orderItems[0]?.id || null;
+    if (shipStationTagging) snapshot.shipStationTagging = shipStationTagging;
     await route.fulfill({ json: snapshot });
   });
   await page.goto("/production-batch");
   await expect(page.locator("#orderList .order-row")).toHaveCount(empty ? 0 : 2);
   return requests;
+}
+
+for (const warning of [false, true]) {
+  for (const operation of ["trash", "remove", "skip", "complete"]) {
+    test(`removal tagging ${operation} ${warning ? "warning" : "success"} keeps saved removals and remaining drafts`, async ({ page }) => {
+      let release;
+      const held = new Promise(resolve => { release = resolve; });
+      const requests = await installSelectedItemsBatch(page, { waitForRelease: held, shipStationTagging: {
+        status: warning ? "warning" : "success", tagName: "Current Production Batch", taggedOrders: 1, removedTags: 1,
+        unmatchedOrders: [], failures: warning ? [{ orderNumber: "12345", message: "Tag update failed." }] : [],
+      } });
+      await page.locator("#orderList .order-item").nth(1).click();
+      await page.locator("#textInput").fill("Keep Beta draft");
+      if (operation === "trash") await page.locator(".order-delete-button").first().click();
+      else {
+        await page.locator("#orderList input[type=checkbox]").first().check();
+        await page.locator(".batch-tools-toggle").first().click();
+        await page.getByRole("button", { name: { remove: "Remove from Batch", skip: "Skip", complete: "Mark as Complete" }[operation], exact: true }).click();
+      }
+      await page.locator("#confirmationDialogConfirmButton").click();
+      await expect(page.locator("#pasteSummaryDialog .batch-summary-card")).toHaveAttribute("data-operation-state", "progress");
+      await expect(page.locator("#pasteSummaryDialog")).toContainText("ShipStation");
+      await expect.poll(() => requests.length).toBe(1);
+      release();
+      await expect(page.locator("#pasteSummaryDialog .batch-summary-card")).toHaveAttribute("data-operation-state", warning ? "error" : "complete");
+      await expect(page.locator("#pasteSummaryDialog")).toContainText(warning ? "Removals were saved" : "tags now match");
+      await expect(page.locator("#orderList .order-row")).toHaveCount(1);
+      await expect(page.locator("#textInput")).toHaveValue("Keep Beta draft");
+      expect(requests).toHaveLength(1);
+      expect(requests[0].action).toBe(operation === "trash" ? "remove-item" : "selected-items");
+      await page.locator("#pasteSummaryDoneButton").click();
+      await expect(operation === "trash" ? page.locator(".order-delete-button").first() : page.locator(".batch-tools-toggle").first()).toBeFocused();
+    });
+  }
 }
 
 test("batch checkboxes select independently and survive search", async ({ page }) => {

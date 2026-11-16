@@ -1529,7 +1529,7 @@ test("skips and reopens an order item from the Orders screen", async ({ page }) 
     postBody: (post) => {
       if (post.action === "skipOrderItem") {
         Object.assign(ordersPayload, buildStatusPayload("skipped"));
-        return ordersPayload;
+        return { ...ordersPayload, shipStationTagging: { status: "warning", taggedOrders: 0, removedTags: 0, unmatchedOrders: [], failures: [{ orderNumber: "1001", message: "Tag update failed." }] } };
       }
       if (post.action === "reopenOrderItem") {
         Object.assign(ordersPayload, buildStatusPayload("open"));
@@ -1548,6 +1548,10 @@ test("skips and reopens an order item from the Orders screen", async ({ page }) 
   await expect(page.locator("#confirmationDialogTitle")).toHaveText("Skip Order Item?");
   await expect(page.locator("#confirmationDialogDescription")).toContainText("It will not be added to a production batch.");
   await page.locator("#confirmationDialogConfirmButton").click();
+  await expect(page.locator("#pasteSummaryDialog .batch-summary-card")).toHaveAttribute("data-operation-state", "error");
+  await expect(page.locator("#pasteSummaryDialog")).toContainText("Removals were saved");
+  await expect(page.locator("#pasteSummaryDialog")).toContainText("Tag update failed.");
+  await page.locator("#pasteSummaryDoneButton").click();
 
   await expect.poll(() => posts.some((post) => post.action === "skipOrderItem" && post.orderItemId === "item-1")).toBe(true);
   await expect(page.locator("#databaseOrdersStatusFilter")).toHaveValue("open");
@@ -1602,7 +1606,7 @@ test("skips and reopens an entire selected order from the Orders screen", async 
     postBody: (post) => {
       if (post.action === "skipOrder") {
         Object.assign(ordersPayload, buildStatusPayload("skipped"));
-        return ordersPayload;
+        return { ...ordersPayload, shipStationTagging: { status: "warning", taggedOrders: 0, removedTags: 0, unmatchedOrders: [], failures: [{ orderNumber: "1001", message: "Tag update failed." }] } };
       }
       if (post.action === "reopenOrder") {
         Object.assign(ordersPayload, buildStatusPayload("open"));
@@ -1622,6 +1626,10 @@ test("skips and reopens an entire selected order from the Orders screen", async 
   await expect(page.locator("#confirmationDialogDescription")).toContainText("Some order items are in the active production batch.");
   await expect(page.locator("#confirmationDialogDescription")).toContainText("Remove the open order items from the batch and skip them?");
   await page.locator("#confirmationDialogConfirmButton").click();
+  await expect(page.locator("#pasteSummaryDialog .batch-summary-card")).toHaveAttribute("data-operation-state", "error");
+  await expect(page.locator("#pasteSummaryDialog")).toContainText("Removals were saved");
+  await expect(page.locator("#pasteSummaryDialog")).toContainText("Tag update failed.");
+  await page.locator("#pasteSummaryDoneButton").click();
 
   await expect.poll(() => posts.some((post) => post.action === "skipOrder" && post.orderId === "order:1001")).toBe(true);
   await expect(page.locator("#databaseOrdersStatusFilter")).toHaveValue("open");
@@ -1682,7 +1690,7 @@ test("skips and reopens checked orders from the Orders column menu", async ({ pa
     postBody: (post) => {
       if (post.action === "skipOrders") {
         Object.assign(ordersPayload, buildStatusPayload("skipped"));
-        return { orderItemIds: ["item-1", "item-2", "item-3"], status: "skipped" };
+        return { orderItemIds: ["item-1", "item-2", "item-3"], status: "skipped", shipStationTagging: { status: "warning", taggedOrders: 0, removedTags: 0, unmatchedOrders: [], failures: [{ orderNumber: "1001", message: "Tag update failed." }] } };
       }
       if (post.action === "reopenOrders") {
         Object.assign(ordersPayload, buildStatusPayload("open"));
@@ -1702,6 +1710,10 @@ test("skips and reopens checked orders from the Orders column menu", async ({ pa
   await expect(page.locator("#confirmationDialogTitle")).toHaveText("Skip Orders?");
   await expect(page.locator("#confirmationDialogDescription")).toContainText("Some selected order items are in the active production batch.");
   await page.locator("#confirmationDialogConfirmButton").click();
+  await expect(page.locator("#pasteSummaryDialog .batch-summary-card")).toHaveAttribute("data-operation-state", "error");
+  await expect(page.locator("#pasteSummaryDialog")).toContainText("Removals were saved");
+  await expect(page.locator("#pasteSummaryDialog")).toContainText("Tag update failed.");
+  await page.locator("#pasteSummaryDoneButton").click();
 
   await expect.poll(() => posts.some((post) => post.action === "skipOrders" && post.orderIds.includes("order:1001") && post.orderIds.includes("order:1002"))).toBe(true);
   await expect(page.locator("#databaseOrdersStatusFilter")).toHaveValue("open");

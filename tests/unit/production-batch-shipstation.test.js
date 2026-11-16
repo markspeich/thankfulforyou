@@ -53,6 +53,23 @@ describe("remove production batch ShipStation tags", () => {
 });
 
 describe("tag production batch in ShipStation", () => {
+  it("retains the whole-order tag for a remaining sibling and removes only the departed order tag", async () => {
+    const sibling = shipment("se-sibling", "100", [tagName, "Urgent"]);
+    const departed = shipment("se-departed", "200", [tagName, "Other"]);
+    const api = client([sibling], [sibling, departed]);
+    const result = await tagProductionBatchInShipStation({ snapshot: snapshot({ orderNumber: "100", shipStationShipmentId: "se-sibling" }), client: api });
+    expect(result).toEqual({ tagName, taggedOrders: 1, removedTags: 1, unmatchedOrders: [], failures: [] });
+    expect(api.removeShipmentTag).toHaveBeenCalledExactlyOnceWith({ shipmentId: "se-departed", tagName });
+    expect(api.addShipmentTag).not.toHaveBeenCalled();
+  });
+
+  it.each([undefined, {}, { orderItems: null }, { orderItems: {} }])("rejects malformed snapshots without allowing empty cleanup", async invalid => {
+    const api = client([], [shipment("se-1", "100", [tagName])]);
+    api.iterateShipments = vi.fn(api.iterateShipments);
+    await expect(tagProductionBatchInShipStation({ snapshot: invalid, client: api })).rejects.toMatchObject({ statusCode: 400 });
+    expect(api.iterateShipments).not.toHaveBeenCalled();
+    expect(api.removeShipmentTag).not.toHaveBeenCalled();
+  });
   it("never guesses between identical order numbers in different shipment statuses", async () => {
     const api = client();
     api.iterateShipments = async function* ({ shipmentStatus }) {
@@ -144,10 +161,34 @@ describe("tag production batch in ShipStation", () => {
     expect(result.failures.map(f => f.orderNumber)).toEqual(["100", "old"]);
   });
 
-  it("rejects empty batches before contacting ShipStation", async () => {
+  it("rejects invalid snapshots before contacting ShipStation", async () => {
     const api = client();
-    await expect(tagProductionBatchInShipStation({ snapshot: snapshot(), client: api })).rejects.toMatchObject({ statusCode: 400, expose: true });
+    await expect(tagProductionBatchInShipStation({ snapshot: {}, client: api })).rejects.toMatchObject({ statusCode: 400, expose: true });
     expect(api.removeShipmentTag).not.toHaveBeenCalled();
+  });
+
+  it("clears only app-owned tags for an empty saved batch", async () => {
+    const api = client([], [shipment("old", "100", [tagName, "Other"])]);
+    await expect(tagProductionBatchInShipStation({ snapshot: snapshot(), client: api })).resolves.toEqual({ tagName, taggedOrders: 0, removedTags: 1, unmatchedOrders: [], failures: [] });
+    expect(api.removeShipmentTag).toHaveBeenCalledExactlyOnceWith({ shipmentId: "old", tagName });
+    expect(api.addShipmentTag).not.toHaveBeenCalled();
+  });
+
+  it("uses context-neutral safe errors for failed empty-batch recovery", async () => {
+    const api = client();
+    api.iterateShipments = async function* () { throw new Error("secret provider body"); };
+    await expect(tagProductionBatchInShipStation({ snapshot: snapshot(), client: api })).rejects.toMatchObject({ expose: true, statusCode: 502, message: expect.not.stringMatching(/completion|still open|secret/) });
+  });
+
+  it("preserves successful cleanup counts and safe per-order failures for an empty saved batch", async () => {
+    const api = client([], [shipment("se-1", "100", [tagName]), shipment("se-2", "200", [tagName])]);
+    api.iterateShipments = vi.fn(api.iterateShipments);
+    api.removeShipmentTag.mockRejectedValueOnce(new Error("secret upstream payload"));
+    const result = await tagProductionBatchInShipStation({ snapshot: snapshot(), client: api });
+    expect(result.removedTags).toBe(1);
+    expect(result.failures).toEqual([{ orderNumber: "100", message: expect.stringMatching(/Unable to remove/) }]);
+    expect(JSON.stringify(result)).not.toMatch(/secret|upstream/);
+    expect(api.iterateShipments).toHaveBeenCalledExactlyOnceWith({ tag: tagName });
   });
 
   it("finishes discovery before mutating tags, so a later page failure makes no changes", async () => {

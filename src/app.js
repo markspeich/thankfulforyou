@@ -312,6 +312,7 @@ const importClipboardButton = document.querySelector("#importClipboardButton");
 const clearBatchButton = document.querySelector("#clearBatchButton");
 const tagBatchInShipStationButton = document.querySelector("#tagBatchInShipStationButton");
 let tagBatchInShipStationBusy = false;
+let deleteOrderBusy = false;
 const workflowAlert = document.querySelector("#importStatus");
 const workflowAlertText = document.querySelector("#workflowAlertText");
 const ordersImportActions = document.querySelector("#ordersImportActions");
@@ -6516,12 +6517,13 @@ async function importManualPasteFallback() {
   if (target === "orders") await importOrdersFromClipboard({ clipboardText });
   if (target === "productionBatch") await importFromClipboard({ clipboardText });
 }
-function completeBatchAdditionOperation({ title, description, metrics, shipStationTagging = null }) {
+function completeBatchAdditionOperation({ title, description, metrics, shipStationTagging = null, removal = false }) {
   const unmatched = Array.isArray(shipStationTagging?.unmatchedOrders) ? shipStationTagging.unmatchedOrders : [];
   const failures = Array.isArray(shipStationTagging?.failures) ? shipStationTagging.failures : [];
   const warning = Boolean(shipStationTagging && (shipStationTagging.status !== "success" || unmatched.length || failures.length));
   const taggingDescription = !shipStationTagging ? "" : warning
-    ? ` Additions were saved, but ShipStation tagging is incomplete.${shipStationTagging.message ? ` ${shipStationTagging.message}` : ""}${unmatched.length ? ` Unmatched orders: ${unmatched.join(", ")}.` : ""}${failures.length ? ` Failed updates: ${failures.map(failure => `${failure.orderNumber}: ${failure.message}`).join("; ")}.` : ""} Use Tag Batch in ShipStation in the Production Batch tools menu to retry before printing packing slips.`
+    ? ` ${removal ? "Removals" : "Additions"} were saved, but ShipStation tagging is incomplete.${shipStationTagging.message ? ` ${shipStationTagging.message}` : ""}${unmatched.length ? ` Unmatched orders: ${unmatched.join(", ")}.` : ""}${failures.length ? ` Failed updates: ${failures.map(failure => `${failure.orderNumber}: ${failure.message}`).join("; ")}.` : ""} Use Tag Batch in ShipStation in the Production Batch tools menu to retry before printing packing slips.`
+    : removal ? " ShipStation tags now match the saved production batch. Orders retain Current Production Batch while another item remains."
     : " ShipStation orders are tagged with Current Production Batch. If a newly created tag is not visible in ShipStation, refresh the entire browser tab.";
   completeOperationDialog({ title: warning ? `${title}: Tagging Needs Attention` : title, description: description + taggingDescription, metrics: [
     ...metrics,
@@ -6735,7 +6737,7 @@ function applyOrderItemsStatusDelta(payload) {
 
   if (status === "skipped") {
     saveActiveOrderDraft();
-    orders = orders.filter((order) => !changedIds.has(order.id));
+    orders.splice(0, orders.length, ...orders.filter((order) => !changedIds.has(order.id)));
     if (!orders.some((order) => order.id === activeOrderItemId)) {
       activeOrderItemId = orders[0]?.id || null;
     }
@@ -8041,6 +8043,11 @@ async function updateDatabaseOrderItemStatus({
   ordersDatabaseMutationInFlight = true;
   render();
 
+  const syncingRemoval = action.startsWith("skip");
+  if (syncingRemoval) {
+    startOperationDialog({ title: "Skipping Orders", description: "Saving removals and synchronizing ShipStation tags.", progressLabel: "Updating orders and ShipStation tags..." });
+    pasteSummaryDialog.addEventListener("close", () => (button?.isConnected ? button : databaseOrdersSearchInput)?.focus(), { once: true });
+  }
   try {
     await persistPendingProductionBatchEdits();
     const accessToken = await resolveProductionBatchMutationAccessToken();
@@ -8064,7 +8071,11 @@ async function updateDatabaseOrderItemStatus({
       refreshBatch: action === "skipOrderItem",
     });
     updateWorkflowAlert(successMessage, "success");
+    if (syncingRemoval && payload.shipStationTagging) {
+      completeBatchAdditionOperation({ removal: true, title: "Orders Skipped", description: successMessage, metrics: [], shipStationTagging: payload.shipStationTagging });
+    } else if (syncingRemoval) pasteSummaryDialog.close();
   } catch (error) {
+    if (syncingRemoval) showActionOperationError(error, fallbackMessage);
     handleOrdersMutationError(
       error,
       fallbackMessage,
@@ -8143,6 +8154,11 @@ async function updateDatabaseOrderStatus({
   ordersDatabaseMutationInFlight = true;
   render();
 
+  const syncingRemoval = action.startsWith("skip");
+  if (syncingRemoval) {
+    startOperationDialog({ title: "Skipping Orders", description: "Saving removals and synchronizing ShipStation tags.", progressLabel: "Updating orders and ShipStation tags..." });
+    pasteSummaryDialog.addEventListener("close", () => (button?.isConnected ? button : databaseOrdersSearchInput)?.focus(), { once: true });
+  }
   try {
     await persistPendingProductionBatchEdits();
     const accessToken = await resolveProductionBatchMutationAccessToken();
@@ -8166,7 +8182,11 @@ async function updateDatabaseOrderStatus({
       refreshBatch: action === "skipOrder",
     });
     updateWorkflowAlert(successMessage, "success");
+    if (syncingRemoval && payload.shipStationTagging) {
+      completeBatchAdditionOperation({ removal: true, title: "Orders Skipped", description: successMessage, metrics: [], shipStationTagging: payload.shipStationTagging });
+    } else if (syncingRemoval) pasteSummaryDialog.close();
   } catch (error) {
+    if (syncingRemoval) showActionOperationError(error, fallbackMessage);
     handleOrdersMutationError(
       error,
       fallbackMessage,
@@ -8252,6 +8272,11 @@ async function updateCheckedDatabaseOrdersStatus({
   ordersDatabaseMutationInFlight = true;
   render();
 
+  const syncingRemoval = action.startsWith("skip");
+  if (syncingRemoval) {
+    startOperationDialog({ title: "Skipping Orders", description: "Saving removals and synchronizing ShipStation tags.", progressLabel: "Updating orders and ShipStation tags..." });
+    pasteSummaryDialog.addEventListener("close", () => (button?.isConnected ? button : databaseOrdersSearchInput)?.focus(), { once: true });
+  }
   try {
     await persistPendingProductionBatchEdits();
     const accessToken = await resolveProductionBatchMutationAccessToken();
@@ -8280,7 +8305,11 @@ async function updateCheckedDatabaseOrdersStatus({
       applyOrderItemsStatusDelta(payload);
     }
     updateWorkflowAlert(successMessage, "success");
+    if (syncingRemoval && payload.shipStationTagging) {
+      completeBatchAdditionOperation({ removal: true, title: "Orders Skipped", description: successMessage, metrics: [], shipStationTagging: payload.shipStationTagging });
+    } else if (syncingRemoval) pasteSummaryDialog.close();
   } catch (error) {
+    if (syncingRemoval) showActionOperationError(error, fallbackMessage);
     handleOrdersMutationError(
       error,
       fallbackMessage,
@@ -10753,7 +10782,7 @@ function renderOrderList() {
     notStartedCountOutput.textContent = String(notStartedCount);
   }
   clearBatchButton.disabled = orders.length === 0;
-  tagBatchInShipStationButton.disabled = !orders.length || tagBatchInShipStationBusy;
+  tagBatchInShipStationButton.disabled = !canAttemptProductionBatchSave() || tagBatchInShipStationBusy;
   if (showColorCountsButton) {
     showColorCountsButton.disabled = orders.length === 0;
   }
@@ -12109,6 +12138,9 @@ function resetEditorToEmptyState() {
 }
 
 async function deleteOrder(orderId) {
+  if (deleteOrderBusy) return;
+  deleteOrderBusy = true;
+  try {
   const order = orders.find((candidate) => candidate.id === orderId);
   if (!order) {
     return;
@@ -12136,6 +12168,8 @@ async function deleteOrder(orderId) {
     ? orders[orderIndex + 1]?.id || orders[orderIndex - 1]?.id || null
     : activeOrderItemId;
   let removedRemoteSnapshot = null;
+  startOperationDialog({ title: "Removing Design", description: "Saving the removal and synchronizing ShipStation tags.", progressLabel: "Updating the batch and ShipStation tags..." });
+  pasteSummaryDialog.addEventListener("close", () => (document.querySelector("#orderList .order-delete-button") || batchToolsMenu?.querySelector("summary"))?.focus(), { once: true });
 
   if (canAttemptProductionBatchSave() && productionBatchContext?.id) {
     try {
@@ -12153,6 +12187,7 @@ async function deleteOrder(orderId) {
         error instanceof Error ? error.message : "Unable to delete the design from the shared batch.",
         "error",
       );
+      showActionOperationError(error, "Unable to remove the design from the shared batch.");
       return;
     }
   }
@@ -12192,6 +12227,10 @@ async function deleteOrder(orderId) {
   if (activeOrderItemId) {
     render();
   }
+  completeBatchAdditionOperation({ removal: true, title: "Design Removed", description: "The design was removed from the production batch.", metrics: [{ label: "Remaining in batch", value: orders.length }], shipStationTagging: removedRemoteSnapshot?.shipStationTagging });
+  } finally {
+    deleteOrderBusy = false;
+  }
 }
 
 function getIncompleteProductionBatchOrders(items = orders) {
@@ -12229,7 +12268,7 @@ async function actOnSelectedBatchItems(operation) {
       return;
     }
     suppressProductionBatchAutosave = true;
-    startOperationDialog({ title: `${label}: Selected Items`, description: `Updating ${itemLabel}.`, progressLabel: "Saving pending edits and updating the batch..." });
+    startOperationDialog({ title: `${label}: Selected Items`, description: `Updating ${itemLabel}.`, progressLabel: "Saving pending edits, updating the batch and synchronizing ShipStation tags..." });
     pasteSummaryDialog.addEventListener("close", () => batchToolsMenu?.querySelector("summary")?.focus(), { once: true });
     const batchId = requireActiveProductionBatchId();
     if (!batchId) throw new Error("No active production batch. Reload the batch and try again.");
@@ -12272,7 +12311,7 @@ async function actOnSelectedBatchItems(operation) {
     renderOrderList();
     render();
     updateWorkflowAlert(`${label}: ${count} item${count === 1 ? "" : "s"} updated.`, "success");
-    completeOperationDialog({ title: "Selected Items Updated", description: `${label} finished successfully.${recoveredDraftCount ? ` Another operator removed ${recoveredDraftCount} unchecked item(s). Their unsaved edits are retained for this browser session. Add those items back from Orders to recover the edits before closing or reloading this page.` : ""}`, metrics: [{ label: "Items updated", value: count }, { label: "Remaining in batch", value: orders.length }] });
+    completeBatchAdditionOperation({ removal: true, shipStationTagging: snapshot.shipStationTagging, title: "Selected Items Updated", description: `${label} finished successfully.${recoveredDraftCount ? ` Another operator removed ${recoveredDraftCount} unchecked item(s). Their unsaved edits are retained for this browser session. Add those items back from Orders to recover the edits before closing or reloading this page.` : ""}`, metrics: [{ label: "Items updated", value: count }, { label: "Remaining in batch", value: orders.length }] });
   } catch (error) {
     const message = error.safeMessage || (error?.status === 409
       ? "Selection changed. Reload the batch and try again. Your edits and selection have been kept."
@@ -12291,7 +12330,7 @@ async function actOnSelectedBatchItems(operation) {
 }
 
 async function tagCurrentProductionBatchInShipStation() {
-  if (tagBatchInShipStationBusy || !orders.length) return;
+  if (tagBatchInShipStationBusy || !canAttemptProductionBatchSave()) return;
   tagBatchInShipStationBusy = true;
   tagBatchInShipStationButton.disabled = true;
   batchToolsMenu?.removeAttribute("open");
@@ -12308,23 +12347,24 @@ async function tagCurrentProductionBatchInShipStation() {
     if (resolveProductionBatchSaveOrderIds() === null) {
       throw new Error("Save newly added designs before tagging the batch, then try again. Your edits have been kept.");
     }
-    await persistPendingProductionBatchEdits();
+    if (orders.length) await persistPendingProductionBatchEdits();
     const accessToken = productionBatchAccessToken || readProductionBatchAccessTokenOverride() || await getAccessToken();
     const result = await runProductionBatchRequestWithSessionRefresh(
       requestToken => tagProductionBatchInShipStation(batchId, { accessToken: requestToken }), accessToken,
     );
     const unmatched = Array.isArray(result.unmatchedOrders) ? result.unmatchedOrders : [];
     const failures = Array.isArray(result.failures) ? result.failures : [];
-    const partial = unmatched.length > 0 || failures.length > 0;
+    const partial = result.status === "warning" || unmatched.length > 0 || failures.length > 0;
     const description = partial
       ? `The tag update is incomplete. Resolve these issues and run Tag Batch in ShipStation again before printing packing slips.${unmatched.length ? ` Unmatched orders: ${unmatched.join(", ")}.` : ""}${failures.length ? ` Failed updates: ${failures.map(failure => `${failure.orderNumber}: ${failure.message}`).join("; ")}.` : ""}`
+      : !orders.length ? "The saved production batch is empty. Stale Current Production Batch tags were cleared. There are no packing slips to print."
       : `In ShipStation, filter orders by the Current Production Batch tag, select all matching orders, and print packing slips. Whole-order packing slips are included. Run this action again if you change the batch.`;
     completeOperationDialog({ title: partial ? "ShipStation Tagging Needs Attention" : "Batch Tagged in ShipStation", description, metrics: [
       { label: "Orders tagged", value: result.taggedOrders }, { label: "Old tags removed", value: result.removedTags },
       { label: "Unmatched orders", value: unmatched.length }, { label: "Failed updates", value: failures.length },
     ] });
     if (partial) pasteSummaryDialog.querySelector(".batch-summary-card").dataset.operationState = "error";
-    updateWorkflowAlert(partial ? "ShipStation tagging is incomplete. Resolve the reported issues before printing packing slips." : "Batch tagged in ShipStation. Filter Current Production Batch to print packing slips.", partial ? "error" : "success");
+    updateWorkflowAlert(partial ? "ShipStation tagging is incomplete. Resolve the reported issues before printing packing slips." : !orders.length ? "Empty batch tags cleared in ShipStation. There are no packing slips to print." : "Batch tagged in ShipStation. Filter Current Production Batch to print packing slips.", partial ? "error" : "success");
   } catch (error) {
     const message = isProductionBatchAuthenticationError(error)
       ? "Your session expired. Sign in again and retry tagging the batch before printing packing slips. Your edits have been kept."
@@ -12334,7 +12374,7 @@ async function tagCurrentProductionBatchInShipStation() {
   } finally {
     suppressProductionBatchAutosave = previousAutosaveSuppressed;
     tagBatchInShipStationBusy = false;
-    tagBatchInShipStationButton.disabled = !orders.length;
+    tagBatchInShipStationButton.disabled = !canAttemptProductionBatchSave();
     if (productionBatchAutosavePending && !suppressProductionBatchAutosave) triggerProductionBatchAutosave();
   }
 }

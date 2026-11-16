@@ -65,6 +65,61 @@ afterEach(() => {
 });
 
 describe("production batch api route", () => {
+  it.each(["remove-item", "selected-items"])("never synchronizes when %s fails in the database", async action => {
+    resolveProductionBatchAuthMock.mockResolvedValue({ userId: "user-1", workspaceId: "workspace-1" });
+    const error = Object.assign(new Error("Batch unavailable"), { expose: true, statusCode: 404 });
+    removeProductionBatchItemMock.mockRejectedValue(error);
+    mutateSelectedProductionBatchItemsMock.mockRejectedValue(error);
+    const { default: handler } = await import("../../api/production-batch.js");
+    const response = createResponseRecorder();
+    await handler({ method: "POST", body: { action, operation: "remove", batchId: "batch-1", orderItemId: "item-1", orderItemIds: ["item-1"] } }, response);
+    expect(response.statusCode).toBe(404);
+    expect(loadProductionBatchMock).not.toHaveBeenCalled();
+    expect(tagProductionBatchInShipStationMock).not.toHaveBeenCalled();
+  });
+
+  it("manually recovers an empty authenticated saved batch instead of accepting browser membership", async () => {
+    resolveProductionBatchAuthMock.mockResolvedValue({ userId: "user-1", workspaceId: "workspace-1" });
+    const saved = { batch: { id: "batch-1" }, orderItems: [] };
+    loadProductionBatchMock.mockResolvedValue(saved);
+    tagProductionBatchInShipStationMock.mockResolvedValue({ removedTags: 2, taggedOrders: 0, unmatchedOrders: [], failures: [] });
+    const { default: handler } = await import("../../api/production-batch.js");
+    const response = createResponseRecorder();
+    await handler({ method: "POST", body: { action: "tag-shipstation", batchId: "batch-1", snapshot: { orderItems: [{ id: "forged" }] } } }, response);
+    expect(response.statusCode).toBe(200);
+    expect(tagProductionBatchInShipStationMock).toHaveBeenCalledExactlyOnceWith({ snapshot: saved });
+    expect(response.body.removedTags).toBe(2);
+  });
+  it.each(["remove-item", "remove", "skip", "complete"])("reconciles authenticated saved remaining membership after %s", async operation => {
+    resolveProductionBatchAuthMock.mockResolvedValue({ userId: "user-1", workspaceId: "workspace-1" });
+    const saved = { batch: { id: "batch-1" }, orderItems: [{ id: "sibling" }] };
+    removeProductionBatchItemMock.mockResolvedValue(saved);
+    mutateSelectedProductionBatchItemsMock.mockResolvedValue(saved);
+    loadProductionBatchMock.mockResolvedValue(saved);
+    const tagging = { tagName: "Current Production Batch", taggedOrders: 1, removedTags: 1, unmatchedOrders: [], failures: [] };
+    tagProductionBatchInShipStationMock.mockResolvedValue(tagging);
+    const { default: handler } = await import("../../api/production-batch.js");
+    const response = createResponseRecorder();
+    await handler({ method: "POST", body: { action: operation === "remove-item" ? operation : "selected-items", operation, batchId: "batch-1", orderItemId: "removed", orderItemIds: ["removed"], snapshot: { orderItems: [] } } }, response);
+    expect(response.statusCode).toBe(200);
+    expect(response.body.shipStationTagging).toEqual({ status: "success", ...tagging });
+    expect(loadProductionBatchMock).toHaveBeenCalledWith({ batchId: "batch-1", workspaceId: "workspace-1" });
+    expect(tagProductionBatchInShipStationMock).toHaveBeenCalledWith({ snapshot: saved });
+  });
+
+  it("retains a saved trash removal when upstream tagging fails", async () => {
+    resolveProductionBatchAuthMock.mockResolvedValue({ userId: "user-1", workspaceId: "workspace-1" });
+    removeProductionBatchItemMock.mockResolvedValue({ batch: { id: "batch-1" }, orderItems: [] });
+    loadProductionBatchMock.mockResolvedValue({ orderItems: [] });
+    tagProductionBatchInShipStationMock.mockRejectedValue(new Error("upstream secret"));
+    const { default: handler } = await import("../../api/production-batch.js");
+    const response = createResponseRecorder();
+    await handler({ method: "POST", body: { action: "remove-item", batchId: "batch-1", orderItemId: "removed" } }, response);
+    expect(response.statusCode).toBe(200);
+    expect(response.body.orderItems).toEqual([]);
+    expect(response.body.shipStationTagging.status).toBe("warning");
+    expect(JSON.stringify(response.body)).not.toContain("upstream secret");
+  });
   it("checks batch ownership before cleanup and returns cleanup counts after completing", async () => {
     resolveProductionBatchAuthMock.mockResolvedValue({ userId: "user-1", workspaceId: "workspace-1" });
     loadProductionBatchMock.mockResolvedValue({ batch: { id: "batch-1" }, orderItems: [{ id: "item-1" }] });
@@ -577,6 +632,7 @@ describe("production batch api route", () => {
       batch: { id: "batch-1", workspaceId: "workspace-1" },
       activeOrderItemId: "order-2",
       orderItems: [{ id: "order-2", revision: 1 }],
+      shipStationTagging: expect.objectContaining({ status: "warning" }),
     });
   });
 

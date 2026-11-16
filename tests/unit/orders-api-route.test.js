@@ -11,9 +11,11 @@ const updateOrderGroupsStatusMock = vi.fn();
 const updateOrderItemStatusMock = vi.fn();
 const resolveProductionBatchAuthMock = vi.fn();
 const autoTagProductionBatchAdditionsMock = vi.fn();
+const autoTagProductionBatchRemovalsMock = vi.fn();
 
 vi.mock("../../api/_lib/production-batch-auto-tag.js", () => ({
   autoTagProductionBatchAdditions: autoTagProductionBatchAdditionsMock,
+  autoTagProductionBatchRemovals: autoTagProductionBatchRemovalsMock,
 }));
 
 vi.mock("../../api/_lib/orders-store.js", () => ({
@@ -68,6 +70,7 @@ beforeEach(() => {
   updateOrderItemStatusMock.mockReset();
   resolveProductionBatchAuthMock.mockReset();
   autoTagProductionBatchAdditionsMock.mockReset();
+  autoTagProductionBatchRemovalsMock.mockReset();
 });
 
 afterEach(() => {
@@ -75,6 +78,17 @@ afterEach(() => {
 });
 
 describe("orders api route", () => {
+  it.each(["skipOrderItem", "skipOrder", "skipOrders"])("syncs tags after successful %s", async action => {
+    resolveProductionBatchAuthMock.mockResolvedValue({ userId: "user-1", workspaceId: "workspace-1" });
+    const tagging = { status: "warning", taggedOrders: 0, removedTags: 0, unmatchedOrders: [], failures: [] };
+    autoTagProductionBatchRemovalsMock.mockResolvedValue(tagging);
+    const { default: handler } = await import("../../api/orders.js");
+    const response = createResponseRecorder();
+    await handler({ method: "POST", body: { action, batchId: "batch-1", orderItemId: "item-1", orderId: "order:100", orderIds: ["order:100"] } }, response);
+    expect(response.statusCode).toBe(200);
+    expect(response.body.shipStationTagging).toEqual(tagging);
+    expect(autoTagProductionBatchRemovalsMock).toHaveBeenCalledExactlyOnceWith({ batchId: "batch-1", workspaceId: "workspace-1" });
+  });
   it.each(["addOrderItemToProductionBatch", "addOrdersToProductionBatch", "importClipboardItems"])("automatically tags saved additions from %s", async action => {
     resolveProductionBatchAuthMock.mockResolvedValue({ userId: "user-1", workspaceId: "workspace-1" });
     addOrderItemsToProductionBatchMock.mockResolvedValue({ addedOrderItemIds: ["item-1"] });

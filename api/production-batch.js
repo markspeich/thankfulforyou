@@ -1,4 +1,5 @@
 import { createServerTiming } from "./_lib/server-timing.js";
+import { autoTagProductionBatchRemovals } from "./_lib/production-batch-auto-tag.js";
 import { resolveProductionBatchAuth } from "./_lib/production-batch-auth.js";
 import { tagProductionBatchInShipStation, removeProductionBatchShipStationTags } from "./_lib/production-batch-shipstation.js";
 import {
@@ -296,7 +297,8 @@ export default async function handler(req, res) {
           res.status(404).json({ error: "Production batch not found." });
           return;
         }
-        res.status(200).json(normalizeSnapshot(selectedSnapshot));
+        const shipStationTagging = await autoTagProductionBatchRemovals({ batchId, workspaceId: req.auth.workspaceId });
+        res.status(200).json({ ...normalizeSnapshot(selectedSnapshot), shipStationTagging });
         return;
       }
 
@@ -313,7 +315,8 @@ export default async function handler(req, res) {
         return;
       }
 
-      res.status(200).json(normalizeSnapshot(savedSnapshot));
+      const shipStationTagging = await autoTagProductionBatchRemovals({ batchId, workspaceId: req.auth.workspaceId });
+      res.status(200).json({ ...normalizeSnapshot(savedSnapshot), shipStationTagging });
       return;
     }
 

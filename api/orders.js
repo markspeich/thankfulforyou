@@ -1,6 +1,6 @@
 import { createServerTiming } from "./_lib/server-timing.js";
 import { resolveProductionBatchAuth } from "./_lib/production-batch-auth.js";
-import { autoTagProductionBatchAdditions } from "./_lib/production-batch-auto-tag.js";
+import { autoTagProductionBatchAdditions, autoTagProductionBatchRemovals } from "./_lib/production-batch-auto-tag.js";
 import {
   addOrderGroupsToProductionBatch,
   addOrderItemsToProductionBatch,
@@ -383,6 +383,8 @@ async function handleUpdateOrderItemStatus({ res, auth, body, status, responseSt
     orderItemId,
     status,
   });
+  const shipStationTagging = status === "skipped"
+    ? await autoTagProductionBatchRemovals({ batchId, workspaceId: auth.workspaceId }) : null;
   const ordersPayload = await loadOrdersResponse({
     workspaceId: auth.workspaceId,
     batchId: batchId || null,
@@ -393,6 +395,7 @@ async function handleUpdateOrderItemStatus({ res, auth, body, status, responseSt
     importedOrderItemCount: 0,
     addedOrderItemCount: 0,
     ...ordersPayload,
+    ...(shipStationTagging ? { shipStationTagging } : {}),
   });
 }
 
@@ -411,6 +414,8 @@ async function handleUpdateOrderGroupStatus({ res, auth, body, status, responseS
     orderId,
     status,
   });
+  const shipStationTagging = status === "skipped"
+    ? await autoTagProductionBatchRemovals({ batchId, workspaceId: auth.workspaceId }) : null;
   const ordersPayload = await loadOrdersResponse({
     workspaceId: auth.workspaceId,
     batchId: batchId || null,
@@ -421,10 +426,12 @@ async function handleUpdateOrderGroupStatus({ res, auth, body, status, responseS
     importedOrderItemCount: 0,
     addedOrderItemCount: 0,
     ...ordersPayload,
+    ...(shipStationTagging ? { shipStationTagging } : {}),
   });
 }
 
 async function handleUpdateOrderGroupsStatus({ res, auth, body, status }) {
+  const batchId = normalizeString(body.batchId);
   const orderIds = normalizeStringArray(body.orderIds);
 
   if (!orderIds.length) {
@@ -439,7 +446,9 @@ async function handleUpdateOrderGroupsStatus({ res, auth, body, status }) {
     status,
   });
 
-  res.status(200).json(mutationResult);
+  const shipStationTagging = status === "skipped"
+    ? await autoTagProductionBatchRemovals({ batchId, workspaceId: auth.workspaceId }) : null;
+  res.status(200).json({ ...mutationResult, ...(shipStationTagging ? { shipStationTagging } : {}) });
 }
 
 export default async function handler(req, res) {

@@ -1,9 +1,18 @@
 import { loadProductionBatch } from "./production-batch-store.js";
 import { tagProductionBatchInShipStation } from "./production-batch-shipstation.js";
 
-/** Membership is already committed. Tag failures must never turn an addition into a failed request. */
-export async function autoTagProductionBatchAdditions({ batchId, workspaceId }) {
+export function autoTagProductionBatchAdditions(options) {
+  return autoTagProductionBatch({ ...options, change: "added to" });
+}
+
+export function autoTagProductionBatchRemovals(options) {
+  return autoTagProductionBatch({ ...options, change: "removed from" });
+}
+
+/** Membership is already committed. Tag failures must never fail the saved mutation. */
+async function autoTagProductionBatch({ batchId, workspaceId, change }) {
   try {
+    if (!batchId || !workspaceId) throw new Error("Saved production batch unavailable.");
     const snapshot = await loadProductionBatch({ batchId, workspaceId });
     if (!snapshot) throw new Error("Saved production batch unavailable.");
     const result = await tagProductionBatchInShipStation({ snapshot });
@@ -19,7 +28,7 @@ export async function autoTagProductionBatchAdditions({ batchId, workspaceId }) 
       removedTags: 0,
       unmatchedOrders: [],
       failures: [],
-      message: "Orders were added to the production batch, but ShipStation tagging could not finish. Use Tag Batch in ShipStation to retry before printing packing slips.",
+      message: `Orders were ${change} the production batch, but ShipStation tagging could not finish. Use Tag Batch in ShipStation to retry before printing packing slips.`,
     };
   }
 }

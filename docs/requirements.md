@@ -975,7 +975,7 @@ For batch Etsy order sessions, the preferred workflow is:
 - Completing the whole production batch must first remove Current Production Batch from tagged ShipStation shipments, including processing and shipped/label-purchased shipments, while preserving other tags and the reusable tag definition.
 - Verify authenticated saved-batch ownership before cleanup, finish tag discovery before deletions, and do not complete the database batch when cleanup fails. Keep the active batch and saved designs available for retry; clearly explain that partial tag removal may have occurred.
 - If database completion cannot be confirmed after cleanup, explain that tags were removed and direct the operator to refresh and check completion status before retrying.
-- Completion confirmation, working feedback, and success result must mention cleanup and show the number of tags removed. Selected-item completion retains its existing behavior.
+- Completion confirmation, working feedback, and success result must mention cleanup and show the number of tags removed. Selected-item lifecycle behavior is preserved; its ShipStation synchronization follows the membership-removal rules below.
 
 ### Automatic ShipStation tagging for batch additions — November 15, 2026
 
@@ -983,3 +983,11 @@ For batch Etsy order sessions, the preferred workflow is:
 - Reuse server-side authenticated saved membership and existing matching/deduplication behavior. Skip no-op additions and do not tag after failed database mutations.
 - Keep successfully added items in the batch if ShipStation tagging fails or has unmatched/ambiguous orders. Return and display a clear partial-success warning with order identifiers and instructions to run Tag Batch in ShipStation; never imply the additions failed or silently claim all tagging succeeded.
 - Include tagging in working feedback and show tagging counts/status in add/import completion. Preserve drafts, selection behavior, and membership refresh independently of external tagging success. Retain manual tagging for recovery and completion-time tag removal.
+
+### ShipStation tags when items leave production — November 16, 2026
+
+- Automatically reconcile Current Production Batch tags after items are removed, explicitly including the trash-can action, selected Remove/Skip/Mark as Complete actions, and Orders skip actions that remove active membership.
+- Reconcile authenticated saved remaining membership. Keep an order tagged while any item of that order remains in the batch; remove its tag after its final item leaves. Empty batches clear the app-owned tag, preserving other tags and the reusable definition.
+- Preserve successful removals when external tagging fails, show clear partial-success warning details, and keep remaining drafts intact. Failed database mutations must not trigger tag synchronization.
+- Provide immediate working feedback for trash removal, prevent duplicate submissions, report tag sync outcomes, and restore appropriate keyboard focus.
+- Allow manual Tag Batch in ShipStation recovery for an authenticated empty batch, clearing stale tags with a clear empty-result message rather than packing-slip instructions. Invalid/missing snapshots must never be interpreted as an empty batch.

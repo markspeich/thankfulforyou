@@ -42,8 +42,8 @@ export async function removeProductionBatchShipStationTags({ client, env = proce
 
 /** Reconcile only the app-owned tag; discovery completes before any writes. */
 export async function tagProductionBatchInShipStation({ snapshot, client, env = process.env } = {}) {
-  if (!Array.isArray(snapshot?.orderItems) || !snapshot.orderItems.length) {
-    throw publicError(400, "The production batch is empty. Add orders before tagging ShipStation.");
+  if (!Array.isArray(snapshot?.orderItems)) {
+    throw publicError(400, "A valid saved production batch is required to update ShipStation tags.");
   }
   if (!client) {
     const apiKey = text(env.SHIPSTATION_API_KEY);
@@ -70,7 +70,9 @@ export async function tagProductionBatchInShipStation({ snapshot, client, env = 
     : ![...available.values()].some(shipment => orderNumbers(shipment).includes(group.number)));
   const hasNumberOnlyOrders = [...groups.values()].some(group => !group.shipmentIds.size);
   try {
-    for await (const shipment of client.iterateShipments({ shipmentStatus: "pending" })) addAvailable(shipment);
+    if (groups.size) {
+      for await (const shipment of client.iterateShipments({ shipmentStatus: "pending" })) addAvailable(shipment);
+    }
     for await (const shipment of client.iterateShipments({ tag: TAG_NAME })) {
       if (hasBatchTag(shipment)) {
         tagged.set(shipment.shipment_id, shipment);
