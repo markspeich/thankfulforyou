@@ -557,6 +557,14 @@ def parse_svg_path_to_subpaths(path_data, tolerance_mm=0.05):
 
 
 def shapely_solid_geometry_from_path(path_data, tolerance_mm=0.05):
+    polygons = shapely_solid_polygons_from_path(path_data, tolerance_mm=tolerance_mm)
+    if not polygons:
+        return None
+
+    return unary_union(polygons)
+
+
+def shapely_solid_polygons_from_path(path_data, tolerance_mm=0.05):
     polygons = []
     for subpath in parse_svg_path_to_subpaths(path_data, tolerance_mm=tolerance_mm):
         cleaned = []
@@ -577,10 +585,7 @@ def shapely_solid_geometry_from_path(path_data, tolerance_mm=0.05):
         elif isinstance(polygon, MultiPolygon):
             polygons.extend(Polygon(part.exterior) for part in polygon.geoms if not part.is_empty)
 
-    if not polygons:
-        return None
-
-    return unary_union(polygons)
+    return polygons
 
 
 def solid_exterior_geometry(geometry):
@@ -594,15 +599,23 @@ def solid_exterior_geometry(geometry):
 
 
 def shapely_offset_backing_path(face_path, backing_mm, tolerance_mm=0.05):
-    source = shapely_solid_geometry_from_path(face_path, tolerance_mm=tolerance_mm)
-    if source is None or source.is_empty:
+    source_polygons = shapely_solid_polygons_from_path(face_path, tolerance_mm=tolerance_mm)
+    if not source_polygons:
         return ""
-    buffered = source.buffer(
-        backing_mm,
-        join_style=BufferJoinStyle.round,
-        resolution=12,
-        mitre_limit=3,
-    )
+    # Buffer each glyph contour separately, then union. The offset of a union
+    # equals the union of the offsets, but GEOS can drop concave sections when
+    # buffering one large merged outline (thousands of vertices from
+    # overlapping letters and touching lines), leaving straight chords that
+    # sit farther than backing_mm from the face.
+    buffered = unary_union([
+        polygon.buffer(
+            backing_mm,
+            join_style=BufferJoinStyle.round,
+            resolution=12,
+            mitre_limit=3,
+        )
+        for polygon in source_polygons
+    ])
     solid = solid_exterior_geometry(buffered)
     if solid is None or solid.is_empty:
         return ""

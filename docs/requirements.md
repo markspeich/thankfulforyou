@@ -78,6 +78,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - The backing border slider should move in 0.1 mm increments.
 - The backing border control should allow values down to 0 mm.
 - The backing border value is a physical millimeter offset around the final fitted text geometry; automatic text fitting must not shrink the requested backing border on longer text.
+- The saved backing border must follow the letter contours at the requested offset everywhere, including concave pockets between letters or between touching lines; no point on the backing edge may sit farther than the backing border distance (plus a small trace tolerance) from the face geometry. Straight-line shortcuts across those pockets are defects.
 - The backing layer should be a solid acrylic silhouette. Enclosed holes created by font counters or tiny gaps in the backing border should be removed from the backing plate.
 - Multi-line layouts may intentionally overlap or touch between lines to help unify the design.
 - Different lines in the same badge reel design may use different fonts.

@@ -554,6 +554,35 @@ load_outline_font(Path.cwd(), 'public/fonts/nonexistent-upload.ttf', {})
     expect(Math.abs(backing.bottom - face.bottom - 3.1)).toBeLessThanOrEqual(0.12);
   });
 
+  test("keeps the backing border following concave pockets between touching lines", { timeout: 60000 }, () => {
+    // Overlapping Skywalk + Somekind lines merge into one dense outline; GEOS
+    // buffering that merged outline used to drop the pocket left of the "E",
+    // leaving a straight chord up to ~4.7 mm from the face.
+    const layout = JSON.parse(readFileSync("tests/fixtures/backing-concave-pocket-layout.json", "utf8"));
+    const analysis = analyzeLayout(layout);
+    expect(analysis.backingEngine).toBe("shapely");
+
+    const maxDistance = Number(runPythonSnippet(`
+import json, sys
+sys.path.insert(0, "tools")
+from export_svg import parse_svg_path_to_subpaths, shapely_solid_geometry_from_path
+from shapely import segmentize
+from shapely.geometry import LinearRing, Point
+analysis = json.load(sys.stdin)
+face = shapely_solid_geometry_from_path(analysis["facePath"], tolerance_mm=0.01)
+worst = 0.0
+for ring in parse_svg_path_to_subpaths(analysis["backingPath"], tolerance_mm=0.01):
+    if len(ring) < 3:
+        continue
+    for coord in segmentize(LinearRing(ring), 0.2).coords:
+        worst = max(worst, face.distance(Point(coord)))
+print(worst)
+`, JSON.stringify(analysis)));
+
+    expect(maxDistance).toBeGreaterThan(3.0);
+    expect(maxDistance).toBeLessThanOrEqual(layout.backingMm + 0.05);
+  });
+
   test("uses Shapely backing offset for unscaled text geometry", { timeout: 30000 }, () => {
     const analysis = analyzeLayout({
       text: "III",

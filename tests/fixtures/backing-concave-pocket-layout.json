@@ -1,0 +1,119 @@
+{
+  "text": "Erica\n50% RN",
+  "widthMm": 68.969,
+  "heightMm": 52.124,
+  "backingMm": 3.1,
+  "weldExportedDesign": true,
+  "letters": [
+    {
+      "character": "E",
+      "fontId": "skywalk",
+      "fontPath": "public/fonts/SkywalkLaserRegular.otf",
+      "fontSizeMm": 28.4711,
+      "horizontalScale": 1,
+      "lineIndex": 0,
+      "verticalScale": 1.16,
+      "x": 10.0132,
+      "y": 31.3535
+    },
+    {
+      "character": "r",
+      "fontId": "skywalk",
+      "fontPath": "public/fonts/SkywalkLaserRegular.otf",
+      "fontSizeMm": 28.4711,
+      "horizontalScale": 1,
+      "lineIndex": 0,
+      "verticalScale": 1.16,
+      "x": 16.8924,
+      "y": 31.3535
+    },
+    {
+      "character": "i",
+      "fontId": "skywalk",
+      "fontPath": "public/fonts/SkywalkLaserRegular.otf",
+      "fontSizeMm": 28.4711,
+      "horizontalScale": 1,
+      "lineIndex": 0,
+      "verticalScale": 1.16,
+      "x": 29.1514,
+      "y": 31.3535
+    },
+    {
+      "character": "c",
+      "fontId": "skywalk",
+      "fontPath": "public/fonts/SkywalkLaserRegular.otf",
+      "fontSizeMm": 28.4711,
+      "horizontalScale": 1,
+      "lineIndex": 0,
+      "verticalScale": 1.16,
+      "x": 36.2951,
+      "y": 31.3535
+    },
+    {
+      "character": "a",
+      "fontId": "skywalk",
+      "fontPath": "public/fonts/SkywalkLaserRegular.otf",
+      "fontSizeMm": 28.4711,
+      "horizontalScale": 1,
+      "lineIndex": 0,
+      "verticalScale": 1.16,
+      "x": 45.802,
+      "y": 31.3535
+    },
+    {
+      "character": "5",
+      "fontId": "somekind",
+      "fontPath": "public/fonts/Somekind.ttf",
+      "fontSizeMm": 22,
+      "horizontalScale": 0.8,
+      "lineIndex": 1,
+      "verticalScale": 1,
+      "x": 6.8001,
+      "y": 45.0236
+    },
+    {
+      "character": "0",
+      "fontId": "somekind",
+      "fontPath": "public/fonts/Somekind.ttf",
+      "fontSizeMm": 22,
+      "horizontalScale": 0.8,
+      "lineIndex": 1,
+      "verticalScale": 1,
+      "x": 14.5612,
+      "y": 45.0236
+    },
+    {
+      "character": "%",
+      "fontId": "somekind",
+      "fontPath": "public/fonts/Somekind.ttf",
+      "fontSizeMm": 22,
+      "horizontalScale": 0.8,
+      "lineIndex": 1,
+      "verticalScale": 1,
+      "x": 22.6751,
+      "y": 45.0236
+    },
+    {
+      "character": "R",
+      "fontId": "somekind",
+      "fontPath": "public/fonts/Somekind.ttf",
+      "fontSizeMm": 22,
+      "horizontalScale": 0.8,
+      "lineIndex": 1,
+      "verticalScale": 1,
+      "x": 42.1362,
+      "y": 45.0236
+    },
+    {
+      "character": "N",
+      "fontId": "somekind",
+      "fontPath": "public/fonts/Somekind.ttf",
+      "fontSizeMm": 22,
+      "horizontalScale": 0.8,
+      "lineIndex": 1,
+      "verticalScale": 1,
+      "x": 51.2203,
+      "y": 45.0236
+    }
+  ]
+}
