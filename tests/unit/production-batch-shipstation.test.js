@@ -191,6 +191,55 @@ describe("tag production batch in ShipStation", () => {
     expect(api.iterateShipments).toHaveBeenCalledExactlyOnceWith({ tag: tagName });
   });
 
+  it("never reads label-purchased history when active shipments resolve number-only orders", async () => {
+    const api = client();
+    api.iterateShipments = vi.fn(async function* ({ shipmentStatus } = {}) {
+      if (shipmentStatus === "pending") yield { ...shipment("se-1", "100"), shipment_status: "pending" };
+    });
+    const result = await tagProductionBatchInShipStation({ snapshot: snapshot({ orderNumber: "100" }), client: api });
+    expect(result.taggedOrders).toBe(1);
+    expect(api.iterateShipments.mock.calls.map(([options]) => options.shipmentStatus || "tag")).toEqual(["pending", "tag", "processing"]);
+  });
+
+  it("bounds the label-purchased fallback by creation date and prefers active matches over history", async () => {
+    const api = client();
+    api.iterateShipments = vi.fn(async function* ({ shipmentStatus } = {}) {
+      if (shipmentStatus === "pending") yield { ...shipment("se-active", "100"), shipment_status: "pending" };
+      if (shipmentStatus === "label_purchased") {
+        yield { ...shipment("se-old-100", "100"), shipment_status: "label_purchased" };
+        yield { ...shipment("se-200", "200"), shipment_status: "label_purchased" };
+      }
+    });
+    const now = () => Date.parse("2026-11-17T00:00:00.000Z");
+    const result = await tagProductionBatchInShipStation({ snapshot: snapshot({ orderNumber: "100" }, { orderNumber: "200" }), client: api, now });
+    expect(result.unmatchedOrders).toEqual([]);
+    expect(api.addShipmentTag.mock.calls.map(([args]) => args.shipmentId)).toEqual(["se-active", "se-200"]);
+    expect(api.iterateShipments).toHaveBeenCalledWith({ shipmentStatus: "label_purchased", createdAtStart: "2026-08-19T00:00:00.000Z" });
+  });
+
+  it("removal-only sync reads just tagged shipments and keeps tags for remaining orders", async () => {
+    const remaining = shipment("se-keep", "100", [tagName]);
+    const byId = shipment("se-amazon", "amz", [tagName]);
+    const departed = shipment("se-gone", "200", [tagName, "Other"]);
+    const api = client([], [remaining, byId, departed]);
+    api.iterateShipments = vi.fn(api.iterateShipments);
+    const result = await tagProductionBatchInShipStation({
+      snapshot: snapshot({ orderNumber: "100" }, { orderNumber: "amz", shipStationShipmentId: "se-amazon" }, { orderNumber: "300" }),
+      client: api, removalsOnly: true,
+    });
+    expect(result).toEqual({ tagName, taggedOrders: 2, removedTags: 1, unmatchedOrders: [], failures: [] });
+    expect(api.iterateShipments).toHaveBeenCalledExactlyOnceWith({ tag: tagName });
+    expect(api.removeShipmentTag).toHaveBeenCalledExactlyOnceWith({ shipmentId: "se-gone", tagName });
+    expect(api.addShipmentTag).not.toHaveBeenCalled();
+  });
+
+  it("removal-only sync makes no writes when tagged shipments cannot be read", async () => {
+    const api = client();
+    api.iterateShipments = async function* () { yield shipment("se-1", "100", [tagName]); throw new Error("secret"); };
+    await expect(tagProductionBatchInShipStation({ snapshot: snapshot(), client: api, removalsOnly: true })).rejects.toMatchObject({ statusCode: 502, expose: true, message: expect.not.stringMatching(/secret/) });
+    expect(api.removeShipmentTag).not.toHaveBeenCalled();
+  });
+
   it("finishes discovery before mutating tags, so a later page failure makes no changes", async () => {
     const api = client([shipment("se-1", "100")]);
     api.iterateShipments = async function* ({ tag }) { if (tag) throw new Error("page failed"); yield shipment("se-1", "100"); };

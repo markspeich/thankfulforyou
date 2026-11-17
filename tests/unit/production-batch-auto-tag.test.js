@@ -21,7 +21,7 @@ describe("automatic batch addition tagging", () => {
     loadProductionBatch.mockResolvedValue(snapshot);
     tagProductionBatchInShipStation.mockResolvedValue(result);
     await expect(autoTagProductionBatchRemovals({ batchId: "batch-1", workspaceId: "workspace-1" })).resolves.toEqual({ status: "success", ...result });
-    expect(tagProductionBatchInShipStation).toHaveBeenCalledWith({ snapshot });
+    expect(tagProductionBatchInShipStation).toHaveBeenCalledWith({ snapshot, removalsOnly: true });
     tagProductionBatchInShipStation.mockRejectedValue(new Error("secret"));
     const warning = await autoTagProductionBatchRemovals({ batchId: "batch-1", workspaceId: "workspace-1" });
     expect(warning.message).toMatch(/removed.*Tag Batch in ShipStation/);

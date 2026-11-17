@@ -36,6 +36,15 @@ describe("ShipStation V2 client", () => {
     expect(Object.fromEntries(new URL(fetchImpl.mock.calls[1][0]).searchParams)).toEqual({ tag: "Current Production Batch", page_size: "100", page: "1" });
   });
 
+  it("passes a creation-date lower bound to bounded shipment searches", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(response({ shipments: [], page: 1, pages: 0 }));
+    const client = createShipStationClient({ apiKey: "secret", fetchImpl });
+    for await (const ignored of client.iterateShipments({ shipmentStatus: "label_purchased", createdAtStart: "2026-08-19T00:00:00.000Z" })) void ignored;
+    expect(Object.fromEntries(new URL(fetchImpl.mock.calls[0][0]).searchParams)).toEqual({
+      shipment_status: "label_purchased", created_at_start: "2026-08-19T00:00:00.000Z", page_size: "100", page: "1",
+    });
+  });
+
   it("rejects a missing API key or Amazon store ID without disclosing configured values", () => {
     for (const env of [
       { SHIPSTATION_AMAZON_STORE_ID: "se-secret-store" },

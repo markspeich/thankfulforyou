@@ -273,12 +273,13 @@ export function createShipStationClient({
     throw new ShipStationError("temporary", { retryable: true });
   }
 
-  async function* iterateShipments({ storeId, shipmentStatus, tag, signal } = {}) {
+  async function* iterateShipments({ storeId, shipmentStatus, tag, createdAtStart, signal } = {}) {
     for (let pageNumber = 1; ; pageNumber += 1) {
       const query = new URLSearchParams({
         ...(shipmentStatus ? { shipment_status: shipmentStatus } : {}),
         ...(storeId ? { store_id: storeId } : {}),
         ...(tag ? { tag } : {}),
+        ...(createdAtStart ? { created_at_start: createdAtStart } : {}),
         page_size: "100", page: String(pageNumber),
       });
       const page = await request({ path: `/shipments?${query}`, signal, validate: assertShipmentPage });

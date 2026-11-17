@@ -6,16 +6,16 @@ export function autoTagProductionBatchAdditions(options) {
 }
 
 export function autoTagProductionBatchRemovals(options) {
-  return autoTagProductionBatch({ ...options, change: "removed from" });
+  return autoTagProductionBatch({ ...options, change: "removed from", removalsOnly: true });
 }
 
 /** Membership is already committed. Tag failures must never fail the saved mutation. */
-async function autoTagProductionBatch({ batchId, workspaceId, change }) {
+async function autoTagProductionBatch({ batchId, workspaceId, change, removalsOnly = false }) {
   try {
     if (!batchId || !workspaceId) throw new Error("Saved production batch unavailable.");
     const snapshot = await loadProductionBatch({ batchId, workspaceId });
     if (!snapshot) throw new Error("Saved production batch unavailable.");
-    const result = await tagProductionBatchInShipStation({ snapshot });
+    const result = await tagProductionBatchInShipStation(removalsOnly ? { snapshot, removalsOnly } : { snapshot });
     return {
       ...result,
       status: result.unmatchedOrders.length || result.failures.length ? "warning" : "success",

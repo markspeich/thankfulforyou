@@ -991,3 +991,10 @@ For batch Etsy order sessions, the preferred workflow is:
 - Preserve successful removals when external tagging fails, show clear partial-success warning details, and keep remaining drafts intact. Failed database mutations must not trigger tag synchronization.
 - Provide immediate working feedback for trash removal, prevent duplicate submissions, report tag sync outcomes, and restore appropriate keyboard focus.
 - Allow manual Tag Batch in ShipStation recovery for an authenticated empty batch, clearing stale tags with a clear empty-result message rather than packing-slip instructions. Invalid/missing snapshots must never be interpreted as an empty batch.
+
+### ShipStation tagging performance — November 17, 2026
+
+- Tagging must not read the full ShipStation shipping history. Order discovery reads pending shipments, tagged shipments, and (for order-number matching or unresolved IDs) processing shipments.
+- Label-purchased shipments are read only as a fallback when a batch order is still unresolved after the active statuses, and only for shipments created within the last 90 days. Assumption: an order in the current production batch with a purchased label was created within that window.
+- When an order number matches an active (pending, processing, or already tagged) shipment, that match wins over label-purchased history; ambiguity is still reported among active shipments.
+- Automatic sync after removals only reads tagged shipments and removes the tag from shipments that no longer match any remaining batch order (by stored shipment ID or order number). It does not add missing tags; use Tag Batch in ShipStation for a full reconciliation.

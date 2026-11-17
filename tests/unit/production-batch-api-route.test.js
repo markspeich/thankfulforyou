@@ -104,7 +104,7 @@ describe("production batch api route", () => {
     expect(response.statusCode).toBe(200);
     expect(response.body.shipStationTagging).toEqual({ status: "success", ...tagging });
     expect(loadProductionBatchMock).toHaveBeenCalledWith({ batchId: "batch-1", workspaceId: "workspace-1" });
-    expect(tagProductionBatchInShipStationMock).toHaveBeenCalledWith({ snapshot: saved });
+    expect(tagProductionBatchInShipStationMock).toHaveBeenCalledWith({ snapshot: saved, removalsOnly: true });
   });
 
   it("retains a saved trash removal when upstream tagging fails", async () => {
