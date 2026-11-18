@@ -583,6 +583,61 @@ print(worst)
     expect(maxDistance).toBeLessThanOrEqual(layout.backingMm + 0.05);
   });
 
+  test("notch fill closes deep notches between glyph offsets without filleting inside corners", { timeout: 60000 }, () => {
+    const candlepinLetter = (character, x) => ({
+      character,
+      fontId: "candlepin",
+      fontPath: "public/fonts/Candlepin-Laser.otf",
+      fontSizeMm: 24,
+      x,
+      y: 30,
+    });
+    const measure = (letters, notchFill) => {
+      const analysis = analyzeLayout({
+        text: letters.map((letter) => letter.character).join(""),
+        widthMm: 70,
+        heightMm: 40,
+        backingMm: 3.1,
+        weldExportedDesign: true,
+        ...(notchFill === undefined ? {} : { notchFill }),
+        letters,
+      });
+      const [area, maxDistance] = runPythonSnippet(`
+import json, sys
+sys.path.insert(0, "tools")
+from export_svg import parse_svg_path_to_subpaths, shapely_solid_geometry_from_path
+from shapely import segmentize
+from shapely.geometry import LinearRing, Point, Polygon
+from shapely.ops import unary_union
+analysis = json.load(sys.stdin)
+face = shapely_solid_geometry_from_path(analysis["facePath"], tolerance_mm=0.01)
+rings = [ring for ring in parse_svg_path_to_subpaths(analysis["backingPath"], tolerance_mm=0.01) if len(ring) >= 3]
+worst = 0.0
+for ring in rings:
+    for coord in segmentize(LinearRing(ring), 0.2).coords:
+        worst = max(worst, face.distance(Point(coord)))
+print(unary_union([Polygon(ring) for ring in rings]).area, worst)
+`, JSON.stringify(analysis)).trim().split(/\s+/).map(Number);
+      return { analysis, area, maxDistance };
+    };
+
+    // Two Os whose 3.1 mm offsets overlap only partway leave deep V notches.
+    const twoOs = [candlepinLetter("O", 6), candlepinLetter("O", 21.5)];
+    const plain = measure(twoOs, false);
+    const filled = measure(twoOs, true);
+    const defaulted = measure(twoOs, undefined);
+    expect(plain.analysis.notchFill).toBe(false);
+    expect(plain.maxDistance).toBeLessThanOrEqual(3.1 + 0.05);
+    expect(filled.analysis.notchFill).toBe(true);
+    expect(filled.maxDistance).toBeGreaterThan(3.1 + 1);
+    expect(filled.area).toBeGreaterThan(plain.area + 5);
+    expect(defaulted.analysis.backingPath).toBe(filled.analysis.backingPath);
+
+    // An ordinary inside corner keeps exactly the plain offset.
+    const corner = [candlepinLetter("L", 10)];
+    expect(measure(corner, true).analysis.backingPath).toBe(measure(corner, false).analysis.backingPath);
+  });
+
   test("uses Shapely backing offset for unscaled text geometry", { timeout: 30000 }, () => {
     const analysis = analyzeLayout({
       text: "III",

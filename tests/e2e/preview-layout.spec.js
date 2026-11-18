@@ -961,6 +961,35 @@ test("previews welded face geometry when welded export is enabled", async ({ pag
   await expect(page.locator("#preview path.face-layer")).toHaveAttribute("d", "M0 0 L12 0 L12 10 L0 10 Z");
 });
 
+test("sends the per-design Notch fill setting with layout analysis and defaults it on", async ({ page }) => {
+  const analyzedNotchFill = [];
+  await page.route("**/api/layout-analyze", async (route) => {
+    analyzedNotchFill.push(route.request().postDataJSON()?.layout?.notchFill);
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(buildMockAnalysisResponse()),
+    });
+  });
+
+  const globalSettingsCard = page.locator(".global-control-card");
+  const notchFillInput = globalSettingsCard.locator("#notchFillInput");
+  await expect(globalSettingsCard.getByText("Notch fill", { exact: true })).toBeVisible();
+  await expect(notchFillInput).toBeChecked();
+
+  await page.locator("#textInput").fill("Test\nLPN");
+  await clickButtonBySelector(page, "#captureButton");
+  await expect.poll(() => analyzedNotchFill.length).toBe(1);
+  expect(analyzedNotchFill[0]).toBe(true);
+
+  await notchFillInput.uncheck();
+  await expect(page.locator("#captureButton")).toBeEnabled();
+  await clickButtonBySelector(page, "#captureButton");
+  await expect.poll(() => analyzedNotchFill.length).toBe(2);
+  expect(analyzedNotchFill[1]).toBe(false);
+  await expect(notchFillInput).not.toBeChecked();
+});
+
 test("shows piece totals and explicit ready design counts in the design status summary", async ({ page }) => {
   const statusSummary = page.getByLabel("Design status summary");
   const orderItemsCard = statusSummary.locator("div").filter({ hasText: "Pieces to produce" });

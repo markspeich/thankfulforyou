@@ -67,6 +67,7 @@ describe("production batch relational snapshot mapping", () => {
             boundingSizePresetId: "size-2-2x1-5",
             backingMm: 3.1,
             weldExportedDesign: true,
+            notchFill: false,
             globalHorizontalScale: 1.1,
             globalVerticalScale: 0.95,
             lines: [
@@ -123,6 +124,7 @@ describe("production batch relational snapshot mapping", () => {
       size_guide_id: "size-2-2x1-5",
       backing_border_mm: 3.1,
       weld_exported_design: true,
+      notch_fill: false,
       global_horizontal_scale: 1.1,
       global_vertical_scale: 0.95,
       production_status: "saved",
@@ -210,6 +212,7 @@ describe("production batch relational snapshot mapping", () => {
           size_guide_id: "size-2-2x1-5",
           backing_border_mm: 3.1,
           weld_exported_design: true,
+          notch_fill: false,
           global_horizontal_scale: 1.1,
           global_vertical_scale: 0.95,
           production_status: "saved",
@@ -304,6 +307,7 @@ describe("production batch relational snapshot mapping", () => {
             boundingSizePresetId: "size-2-2x1-5",
             backingMm: 3.1,
             weldExportedDesign: true,
+            notchFill: false,
             globalHorizontalScale: 1.1,
             globalVerticalScale: 0.95,
             lines: [

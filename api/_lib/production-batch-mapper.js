@@ -102,6 +102,7 @@ function buildDesignRow(orderItem, { workspaceId, updatedBy }) {
     size_guide_id: settings.boundingSizePresetId || null,
     backing_border_mm: toNumber(settings.backingMm, 3.1),
     weld_exported_design: settings.weldExportedDesign !== false,
+    notch_fill: settings.notchFill !== false,
     global_horizontal_scale: toNumber(settings.globalHorizontalScale, 1),
     global_vertical_scale: toNumber(settings.globalVerticalScale, 1),
     production_status: mapDesignStatusToProductionStatus(orderItem.status),
@@ -219,6 +220,7 @@ function buildOrderItemFromRows({ orderItem, design, designLines }) {
       boundingSizePresetId: design?.size_guide_id ?? null,
       backingMm: toNumber(design?.backing_border_mm, 3.1),
       weldExportedDesign: design?.weld_exported_design !== false,
+      notchFill: design?.notch_fill !== false,
       globalHorizontalScale: toNumber(design?.global_horizontal_scale, 1),
       globalVerticalScale: toNumber(design?.global_vertical_scale, 1),
       lines: orderedLines.map((line) => {

@@ -79,6 +79,10 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - The backing border control should allow values down to 0 mm.
 - The backing border value is a physical millimeter offset around the final fitted text geometry; automatic text fitting must not shrink the requested backing border on longer text.
 - The saved backing border must follow the letter contours at the requested offset everywhere, including concave pockets between letters or between touching lines; no point on the backing edge may sit farther than the backing border distance (plus a small trace tolerance) from the face geometry. Straight-line shortcuts across those pockets are defects.
+- Notch fill (temporary, added 2026-11-17): where the backing offsets of neighboring glyphs barely meet, they leave a deep, narrow V notch in the backing edge (for example between `MR.` and `HIGH`). When a design's `Notch fill` setting is on, the analyzed backing fills those notches: it applies a 3 mm morphological closing (grow by backing + 3 mm, shrink by 3 mm) and keeps only the added regions that reach at least 3 mm deep behind the new edge. Ordinary inside corners and concave pockets are not filleted and keep the plain offset exactly; only filled notches are exempt from the backing-distance rule above.
+- `Notch fill` is a per-design checkbox in the `Global Settings` card, directly below `Backing Border`. It defaults on (checked), is saved with the design (`designs.notch_fill`), is included in copy/paste of layout controls, and is not part of presets. It is only included in the design settings signature when turned off, so designs saved before the option existed keep their signatures and their previously analyzed backing until they are re-analyzed.
+- Notch fill runs only in the server-side vector backing analysis; the instant local raster preview is unchanged. The operator sees the filled backing after the design is analyzed (on Save).
+- The `Notch fill` checkbox is a temporary safety switch. Plan to remove the checkbox after about two weeks of production use (around 2026-12-01) and keep notch fill always on if no problems are found.
 - The backing layer should be a solid acrylic silhouette. Enclosed holes created by font counters or tiny gaps in the backing border should be removed from the backing plate.
 - Multi-line layouts may intentionally overlap or touch between lines to help unify the design.
 - Different lines in the same badge reel design may use different fonts.
@@ -716,7 +720,7 @@ The website should be a practical production tool rather than a marketing site. 
 - Orders with fixed SVG items but blank design text should still be considered renderable designs for previewing and saving.
 - The preset dropdown label in the `Preset` card should read `Preset Name`.
 - The `Preset` card should include a `Reload preset` button at the bottom that reapplies the currently selected preset and overwrites all current layout settings for the active design with that preset's current values.
-- The `Global Settings` card should contain `Weld Exported Design`, `Size Guide`, global `Horizontal Stretch`, global `Vertical Stretch`, and `Backing Border`, followed by the per-line controls for `Line 1`, `Line 2`, and any additional lines.
+- The `Global Settings` card should contain `Weld Exported Design`, `Size Guide`, global `Horizontal Stretch`, global `Vertical Stretch`, `Backing Border`, and the temporary `Notch fill` checkbox, followed by the per-line controls for `Line 1`, `Line 2`, and any additional lines.
 - The selected-order editor should also provide an `Assign Preset to Listing` action when the active order has an imported Etsy listing id.
 - The `Assign Preset to Listing` action should assign the currently selected preset to that listing id by updating the preset's listing assignments.
 - A preset may be linked to multiple Etsy listing ids.
@@ -741,7 +745,7 @@ The website should be a practical production tool rather than a marketing site. 
 - `Copy Layout` should capture only layout-related settings from the currently selected design.
 - `Paste Layout` should apply the copied layout settings to the currently selected design when the selected design is different from the copied source design.
 - Copying or pasting layout controls must not copy order text, quantity, buyer metadata, listing metadata, completion state, saved export data, or cached analysis results.
-- Pasting layout controls should copy all global layout settings, including preset selection, weld-export setting, backing border, and global stretch settings, plus every existing line's per-line layout settings such as font choice, letter bridge, line bridge, offsets, text height, horizontal stretch, vertical stretch, and `Lock Text Height`.
+- Pasting layout controls should copy all global layout settings, including preset selection, weld-export setting, backing border, notch fill, and global stretch settings, plus every existing line's per-line layout settings such as font choice, letter bridge, line bridge, offsets, text height, horizontal stretch, vertical stretch, and `Lock Text Height`.
 - When the copied source and target design have different text-line counts, pasted layout controls should apply line by line only for matching line indexes and should leave unmatched target lines unchanged.
 - After pasting layout controls, the target design should be treated as changed, any saved completed/export-ready state should be cleared for that design, and the operator should need to complete it again so fresh analysis and export data are produced.
 - The preset editor should use the same practical visual language as the existing global and per-line layout controls rather than exposing raw JSON by default.

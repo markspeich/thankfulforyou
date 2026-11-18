@@ -3,6 +3,7 @@ const GLOBAL_SETTING_KEYS = [
   "boundingSizePresetId",
   "backingMm",
   "weldExportedDesign",
+  "notchFill",
 ];
 
 const LINE_SETTING_KEYS = [

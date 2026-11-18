@@ -21,7 +21,7 @@ from fontTools.svgLib.path import parse_path as draw_svg_path
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 import pyclipper
 from shapely import BufferJoinStyle
-from shapely.geometry import MultiPolygon, Polygon
+from shapely.geometry import MultiPolygon, Point, Polygon
 from shapely.ops import unary_union
 from shapely.validation import make_valid
 
@@ -34,6 +34,8 @@ FIXED_SVG_BACKING_TRACE_SCALE = 24
 FIXED_SVG_BACKING_TOLERANCE_MM = 0.065
 FIXED_SVG_BACKING_TRACE_PADDING_MM = 4.0
 FIXED_SVG_VECTOR_OFFSET_SCALE = 1000
+# Temporary per-design "Notch fill" backing option (see docs/requirements.md).
+NOTCH_FILL_RADIUS_MM = 3.0
 COLOR_LABEL_FONT_SIZE_MM = 9.0
 COLOR_LABEL_LINE_HEIGHT_MM = 4.8
 IMPORTANT_NOTES_FONT_SIZE_MM = 7.0
@@ -598,27 +600,74 @@ def solid_exterior_geometry(geometry):
     return geometry
 
 
-def shapely_offset_backing_path(face_path, backing_mm, tolerance_mm=0.05):
-    source_polygons = shapely_solid_polygons_from_path(face_path, tolerance_mm=tolerance_mm)
-    if not source_polygons:
-        return ""
+def buffer_source_polygons(source_polygons, distance_mm):
     # Buffer each glyph contour separately, then union. The offset of a union
     # equals the union of the offsets, but GEOS can drop concave sections when
     # buffering one large merged outline (thousands of vertices from
     # overlapping letters and touching lines), leaving straight chords that
-    # sit farther than backing_mm from the face.
-    buffered = unary_union([
+    # sit farther than the offset from the face.
+    return unary_union([
         polygon.buffer(
-            backing_mm,
+            distance_mm,
             join_style=BufferJoinStyle.round,
             resolution=12,
             mitre_limit=3,
         )
         for polygon in source_polygons
     ])
+
+
+def polygon_parts(geometry):
+    if geometry is None or geometry.is_empty:
+        return []
+    if isinstance(geometry, Polygon):
+        return [geometry]
+    return [part for part in getattr(geometry, "geoms", []) if isinstance(part, Polygon) and not part.is_empty]
+
+
+def apply_notch_fill(source_polygons, backing, backing_mm, radius_mm=NOTCH_FILL_RADIUS_MM):
+    """Fill deep, narrow notches in the backing without rounding other corners.
+
+    A morphological closing (grow by backing + r, shrink by r) fills every
+    concavity narrower than about 2r, but it also fillets ordinary inside
+    corners. Only the added regions that reach at least r deep behind the new
+    edge are kept: true notches between neighboring glyph offsets are many
+    millimetres deep, while a corner fillet is at most ~0.4r deep for a right
+    angle. Everything else keeps the plain offset unchanged.
+    """
+    if radius_mm <= 0 or backing is None or backing.is_empty:
+        return backing
+
+    grown = solid_exterior_geometry(buffer_source_polygons(source_polygons, backing_mm + radius_mm))
+    if grown is None or grown.is_empty:
+        return backing
+    closed = solid_exterior_geometry(grown.buffer(-radius_mm, join_style=BufferJoinStyle.round, resolution=12))
+    if closed is None or closed.is_empty:
+        return backing
+
+    closed_edge = closed.boundary
+    notches = []
+    for piece in polygon_parts(closed.difference(backing)):
+        depth = max(closed_edge.distance(Point(coord)) for coord in piece.exterior.coords)
+        if depth >= radius_mm:
+            notches.append(piece)
+    if not notches:
+        return backing
+
+    filled = solid_exterior_geometry(unary_union([backing, *notches]))
+    return backing if filled is None or filled.is_empty else filled
+
+
+def shapely_offset_backing_path(face_path, backing_mm, tolerance_mm=0.05, notch_fill=False):
+    source_polygons = shapely_solid_polygons_from_path(face_path, tolerance_mm=tolerance_mm)
+    if not source_polygons:
+        return ""
+    buffered = buffer_source_polygons(source_polygons, backing_mm)
     solid = solid_exterior_geometry(buffered)
     if solid is None or solid.is_empty:
         return ""
+    if notch_fill and backing_mm > 0:
+        solid = apply_notch_fill(source_polygons, solid, backing_mm)
 
     polygons = [solid] if isinstance(solid, Polygon) else [part for part in solid.geoms if isinstance(part, Polygon)]
     return " ".join(polyline_closed_path(list(polygon.exterior.coords), 1) for polygon in polygons)
@@ -1387,6 +1436,7 @@ def analyze_single_layout(root, payload):
     scale = profile["scale"]
     backing = float(payload["backingMm"])
     weld_exported_design = payload.get("weldExportedDesign", True)
+    notch_fill = payload.get("notchFill", True) is not False
     outline_font_cache = {}
     face_outline = build_face_outline_path(
         root,
@@ -1415,6 +1465,7 @@ def analyze_single_layout(root, payload):
         face_outline["path"],
         backing,
         tolerance_mm=profile["backing_tolerance_mm"],
+        notch_fill=notch_fill,
     )
     backing_engine = "shapely"
     if not backing_path and has_scaled_letters:
@@ -1452,6 +1503,7 @@ def analyze_single_layout(root, payload):
         "exportFacePath": welded_face_path if weld_exported_design else face_outline["path"],
         "backingPath": backing_path,
         "backingEngine": backing_engine,
+        "notchFill": notch_fill and backing_engine == "shapely",
         "fixedSvgBackingPaths": build_fixed_svg_backing_analysis_paths(payload, width_mm, height_mm),
         "connectedComponentCount": component_count,
         "isConnected": component_count <= 1,

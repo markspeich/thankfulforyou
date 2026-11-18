@@ -459,6 +459,7 @@ const importedQuantityValue = document.querySelector("#importedQuantityValue");
 const presetInput = document.querySelector("#presetInput");
 const presetListingIndicator = document.querySelector("#presetListingIndicator");
 const weldExportedDesignInput = document.querySelector("#weldExportedDesignInput");
+const notchFillInput = document.querySelector("#notchFillInput");
 const boundingSizePresetInput = document.querySelector("#boundingSizePresetInput");
 const globalHorizontalScaleInput = document.querySelector("#globalHorizontalScaleInput");
 const globalHorizontalScaleOutput = document.querySelector("#globalHorizontalScaleOutput");
@@ -1532,6 +1533,8 @@ function normalizeSettings(settings = {}) {
     weldExportedDesign: typeof settings.weldExportedDesign === "boolean"
       ? settings.weldExportedDesign
       : presetBaseSettings.weldExportedDesign,
+    // Temporary per-design backing option; deliberately not part of presets.
+    notchFill: settings.notchFill !== false,
     lines: buildNormalizedLineSettings(rawLines, configuredLines, presetId).map(applyFontBridgePolicy),
   };
 }
@@ -1750,6 +1753,7 @@ function buildExportPayload(layout, analysis = layout?.analysis || null, source 
       heightMm: layout.heightMm,
       backingMm: layout.backingMm,
       weldExportedDesign: layout.weldExportedDesign,
+      notchFill: layout.notchFill !== false,
       letters: Array.isArray(layout.letters) ? layout.letters : [],
       fixedSvgs: Array.isArray(layout.fixedSvgs) ? layout.fixedSvgs : [],
       colorName,
@@ -9547,6 +9551,7 @@ function getCurrentSettings() {
     boundingSizePresetId: boundingSizePresetInput?.value || DEFAULT_BOUNDING_SIZE_PRESET_ID,
     backingMm: Number(backingInput.value),
     weldExportedDesign: weldExportedDesignInput.checked,
+    notchFill: notchFillInput.checked,
     lines,
   });
 }
@@ -9560,6 +9565,7 @@ function applySettings(settings) {
     boundingSizePresetInput.value = normalized.boundingSizePresetId;
   }
   weldExportedDesignInput.checked = normalized.weldExportedDesign;
+  notchFillInput.checked = normalized.notchFill;
   backingInput.value = String(normalized.backingMm);
   updateBackingOutput();
   renderLineControls(normalized);
@@ -10438,7 +10444,7 @@ function rebaseFontAliasDraftSettings({ draftSettings, previousPublishedSettings
     }
   }
   const rebased = { ...latest };
-  for (const key of ["presetId", "boundingSizePresetId", "backingMm", "weldExportedDesign", "customNotes"]) {
+  for (const key of ["presetId", "boundingSizePresetId", "backingMm", "weldExportedDesign", "notchFill", "customNotes"]) {
     if (settingsValueChanged(draft[key], previous[key])) rebased[key] = draft[key];
   }
 
@@ -14442,6 +14448,7 @@ function assembleOrderLayout(normalized, sourceLines, fitScale, fitted, guide) {
     heightMm: expanded.heightMm,
     backingMm,
     weldExportedDesign: normalized.weldExportedDesign,
+    notchFill: normalized.notchFill,
     boundingSizePresetId: normalized.boundingSizePresetId,
     guide,
     textBoundsMm: expanded.textBoundsMm,
@@ -14714,6 +14721,10 @@ backingOutput.addEventListener("change", () => {
   updateActiveOrderFromControls();
 });
 weldExportedDesignInput.addEventListener("input", () => {
+  render();
+  updateActiveOrderFromControls();
+});
+notchFillInput.addEventListener("input", () => {
   render();
   updateActiveOrderFromControls();
 });

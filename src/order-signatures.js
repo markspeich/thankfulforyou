@@ -28,6 +28,9 @@ function buildSignaturePayload(settings = {}, options = {}) {
       : {}),
     backingMm: toFiniteNumber(settings.backingMm),
     weldExportedDesign: Boolean(settings.weldExportedDesign),
+    // Notch fill defaults on and is only signed when turned off, so designs
+    // saved before the option existed keep their signatures and cached builds.
+    ...(settings.notchFill === false ? { notchFill: false } : {}),
     lines: normalizeLines(settings.lines).map((line = {}) => {
       if (line.kind === "fixedSvg") {
         return {

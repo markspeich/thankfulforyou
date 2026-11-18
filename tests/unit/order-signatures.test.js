@@ -17,6 +17,14 @@ describe("order signatures", () => {
     expect(getSettingsSignatureCandidates({ ...settings, customNotes: "Pack separately" })
       .some((signature) => oldSignatures.includes(signature))).toBe(false);
   });
+  it("signs notch fill only when turned off so designs saved before the option keep their signatures", () => {
+    const settings = { text: "Ada", lines: [] };
+    expect(buildSettingsSignature({ ...settings, notchFill: true })).toBe(buildSettingsSignature(settings));
+    expect(buildSettingsSignature({ ...settings, notchFill: false })).not.toBe(buildSettingsSignature(settings));
+    const oldSignatures = getSettingsSignatureCandidates(settings);
+    expect(getSettingsSignatureCandidates({ ...settings, notchFill: false })
+      .some((signature) => oldSignatures.includes(signature))).toBe(false);
+  });
   it("includes lockTextHeight, horizontalScale, and font bridging policy in the current signature format", () => {
     const signature = buildSettingsSignature({
       text: "Mark\nRN",
