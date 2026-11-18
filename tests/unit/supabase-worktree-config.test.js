@@ -63,7 +63,7 @@ describe("per-worktree Supabase config", () => {
       "port = 54323",
       'api_url = "http://127.0.0.1"',
       "",
-      "[inbucket]",
+      "[local_smtp]",
       "port = 54324",
       "",
       "[auth]",
@@ -83,7 +83,7 @@ describe("per-worktree Supabase config", () => {
         db: 55001,
         dbShadow: 55002,
         studio: 55003,
-        inbucket: 55004,
+        localSmtp: 55004,
         dbPooler: 55005,
         analytics: 55006,
         edgeInspector: 55007,
@@ -97,6 +97,7 @@ describe("per-worktree Supabase config", () => {
     expect(generated).toContain('site_url = "http://127.0.0.1:4701"');
     expect(generated).toContain('additional_redirect_urls = ["http://127.0.0.1:4701"]');
     expect(generated).toContain("inspector_port = 55007");
+    expect(generated).toContain("[local_smtp]\nport = 55004");
   });
 
   it("generates a disposable Supabase workdir from canonical migrations and seed", async () => {

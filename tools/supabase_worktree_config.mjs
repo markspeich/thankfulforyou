@@ -11,7 +11,7 @@ const PORT_OFFSETS = {
   db: 1,
   dbShadow: 2,
   studio: 3,
-  inbucket: 4,
+  localSmtp: 4,
   dbPooler: 5,
   analytics: 6,
   edgeInspector: 7,
@@ -64,7 +64,7 @@ export function computeSupabaseWorktreePorts(worktreeId) {
     db: blockStart + PORT_OFFSETS.db,
     dbShadow: blockStart + PORT_OFFSETS.dbShadow,
     studio: blockStart + PORT_OFFSETS.studio,
-    inbucket: blockStart + PORT_OFFSETS.inbucket,
+    localSmtp: blockStart + PORT_OFFSETS.localSmtp,
     dbPooler: blockStart + PORT_OFFSETS.dbPooler,
     analytics: blockStart + PORT_OFFSETS.analytics,
     edgeInspector: blockStart + PORT_OFFSETS.edgeInspector,
@@ -134,8 +134,8 @@ export function buildGeneratedSupabaseConfig(canonicalConfig, {
       return rewriteConfigValue(line, "api_url", `http://127.0.0.1:${ports.api}`);
     }
 
-    if (section === "inbucket" && /^\s*port\s*=/.test(line)) {
-      return rewriteConfigValue(line, "port", ports.inbucket);
+    if ((section === "local_smtp" || section === "inbucket") && /^\s*port\s*=/.test(line)) {
+      return rewriteConfigValue(line, "port", ports.localSmtp);
     }
 
     if (section === "auth" && /^\s*site_url\s*=/.test(line)) {
