@@ -913,9 +913,9 @@ test("keeps compact badge reel status accurate when detail hydration fails", asy
   const workspace = page.getByRole("region", { name: "Orders workspace" });
   await workspace.locator(".database-order-row").filter({ hasText: "Order 1001" }).getByRole("button").click();
   const cards = workspace.locator(".database-order-item-card");
-  await expect(cards.filter({ hasText: "Ada RN" }).locator(".database-order-item-meta > dd").nth(2)).toHaveText("Unrecognized");
-  await expect(cards.filter({ hasText: "PICU" }).locator(".database-order-item-meta > dd").nth(2)).toHaveText("Not set");
-  await expect(cards.filter({ hasText: "Blank first" }).locator(".database-order-item-meta > dd").nth(2)).toHaveText("Unrecognized");
+  await expect(cards.filter({ hasText: "Ada RN" }).locator(".database-order-item-meta > dd").nth(3)).toHaveText("Unrecognized");
+  await expect(cards.filter({ hasText: "PICU" }).locator(".database-order-item-meta > dd").nth(3)).toHaveText("Not set");
+  await expect(cards.filter({ hasText: "Blank first" }).locator(".database-order-item-meta > dd").nth(3)).toHaveText("Unrecognized");
 });
 
 test("renders canonical badge reel type metadata in selected order item cards", async ({ page }) => {
@@ -1063,6 +1063,8 @@ test("renders canonical badge reel type metadata in selected order item cards", 
   await expect(firstItemCard.getByRole("img", { name: "Custom badge reel" })).toBeVisible();
   await expect(firstItemCard.locator(".database-order-item-meta")).toContainText("Color");
   await expect(firstItemCard.locator(".database-order-item-meta")).toContainText("Red Glitter");
+  await expect(firstItemCard.locator(".database-order-item-meta")).toContainText("Text Color");
+  await expect(firstItemCard.locator(".database-order-item-meta > dt:text-is('Text Color') + dd")).toHaveText("White");
   await expect(firstItemCard.locator(".database-order-item-meta")).toContainText("Badge reel");
   await expect(firstItemCard.locator(".database-order-item-meta")).toContainText("Swivel Alligator");
   await expect(firstItemCard.locator(".database-order-item-meta")).toContainText("Quantity");
@@ -1070,6 +1072,7 @@ test("renders canonical badge reel type metadata in selected order item cards", 
   await expect(firstItemCard.locator(".database-order-item-meta > dt")).toHaveText([
     "Personalization",
     "Color",
+    "Text Color",
     "Badge reel",
     "Quantity",
     "Ship By Date",

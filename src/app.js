@@ -6249,6 +6249,17 @@ function getDatabaseOrderItemColorText(item) {
   return match ? match.trim() : "No color";
 }
 
+function getDatabaseOrderItemTextColorText(item) {
+  const storedTextColor = typeof item?.textColor === "string" ? item.textColor.trim() : "";
+  if (storedTextColor) return storedTextColor;
+  // Orders imported before text color capture derive the default from their color.
+  const colorText = getDatabaseOrderItemColorText(item);
+  return resolveTextColorName({
+    textColorName: item?.source?.textColorName,
+    colorName: colorText === "No color" ? "" : colorText,
+  });
+}
+
 function getDatabaseOrderItemQuantityText(item) {
   const candidates = [
     item?.source?.quantity,
@@ -7951,6 +7962,11 @@ function renderSelectedDatabaseOrderItems() {
     const colorValue = document.createElement("dd");
     colorValue.textContent = getDatabaseOrderItemColorText(item);
 
+    const textColorTerm = document.createElement("dt");
+    textColorTerm.textContent = "Text Color";
+    const textColorValue = document.createElement("dd");
+    textColorValue.textContent = getDatabaseOrderItemTextColorText(item);
+
     const badgeReelTerm = document.createElement("dt");
     badgeReelTerm.textContent = "Badge reel";
     const badgeReelValue = document.createElement("dd");
@@ -7971,6 +7987,8 @@ function renderSelectedDatabaseOrderItems() {
       personalizationValue,
       colorTerm,
       colorValue,
+      textColorTerm,
+      textColorValue,
       badgeReelTerm,
       badgeReelValue,
       quantityTerm,

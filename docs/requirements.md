@@ -378,6 +378,7 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - Imports must also store a `Text Color` with each order item (`order_items.text_color`). Use the listing's `Text Color` variation when present. Otherwise default to `White`, except when the item's `Color` contains the word `White` (case-insensitive), in which case the text color is `Black`. The same default applies to Amazon and clipboard imports, which have no text color variation.
 - Orders imported before text color capture have no stored text color; readers derive it from `Color` with the same rule. Re-importing an existing item fills a missing stored `Color` or `Text Color` from the listing but never overwrites a stored value.
 - The selected-order editor shows `Text Color` as a read-only row below `Color`, highlighted when it is not `White`.
+- The Orders page order detail shows each item's `Text Color` directly below `Color`, using the stored value or, for older orders, the same derived default.
 - The import pipeline should also extract the Etsy line-item quantity when it is present and store it with the imported design metadata.
 - The import pipeline should prefer the embedded Etsy page data model when available rather than relying only on visible DOM scraping, because the saved page includes structured order and transaction data.
 - The import flow should support a browser-side helper path, such as a User JavaScript and CSS script, that can copy structured order payloads directly from the live Etsy orders page.
