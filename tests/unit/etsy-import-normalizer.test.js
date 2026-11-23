@@ -52,6 +52,32 @@ describe("Etsy transaction normalizer", () => {
     expect(result.source.colorName).toBe("Pink");
   });
 
+  it("imports Pattern as the item color and keeps the listing Text Color", () => {
+    // Break caught: order 4241446592 names its backing color "Pattern", which imported as blank.
+    const result = normalizeEtsyTransaction({
+      receipt: { receipt_id: 4241446592 },
+      transaction: {
+        transaction_id: 988,
+        variations: [
+          { property_id: 514, formatted_name: "Pattern", formatted_value: "Leopard" },
+          { property_id: 515, formatted_name: "Text Color", formatted_value: "Pink" },
+        ],
+      },
+    });
+
+    expect(result.source.colorName).toBe("Leopard");
+    expect(result.source.textColorName).toBe("Pink");
+  });
+
+  it("leaves text color blank when the listing does not specify one", () => {
+    const result = normalizeEtsyTransaction({
+      receipt: {},
+      transaction: { transaction_id: 989, variations: [{ formatted_name: "Color", formatted_value: "White Marble" }] },
+    });
+
+    expect(result.source.textColorName).toBe("");
+  });
+
   it("supports renamed questions/dropdowns, excludes ordinary variations, and cleans imported text", () => {
     const result = normalizeEtsyTransaction({ receipt: {}, transaction: { transaction_id: "1", variations: [
       { property_id: "54", formatted_name: "Who is this for?", formatted_value: "JosÃ© &amp; Ana" },

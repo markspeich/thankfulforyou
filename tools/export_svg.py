@@ -1560,6 +1560,7 @@ def build_precomputed_order_paths(payload):
         "quantity": quantity,
         "unsupported_characters": analysis.get("unsupportedCharacters", []),
         "is_keychain": payload.get("isKeychain") is True,
+        "text_color_name": resolve_text_color_name(payload),
         "custom_notes": payload.get("customNotes", ""),
     }
 
@@ -1594,8 +1595,20 @@ def build_single_order_paths(root, payload):
         "quantity": quantity,
         "unsupported_characters": analysis.get("unsupportedCharacters", []),
         "is_keychain": payload.get("isKeychain") is True,
+        "text_color_name": resolve_text_color_name(payload),
         "custom_notes": payload.get("customNotes", ""),
     }
+
+
+def resolve_text_color_name(payload):
+    # Mirrors src/text-color.js: listing value, else Black on white colors, else White.
+    explicit = payload.get("textColorName")
+    if isinstance(explicit, str) and explicit.strip():
+        return explicit.strip()
+    color_name = payload.get("colorName")
+    if isinstance(color_name, str) and re.search(r"\bwhite\b", color_name, re.IGNORECASE):
+        return "Black"
+    return "White"
 
 
 def estimate_color_label_width_mm(color_name):
@@ -1628,8 +1641,9 @@ def build_important_notes(order, instance_id, x, center_y):
     notes = []
     if order.get("is_keychain", False):
         notes.append("Keychain")
-    if "white" in order.get("color_name", "").lower():
-        notes.append("BLACK TEXT")
+    text_color_name = order.get("text_color_name", "White")
+    if text_color_name.lower() != "white":
+        notes.append(f"Text Color: {text_color_name}")
     if not order.get("weld_exported_design", True):
         notes.append("NOT WELDED")
     for item in order.get("unsupported_characters", []):

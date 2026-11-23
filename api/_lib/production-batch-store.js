@@ -73,7 +73,7 @@ export async function loadProductionBatch({ batchId, workspaceId }) {
   ] = await Promise.all([
     supabase
       .from("order_items")
-      .select("id, workspace_id, status, order_number, buyer_name, listing_id, transaction_id, imported_color, quantity, source_json, revision, updated_at, updated_by")
+      .select("id, workspace_id, status, order_number, buyer_name, listing_id, transaction_id, imported_color, text_color, quantity, source_json, revision, updated_at, updated_by")
       .in("id", orderItemIds),
     supabase
       .from("designs")

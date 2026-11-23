@@ -817,7 +817,7 @@ test("saves design notes beside text and includes corresponding notes in every p
   }
   const copied = await page.evaluate(() => window.__copiedSvgPayloads);
   for (const svg of copied) {
-    expect(svg.indexOf("BLACK TEXT")).toBeLessThan(svg.indexOf("Pack separately"));
+    expect(svg.indexOf("Text Color: Black")).toBeLessThan(svg.indexOf("Pack separately"));
     expect(svg).toContain("Check clasp &amp; clip");
   }
   const exportPreview = await page.context().newPage();
@@ -861,7 +861,7 @@ for (const textFallback of [false, true]) {
     const formats = await page.evaluate(() => window.__copiedFormats);
     if (!textFallback) expect(formats["image/svg+xml"]).toBe(formats["text/plain"]);
     const svg = formats["text/plain"];
-    expect(svg).toContain("BLACK TEXT");
+    expect(svg).toContain("Text Color: Black");
     expect(svg).toContain("Check clasp");
     const rendered = await page.context().newPage();
     await rendered.setContent(svg);

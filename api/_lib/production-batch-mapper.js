@@ -191,6 +191,7 @@ function buildSource(orderItem) {
     colorName: orderItem.imported_color || sourceJson.colorName || "",
     quantity: orderItem.quantity == null ? sourceJson.quantity || "" : String(orderItem.quantity),
     ...sourceJson,
+    ...(orderItem.text_color ? { textColorName: orderItem.text_color } : {}),
   };
 }
 

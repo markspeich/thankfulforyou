@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
+import { resolveTextColorName } from "../../src/text-color.js";
 import { describe, expect, test } from "vitest";
 
 const pythonCommand = process.env.PYTHON || (process.platform === "win32" ? "py" : "python3");
@@ -189,7 +190,7 @@ describe("export_svg face tracing", () => {
     const source = readFileSync("src/app.js", "utf8");
     const start = source.indexOf("function buildExportPayload(");
     const end = source.indexOf("async function fetchFixedSvgText", start);
-    const buildExportPayload = runInNewContext(`${source.slice(start, end)}; buildExportPayload`);
+    const buildExportPayload = runInNewContext(`${source.slice(start, end)}; buildExportPayload`, { resolveTextColorName });
     const layout = {
       text: "A", widthMm: 40, heightMm: 40, backingMm: 3.1,
       letters: [{ character: "A", fontPath: "https://example.invalid/uploaded.ttf" }],
@@ -1330,7 +1331,7 @@ else:
     for (const payload of [layout, { layouts: [layout, { ...layout, isKeychain: false, quantity: 1 }] }]) {
       const svg = exportSvg(payload);
       expect(svg.match(/>Keychain<\/text>/g)).toHaveLength(2);
-      expect(svg).toContain('>BLACK TEXT</text>');
+      expect(svg).toContain('>Text Color: Black</text>');
       expect(svg).toContain('>NOT WELDED</text>');
     }
     for (const isKeychain of [undefined, false, "true"]) {
@@ -1356,7 +1357,7 @@ else:
         const group = svg.match(new RegExp(`<g id="order-1-copy-${copy}-important-notes">([\\s\\S]*?)</g>`))[1];
         const lines = Array.from(group.matchAll(/<text[^>]*x="([^"]+)" y="([^"]+)"[^>]*>([^<]*)<\/text>/g));
         expect(lines.map((line) => line[3])).toEqual([
-          "Keychain", "BLACK TEXT", "NOT WELDED", "CHECK FONT: Candlepin missing ? (Line 1)",
+          "Keychain", "Text Color: Black", "NOT WELDED", "CHECK FONT: Candlepin missing ? (Line 1)",
           "Handle &lt;carefully&gt; &amp; check", "Second line",
         ]);
         expect(new Set(lines.map((line) => line[1]))).toEqual(new Set(["25.781"]));
@@ -1394,7 +1395,7 @@ else:
     expect(svg).toContain(">Inspect fresh geometry</text>");
   });
 
-  test("adds black-text and not-welded notes in the leading batch export column", () => {
+  test("adds text-color and not-welded notes in the leading batch export column", () => {
     const svg = exportSvg({
       layouts: [
         {
@@ -1426,10 +1427,28 @@ else:
 
     expect(svg).toContain('id="order-1-copy-1-important-notes"');
     expect(svg).toContain('id="order-1-copy-1-important-note-1" x="25.781" y="21.581"');
-    expect(svg).toContain('>BLACK TEXT</text>');
+    expect(svg).toContain('>Text Color: Black</text>');
     expect(svg).toContain('id="order-1-copy-1-important-note-2" x="25.781" y="29.981"');
     expect(svg).toContain('>NOT WELDED</text>');
     expect(svg).not.toContain('id="order-2-copy-1-important-notes"');
+  });
+
+  test("notes any text color other than White, preferring the listing text color", () => {
+    const layout = {
+      text: "Ada", widthMm: 40, heightMm: 20,
+      analysis: { exportFacePath: "M0 0 H10 V10 Z", backingPath: "M0 0 H12 V12 Z" },
+    };
+    const notesFor = (fields) => {
+      const group = exportSvg({ ...layout, ...fields }).match(/<g id="order-1-copy-1-important-notes">([\s\S]*?)<\/g>/);
+      return group ? Array.from(group[1].matchAll(/>([^<]*)<\/text>/g), (match) => match[1]) : [];
+    };
+
+    expect(notesFor({ colorName: "Teal", textColorName: "Gold" })).toEqual(["Text Color: Gold"]);
+    expect(notesFor({ colorName: "White Marble", textColorName: "Pink" })).toEqual(["Text Color: Pink"]);
+    expect(notesFor({ colorName: "White Marble", textColorName: "white" })).toEqual([]);
+    expect(notesFor({ colorName: "Pearl White" })).toEqual(["Text Color: Black"]);
+    expect(notesFor({ colorName: "Teal" })).toEqual([]);
+    expect(notesFor({ colorName: "Whitewater" })).toEqual([]);
   });
 
   test("places not-welded and font warnings on separate absolute SVG text lines", () => {

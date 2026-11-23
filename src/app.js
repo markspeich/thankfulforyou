@@ -48,6 +48,7 @@ import {
 } from "./presets.js";
 import { savePresetSnapshot } from "./preset-api.js";
 import { computeLineMaskMetrics } from "./text-metrics.js";
+import { DEFAULT_TEXT_COLOR, resolveTextColorName } from "./text-color.js";
 import { buildFontCoverageSummary, formatUnsupportedCharacters } from "./font-coverage.js";
 import { getRenderableTextLines } from "./text-lines.js";
 import { shouldUsePostStretchBackingOffset, shouldUseRasterTextPreview } from "./preview-rendering.js";
@@ -456,6 +457,8 @@ const importedColorField = document.querySelector("#importedColorField");
 const importedColorValue = document.querySelector("#importedColorValue");
 const importedQuantityField = document.querySelector("#importedQuantityField");
 const importedQuantityValue = document.querySelector("#importedQuantityValue");
+const importedTextColorField = document.querySelector("#importedTextColorField");
+const importedTextColorValue = document.querySelector("#importedTextColorValue");
 const presetInput = document.querySelector("#presetInput");
 const presetListingIndicator = document.querySelector("#presetListingIndicator");
 const weldExportedDesignInput = document.querySelector("#weldExportedDesignInput");
@@ -1742,6 +1745,7 @@ function buildExportPayload(layout, analysis = layout?.analysis || null, source 
   }
 
   const colorName = typeof source?.colorName === "string" ? source.colorName.trim() : "";
+  const textColorName = resolveTextColorName({ textColorName: source?.textColorName, colorName });
   const quantity = source?.quantity == null ? "" : String(source.quantity).trim();
   const isKeychain = typeof source?.listingTitle === "string" && /keychain/i.test(source.listingTitle);
 
@@ -1757,6 +1761,7 @@ function buildExportPayload(layout, analysis = layout?.analysis || null, source 
       letters: Array.isArray(layout.letters) ? layout.letters : [],
       fixedSvgs: Array.isArray(layout.fixedSvgs) ? layout.fixedSvgs : [],
       colorName,
+      textColorName,
       quantity,
       isKeychain,
       analysis: {
@@ -1773,6 +1778,7 @@ function buildExportPayload(layout, analysis = layout?.analysis || null, source 
     ...layout,
     customNotes: typeof settings?.customNotes === "string" ? settings.customNotes : "",
     colorName,
+    textColorName,
     quantity,
     isKeychain,
   };
@@ -3652,6 +3658,7 @@ function normalizeStoredSource(source) {
     listingId: source.listingId == null ? "" : String(source.listingId).trim(),
     buyerName: typeof source.buyerName === "string" ? source.buyerName.trim() : "",
     colorName: typeof source.colorName === "string" ? source.colorName.trim() : "",
+    textColorName: typeof source.textColorName === "string" ? source.textColorName.trim() : "",
     quantity: source.quantity == null ? "" : String(source.quantity).trim(),
     listingTitle: typeof source.listingTitle === "string" ? source.listingTitle.trim() : "",
     listingImageUrl75x75: typeof source.listingImageUrl75x75 === "string" ? source.listingImageUrl75x75.trim() : "",
@@ -3669,6 +3676,7 @@ function normalizeEditableOrderSource(source = null) {
     listingId: "",
     buyerName: "",
     colorName: "",
+    textColorName: "",
     quantity: "",
     listingTitle: "",
     listingImageUrl75x75: "",
@@ -9675,6 +9683,11 @@ function renderImportedColor(order) {
   importedColorField.classList.toggle("is-hidden", !order);
   importedColorValue.classList.toggle("highlight-light-color", hasColor && /\bwhite\b/i.test(colorName));
   importedQuantityField.classList.toggle("is-hidden", !order);
+  // Older orders were imported before text color capture; derive the default from the color.
+  const textColorName = resolveTextColorName({ textColorName: order?.source?.textColorName, colorName });
+  importedTextColorField.classList.toggle("is-hidden", !order);
+  importedTextColorValue.classList.toggle("highlight-light-color", textColorName !== DEFAULT_TEXT_COLOR);
+  importedTextColorValue.textContent = textColorName;
 
   importedColorValue.textContent = hasColor ? colorName : "Not set";
   importedQuantityValue.textContent = hasQuantity ? quantity : "1";

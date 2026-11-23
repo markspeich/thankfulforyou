@@ -597,6 +597,57 @@ describe("orders store", () => {
     expect(supabaseMock.db.designs[0].design_text).toBe("Original");
   });
 
+  it("stores the resolved text color on new items and returns it", async () => {
+    resetDb();
+    const { importWorkspaceOrderItems, listWorkspaceOrders } = await import("../../api/_lib/orders-store.js");
+
+    await importWorkspaceOrderItems({
+      workspaceId: "workspace-1",
+      userId: "user-1",
+      items: [
+        { text: "A", source: { transactionId: "tc-listing", colorName: "White Marble", textColorName: "Gold" } },
+        { text: "B", source: { transactionId: "tc-white", colorName: "White Glitter" } },
+        { text: "C", source: { transactionId: "tc-default", colorName: "Teal" } },
+      ],
+    });
+
+    const byId = Object.fromEntries(supabaseMock.db.order_items.map((row) => [row.id, row.text_color]));
+    expect(byId).toEqual({ "transaction:tc-listing": "Gold", "transaction:tc-white": "Black", "transaction:tc-default": "White" });
+    const result = await listWorkspaceOrders({ workspaceId: "workspace-1", statusFilter: "all" });
+    expect(result.orders.flatMap((order) => order.items.map((item) => item.textColor)).sort()).toEqual(["Black", "Gold", "White"]);
+  });
+
+  it("fills a missing stored color and text color during re-import without overwriting stored values", async () => {
+    // Break caught: order 4241446592 was imported before Pattern was read, so its color stayed blank on re-import.
+    resetDb({
+      order_items: [
+        { id: "transaction:tc-blank", workspace_id: "workspace-1", status: "open", quantity: 1,
+          imported_color: null, text_color: null, source_json: { colorName: "" } },
+        { id: "transaction:tc-edited", workspace_id: "workspace-1", status: "open", quantity: 1,
+          imported_color: "White Pearl", text_color: null, source_json: { colorName: "White Pearl" } },
+        { id: "transaction:tc-stored", workspace_id: "workspace-1", status: "open", quantity: 1,
+          imported_color: "Teal", text_color: "Gold", source_json: { colorName: "Teal" } },
+      ],
+    });
+    const { importWorkspaceOrderItems } = await import("../../api/_lib/orders-store.js");
+
+    await importWorkspaceOrderItems({
+      workspaceId: "workspace-1",
+      userId: "user-1",
+      items: [
+        { text: "A", source: { transactionId: "tc-blank", colorName: "Leopard", textColorName: "Pink" } },
+        { text: "B", source: { transactionId: "tc-edited", colorName: "Teal" } },
+        { text: "C", source: { transactionId: "tc-stored", colorName: "Pink", textColorName: "Black" } },
+      ],
+    });
+
+    const byId = Object.fromEntries(supabaseMock.db.order_items.map((row) => [row.id, row]));
+    expect(byId["transaction:tc-blank"]).toMatchObject({ imported_color: "Leopard", text_color: "Pink",
+      source_json: { colorName: "Leopard", textColorName: "Pink" } });
+    expect(byId["transaction:tc-edited"]).toMatchObject({ imported_color: "White Pearl", text_color: "Black" });
+    expect(byId["transaction:tc-stored"]).toMatchObject({ imported_color: "Teal", text_color: "Gold" });
+  });
+
   it("merges an unrecognized badge reel marker on an existing item without replacing order or design data", async () => {
     // Break caught: manual re-imports lose safe unknown/blank reel markers, so Orders later shows Not set.
     resetDb({

@@ -5,7 +5,9 @@ const PERSONALIZATION_PROPERTY_ID = "54";
 const URL_PATTERN = /^https?:\/\/\S+$/i;
 const FONT_LABEL_PATTERN = /\bfont\b/i;
 const FONT_LINE_LABEL_PATTERN = /\bline\s*(\d+)\b/i;
-const COLOR_LABEL_ALIASES = new Set(["color", "heart color"]);
+// Some listings name the backing color "Pattern"; it means the same thing as Color.
+const COLOR_LABEL_ALIASES = new Set(["color", "heart color", "pattern"]);
+const TEXT_COLOR_LABEL_ALIASES = new Set(["text color", "text colour"]);
 
 function text(value) { return normalizeImportedText(value); }
 function id(value) { return value == null ? "" : String(value).trim(); }
@@ -126,7 +128,12 @@ export function normalizeEtsyTransaction({ receipt = {}, transaction = {}, listi
     .sort((left, right) => left.lineIndex - right.lineIndex);
   const listingId = id(transaction.listing_id ?? listing.listing_id);
   const transactionId = id(transaction.transaction_id);
-  const color = variations.find((variation) => COLOR_LABEL_ALIASES.has(text(variation.formatted_name).toLowerCase()));
+  const variationLabel = (variation) => text(variation.formatted_name).toLowerCase();
+  const color = variations.find((variation) => COLOR_LABEL_ALIASES.has(variationLabel(variation)));
+  const colorName = text(color?.formatted_value);
+  const textColor = variations.find((variation) => TEXT_COLOR_LABEL_ALIASES.has(variationLabel(variation)));
+  // Raw listing value; the order store resolves the White/Black default when it is blank.
+  const textColorName = text(textColor?.formatted_value);
   const badgeReelType = findBadgeReelTypeCandidate(variations, { label: "formatted_name", value: "formatted_value" });
   const buyerName = text(receipt.name ?? receipt.buyer_name);
   const orderNumber = id(receipt.receipt_id);
@@ -144,7 +151,7 @@ export function normalizeEtsyTransaction({ receipt = {}, transaction = {}, listi
     },
     source: {
       orderNumber, transactionId, listingId, buyerName,
-      colorName: text(color?.formatted_value), quantity, listingTitle,
+      colorName, textColorName, quantity, listingTitle,
       ...(badgeReelType?.id ? { badgeReelTypeId: badgeReelType.id } : {}),
       listingImageUrl75x75: imageUrl(image),
       personalizationResponses: designResponses.map(({ kind, name, value }) => ({ kind, name, value })),
