@@ -184,12 +184,15 @@ import {
 import { createListingsWorkspace } from "./listings-workspace.js";
 
 let orderColorEditIntentOrderId = null;
+let orderTextColorEditIntentOrderId = null;
 const orderMetadataEditing = {
   colorName: false,
+  textColorName: false,
   quantity: false,
 };
 const orderMetadataOriginalValues = {
   colorName: "",
+  textColorName: "",
   quantity: "",
 };
 
@@ -459,6 +462,10 @@ const importedQuantityField = document.querySelector("#importedQuantityField");
 const importedQuantityValue = document.querySelector("#importedQuantityValue");
 const importedTextColorField = document.querySelector("#importedTextColorField");
 const importedTextColorValue = document.querySelector("#importedTextColorValue");
+const orderTextColorInput = document.querySelector("#orderTextColorInput");
+const editOrderTextColorButton = document.querySelector("#editOrderTextColorButton");
+const saveOrderTextColorButton = document.querySelector("#saveOrderTextColorButton");
+const cancelOrderTextColorButton = document.querySelector("#cancelOrderTextColorButton");
 const presetInput = document.querySelector("#presetInput");
 const presetListingIndicator = document.querySelector("#presetListingIndicator");
 const weldExportedDesignInput = document.querySelector("#weldExportedDesignInput");
@@ -3696,6 +3703,7 @@ function sourceHasMeaningfulMetadata(source) {
     || source.listingId
     || source.buyerName
     || source.colorName
+    || source.textColorName
     || source.quantity
     || source.listingTitle
     || source.listingImageUrl75x75
@@ -3705,24 +3713,49 @@ function sourceHasMeaningfulMetadata(source) {
   );
 }
 
+function getOrderTextColorName(order) {
+  return resolveTextColorName({ textColorName: order?.source?.textColorName, colorName: order?.source?.colorName });
+}
+
 function getOrderMetadataFieldValue(order, field) {
-  return field === "colorName"
-    ? order?.source?.colorName?.trim() || ""
-    : order?.source?.quantity?.trim() || "";
+  if (field === "colorName") return order?.source?.colorName?.trim() || "";
+  // Start text color edits from the displayed value, including the derived default.
+  if (field === "textColorName") return order ? getOrderTextColorName(order) : "";
+  return order?.source?.quantity?.trim() || "";
 }
 
 function getOrderMetadataInput(field) {
-  return field === "colorName" ? orderColorInput : orderQuantityInput;
+  if (field === "colorName") return orderColorInput;
+  if (field === "textColorName") return orderTextColorInput;
+  return orderQuantityInput;
 }
 
 function getOrderMetadataValueElement(field) {
-  return field === "colorName" ? importedColorValue : importedQuantityValue;
+  if (field === "colorName") return importedColorValue;
+  if (field === "textColorName") return importedTextColorValue;
+  return importedQuantityValue;
 }
 
 function getOrderMetadataButtons(field) {
-  return field === "colorName"
-    ? { edit: editOrderColorButton, save: saveOrderColorButton, cancel: cancelOrderColorButton }
-    : { edit: editOrderQuantityButton, save: saveOrderQuantityButton, cancel: cancelOrderQuantityButton };
+  if (field === "colorName") return { edit: editOrderColorButton, save: saveOrderColorButton, cancel: cancelOrderColorButton };
+  if (field === "textColorName") return { edit: editOrderTextColorButton, save: saveOrderTextColorButton, cancel: cancelOrderTextColorButton };
+  return { edit: editOrderQuantityButton, save: saveOrderQuantityButton, cancel: cancelOrderQuantityButton };
+}
+
+// Color and text color change only through explicit edits, tracked per selected item.
+function isExplicitOrderMetadataField(field) {
+  return field === "colorName" || field === "textColorName";
+}
+
+function getOrderMetadataEditIntentOrderId(field) {
+  if (field === "colorName") return orderColorEditIntentOrderId;
+  if (field === "textColorName") return orderTextColorEditIntentOrderId;
+  return undefined;
+}
+
+function setOrderMetadataEditIntentOrderId(field, orderId) {
+  if (field === "colorName") orderColorEditIntentOrderId = orderId;
+  if (field === "textColorName") orderTextColorEditIntentOrderId = orderId;
 }
 
 function sanitizeOrderQuantityInput() {
@@ -3769,7 +3802,7 @@ function renderOrderMetadataFieldEditState(field, order = getActiveOrder()) {
 
   if (buttons.save) {
     buttons.save.hidden = !editing;
-    buttons.save.disabled = !order || !hasOrderMetadataFieldChanges(field) || (field === "colorName" && orderColorEditIntentOrderId !== order?.id);
+    buttons.save.disabled = !order || !hasOrderMetadataFieldChanges(field) || (isExplicitOrderMetadataField(field) && getOrderMetadataEditIntentOrderId(field) !== order?.id);
   }
 
   if (buttons.cancel) {
@@ -3780,6 +3813,7 @@ function renderOrderMetadataFieldEditState(field, order = getActiveOrder()) {
 
 function renderOrderMetadataEditState(order = getActiveOrder()) {
   renderOrderMetadataFieldEditState("colorName", order);
+  renderOrderMetadataFieldEditState("textColorName", order);
   renderOrderMetadataFieldEditState("quantity", order);
 }
 
@@ -3790,6 +3824,10 @@ function syncOrderMetadataControls(order) {
 
   if (!orderMetadataEditing.colorName) {
     orderColorInput.value = getOrderMetadataFieldValue(order, "colorName");
+  }
+
+  if (orderTextColorInput && !orderMetadataEditing.textColorName) {
+    orderTextColorInput.value = getOrderMetadataFieldValue(order, "textColorName");
   }
 
   if (!orderMetadataEditing.quantity) {
@@ -3806,7 +3844,7 @@ function beginOrderMetadataFieldEdit(field) {
     return;
   }
 
-  if (field === "colorName") orderColorEditIntentOrderId = null;
+  setOrderMetadataEditIntentOrderId(field, null);
   orderMetadataOriginalValues[field] = getOrderMetadataFieldValue(order, field);
   orderMetadataEditing[field] = true;
   input.value = orderMetadataOriginalValues[field];
@@ -3816,7 +3854,7 @@ function beginOrderMetadataFieldEdit(field) {
 }
 
 function cancelOrderMetadataFieldEdit(field) {
-  if (field === "colorName") orderColorEditIntentOrderId = null;
+  setOrderMetadataEditIntentOrderId(field, null);
   const input = getOrderMetadataInput(field);
   if (input) {
     input.value = orderMetadataOriginalValues[field];
@@ -3827,14 +3865,17 @@ function cancelOrderMetadataFieldEdit(field) {
 }
 
 function isAnyOrderMetadataFieldEditing() {
-  return orderMetadataEditing.colorName || orderMetadataEditing.quantity;
+  return orderMetadataEditing.colorName || orderMetadataEditing.textColorName || orderMetadataEditing.quantity;
 }
 
 function resetOrderMetadataEditState() {
   orderColorEditIntentOrderId = null;
+  orderTextColorEditIntentOrderId = null;
   orderMetadataEditing.colorName = false;
+  orderMetadataEditing.textColorName = false;
   orderMetadataEditing.quantity = false;
   orderMetadataOriginalValues.colorName = "";
+  orderMetadataOriginalValues.textColorName = "";
   orderMetadataOriginalValues.quantity = "";
 }
 
@@ -3867,31 +3908,39 @@ function updateActiveOrderMetadataFromControls({ persist = true } = {}) {
 async function saveOrderMetadataFieldEdit(field) {
   const order = getActiveOrder();
   if (!order || !hasOrderMetadataFieldChanges(field)) return;
-  if (field === "colorName" && (!orderMetadataEditing.colorName || orderColorEditIntentOrderId !== order.id)) return;
+  if (isExplicitOrderMetadataField(field) && (!orderMetadataEditing[field] || getOrderMetadataEditIntentOrderId(field) !== order.id)) return;
   const colorName = orderColorInput.value.trim();
   const clearColor = field === "colorName" && !colorName;
-  if (field === "colorName") orderColorEditIntentOrderId = null;
+  // A blank text color clears the stored value so the White/Black default applies again.
+  const textColorName = orderTextColorInput?.value.trim() || "";
+  const clearTextColor = field === "textColorName" && !textColorName;
+  setOrderMetadataEditIntentOrderId(field, null);
   const previousSource = order.source ? { ...order.source } : null;
   const attemptedValue = getOrderMetadataInput(field).value;
   if (field === "colorName") {
     order.source = { ...normalizeEditableOrderSource(order.source), colorName };
+  } else if (field === "textColorName") {
+    order.source = { ...normalizeEditableOrderSource(order.source), textColorName };
   } else {
     updateActiveOrderMetadataFromControls({ persist: false });
   }
   orderMetadataEditing[field] = false;
   orderMetadataOriginalValues[field] = getOrderMetadataFieldValue(order, field);
   syncOrderMetadataControls(order);
-  startOperationDialog({ title: clearColor ? "Clearing color" : `Saving ${field === "colorName" ? "color" : "quantity"}`, description: "Saving order metadata." });
+  const fieldLabel = { colorName: "color", textColorName: "text color", quantity: "quantity" }[field];
+  const operationTitle = clearColor ? "Clearing color" : clearTextColor ? "Resetting text color" : `Saving ${fieldLabel}`;
+  startOperationDialog({ title: operationTitle, description: "Saving order metadata." });
   try {
     const saved = await saveBatchSnapshotToRemote({
       publishOrderIds: [order.id], persistActiveDraft: false, successMessage: false,
       recoverRevisionOnlyConflict: false,
       ...(field === "colorName" ? { colorUpdates: [{ orderItemId: order.id, action: clearColor ? "clear" : "set", ...(clearColor ? {} : { colorName }) }] } : {}),
+      ...(field === "textColorName" ? { textColorUpdates: [{ orderItemId: order.id, action: clearTextColor ? "clear" : "set", ...(clearTextColor ? {} : { textColorName }) }] } : {}),
     });
     if (!saved) {
       order.source = previousSource;
       if (getActiveOrder()?.id === order.id) {
-        if (field === "colorName") orderColorEditIntentOrderId = order.id;
+        setOrderMetadataEditIntentOrderId(field, order.id);
         orderMetadataEditing[field] = true;
         orderMetadataOriginalValues[field] = getOrderMetadataFieldValue(order, field);
         getOrderMetadataInput(field).value = attemptedValue;
@@ -5466,6 +5515,10 @@ function applySuccessfulProductionBatchSave({
       if ((localOrder.source?.colorName?.trim() || "") !== colorName) {
         localOrder.source = { ...localOrder.source, colorName };
       }
+      const textColorName = remoteOrder.source?.textColorName?.trim() || "";
+      if ((localOrder.source?.textColorName?.trim() || "") !== textColorName) {
+        localOrder.source = { ...localOrder.source, textColorName };
+      }
     }
   }
   syncOrderMetadataControls(getActiveOrder());
@@ -5505,6 +5558,7 @@ async function saveBatchSnapshotToRemote(options = {}) {
     degradeOnFailure = true,
     recoverRevisionOnlyConflict = true,
     colorUpdates = [],
+    textColorUpdates = [],
   } = options;
   let snapshot = null;
   let accessToken = null;
@@ -5528,7 +5582,7 @@ async function saveBatchSnapshotToRemote(options = {}) {
       return false;
     }
 
-    if (!colorUpdates.length && snapshotKey && snapshotKey === lastProductionBatchSaveKey) {
+    if (!colorUpdates.length && !textColorUpdates.length && snapshotKey && snapshotKey === lastProductionBatchSaveKey) {
       return true;
     }
 
@@ -5541,7 +5595,7 @@ async function saveBatchSnapshotToRemote(options = {}) {
     let savedSnapshot = null;
     try {
       savedSnapshot = await runProductionBatchRequestWithSessionRefresh(
-        (requestToken) => saveProductionBatchSnapshot(snapshot, { keepalive, accessToken: requestToken, changedOrderItemIds, colorUpdates }),
+        (requestToken) => saveProductionBatchSnapshot(snapshot, { keepalive, accessToken: requestToken, changedOrderItemIds, colorUpdates, textColorUpdates }),
         accessToken,
       );
     } catch (error) {
@@ -5559,7 +5613,7 @@ async function saveBatchSnapshotToRemote(options = {}) {
           return false;
         }
         savedSnapshot = await runProductionBatchRequestWithSessionRefresh(
-          (requestToken) => saveProductionBatchSnapshot(snapshot, { keepalive, accessToken: requestToken, changedOrderItemIds, colorUpdates }),
+          (requestToken) => saveProductionBatchSnapshot(snapshot, { keepalive, accessToken: requestToken, changedOrderItemIds, colorUpdates, textColorUpdates }),
           productionBatchAccessToken || accessToken,
         );
       } else {
@@ -14658,6 +14712,13 @@ cancelOrderQuantityButton?.addEventListener("click", () => cancelOrderMetadataFi
 orderColorInput?.addEventListener("input", () => {
   if (orderMetadataEditing.colorName) orderColorEditIntentOrderId = getActiveOrder()?.id ?? null;
   renderOrderMetadataFieldEditState("colorName");
+});
+editOrderTextColorButton?.addEventListener("click", () => beginOrderMetadataFieldEdit("textColorName"));
+saveOrderTextColorButton?.addEventListener("click", () => void saveOrderMetadataFieldEdit("textColorName"));
+cancelOrderTextColorButton?.addEventListener("click", () => cancelOrderMetadataFieldEdit("textColorName"));
+orderTextColorInput?.addEventListener("input", () => {
+  if (orderMetadataEditing.textColorName) orderTextColorEditIntentOrderId = getActiveOrder()?.id ?? null;
+  renderOrderMetadataFieldEditState("textColorName");
 });
 orderQuantityInput?.addEventListener("input", () => {
   sanitizeOrderQuantityInput();

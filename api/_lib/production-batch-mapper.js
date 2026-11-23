@@ -82,6 +82,7 @@ function buildOrderItemRow(orderItem, { workspaceId, updatedBy }) {
     listing_id: source.listingId || null,
     transaction_id: source.transactionId || null,
     imported_color: source.colorName || null,
+    text_color: source.textColorName || null,
     quantity: toPositiveInteger(source.quantity, 1),
     source_json: { ...source },
     revision: Number.isInteger(orderItem.revision) ? orderItem.revision : 1,

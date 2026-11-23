@@ -407,6 +407,26 @@
                             <div id="importedTextColorField" class="order-metadata-row" aria-live="polite">
                               <span class="imported-color-label">Text Color</span>
                               <span id="importedTextColorValue" class="imported-color-value order-metadata-value"></span>
+                              <input id="orderTextColorInput" class="order-metadata-input" type="text" autocomplete="off" placeholder="Default text color" aria-label="Text color" hidden>
+                              <div class="order-metadata-actions" aria-label="Text color actions">
+                                <button id="editOrderTextColorButton" class="metadata-icon-button" type="button" aria-label="Edit text color" title="Edit text color">
+                                  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                                    <path d="M4 20h4l10.5-10.5a2.1 2.1 0 0 0-3-3L5 17v3Z" />
+                                    <path d="M13.5 8.5 16 11" />
+                                  </svg>
+                                </button>
+                                <button id="saveOrderTextColorButton" class="metadata-icon-button metadata-save-button" type="button" aria-label="Save text color" title="Save text color" hidden disabled>
+                                  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                                    <path d="M5 12.5 9.5 17 19 7" />
+                                  </svg>
+                                </button>
+                                <button id="cancelOrderTextColorButton" class="metadata-icon-button" type="button" aria-label="Cancel text color edit" title="Cancel text color edit" hidden>
+                                  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                                    <path d="M7 7 17 17" />
+                                    <path d="M17 7 7 17" />
+                                  </svg>
+                                </button>
+                              </div>
                             </div>
                             <div id="importedQuantityField" class="order-metadata-row" aria-live="polite">
                               <span class="imported-color-label">Quantity</span>

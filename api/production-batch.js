@@ -174,7 +174,7 @@ export default async function handler(req, res) {
     }
 
     if (req.method === "PUT") {
-      const { snapshot, colorUpdates, changedOrderItemIds: rawChangedOrderItemIds } = readJsonBody(req);
+      const { snapshot, colorUpdates, textColorUpdates, changedOrderItemIds: rawChangedOrderItemIds } = readJsonBody(req);
       const changedOrderItemIds = normalizeChangedOrderItemIds(rawChangedOrderItemIds);
 
       if (!snapshot?.batch?.id || !snapshot?.batch?.workspaceId) {
@@ -216,6 +216,7 @@ export default async function handler(req, res) {
       const savedSnapshot = await saveProductionBatch({
         snapshot: mergedSnapshot,
         ...(colorUpdates !== undefined ? { colorUpdates } : {}),
+        ...(textColorUpdates !== undefined ? { textColorUpdates } : {}),
         changedOrderItemIds,
         userId: req.auth.userId,
       });

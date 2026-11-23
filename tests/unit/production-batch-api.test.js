@@ -410,3 +410,15 @@ it("sends request-scoped explicit color intent separately from the snapshot", as
   await saveProductionBatchSnapshot(snapshot);
   expect(JSON.parse(fetchMock.mock.calls[1][1].body)).not.toHaveProperty("colorUpdates");
 });
+
+it("sends request-scoped explicit text color intent separately from the snapshot", async () => {
+  const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({}) });
+  vi.stubGlobal("fetch", fetchMock);
+  const { saveProductionBatchSnapshot } = await import("../../src/production-batch-api.js");
+  const snapshot = { orderItems: [{ id: "item", source: { textColorName: "Stale" } }] };
+  const textColorUpdates = [{ orderItemId: "item", action: "set", textColorName: "Gold" }];
+  await saveProductionBatchSnapshot(snapshot, { textColorUpdates });
+  expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({ snapshot, textColorUpdates });
+  await saveProductionBatchSnapshot(snapshot);
+  expect(JSON.parse(fetchMock.mock.calls[1][1].body)).not.toHaveProperty("textColorUpdates");
+});

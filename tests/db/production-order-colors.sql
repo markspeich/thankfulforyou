@@ -51,8 +51,8 @@ begin
   exception when sqlstate 'PT409' then null;
   end;
   assert (select revision = 8 and imported_color is null from public.order_items where id = row_json ->> 'id'), 'Rejected request wrote data';
-  assert not has_function_privilege('anon', 'public.save_production_order_items(jsonb,jsonb)', 'execute'), 'Anonymous RPC access';
-  assert not has_function_privilege('authenticated', 'public.save_production_order_items(jsonb,jsonb)', 'execute'), 'Browser RPC access';
+  assert not has_function_privilege('anon', 'public.save_production_order_items(jsonb,jsonb,jsonb)', 'execute'), 'Anonymous RPC access';
+  assert not has_function_privilege('authenticated', 'public.save_production_order_items(jsonb,jsonb,jsonb)', 'execute'), 'Browser RPC access';
 end;
 $$;
 select 'Color persistence regression checks passed' as result;

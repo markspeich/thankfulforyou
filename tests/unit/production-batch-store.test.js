@@ -4,6 +4,7 @@ const supabaseMock = vi.hoisted(() => ({
   calls: [],
   batchItems: null,
   storedColor: "Hot Pink",
+  storedTextColor: "Navy Blue",
   rpcError: null,
   fontAliases: [],
   presets: [],
@@ -180,6 +181,7 @@ function createSelectChain(table) {
             workspace_id: "workspace-1",
             amazon_customization_json: { private: "raw Amazon document" },
             imported_color: supabaseMock.storedColor,
+            text_color: supabaseMock.storedTextColor,
             source_json: { colorName: supabaseMock.storedColor },
             quantity: 1,
             revision: 1,
@@ -210,6 +212,7 @@ afterEach(() => {
   supabaseMock.calls = [];
   supabaseMock.batchItems = null;
   supabaseMock.storedColor = "Hot Pink";
+  supabaseMock.storedTextColor = "Navy Blue";
   supabaseMock.rpcError = null;
   supabaseMock.fontAliases = [];
   supabaseMock.sizeGuides = [];
@@ -509,6 +512,41 @@ describe("explicit production color updates", () => {
     const { saveProductionBatch } = await import("../../api/_lib/production-batch-store.js");
     await expect(saveProductionBatch({ snapshot: snapshot(""), colorUpdates: [{ orderItemId: "order-1", action: "set", colorName: " " }] })).rejects.toMatchObject({ statusCode: 400 });
     expect(supabaseMock.calls.some(c => c.operation === "upsert")).toBe(false);
+  });
+});
+
+describe("explicit production text color updates", () => {
+  const snapshot = (textColorName) => ({
+    batch: { id: "batch-1", workspaceId: "workspace-1" },
+    orderItems: [{ id: "order-1", revision: 1, text: "TUTOR", source: { colorName: "Hot Pink", textColorName }, settings: { lines: [] } }],
+  });
+  const savedRow = () => supabaseMock.calls.find(c => c.table === "order_items" && c.operation === "upsert").payload[0];
+
+  it.each(["", "Stale Red", undefined])("preserves stored text color during design saves with snapshot text color %s", async (textColorName) => {
+    const { saveProductionBatch } = await import("../../api/_lib/production-batch-store.js");
+    await saveProductionBatch({ snapshot: snapshot(textColorName), userId: "user-1" });
+    expect(savedRow()).toMatchObject({ text_color: "Navy Blue", source_json: { textColorName: "Navy Blue" } });
+  });
+  it.each([
+    [{ orderItemId: "order-1", action: "set", textColorName: " Gold " }, "Gold"],
+    [{ orderItemId: "order-1", action: "clear" }, null],
+  ])("applies explicit text color update %j without touching color", async (update, expected) => {
+    const { saveProductionBatch } = await import("../../api/_lib/production-batch-store.js");
+    await saveProductionBatch({ snapshot: snapshot("Stale Red"), userId: "user-1", textColorUpdates: [update] });
+    expect(savedRow()).toMatchObject({ text_color: expected, imported_color: "Hot Pink",
+      source_json: { textColorName: expected || "", colorName: "Hot Pink" } });
+    const rpc = supabaseMock.calls.find(c => c.operation === "rpc" && c.name === "save_production_order_items");
+    if (rpc) expect(rpc.args.p_text_color_updates).toEqual([update.action === "clear" ? update : { ...update, textColorName: "Gold" }]);
+  });
+  it.each([
+    [{ orderItemId: "order-1", action: "set", textColorName: " " }],
+    [{ orderItemId: "other", action: "clear" }],
+    [{ orderItemId: "order-1", action: "clear", textColorName: "Gold" }],
+    [{ orderItemId: "order-1", action: "clear" }, { orderItemId: "order-1", action: "clear" }],
+  ])("rejects invalid or unscoped text color intent %j before persistence", async (...updates) => {
+    const { saveProductionBatch } = await import("../../api/_lib/production-batch-store.js");
+    await expect(saveProductionBatch({ snapshot: snapshot(""), textColorUpdates: updates })).rejects.toMatchObject({ statusCode: 400 });
+    expect(supabaseMock.calls.some(c => c.operation === "rpc" || c.operation === "upsert")).toBe(false);
   });
 });
 

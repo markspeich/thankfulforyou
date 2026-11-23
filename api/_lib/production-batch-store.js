@@ -1,4 +1,4 @@
-import { normalizeOrderColorUpdates } from "./order-color-updates.js";
+import { normalizeOrderColorUpdates, normalizeOrderTextColorUpdates } from "./order-color-updates.js";
 import { createSupabaseAdminClient } from "./supabase-admin.js";
 import {
   buildProductionBatchRowsFromSnapshot,
@@ -179,7 +179,7 @@ export async function getSessionContext(auth) {
   };
 }
 
-export async function saveProductionBatch({ snapshot, userId, changedOrderItemIds = null, colorUpdates = [] }) {
+export async function saveProductionBatch({ snapshot, userId, changedOrderItemIds = null, colorUpdates = [], textColorUpdates = [] }) {
   const supabase = createSupabaseAdminClient();
   const rows = buildProductionBatchRowsFromSnapshot(snapshot, {
     workspaceId: snapshot.batch.workspaceId,
@@ -190,7 +190,9 @@ export async function saveProductionBatch({ snapshot, userId, changedOrderItemId
     ? new Set(changedOrderItemIds.filter((value) => typeof value === "string" && value))
     : null;
   const shouldSaveOrderItem = (orderItemId) => !changedOrderItemIdSet || changedOrderItemIdSet.has(orderItemId);
-  const normalizedColorUpdates = normalizeOrderColorUpdates(colorUpdates, rows.orderItems.filter(row => shouldSaveOrderItem(row.id)).map(row => row.id));
+  const savedOrderItemIds = rows.orderItems.filter(row => shouldSaveOrderItem(row.id)).map(row => row.id);
+  const normalizedColorUpdates = normalizeOrderColorUpdates(colorUpdates, savedOrderItemIds);
+  const normalizedTextColorUpdates = normalizeOrderTextColorUpdates(textColorUpdates, savedOrderItemIds);
   const savedAt = new Date().toISOString();
   let nextOrderItems = rows.orderItems.filter((orderItem) => shouldSaveOrderItem(orderItem.id)).map((orderItem) => ({
     ...orderItem,
@@ -199,16 +201,26 @@ export async function saveProductionBatch({ snapshot, userId, changedOrderItemId
   }));
   if (nextOrderItems.length) {
     const { data: storedItems, error } = await supabase.from("order_items")
-      .select("id, imported_color, source_json").eq("workspace_id", snapshot.batch.workspaceId).in("id", nextOrderItems.map(row => row.id));
+      .select("id, imported_color, text_color, source_json").eq("workspace_id", snapshot.batch.workspaceId).in("id", nextOrderItems.map(row => row.id));
     if (error) throw error;
     const storedById = new Map((storedItems || []).map(row => [row.id, row]));
     const updatesById = new Map(normalizedColorUpdates.map(update => [update.orderItemId, update]));
+    const textColorUpdatesById = new Map(normalizedTextColorUpdates.map(update => [update.orderItemId, update]));
     nextOrderItems = nextOrderItems.map(row => {
       const stored = storedById.get(row.id);
       const update = updatesById.get(row.id);
       const color = update ? (update.action === "clear" ? "" : update.colorName)
         : stored ? stored.imported_color ?? stored.source_json?.colorName ?? "" : row.imported_color || "";
-      return { ...row, imported_color: color || null, source_json: { ...row.source_json, colorName: color } };
+      // Text color changes only through explicit edits; otherwise keep what is stored.
+      const textColorUpdate = textColorUpdatesById.get(row.id);
+      const textColor = textColorUpdate ? (textColorUpdate.action === "clear" ? "" : textColorUpdate.textColorName)
+        : stored ? stored.text_color ?? "" : row.text_color || "";
+      return {
+        ...row,
+        imported_color: color || null,
+        text_color: textColor || null,
+        source_json: { ...row.source_json, colorName: color, textColorName: textColor },
+      };
     });
   }
   let nextDesigns = rows.designs.filter((design) => shouldSaveOrderItem(design.order_item_id)).map((design) => ({
@@ -267,11 +279,12 @@ export async function saveProductionBatch({ snapshot, userId, changedOrderItemId
     const { error: orderItemsError } = await supabase.rpc("save_production_order_items", {
       p_order_items: nextOrderItems,
       p_color_updates: normalizedColorUpdates,
+      p_text_color_updates: normalizedTextColorUpdates,
     });
 
     if (orderItemsError) {
       if (["PT409", "40001"].includes(orderItemsError.code)) throw Object.assign(new Error("Order item revision conflict."), { code: "REVISION_CONFLICT" });
-      if (orderItemsError.code === "22023") throw Object.assign(new Error("Invalid explicit color update."), { statusCode: 400, expose: true });
+      if (orderItemsError.code === "22023") throw Object.assign(new Error("Invalid explicit color or text color update."), { statusCode: 400, expose: true });
       throw orderItemsError;
     }
   }

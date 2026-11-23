@@ -5132,3 +5132,72 @@ test("failed deliberate color deletion preserves the stored color and empty retr
   await expect(page.locator("#orderColorInput")).toHaveValue("");
   await expect(page.getByText("Color save rejected. Try again.", { exact: false }).first()).toBeVisible();
 });
+
+test("edits text color explicitly and resets it to the color-based default", async ({ page }) => {
+  await page.route("**/api/layout-analyze", route => route.fulfill({
+    status: 200, contentType: "application/json",
+    body: JSON.stringify(buildMockAnalysisResponse({ facePath: "M0 0 L10 0 L10 10 L0 10 Z", exportFacePath: "M0 0 L10 0 L10 10 L0 10 Z" })),
+  }));
+  const requests = [];
+  page.on("request", request => {
+    if (request.url().includes("/api/production-batch") && request.method() === "PUT") requests.push(request.postDataJSON());
+  });
+  await expect(page.locator("#importedTextColorValue")).toHaveText("White");
+  await expect(page.locator("#orderTextColorInput")).toBeHidden();
+  await expect(page.locator("#saveOrderTextColorButton")).toBeHidden();
+  await expect(page.locator("#cancelOrderTextColorButton")).toBeHidden();
+
+  await page.locator("#editOrderTextColorButton").click();
+  await expect(page.locator("#orderTextColorInput")).toBeVisible();
+  await expect(page.locator("#orderTextColorInput")).toHaveValue("White");
+  await expect(page.locator("#saveOrderTextColorButton")).toBeDisabled();
+  await page.locator("#orderTextColorInput").fill("Temporary Red");
+  await page.locator("#cancelOrderTextColorButton").click();
+  await expect(page.locator("#importedTextColorValue")).toHaveText("White");
+
+  await page.locator("#editOrderTextColorButton").click();
+  await page.locator("#orderTextColorInput").fill("Navy Blue");
+  await expect(page.locator("#saveOrderTextColorButton")).toBeEnabled();
+  await page.locator("#saveOrderTextColorButton").click();
+  await expect(page.locator("#pasteSummaryDialog")).not.toBeVisible();
+  await expect(page.locator("#orderTextColorInput")).toBeHidden();
+  await expect(page.locator("#importedTextColorValue")).toHaveText("Navy Blue");
+  await expect(page.locator("#importedTextColorValue")).toHaveClass(/highlight-light-color/);
+  expect(requests.some(r => r.textColorUpdates?.[0]?.action === "set" && r.textColorUpdates[0].textColorName === "Navy Blue")).toBe(true);
+  expect(requests.every(r => !r.colorUpdates)).toBe(true);
+
+  // Ordinary design saves do not send text color intent.
+  requests.length = 0;
+  await setDesignText(page, "TUTOR\nMENTOR");
+  await page.locator("#captureButton").click();
+  await expectSavedProductionBatchSnapshot(page, snapshot => snapshot.orderItems.some(item => item.text === "TUTOR\nMENTOR"));
+  expect(requests.every(r => !r.textColorUpdates)).toBe(true);
+  await expect(page.locator("#importedTextColorValue")).toHaveText("Navy Blue");
+
+  // Clearing the field resets to the default derived from Color.
+  await page.locator("#editOrderColorButton").click();
+  await page.locator("#orderColorInput").fill("White Glitter");
+  await page.locator("#saveOrderColorButton").click();
+  await expect(page.locator("#pasteSummaryDialog")).not.toBeVisible();
+  await expect(page.locator("#importedTextColorValue")).toHaveText("Navy Blue");
+  await page.locator("#editOrderTextColorButton").click();
+  await page.locator("#orderTextColorInput").fill("");
+  await page.locator("#saveOrderTextColorButton").click();
+  await expect(page.locator("#pasteSummaryDialog")).not.toBeVisible();
+  await expect(page.locator("#importedTextColorValue")).toHaveText("Black");
+  expect(requests.some(r => r.textColorUpdates?.[0]?.action === "clear")).toBe(true);
+});
+
+test("failed text color save preserves the prior text color and the attempted edit", async ({ page }) => {
+  await page.route("**/api/production-batch**", async route => {
+    if (route.request().method() !== "PUT" || !route.request().postDataJSON()?.textColorUpdates?.length) return route.fallback();
+    await route.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify({ error: "Text color save rejected. Try again." }) });
+  });
+  await page.locator("#editOrderTextColorButton").click();
+  await page.locator("#orderTextColorInput").fill("Gold");
+  await page.locator("#saveOrderTextColorButton").click();
+  await expect(page.locator("#importedTextColorValue")).toHaveText("White");
+  await expect(page.locator("#orderTextColorInput")).toBeVisible();
+  await expect(page.locator("#orderTextColorInput")).toHaveValue("Gold");
+  await expect(page.getByText("Text color save rejected. Try again.", { exact: false }).first()).toBeVisible();
+});

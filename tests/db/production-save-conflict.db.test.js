@@ -60,7 +60,7 @@ describe("production save conflict through local PostgREST", () => {
     expect(conflict.elapsedMs).toBeLessThan(REQUEST_TIMEOUT_MS);
     const { data, error } = await supabase.from("order_items").select("id, revision, imported_color, source_json").eq("workspace_id", workspaceId);
     expect(error).toBeNull();
-    expect(data).toEqual([{ id: row.id, revision: 2, imported_color: "Hot Pink", source_json: { colorName: "Hot Pink" } }]);
+    expect(data).toEqual([{ id: row.id, revision: 2, imported_color: "Hot Pink", source_json: { colorName: "Hot Pink", textColorName: "" } }]);
   });
 
   it("maps an actual RPC conflict to REVISION_CONFLICT before writing batch or design records", async () => {
@@ -81,7 +81,7 @@ describe("production save conflict through local PostgREST", () => {
     }
     const { data, error } = await supabase.from("order_items").select("revision, imported_color, source_json").eq("id", row.id).single();
     expect(error).toBeNull();
-    expect(data).toEqual({ revision: 2, imported_color: "Hot Pink", source_json: { colorName: "Hot Pink" } });
+    expect(data).toEqual({ revision: 2, imported_color: "Hot Pink", source_json: { colorName: "Hot Pink", textColorName: "" } });
   });
 
   it("keeps fresh saves and explicit color intent working after a rejected stale save", async () => {
@@ -92,6 +92,6 @@ describe("production save conflict through local PostgREST", () => {
     expect((await rpc([{ ...row, revision: 6 }])).status).toBe(204);
     const { data, error } = await supabase.from("order_items").select("revision, imported_color, source_json").eq("id", row.id).single();
     expect(error).toBeNull();
-    expect(data).toEqual({ revision: 6, imported_color: null, source_json: { colorName: "" } });
+    expect(data).toEqual({ revision: 6, imported_color: null, source_json: { colorName: "", textColorName: "" } });
   });
 });
