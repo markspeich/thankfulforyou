@@ -409,6 +409,36 @@ describe("Amazon import database integration", () => {
     expect(design.design_text).toBe("Original");
   });
 
+  it("stores the resolved text color and keeps a stored text color on re-import", async () => {
+    // Break caught: the strict legacy RPC rejected the text_color key, failing every Amazon import.
+    const admin = createSupabaseAdminClient();
+    const id = `amazon-order-item:${randomUUID()}`;
+    const whiteBacking = item(id);
+    whiteBacking.source.colorName = "White";
+    await importAmazonOrderItemsTransactional({
+      workspaceId: PRIMARY_WORKSPACE_ID,
+      userId: importUserId,
+      items: [whiteBacking],
+    });
+    const { data: imported, error: importedError } = await admin
+      .from("order_items").select("text_color").eq("id", id).maybeSingle();
+    expect(importedError).toBeNull();
+    expect(imported.text_color).toBe("Black");
+
+    const { error: editError } = await admin
+      .from("order_items").update({ text_color: "Gold" }).eq("id", id);
+    expect(editError).toBeNull();
+    await importAmazonOrderItemsTransactional({
+      workspaceId: PRIMARY_WORKSPACE_ID,
+      userId: importUserId,
+      items: [whiteBacking],
+    });
+    const { data: reimported, error: reimportedError } = await admin
+      .from("order_items").select("text_color").eq("id", id).maybeSingle();
+    expect(reimportedError).toBeNull();
+    expect(reimported.text_color).toBe("Gold");
+  });
+
   it("imports the supplied Amazon customization through the real service into the production batch", async () => {
     // Break caught: the real preset envelope, font resolver, transactional store, and batch loader disagree.
     const previousApiKey = process.env.SHIPSTATION_API_KEY;

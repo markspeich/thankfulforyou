@@ -6,6 +6,21 @@ const migrationUrl = new URL(
   import.meta.url,
 );
 
+describe("Amazon import text color migration", () => {
+  it("strips text_color before the strict legacy RPC and fills only null stored values", async () => {
+    const sql = await readFile(new URL(
+      "../../supabase/migrations/20261124144137_amazon_import_accepts_text_color.sql",
+      import.meta.url,
+    ), "utf8");
+
+    expect(sql).toMatch(/create\s+or\s+replace\s+function\s+public\.import_amazon_order_items\(/i);
+    expect(sql).toMatch(/-\s*'badge_reel_type_id'\s*-\s*'text_color'/i);
+    expect(sql).toMatch(/set\s+text_color\s*=\s*incoming\.text_color/i);
+    expect(sql).toMatch(/stored\.text_color\s+is\s+null/i);
+    expect(sql).not.toMatch(/delete\s+from|drop\s+table|drop\s+column/i);
+  });
+});
+
 describe("badge reel type storage migration", () => {
   it("adds a nullable canonical ID and backfills only null values from exact Amazon and Etsy fields", async () => {
     const sql = await readFile(migrationUrl, "utf8");
