@@ -142,6 +142,7 @@ import {
 } from "./production-batch-model.js";
 import {
   buildBoundingSizePresetFingerprint,
+  formatBoundingSizePresetDisplayLabel,
   DEFAULT_BOUNDING_SIZE_PRESET_ID,
   getBoundingSizePresetOptions,
   isBuiltInBoundingSizePresetId,
@@ -544,6 +545,7 @@ const presetAssignmentsList = document.querySelector("#presetAssignmentsList");
 const presetAssignmentsEmptyState = document.querySelector("#presetAssignmentsEmptyState");
 const sizePresetList = document.querySelector("#sizePresetList");
 const sizePresetNameInput = document.querySelector("#sizePresetNameInput");
+const sizePresetDisplayNameInput = document.querySelector("#sizePresetDisplayNameInput");
 const sizePresetMaxWidthInput = document.querySelector("#sizePresetMaxWidthInput");
 const sizePresetMaxHeightInput = document.querySelector("#sizePresetMaxHeightInput");
 const sizePresetMinWidthInput = document.querySelector("#sizePresetMinWidthInput");
@@ -4483,7 +4485,10 @@ function renderSizePresetList() {
   const draftDefinition = sizePresetEditorDraftActive
     ? [{
       id: "",
-      label: buildSizePresetEditorLabel() || "New guide draft",
+      label: formatBoundingSizePresetDisplayLabel({
+        label: buildSizePresetEditorLabel(),
+        name: sizePresetDisplayNameInput?.value,
+      }) || "New guide draft",
       maxWidthIn: readPositiveNumberInput(sizePresetMaxWidthInput),
       maxHeightIn: readPositiveNumberInput(sizePresetMaxHeightInput),
       minWidthIn: readPositiveNumberInput(sizePresetMinWidthInput),
@@ -4496,7 +4501,7 @@ function renderSizePresetList() {
     const preset = resolveBoundingSizePreset(definition.id);
     return {
       id: definition.id,
-      label: preset.label,
+      label: preset.displayLabel,
       maxWidthIn: preset.maxWidthIn,
       maxHeightIn: preset.maxHeightIn,
       minWidthIn: preset.minWidthIn,
@@ -4754,6 +4759,9 @@ function clearSizePresetEditor() {
   if (sizePresetNameInput) {
     sizePresetNameInput.value = "";
   }
+  if (sizePresetDisplayNameInput) {
+    sizePresetDisplayNameInput.value = "";
+  }
   if (sizePresetMaxWidthInput) {
     sizePresetMaxWidthInput.value = "";
   }
@@ -4802,6 +4810,9 @@ function selectSizePresetForEditing(presetId, options = {}) {
   if (sizePresetNameInput) {
     sizePresetNameInput.value = "";
   }
+  if (sizePresetDisplayNameInput) {
+    sizePresetDisplayNameInput.value = definition.name || "";
+  }
   if (sizePresetMaxWidthInput) {
     sizePresetMaxWidthInput.value = String(definition.max.widthIn);
   }
@@ -4822,7 +4833,7 @@ function selectSizePresetForEditing(presetId, options = {}) {
   if (deleteSizePresetButton) {
     deleteSizePresetButton.disabled = isBuiltInBoundingSizePresetId(definition.id);
   }
-  setSizePresetEditorStatus(`Editing ${definition.label}.`, "pending");
+  setSizePresetEditorStatus(`Editing ${formatBoundingSizePresetDisplayLabel(definition)}.`, "pending");
   renderSizePresetEditorPreview();
   renderSizePresetList();
   renderSizeGuideAssignedPresets();
@@ -4871,7 +4882,7 @@ function cancelSizePresetEditorChanges() {
 
   if (currentDefinition) {
     selectSizePresetForEditing(currentDefinition.id);
-    setSizePresetEditorStatus(`Canceled changes to ${currentDefinition.label}.`, "pending");
+    setSizePresetEditorStatus(`Canceled changes to ${formatBoundingSizePresetDisplayLabel(currentDefinition)}.`, "pending");
     return;
   }
 
@@ -4891,6 +4902,7 @@ function readSizePresetEditorDefinition() {
   return {
     id: editingBuiltIn ? generateSizePresetId() : (selectedSizePresetId || generateSizePresetId()),
     label,
+    name: sizePresetDisplayNameInput?.value,
     max: {
       widthIn: sizePresetMaxWidthInput?.value,
       heightIn: sizePresetMaxHeightInput?.value,
@@ -4910,6 +4922,7 @@ function buildSizePresetEditorDirtyKey() {
     const definition = normalizeBoundingSizePresetDefinition({
       id: "size-dirty-check",
       label: buildSizePresetEditorLabel(),
+      name: sizePresetDisplayNameInput?.value,
       max: {
         widthIn: sizePresetMaxWidthInput?.value,
         heightIn: sizePresetMaxHeightInput?.value,
@@ -4923,6 +4936,7 @@ function buildSizePresetEditorDirtyKey() {
 
     return JSON.stringify({
       label: definition.label,
+      name: definition.name || "",
       max: definition.max,
       min: definition.min,
       circleDiameterIn: definition.circleDiameterIn ?? null,
@@ -4930,6 +4944,7 @@ function buildSizePresetEditorDirtyKey() {
   } catch {
     return JSON.stringify({
       label: buildSizePresetEditorLabel(),
+      name: sizePresetDisplayNameInput?.value || "",
       maxWidthIn: sizePresetMaxWidthInput?.value || "",
       maxHeightIn: sizePresetMaxHeightInput?.value || "",
       minWidthIn: sizePresetMinWidthInput?.value || "",
@@ -5022,6 +5037,7 @@ async function saveSizePresetFromEditor() {
     const previousId = selectedSizePresetId && !isBuiltInBoundingSizePresetId(selectedSizePresetId)
       ? selectedSizePresetId
       : null;
+    const previousFingerprint = previousId ? buildBoundingSizePresetFingerprint(previousId) : null;
     const result = saveBoundingSizePresetDefinitionLocally({ preset: definition, previousId });
     selectedSizePresetId = result.preset.id;
     refreshBoundingSizePresetUi(result.preset.id);
@@ -5029,11 +5045,15 @@ async function saveSizePresetFromEditor() {
 
     try {
       await savePresetSnapshot(result.snapshot);
-      const affectedOrderIds = invalidateOrdersUsingSizePreset(previousId || result.preset.id);
+      // Renaming a guide does not change geometry, so only invalidate designs when dimensions changed.
+      const geometryChanged = previousFingerprint !== buildBoundingSizePresetFingerprint(result.preset.id);
+      const affectedOrderIds = geometryChanged
+        ? invalidateOrdersUsingSizePreset(previousId || result.preset.id)
+        : [];
       if (affectedOrderIds.length) {
         triggerProductionBatchAutosave({ publishOrderIds: affectedOrderIds });
       }
-      setSizePresetEditorStatus(`Saved ${result.preset.label}.`, "success");
+      setSizePresetEditorStatus(`Saved ${formatBoundingSizePresetDisplayLabel(result.preset)}.`, "success");
     } catch (error) {
       setSizePresetEditorStatus(
         error instanceof Error
@@ -5071,7 +5091,7 @@ async function deleteSelectedSizePreset() {
 
     try {
       await savePresetSnapshot(result.snapshot);
-      setSizePresetEditorStatus(`Deleted ${deletedDefinition?.label || "size guide"}.`, "success");
+      setSizePresetEditorStatus(`Deleted ${deletedDefinition ? formatBoundingSizePresetDisplayLabel(deletedDefinition) : "size guide"}.`, "success");
     } catch (error) {
       setSizePresetEditorStatus(
         error instanceof Error
@@ -15033,7 +15053,7 @@ presetWeldExportedDesignInput?.addEventListener("input", () => {
   updatePresetSaveButtonState();
 });
 newSizePresetButton?.addEventListener("click", startNewSizePresetDraft);
-[sizePresetNameInput, sizePresetMaxWidthInput, sizePresetMaxHeightInput, sizePresetMinWidthInput, sizePresetMinHeightInput, sizePresetCircleDiameterInput]
+[sizePresetNameInput, sizePresetDisplayNameInput, sizePresetMaxWidthInput, sizePresetMaxHeightInput, sizePresetMinWidthInput, sizePresetMinHeightInput, sizePresetCircleDiameterInput]
   .forEach((input) => {
     input?.addEventListener("input", () => {
       renderSizePresetEditorPreview();

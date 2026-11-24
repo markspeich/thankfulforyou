@@ -1,4 +1,5 @@
 const MM_PER_INCH = 25.4;
+export const MAX_SIZE_GUIDE_NAME_LENGTH = 80;
 
 export const DEFAULT_BOUNDING_SIZE_PRESET_ID = "size-2-2x1-5";
 
@@ -26,6 +27,10 @@ function cloneDefinition(definition) {
     max: { ...definition.max },
     min: { ...definition.min },
   };
+
+  if (definition.name) {
+    clone.name = definition.name;
+  }
 
   if (Number.isFinite(definition.circleDiameterIn)) {
     clone.circleDiameterIn = definition.circleDiameterIn;
@@ -55,12 +60,29 @@ function assertOptionalPositiveNumber(value, fallback, fieldName) {
   return assertPositiveNumber(value, fieldName);
 }
 
+export function normalizeSizeGuideName(value) {
+  return String(value ?? "").replace(/\s+/g, " ").trim();
+}
+
+// Operator-facing label: "Name (W x H)" when the guide has a name, otherwise just the dimensions.
+export function formatBoundingSizePresetDisplayLabel(definition = {}) {
+  const dimensions = String(definition.label ?? "").trim();
+  const name = normalizeSizeGuideName(definition.name);
+  if (!name) {
+    return dimensions;
+  }
+
+  return dimensions ? `${name} (${dimensions})` : name;
+}
+
 function resolveDefinition(definition) {
   const circleDiameterIn = Number.isFinite(definition.circleDiameterIn) ? definition.circleDiameterIn : null;
 
   return {
     id: definition.id,
     label: definition.label,
+    name: definition.name || "",
+    displayLabel: formatBoundingSizePresetDisplayLabel(definition),
     maxWidthMm: toMm(definition.max.widthIn),
     maxHeightMm: toMm(definition.max.heightIn),
     minWidthMm: toMm(definition.min.widthIn),
@@ -89,6 +111,7 @@ export function buildBoundingSizePresetFingerprint(presetId) {
 export function normalizeBoundingSizePresetDefinition(definition = {}) {
   const id = String(definition.id ?? "").trim();
   const label = String(definition.label ?? "").trim();
+  const name = normalizeSizeGuideName(definition.name);
   const maxWidthIn = assertPositiveNumber(definition.max?.widthIn, "Maximum width");
   const maxHeightIn = assertPositiveNumber(definition.max?.heightIn, "Maximum height");
   const minWidthIn = assertOptionalPositiveNumber(definition.min?.widthIn, maxWidthIn, "Minimum width");
@@ -99,6 +122,9 @@ export function normalizeBoundingSizePresetDefinition(definition = {}) {
   }
   if (!label) {
     throw new Error("Size guide name is required.");
+  }
+  if (name.length > MAX_SIZE_GUIDE_NAME_LENGTH) {
+    throw new Error(`Size guide name must be ${MAX_SIZE_GUIDE_NAME_LENGTH} characters or fewer.`);
   }
   if (minWidthIn > maxWidthIn) {
     throw new Error("Minimum width cannot be larger than maximum width.");
@@ -113,6 +139,10 @@ export function normalizeBoundingSizePresetDefinition(definition = {}) {
     max: { widthIn: maxWidthIn, heightIn: maxHeightIn },
     min: { widthIn: minWidthIn, heightIn: minHeightIn },
   };
+
+  if (name) {
+    normalized.name = name;
+  }
 
   if (definition.circleDiameterIn !== undefined && definition.circleDiameterIn !== null && definition.circleDiameterIn !== "") {
     normalized.circleDiameterIn = assertPositiveNumber(definition.circleDiameterIn, "Circle diameter");
@@ -149,7 +179,7 @@ export function getBoundingSizePresetDefinitions() {
 export function getBoundingSizePresetOptions() {
   return boundingSizePresets.map((preset) => ({
     id: preset.id,
-    label: preset.label,
+    label: formatBoundingSizePresetDisplayLabel(preset),
   }));
 }
 

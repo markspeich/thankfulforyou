@@ -100,6 +100,7 @@ function buildPresetSnapshot({ presets, lineRules, assignments, sizeGuides }) {
     sizePresets: (sizeGuides || []).map((guide) => ({
       id: guide.id,
       label: guide.name,
+      ...(guide.display_name ? { name: guide.display_name } : {}),
       max: {
         widthIn: guide.max_width_in,
         heightIn: guide.max_height_in,
@@ -205,7 +206,7 @@ export async function loadPresetSnapshot(workspaceKey) {
       .order("name", { ascending: true }),
     supabase
       .from("size_guides")
-      .select("id, workspace_id, name, max_width_in, max_height_in, min_width_in, min_height_in, circle_diameter_in, updated_at")
+      .select("id, workspace_id, name, display_name, max_width_in, max_height_in, min_width_in, min_height_in, circle_diameter_in, updated_at")
       .eq("workspace_id", workspaceId)
       .order("name", { ascending: true }),
   ]);
@@ -265,6 +266,7 @@ export async function savePresetSnapshot(workspaceKey, snapshot) {
     id: guide.id,
     workspace_id: workspaceId,
     name: guide.label,
+    display_name: typeof guide.name === "string" && guide.name.trim() ? guide.name.trim() : null,
     max_width_in: guide.max?.widthIn,
     max_height_in: guide.max?.heightIn,
     min_width_in: guide.min?.widthIn,

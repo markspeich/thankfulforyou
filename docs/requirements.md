@@ -266,7 +266,10 @@ The current browser-rendered preview confirms that the modified Candlepin font c
 - The `New Guide` action should sit at the top of the left size-guide navigation panel. `Save Guide`, `Cancel`, and `Delete Guide` should sit at the top right of the size-guide editor panel.
 - `Cancel` should be enabled only after starting a new size-guide draft or changing the selected guide, and should discard an unsaved size-guide draft or revert edits to the selected saved size guide.
 - Clicking `New Guide` should immediately show a selected unsaved draft row in the size-guide navigation list.
-- The size guide name field should be read-only and derived live from the maximum dimensions as `W x H`, showing the entered dimension immediately while the other dimension is still blank.
+- The size guide dimensions field should be read-only and derived live from the maximum dimensions as `W x H`, showing the entered dimension immediately while the other dimension is still blank.
+- Size guides may have an optional operator-entered name (up to 80 characters), edited in a `Name (optional)` field in the size guide editor. Names are optional for now; unnamed guides continue to be identified by their dimensions.
+- Anywhere a size guide's dimension label is displayed (size guide selector rows, the `Size Guide` selects in `Global Settings` and preset `Global Defaults`, and size guide editor status messages), a named guide should show as `Name (W x H)`; an unnamed guide shows only `W x H`.
+- Renaming a size guide without changing its dimensions or circle does not change geometry and must not invalidate saved or completed designs that use that guide.
 - Size guide editor fields should use compact spacing so production dimensions can be scanned and edited without excessive vertical spread.
 - The active size guide must be a global layout setting selected in the `Global Settings` card and saved as part of reusable presets.
 - Treat `Text Height` as the authored physical size for each line in millimeters.

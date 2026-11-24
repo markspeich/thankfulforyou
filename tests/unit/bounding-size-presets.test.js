@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import {
   DEFAULT_BOUNDING_SIZE_PRESET_ID,
+  buildBoundingSizePresetFingerprint,
+  formatBoundingSizePresetDisplayLabel,
   getBoundingSizePresetDefinitions,
   getBoundingSizePresetOptions,
   isBuiltInBoundingSizePresetId,
@@ -31,6 +33,49 @@ describe("size guides", () => {
   it("falls back to the default when an unknown id is provided", () => {
     expect(resolveBoundingSizePreset("missing").id).toBe(DEFAULT_BOUNDING_SIZE_PRESET_ID);
     expect(isValidBoundingSizePresetId("missing")).toBe(false);
+  });
+
+  it("keeps an optional trimmed name and shows it with the dimensions", () => {
+    const named = normalizeBoundingSizePresetDefinition({
+      id: "size-named",
+      label: "3 x 2",
+      name: "  Standard   Badge ",
+      max: { widthIn: 3, heightIn: 2 },
+    });
+
+    expect(named.name).toBe("Standard Badge");
+    expect(formatBoundingSizePresetDisplayLabel(named)).toBe("Standard Badge (3 x 2)");
+
+    const unnamed = normalizeBoundingSizePresetDefinition({
+      id: "size-unnamed",
+      label: "3 x 2",
+      name: "   ",
+      max: { widthIn: 3, heightIn: 2 },
+    });
+    expect(unnamed).not.toHaveProperty("name");
+    expect(formatBoundingSizePresetDisplayLabel(unnamed)).toBe("3 x 2");
+
+    setBoundingSizePresetDefinitionsForTests([named]);
+    expect(getBoundingSizePresetOptions()).toContainEqual({ id: "size-named", label: "Standard Badge (3 x 2)" });
+    expect(resolveBoundingSizePreset("size-named").displayLabel).toBe("Standard Badge (3 x 2)");
+    expect(getBoundingSizePresetDefinitions().find((guide) => guide.id === "size-named").name).toBe("Standard Badge");
+  });
+
+  it("rejects names longer than 80 characters", () => {
+    expect(() => normalizeBoundingSizePresetDefinition({
+      id: "size-long",
+      label: "3 x 2",
+      name: "x".repeat(81),
+      max: { widthIn: 3, heightIn: 2 },
+    })).toThrow(/80 characters/);
+  });
+
+  it("does not change the geometry fingerprint when only the name changes", () => {
+    const base = { id: "size-fp", label: "3 x 2", max: { widthIn: 3, heightIn: 2 } };
+    setBoundingSizePresetDefinitionsForTests([base]);
+    const before = buildBoundingSizePresetFingerprint("size-fp");
+    setBoundingSizePresetDefinitionsForTests([{ ...base, name: "Renamed" }]);
+    expect(buildBoundingSizePresetFingerprint("size-fp")).toBe(before);
   });
 
   it("exposes operator-facing options", () => {

@@ -1869,6 +1869,36 @@ test("creates a custom size guide and uses it in the order editor preview", asyn
   }).toBeCloseTo(1.75 * 25.4, 4);
 });
 
+test("names a size guide and shows the name with its dimensions", async ({ page }) => {
+  await installPresetRoutes(page);
+
+  await page.goto("/size-guides");
+  await page.getByRole("button", { name: "New Guide" }).click();
+  await page.locator("#sizePresetMaxWidthInput").fill("3");
+  await page.locator("#sizePresetMaxHeightInput").fill("2");
+  await page.locator("#sizePresetDisplayNameInput").fill("Wide Badge");
+  await expect(page.locator("#sizePresetNameInput")).toHaveValue("3 x 2");
+  await clickEnabledButton(page, "#saveSizePresetButton");
+
+  await expect(page.locator("#sizePresetEditorStatus")).toContainText("Saved Wide Badge (3 x 2)");
+  await expect(page.getByLabel("Size Guides").getByText("Wide Badge (3 x 2)", { exact: true })).toBeVisible();
+  await expect(page.locator("#saveSizePresetButton")).toBeDisabled();
+
+  await page.locator("#sizePresetDisplayNameInput").fill("Wider Badge");
+  await expect(page.locator("#saveSizePresetButton")).toBeEnabled();
+  await clickEnabledButton(page, "#saveSizePresetButton");
+  await expect(page.locator("#sizePresetEditorStatus")).toContainText("Saved Wider Badge (3 x 2)");
+
+  await page.goto("/production-batch");
+  await clickBatchAction(page, "Add Design");
+  await page.locator("#boundingSizePresetInput").selectOption({ label: "Wider Badge (3 x 2)" });
+  await expect(page.locator("#boundingSizePresetInput")).toHaveValue(/size-/);
+  await expect(page.locator("#preview .preview-guide-label").first()).toHaveText('3"');
+
+  await page.goto("/presets");
+  await expect(page.locator("#presetBoundingSizePresetInput option", { hasText: "Wider Badge (3 x 2)" })).toHaveCount(1);
+});
+
 test("remembers the collapsed left nav state after refresh", async ({ page }) => {
   await page.goto("/");
 
