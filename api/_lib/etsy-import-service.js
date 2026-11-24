@@ -1,5 +1,6 @@
 import { randomUUID as uuid } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
+import { databaseErrorLogFields } from "./database-error-log.js";
 export class EtsyImportError extends Error {
   constructor(code, message, statusCode = 500) { super(message); this.code = code; this.statusCode = statusCode; }
 }
@@ -63,6 +64,7 @@ export function createEtsyImportService({ store, refreshAccess, createClient, no
             runId,
             receiptId: identifier(attempt.rawReceipt?.receipt_id),
             transactionId: identifier(attempt.transactionId),
+            ...databaseErrorLogFields(error),
           });
         } catch {}
       }

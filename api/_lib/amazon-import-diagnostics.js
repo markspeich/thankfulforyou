@@ -1,3 +1,4 @@
+import { databaseErrorCause } from "./database-error-log.js";
 import { ShipStationError } from "./shipstation-client.js";
 
 const MAX_STRING_LENGTH = 128;
@@ -260,6 +261,8 @@ function safeContext(context) {
     Object.assign(details, safeAmazonImportError(context.error));
     const rawResponse = rawShipStationResponse(context.error);
     if (rawResponse !== undefined) details.rawShipStationResponse = rawResponse;
+    const databaseError = databaseErrorCause(context.error);
+    if (databaseError) details.databaseError = databaseError;
   }
   if (["errorName", "errorCode", "statusCode", "retryable", "requestId"].some((key) => Object.hasOwn(context, key))) {
     Object.assign(details, safeAmazonImportError({

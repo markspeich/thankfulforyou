@@ -1,3 +1,4 @@
+import { databaseErrorLogArgs } from "./database-error-log.js";
 import { resolveProductionBatchAuth } from "./production-batch-auth.js";
 import { cleanCopyPrompt, createListingStore, listingError, parseEtsyListingSource } from "./listing-store.js";
 import { getListingCapabilities, generateListingCopy, prepareListingImage, ListingProviderError } from "./listing-providers.js";
@@ -20,7 +21,7 @@ function readBody(req) {
 
 function safeError(res, error) {
   if (error instanceof ListingProviderError || (error?.statusCode && error?.expose)) return res.status(error.statusCode || 502).json({ error: error.message });
-  console.error("Listings API error", error?.name || "Error");
+  console.error("Listings API error", error?.name || "Error", ...databaseErrorLogArgs(error));
   return res.status(500).json({ error: "Unable to manage listing drafts." });
 }
 

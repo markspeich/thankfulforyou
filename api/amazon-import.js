@@ -12,6 +12,7 @@ import { listWorkspaceFonts } from "./_lib/font-store.js";
 import { listWorkspaceFontAliases } from "./_lib/font-alias-store.js";
 import { createAmazonItemEnricher } from "./_lib/amazon-import-enrichment.js";
 import { createAmazonImportDiagnostics } from "./_lib/amazon-import-diagnostics.js";
+import { databaseErrorLogFields } from "./_lib/database-error-log.js";
 
 const FALLBACK_ERROR = "Unable to import Amazon orders.";
 const SAFE_AMAZON_ERROR_MESSAGES = Object.freeze({
@@ -167,7 +168,7 @@ function errorLogMetadata(error, { stage, streaming }) {
     retryable: typeof error?.retryable === "boolean" ? error.retryable : null,
     requestId: isShipStationError && typeof error.requestId === "string" && SAFE_SHIPSTATION_REQUEST_ID.test(error.requestId) ? error.requestId : null,
     streaming,
-
+    ...databaseErrorLogFields(error),
   };
 }
 
