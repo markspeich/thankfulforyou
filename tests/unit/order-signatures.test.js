@@ -405,4 +405,20 @@ describe("order signatures", () => {
       backingBorder: true,
     });
   });
+
+  it("signs backing-layer fixed SVGs while keeping top-layer signatures unchanged", () => {
+    const settings = {
+      text: "",
+      presetId: "preset-a1f4c8e2b601",
+      backingMm: 3.1,
+      weldExportedDesign: true,
+      lines: [{ kind: "fixedSvg", fixedDesignId: "fixed-design-1", fixedDesignVersion: 2, svgSizeMm: 32, offsetXMm: 0, offsetYMm: 0 }],
+    };
+    const legacySignature = buildSettingsSignature(settings);
+
+    expect(buildSettingsSignature({ ...settings, lines: [{ ...settings.lines[0], layer: "top" }] })).toBe(legacySignature);
+    const backingSignature = buildSettingsSignature({ ...settings, lines: [{ ...settings.lines[0], layer: "backing" }] });
+    expect(backingSignature).not.toBe(legacySignature);
+    expect(JSON.parse(backingSignature).lines[0]).toMatchObject({ layer: "backing" });
+  });
 });

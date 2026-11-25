@@ -235,6 +235,7 @@ const ALLOWED_FIXED_ITEM_SETTINGS = [
   "offsetXMm",
   "offsetYMm",
   "backingBorder",
+  "layer",
 ];
 
 let presetRegistry = createPresetRegistry(FALLBACK_MANIFEST, FALLBACK_PRESET_DEFINITIONS);

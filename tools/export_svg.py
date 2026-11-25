@@ -1043,8 +1043,11 @@ def normalize_fixed_svgs(payload):
                 raise ValueError("Fixed design artwork could not be loaded. Try again or replace the artwork.")
             continue
 
+        layer = "backing" if fixed_svg.get("layer") == "backing" else "top"
         backing_mm = 0.0
-        if fixed_svg.get("backingBorder") is True:
+        # Backing-layer artwork is itself part of the backing, so it never gets
+        # a traced backing outline of its own.
+        if layer == "top" and fixed_svg.get("backingBorder") is True:
             try:
                 backing_mm = float(fixed_svg.get("backingMm", 0))
             except (TypeError, ValueError):
@@ -1057,6 +1060,7 @@ def normalize_fixed_svgs(payload):
             "y": y,
             "width": width,
             "height": height,
+            "layer": layer,
             "backing_border": backing_mm > 0,
             "backing_mm": max(0.0, backing_mm),
             **parsed_svg,
@@ -1568,7 +1572,7 @@ def build_precomputed_order_paths(payload):
 def build_single_order_paths(root, payload):
     precomputed_order = build_precomputed_order_paths(payload)
     if precomputed_order:
-        return precomputed_order
+        return merge_backing_layer_fixed_svgs(precomputed_order)
 
     analysis = analyze_single_layout(root, payload)
     width = analysis["widthMm"]
@@ -1580,7 +1584,7 @@ def build_single_order_paths(root, payload):
     export_width = width * 2 + EXPORT_GAP_MM + color_label_extra
     backing_x = width + EXPORT_GAP_MM
 
-    return {
+    return merge_backing_layer_fixed_svgs({
         "width": width,
         "height": height,
         "export_width": export_width,
@@ -1597,7 +1601,7 @@ def build_single_order_paths(root, payload):
         "is_keychain": payload.get("isKeychain") is True,
         "text_color_name": resolve_text_color_name(payload),
         "custom_notes": payload.get("customNotes", ""),
-    }
+    })
 
 
 def resolve_text_color_name(payload):
@@ -1646,6 +1650,10 @@ def build_important_notes(order, instance_id, x, center_y):
         notes.append(f"Text Color: {text_color_name}")
     if not order.get("weld_exported_design", True):
         notes.append("NOT WELDED")
+    if order.get("backing_piece_count", 1) > 1:
+        # Two short lines so the note fits inside the batch export's notes column.
+        notes.append("CHECK BACKING")
+        notes.append(f"{order['backing_piece_count']} pieces")
     for item in order.get("unsupported_characters", []):
         if not isinstance(item, dict) or not item.get("character"):
             continue
@@ -2220,9 +2228,61 @@ def fixed_svg_backing_path(fixed_svg):
     )
 
 
-def build_fixed_svg_layers(order, instance_id, face_x, item_y, id_suffix=""):
+def fixed_svg_solid_polygons(fixed_svg):
+    """Solid outer silhouette of fixed artwork in design millimetres.
+
+    Backing acrylic is cut as one solid piece, so interior counters in the
+    artwork are filled the same way the text backing fills its holes.
+    """
+    polygons = []
+    for element in fixed_svg.get("source_elements") or []:
+        for subpath in transformed_svg_subpaths_mm(element, fixed_svg):
+            cleaned = []
+            for point in subpath:
+                if not cleaned or distance_between_points(cleaned[-1], point) > 0.0001:
+                    cleaned.append(point)
+            if len(cleaned) >= 2 and distance_between_points(cleaned[0], cleaned[-1]) <= 0.0001:
+                cleaned = cleaned[:-1]
+            if len(cleaned) < 3 or abs(polygon_area(cleaned)) < 0.0001:
+                continue
+            polygon = Polygon(cleaned)
+            if not polygon.is_valid:
+                polygon = make_valid(polygon)
+            polygons.extend(Polygon(part.exterior) for part in polygon_parts(polygon))
+    return polygons
+
+
+def merge_backing_layer_fixed_svgs(order):
+    """Union backing-layer fixed artwork into the order's backing silhouette.
+
+    Records backing_piece_count so the export can flag artwork that does not
+    touch the rest of the backing and would be cut as a separate piece.
+    """
+    artwork = [
+        polygon
+        for fixed_svg in order.get("fixed_svgs", [])
+        if fixed_svg.get("layer") == "backing"
+        for polygon in fixed_svg_solid_polygons(fixed_svg)
+    ]
+    if not artwork:
+        return order
+
+    backing_polygons = shapely_solid_polygons_from_path(order.get("backing_path") or "", tolerance_mm=0.01)
+    merged = solid_exterior_geometry(unary_union([*backing_polygons, *artwork]))
+    parts = polygon_parts(merged)
+    if not parts:
+        return order
+
+    order["backing_path"] = " ".join(polyline_closed_path(list(part.exterior.coords), 1) for part in parts)
+    order["backing_piece_count"] = len(parts)
+    return order
+
+
+def build_fixed_svg_layers(order, instance_id, face_x, item_y, id_suffix="", include_backing_layer=False):
     parts = []
     for fixed_svg in order.get("fixed_svgs", []):
+        if fixed_svg.get("layer") == "backing" and not include_backing_layer:
+            continue
         scale = min(
             fixed_svg["width"] / fixed_svg["source_width"],
             fixed_svg["height"] / fixed_svg["source_height"],
@@ -2462,7 +2522,7 @@ def build_fixed_design_svg(order):
   <title>Fixed design</title>
   <g transform="translate({-left:.3f} {-top:.3f})" fill="rgb(255, 0, 0)" stroke="none">
     <path d="{order['face_path']}"/>
-{build_fixed_svg_layers(order, 'fixed-design', 0.0, 0.0)}
+{build_fixed_svg_layers(order, 'fixed-design', 0.0, 0.0, include_backing_layer=True)}
   </g>
 </svg>
 '''

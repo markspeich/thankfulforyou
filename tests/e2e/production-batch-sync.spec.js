@@ -1632,14 +1632,14 @@ test("three-way rebases fixed SVG draft controls during font alias conflict reco
   const fixedCard = page.locator('.line-control-card[data-line-kind="fixedSvg"]');
   await expect(fixedCard).toHaveCount(1);
   await fixedCard.locator('[data-setting="svgSizeMm"]').fill("42");
-  await fixedCard.locator('[data-setting="backingBorder"]').check();
+  await fixedCard.locator('[data-setting="fixedSvgLayer"]').selectOption("backing");
   await page.getByRole("button", { name: "Map font" }).click();
   await page.locator("#fontAliasFontSelect").selectOption("skywalk");
   await page.locator("#fontAliasConfirmButton").click();
 
   await expect(page.locator("#fontAliasStatus")).toContainText("This mapping changed while you were editing it");
   await expect(fixedCard.locator('[data-setting="svgSizeMm"]')).toHaveValue("42");
-  await expect(fixedCard.locator('[data-setting="backingBorder"]')).toBeChecked();
+  await expect(fixedCard.locator('[data-setting="fixedSvgLayer"]')).toHaveValue("backing");
   await expect(fixedCard.locator('[data-setting="offsetXMm"]')).toHaveValue("2");
   await expect(fixedCard.locator('[data-setting="offsetYMm"]')).toHaveValue("1.5");
 });

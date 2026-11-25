@@ -26,6 +26,7 @@ const FIXED_SVG_LINE_SETTING_KEYS = [
   "offsetXMm",
   "offsetYMm",
   "backingBorder",
+  "layer",
 ];
 
 function normalizeLines(lines) {

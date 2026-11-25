@@ -17,6 +17,7 @@ const FIXED_ITEM_KEYS = [
   "offsetXMm",
   "offsetYMm",
   "backingBorder",
+  "layer",
 ];
 
 function diffLineSettings(base, line) {

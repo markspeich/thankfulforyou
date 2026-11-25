@@ -112,8 +112,67 @@ describe("production batch mapper fixed design items", () => {
         offsetXMm: 2,
         offsetYMm: -7,
         backingBorder: true,
+        layer: "top",
       },
       expect.objectContaining({ kind: "text", fontId: "somekind", fontSizeMm: 23 }),
     ]);
+  });
+
+  it("round-trips backing-layer fixed SVGs without a traced backing border", () => {
+    const rows = buildProductionBatchRowsFromSnapshot({
+      batch: { id: "batch-1", workspaceId: "workspace-1" },
+      activeOrderItemId: "order-1",
+      orderItems: [{
+        id: "order-1",
+        text: "Morgan",
+        status: "captured",
+        source: {},
+        settings: {
+          text: "Morgan",
+          lines: [
+            { kind: "text", fontId: "skywalk" },
+            { kind: "fixedSvg", fixedDesignId: "heart", fixedDesignVersion: 1, layer: "backing", backingBorder: true },
+          ],
+        },
+      }],
+    }, { workspaceId: "workspace-1", updatedBy: "operator-1" });
+
+    expect(rows.designLines.map((line) => [line.item_kind, line.fixed_svg_layer, line.fixed_svg_backing_border]))
+      .toEqual([["text", "top", false], ["fixed_svg", "backing", false]]);
+
+    const restored = buildSnapshotFromProductionBatchRows({
+      batch: { id: "batch-1", workspace_id: "workspace-1", active_order_item_id: "order-1" },
+      batchItems: [{ order_item_id: "order-1", batch_position: 0, status: "active" }],
+      orderItems: [{ id: "order-1", workspace_id: "workspace-1", source_json: {}, quantity: 1 }],
+      designs: [{ id: "design-1", order_item_id: "order-1", design_text: "Morgan", production_status: "saved" }],
+      designLines: rows.designLines.map(({ order_item_id: _orderItemId, ...line }) => ({ ...line, design_id: "design-1" })),
+    });
+
+    expect(restored.orderItems[0].settings.lines[1]).toEqual(expect.objectContaining({
+      kind: "fixedSvg",
+      layer: "backing",
+      backingBorder: false,
+    }));
+  });
+
+  it("restores rows saved before the layer column as top-layer artwork", () => {
+    const restored = buildSnapshotFromProductionBatchRows({
+      batch: { id: "batch-1", workspace_id: "workspace-1", active_order_item_id: "order-1" },
+      batchItems: [{ order_item_id: "order-1", batch_position: 0, status: "active" }],
+      orderItems: [{ id: "order-1", workspace_id: "workspace-1", source_json: {}, quantity: 1 }],
+      designs: [{ id: "design-1", order_item_id: "order-1", design_text: "", production_status: "saved" }],
+      designLines: [{
+        design_id: "design-1",
+        line_index: 0,
+        item_kind: "fixed_svg",
+        fixed_design_id: "heart",
+        fixed_svg_backing_border: true,
+      }],
+    });
+
+    expect(restored.orderItems[0].settings.lines[0]).toEqual(expect.objectContaining({
+      layer: "top",
+      backingBorder: true,
+    }));
   });
 });

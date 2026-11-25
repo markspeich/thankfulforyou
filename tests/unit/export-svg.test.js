@@ -84,6 +84,52 @@ function pathBounds(path) {
   };
 }
 
+describe("export_svg fixed SVG layers", () => {
+  const backingLayerPayload = (xMm) => ({
+    text: "Morgan", widthMm: 60, heightMm: 30, backingMm: 3,
+    analysis: { exportFacePath: "M5 5 H25 V25 H5 Z", backingPath: "M2 2 H28 V2 V28 H2 Z", connectedComponentCount: 1 },
+    fixedSvgs: [{ id: "heart", name: "Heart", xMm, yMm: 10, widthMm: 10, heightMm: 10,
+      layer: "backing", backingBorder: true, backingMm: 3,
+      svgText: '<svg viewBox="0 0 10 10"><path d="M0 0 H10 V10 H0 Z M3 3 V7 H7 V3 Z" fill-rule="evenodd"/></svg>' }],
+  });
+
+  function backingBorderPath(svg) {
+    return svg.match(/id="order-1-copy-1-mirror-backing-border" d="([^"]+)"/)?.[1] || "";
+  }
+
+  test("merges backing-layer artwork into the backing border instead of the top layer", () => {
+    const svg = exportSvg(backingLayerPayload(24));
+
+    expect(svg).not.toContain("fixed-svg-heart");
+    const backing = pathBounds(backingBorderPath(svg));
+    expect(backing.left).toBeCloseTo(2, 3);
+    expect(backing.right).toBeCloseTo(34, 3);
+    expect(backing.bottom).toBeCloseTo(28, 3);
+    // One merged outline: the artwork's counter is filled and no extra offset border is traced.
+    expect(countPathCommands(backingBorderPath(svg), "M")).toBe(1);
+    expect(svg).not.toContain("CHECK BACKING");
+  });
+
+  test("flags backing-layer artwork that does not touch the rest of the backing", () => {
+    const svg = exportSvg(backingLayerPayload(40));
+
+    expect(countPathCommands(backingBorderPath(svg), "M")).toBe(2);
+    expect(svg).toContain(">CHECK BACKING</text>");
+    expect(svg).toContain(">2 pieces</text>");
+  });
+
+  test("keeps top-layer artwork in the design columns", () => {
+    const payload = backingLayerPayload(24);
+    payload.fixedSvgs[0].layer = "top";
+    payload.fixedSvgs[0].backingBorder = false;
+    const svg = exportSvg(payload);
+
+    expect(svg).toContain('id="order-1-copy-1-fixed-svg-heart"');
+    expect(svg).toContain('id="order-1-copy-1-mirror-fixed-svg-heart"');
+    expect(backingBorderPath(svg)).toBe("M2 2 H28 V2 V28 H2 Z");
+  });
+});
+
 describe("export_svg face tracing", () => {
   test("fixed-design export preserves one face and artwork with holes, without production backing or copies", () => {
     const face = "M5 8 H15 V18 H5 Z M7 10 V16 H13 V10 Z";

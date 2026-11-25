@@ -733,11 +733,13 @@ test("inserts a fixed SVG design from the preset tools menu with SVG-only contro
   await expect(fixedCard.getByText("Vertical Stretch")).toHaveCount(0);
   await expect(fixedCard.getByText("Lock Text Height")).toHaveCount(0);
 
-  const backingBorderInput = fixedCard.getByLabel("Backing Border");
+  const layerSelect = fixedCard.getByLabel("Layer");
   const fixedPreview = page.locator('#preview [data-fixed-svg-id="fixed-design-2"]');
-  await expect(backingBorderInput).not.toBeChecked();
+  await expect(fixedCard.locator('input[type="checkbox"][data-setting="backingBorder"]')).toHaveCount(0);
+  await expect(layerSelect).toHaveValue("top");
+  await expect(layerSelect.locator("option")).toHaveText(["Top layer", "Top layer + backing border", "Backing border"]);
   await expect(fixedPreview).toHaveAttribute("href", /paw-print\.svg/);
-  await backingBorderInput.check();
+  await layerSelect.selectOption("topWithBorder");
   const fixedBackingPreview = page.locator('#preview image[data-fixed-svg-backing-id="fixed-design-2"]');
   await expect(fixedBackingPreview).toBeVisible();
   await expect.poll(async () => fixedBackingPreview.getAttribute("href")).toMatch(/^data:image\/png;base64,/);
@@ -745,7 +747,18 @@ test("inserts a fixed SVG design from the preset tools menu with SVG-only contro
   await expect.poll(async () => fixedPreview.getAttribute("href")).toMatch(/^data:image\/svg\+xml/);
   await expect.poll(async () => fixedPreview.getAttribute("href")).toContain("fill%3D%22%23f8fbfc%22");
   await expect(page.locator('#preview path[data-fixed-svg-backing-id="fixed-design-2"]')).toHaveCount(0);
-  await backingBorderInput.uncheck();
+  await layerSelect.selectOption("backing");
+  const backingLayerArtwork = page.locator('#preview image[data-fixed-svg-layer="backing"][data-fixed-svg-backing-id="fixed-design-2"]');
+  await expect(backingLayerArtwork).toBeVisible();
+  await expect.poll(async () => backingLayerArtwork.getAttribute("href")).toMatch(/^data:image\/png;base64,/);
+  await expect(fixedPreview).toHaveCount(0);
+  await expect.poll(async () => page.locator("#preview").evaluate((preview) => {
+    const children = [...preview.children];
+    const faceLayerIndex = children.findIndex((child) => child.classList.contains("face-layer"));
+    const artworkIndex = children.findIndex((child) => child.getAttribute("data-fixed-svg-layer") === "backing");
+    return artworkIndex >= 0 && artworkIndex < faceLayerIndex;
+  })).toBe(true);
+  await layerSelect.selectOption("top");
   await expect(page.locator('#preview [data-fixed-svg-backing-id="fixed-design-2"]')).toHaveCount(0);
   await expect(fixedPreview).toHaveAttribute("href", /paw-print\.svg/);
 
@@ -835,7 +848,7 @@ test(`backing preview preserves saved SVG group transforms, complete artwork, an
   await page.locator("#insertFixedDesignDialog").getByRole("button", { name: "Insert Fixed Design", exact: true }).click();
   const card = page.locator(".line-control-card", { hasText: "Fixed Design: Paw Print" });
   const image = page.locator('#preview [data-fixed-svg-id="fixed-design-2"]');
-  await card.getByLabel("Backing Border").check();
+  await card.getByLabel("Layer").selectOption("topWithBorder");
   await expect.poll(() => image.getAttribute("href")).toMatch(/^data:image\/svg\+xml/);
   const pixels = await image.evaluate(async element => {
     const href = element.getAttribute("href");
@@ -871,7 +884,7 @@ test(`backing preview preserves saved SVG group transforms, complete artwork, an
     return [...context.getImageData(Math.round(canvas.width / 4), Math.round(canvas.height / 2), 1, 1).data];
   });
   expect(backingPixel).toEqual([255, 0, 0, 255]);
-  await card.getByLabel("Backing Border").uncheck();
+  await card.getByLabel("Layer").selectOption("top");
   await expect(image).toHaveAttribute("href", /paw-print\.svg/);
 });
 }
@@ -912,7 +925,7 @@ test("renders fixed SVG backing as analyzed vector geometry after Save", async (
 
   const fixedCard = page.locator(".line-control-card", { hasText: "Fixed Design: Paw Print" });
   await expect(fixedCard).toBeVisible();
-  await fixedCard.getByLabel("Backing Border").check();
+  await fixedCard.getByLabel("Layer").selectOption("topWithBorder");
   await expect(page.locator('#preview image[data-fixed-svg-backing-id="fixed-design-2"]')).toBeVisible();
 
   await page.locator("#captureButton").click();

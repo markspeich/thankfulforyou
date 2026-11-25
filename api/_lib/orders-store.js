@@ -176,7 +176,8 @@ export function buildImportedDesignLineRows(item, designId = null) {
       fixed_design_id: itemKind === "fixed_svg" ? nullableString(line.settings.fixedDesignId) : null,
       fixed_design_version: itemKind === "fixed_svg" ? toNumber(line.settings.fixedDesignVersion, null) : null,
       svg_size_mm: itemKind === "fixed_svg" ? toNumber(line.settings.svgSizeMm, 32) : 32,
-      fixed_svg_backing_border: itemKind === "fixed_svg" ? Boolean(line.settings.backingBorder) : false,
+      fixed_svg_backing_border: itemKind === "fixed_svg" && line.settings.layer !== "backing" ? Boolean(line.settings.backingBorder) : false,
+      fixed_svg_layer: itemKind === "fixed_svg" && line.settings.layer === "backing" ? "backing" : "top",
     };
   });
 }
@@ -198,7 +199,8 @@ function normalizeDesignLine(row) {
     fixedDesignId: row.fixed_design_id ?? null,
     fixedDesignVersion: row.fixed_design_version == null ? null : toNumber(row.fixed_design_version, null),
     svgSizeMm: toNumber(row.svg_size_mm, 32),
-    backingBorder: Boolean(row.fixed_svg_backing_border),
+    backingBorder: row.fixed_svg_layer !== "backing" && Boolean(row.fixed_svg_backing_border),
+    layer: row.fixed_svg_layer === "backing" ? "backing" : "top",
   };
 }
 
@@ -451,7 +453,7 @@ export async function listWorkspaceOrders({ workspaceId, activeBatchId = null, s
   const { data: designLines, error: designLinesError } = designIds.length
     ? await supabase
       .from("design_lines")
-      .select("design_id, line_index, item_kind, text, font_id, letter_bridge_mm, line_bridge_mm, offset_x_mm, offset_y_mm, text_height_mm, horizontal_scale, vertical_scale, lock_text_height, fixed_design_id, fixed_design_version, svg_size_mm, fixed_svg_backing_border")
+      .select("design_id, line_index, item_kind, text, font_id, letter_bridge_mm, line_bridge_mm, offset_x_mm, offset_y_mm, text_height_mm, horizontal_scale, vertical_scale, lock_text_height, fixed_design_id, fixed_design_version, svg_size_mm, fixed_svg_backing_border, fixed_svg_layer")
       .in("design_id", designIds)
       .order("line_index", { ascending: true })
     : { data: [], error: null };
@@ -569,7 +571,7 @@ export async function getWorkspaceOrderDetail({ workspaceId, orderId, activeBatc
   const designIds = designRows.map((design) => design.id);
   const { data: designLines, error: designLinesError } = designIds.length
     ? await supabase.from("design_lines")
-      .select("design_id, line_index, item_kind, text, font_id, letter_bridge_mm, line_bridge_mm, offset_x_mm, offset_y_mm, text_height_mm, horizontal_scale, vertical_scale, lock_text_height, fixed_design_id, fixed_design_version, svg_size_mm, fixed_svg_backing_border")
+      .select("design_id, line_index, item_kind, text, font_id, letter_bridge_mm, line_bridge_mm, offset_x_mm, offset_y_mm, text_height_mm, horizontal_scale, vertical_scale, lock_text_height, fixed_design_id, fixed_design_version, svg_size_mm, fixed_svg_backing_border, fixed_svg_layer")
       .in("design_id", designIds)
       .order("line_index", { ascending: true })
     : { data: [], error: null };

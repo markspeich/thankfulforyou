@@ -41,6 +41,9 @@ function buildSignaturePayload(settings = {}, options = {}) {
           offsetXMm: toFiniteNumber(line.offsetXMm),
           offsetYMm: toFiniteNumber(line.offsetYMm),
           backingBorder: Boolean(line.backingBorder),
+          // Only backing-layer artwork is signed so top-layer designs saved
+          // before the layer option existed keep their signatures.
+          ...(line.layer === "backing" ? { layer: "backing" } : {}),
         };
       }
 

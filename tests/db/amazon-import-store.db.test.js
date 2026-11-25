@@ -224,6 +224,35 @@ describe("Amazon import database integration", () => {
     ]);
   });
 
+  it("keeps the acrylic layer of imported preset fixed designs", async () => {
+    const id = `amazon-order-item:${randomUUID()}`;
+    const importedItem = item(id, "Ada");
+    importedItem.settings.lines = [
+      { fontId: "skywalk", fontSizeMm: 18 },
+      { kind: "fixedSvg", svgSizeMm: 20, layer: "backing", backingBorder: true },
+      { kind: "fixedSvg", svgSizeMm: 12, backingBorder: true },
+    ];
+    await importAmazonOrderItemsTransactional({
+      workspaceId: PRIMARY_WORKSPACE_ID,
+      userId: importUserId,
+      items: [importedItem],
+    });
+
+    const supabase = createSupabaseAdminClient();
+    const { data: design } = await supabase.from("designs").select("id").eq("order_item_id", id).single();
+    const { data: lines, error } = await supabase
+      .from("design_lines")
+      .select("line_index, item_kind, fixed_svg_layer, fixed_svg_backing_border")
+      .eq("design_id", design.id)
+      .order("line_index");
+    expect(error).toBeNull();
+    expect(lines).toEqual([
+      { line_index: 0, item_kind: "text", fixed_svg_layer: "top", fixed_svg_backing_border: false },
+      { line_index: 1, item_kind: "fixed_svg", fixed_svg_layer: "backing", fixed_svg_backing_border: false },
+      { line_index: 2, item_kind: "fixed_svg", fixed_svg_layer: "top", fixed_svg_backing_border: true },
+    ]);
+  });
+
   it("reports durable IDs as existing without changing their stored rows", async () => {
     const id = `amazon-order-item:${randomUUID()}`;
     await importAmazonOrderItemsTransactional({

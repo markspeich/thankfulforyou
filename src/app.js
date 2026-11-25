@@ -1183,7 +1183,29 @@ function createFixedDesignLineSettings(fixedDesign) {
     offsetXMm: 0,
     offsetYMm: 0,
     backingBorder: false,
+    layer: "top",
   };
+}
+
+const FIXED_SVG_LAYER_CHOICES = [
+  { value: "top", label: "Top layer" },
+  { value: "topWithBorder", label: "Top layer + backing border" },
+  { value: "backing", label: "Backing border" },
+];
+
+// The Layer dropdown is one control over two stored settings: which acrylic
+// layer the artwork is cut from, and (top layer only) whether an offset
+// backing outline is traced around it.
+function getFixedSvgLayerChoice(line = {}) {
+  if (line.layer === "backing") return "backing";
+  return line.backingBorder ? "topWithBorder" : "top";
+}
+
+function fixedSvgLayerSettingsForChoice(choice, fallback = {}) {
+  if (choice === "backing") return { layer: "backing", backingBorder: false };
+  if (choice === "topWithBorder") return { layer: "top", backingBorder: true };
+  if (choice === "top") return { layer: "top", backingBorder: false };
+  return { layer: fallback.layer === "backing" ? "backing" : "top", backingBorder: Boolean(fallback.backingBorder) };
 }
 
 function getPresetBaseSettings(presetId) {
@@ -1228,7 +1250,8 @@ function normalizeLineSettings(lineSettings = {}) {
       svgSizeMm: Number.isFinite(Number(lineSettings.svgSizeMm)) ? Number(lineSettings.svgSizeMm) : 32,
       offsetXMm: Number.isFinite(Number(lineSettings.offsetXMm)) ? Number(lineSettings.offsetXMm) : 0,
       offsetYMm: Number.isFinite(Number(lineSettings.offsetYMm)) ? Number(lineSettings.offsetYMm) : 0,
-      backingBorder: Boolean(lineSettings.backingBorder),
+      backingBorder: lineSettings.layer !== "backing" && Boolean(lineSettings.backingBorder),
+      layer: lineSettings.layer === "backing" ? "backing" : "top",
     };
   }
 
@@ -1388,8 +1411,9 @@ function buildFixedSvgLayoutItems(lines, layoutWidthMm, layoutHeightMm, backingM
         svgSizeMm: sizeMm,
         offsetXMm: Number(line.offsetXMm || 0),
         offsetYMm: Number(line.offsetYMm || 0),
-        backingBorder: Boolean(line.backingBorder),
-        backingMm: Boolean(line.backingBorder) ? Number(backingMm || DEFAULT_BACKING_MM) : 0,
+        layer: line.layer === "backing" ? "backing" : "top",
+        backingBorder: line.layer !== "backing" && Boolean(line.backingBorder),
+        backingMm: line.layer !== "backing" && Boolean(line.backingBorder) ? Number(backingMm || DEFAULT_BACKING_MM) : 0,
       };
     });
 }
@@ -2185,7 +2209,7 @@ function createPresetFixedItemCard(item, index) {
     createPresetEditorRangeField(`fixed:${index}`, "svgSizeMm", "Vertical Size", 5, 80, 0.5, normalized.svgSizeMm),
     createPresetEditorRangeField(`fixed:${index}`, "offsetXMm", "Horizontal Offset", -30, 30, 0.1, normalized.offsetXMm),
     createPresetEditorRangeField(`fixed:${index}`, "offsetYMm", "Vertical Offset From Center", -30, 30, 0.1, normalized.offsetYMm),
-    createPresetEditorFixedCheckboxField(index, "backingBorder", "Backing Border", normalized.backingBorder),
+    createFixedSvgLayerField({ fixedItemIndex: String(index) }, getFixedSvgLayerChoice(normalized)),
   );
 
   card.append(header, grid);
@@ -2253,7 +2277,11 @@ function readPresetEditorFixedItems(fallbackItems = []) {
       const svgSizeInput = card.querySelector('[data-setting="svgSizeMm"]');
       const offsetXInput = card.querySelector('[data-setting="offsetXMm"]');
       const offsetYInput = card.querySelector('[data-setting="offsetYMm"]');
-      const backingBorderInput = card.querySelector('[data-setting="backingBorder"]');
+      const layerSelect = card.querySelector('[data-setting="fixedSvgLayer"]');
+      const layerSettings = fixedSvgLayerSettingsForChoice(
+        layerSelect instanceof HTMLSelectElement ? layerSelect.value : null,
+        fallback,
+      );
 
       return {
         kind: "fixedSvg",
@@ -2263,7 +2291,7 @@ function readPresetEditorFixedItems(fallbackItems = []) {
         svgSizeMm: svgSizeInput instanceof HTMLInputElement ? Number(svgSizeInput.value) : fallback.svgSizeMm,
         offsetXMm: offsetXInput instanceof HTMLInputElement ? Number(offsetXInput.value) : fallback.offsetXMm,
         offsetYMm: offsetYInput instanceof HTMLInputElement ? Number(offsetYInput.value) : fallback.offsetYMm,
-        backingBorder: backingBorderInput instanceof HTMLInputElement ? backingBorderInput.checked : fallback.backingBorder,
+        ...layerSettings,
       };
     })
     .filter((item) => typeof item.fixedDesignId === "string" && item.fixedDesignId.trim());
@@ -9332,7 +9360,7 @@ function renderLineControls(settings = getCurrentSettings()) {
         createFixedDesignRangeField(settingsIndex, "svgSizeMm", "Vertical Size", 5, 80, 0.5, line.svgSizeMm),
         createFixedDesignRangeField(settingsIndex, "offsetXMm", "Horizontal Offset", -30, 30, 0.1, line.offsetXMm),
         createFixedDesignRangeField(settingsIndex, "offsetYMm", "Vertical Offset From Center", -30, 30, 0.1, line.offsetYMm),
-        createFixedDesignCheckboxField(settingsIndex, "backingBorder", "Backing Border", line.backingBorder),
+        createFixedSvgLayerField({ settingsIndex: String(settingsIndex) }, getFixedSvgLayerChoice(line)),
       );
       card.append(grid);
       lineControlCards.append(card);
@@ -9405,14 +9433,14 @@ function readFixedDesignLineSettingsFromControls({ settingsIndex, fallbackLineSe
   const svgSizeInput = lineCard.querySelector('[data-setting="svgSizeMm"]');
   const offsetXInput = lineCard.querySelector('[data-setting="offsetXMm"]');
   const offsetYInput = lineCard.querySelector('[data-setting="offsetYMm"]');
-  const backingBorderInput = lineCard.querySelector('[data-setting="backingBorder"]');
+  const layerSelect = lineCard.querySelector('[data-setting="fixedSvgLayer"]');
 
   return normalizeLineSettings({
     ...fallback,
+    ...fixedSvgLayerSettingsForChoice(layerSelect instanceof HTMLSelectElement ? layerSelect.value : null, fallback),
     svgSizeMm: svgSizeInput instanceof HTMLInputElement ? Number(svgSizeInput.value) : fallback.svgSizeMm,
     offsetXMm: offsetXInput instanceof HTMLInputElement ? Number(offsetXInput.value) : fallback.offsetXMm,
     offsetYMm: offsetYInput instanceof HTMLInputElement ? Number(offsetYInput.value) : fallback.offsetYMm,
-    backingBorder: backingBorderInput instanceof HTMLInputElement ? backingBorderInput.checked : fallback.backingBorder,
   });
 }
 
@@ -9492,37 +9520,26 @@ function createFixedDesignRangeField(settingsIndex, setting, labelText, min, max
   return label;
 }
 
-function createFixedDesignCheckboxField(settingsIndex, setting, labelText, checked) {
+function createFixedSvgLayerField(dataset, choice) {
   const label = document.createElement("label");
-  label.className = "check-field line-control-toggle";
-
-  const input = document.createElement("input");
-  input.type = "checkbox";
-  input.checked = Boolean(checked);
-  input.dataset.settingsIndex = String(settingsIndex);
-  input.dataset.setting = setting;
+  label.className = "field compact-field";
 
   const span = document.createElement("span");
-  span.textContent = labelText;
+  span.textContent = "Layer";
 
-  label.append(input, span);
-  return label;
-}
+  const select = document.createElement("select");
+  Object.assign(select.dataset, dataset);
+  select.dataset.setting = "fixedSvgLayer";
 
-function createPresetEditorFixedCheckboxField(index, setting, labelText, checked) {
-  const label = document.createElement("label");
-  label.className = "check-field line-control-toggle";
+  FIXED_SVG_LAYER_CHOICES.forEach(({ value, label: optionLabel }) => {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = optionLabel;
+    option.selected = value === choice;
+    select.append(option);
+  });
 
-  const input = document.createElement("input");
-  input.type = "checkbox";
-  input.checked = Boolean(checked);
-  input.dataset.fixedItemIndex = String(index);
-  input.dataset.setting = setting;
-
-  const span = document.createElement("span");
-  span.textContent = labelText;
-
-  label.append(input, span);
+  label.append(span, select);
   return label;
 }
 
@@ -10375,7 +10392,7 @@ function rebaseFontAliasDraftLine({ draftLine, previousLine, authoritativeLine, 
 
   const fixedLine = draftLine.kind === "fixedSvg" || authoritativeLine.kind === "fixedSvg";
   const draftKeys = fixedLine
-    ? ["svgSizeMm", "offsetXMm", "offsetYMm", "backingBorder"]
+    ? ["svgSizeMm", "offsetXMm", "offsetYMm", "backingBorder", "layer"]
     : [
         "bridgeMm",
         "lineBridgeMm",
@@ -13707,6 +13724,25 @@ function findFixedSvgBackingAnalysisPath(analysis, fixedSvg) {
 }
 function createFixedSvgBackingPreviewElements(fixedSvgs = [], frame, analysis = null) {
   return fixedSvgs.flatMap((fixedSvg) => {
+    if (fixedSvg.layer === "backing") {
+      // Backing-layer artwork is cut as part of the backing silhouette, so it
+      // previews as a solid shape in the backing color beneath the face layer.
+      if (!fixedSvg.publicUrl) return [];
+      const cacheKey = getFixedSvgBackingPreviewCacheKey(fixedSvg, 0);
+      const backingArtwork = makeSvgElement("image", {
+        "data-fixed-svg-backing-id": fixedSvg.id,
+        "data-fixed-svg-layer": "backing",
+        "data-backing-cache-key": cacheKey,
+        href: TRANSPARENT_PREVIEW_PIXEL,
+        x: frame.designX + fixedSvg.xMm,
+        y: frame.designY + fixedSvg.yMm,
+        width: fixedSvg.widthMm,
+        height: fixedSvg.heightMm,
+      });
+      resolveFixedSvgBackingPreviewHref(fixedSvg, 0, backingArtwork, cacheKey);
+      return [backingArtwork];
+    }
+
     const backingMm = Number(fixedSvg.backingMm || 0);
     if (!fixedSvg.backingBorder || backingMm <= 0) {
       return [];
@@ -13864,7 +13900,9 @@ function resolveFixedSvgWhitePreviewHref(fixedSvg, imageElement) {
 }
 
 function createFixedSvgPreviewElements(fixedSvgs = [], frame) {
-  return fixedSvgs.map((fixedSvg) => {
+  // Backing-layer artwork is drawn by createFixedSvgBackingPreviewElements.
+  const topLayerFixedSvgs = fixedSvgs.filter((fixedSvg) => !(fixedSvg.layer === "backing" && fixedSvg.publicUrl));
+  return topLayerFixedSvgs.map((fixedSvg) => {
     const commonAttributes = {
       "data-fixed-svg-id": fixedSvg.id,
       "data-fixed-svg-name": fixedSvg.name,
