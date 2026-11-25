@@ -668,6 +668,35 @@ test("clears a stale save error when applying a fixed SVG preset to a blank manu
   await expect(fixedPreview).toHaveAttribute("href", fixedDesignPublicUrl("cardiology-heart.svg"));
 });
 
+test("previews top-layer artwork as white acrylic over backing-layer artwork", async ({ page }) => {
+  await page.goto("/production-batch");
+  await expect(page.locator("#initialBatchLoading")).toBeHidden();
+  const dialog = page.locator("#insertFixedDesignDialog");
+  const insertFixedDesign = async (name) => {
+    await openPresetTools(page);
+    await page.getByRole("button", { name: "Insert Fixed Design" }).click();
+    await dialog.locator("#insertFixedDesignSearchInput").fill(name);
+    await dialog.getByRole("button", { name: new RegExp(name) }).click();
+    await dialog.getByRole("button", { name: "Insert Fixed Design" }).click();
+    await expect(dialog).not.toBeVisible();
+  };
+
+  await insertFixedDesign("Paw Print");
+  await insertFixedDesign("Cardiology Heart");
+  const backCard = page.locator(".line-control-card", { hasText: "Fixed Design: Paw Print" });
+  const frontPreview = page.locator('#preview [data-fixed-svg-id="fixed-design-1"]');
+  // Without backing-layer artwork, top-layer art keeps its original outline.
+  await expect(frontPreview).toHaveAttribute("href", /cardiology-heart\.svg/);
+
+  await backCard.getByLabel("Layer").selectOption("backing");
+  await expect(page.locator('#preview image[data-fixed-svg-layer="backing"][data-fixed-svg-backing-id="fixed-design-2"]')).toBeVisible();
+  await expect.poll(async () => frontPreview.getAttribute("href")).toMatch(/^data:image\/svg\+xml/);
+  await expect.poll(async () => frontPreview.getAttribute("href")).toContain("fill%3D%22%23f8fbfc%22");
+
+  await backCard.getByLabel("Layer").selectOption("top");
+  await expect(frontPreview).toHaveAttribute("href", /cardiology-heart\.svg/);
+});
+
 test("inserts a fixed SVG design from the preset tools menu with SVG-only controls", async ({ page }) => {
   const analyzedLayouts = [];
   await page.route("**/api/layout-analyze", async (route) => {

@@ -13902,6 +13902,9 @@ function resolveFixedSvgWhitePreviewHref(fixedSvg, imageElement) {
 function createFixedSvgPreviewElements(fixedSvgs = [], frame) {
   // Backing-layer artwork is drawn by createFixedSvgBackingPreviewElements.
   const topLayerFixedSvgs = fixedSvgs.filter((fixedSvg) => !(fixedSvg.layer === "backing" && fixedSvg.publicUrl));
+  // When the design has backing-layer artwork, top-layer artwork previews as
+  // white acrylic over it. Otherwise the original outline keeps it visible.
+  const designHasBackingArtwork = fixedSvgs.some((fixedSvg) => fixedSvg.layer === "backing" && fixedSvg.publicUrl);
   return topLayerFixedSvgs.map((fixedSvg) => {
     const commonAttributes = {
       "data-fixed-svg-id": fixedSvg.id,
@@ -13919,7 +13922,7 @@ function createFixedSvgPreviewElements(fixedSvgs = [], frame) {
         width: fixedSvg.widthMm,
         height: fixedSvg.heightMm,
       });
-      if (fixedSvg.backingBorder) {
+      if (fixedSvg.backingBorder || designHasBackingArtwork) {
         resolveFixedSvgWhitePreviewHref(fixedSvg, image);
       }
       return image;
